@@ -1,4 +1,7 @@
-<!DOCTYPE html><html lang="en" class="no-js"><head>
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
     
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -12,6 +15,7 @@
         <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/dev/arr/arr-settings/">
       
       
+      
         <link rel="prev" href="../arr-features/">
       
       
@@ -22,21 +26,26 @@
       
       
       <link rel="icon" href="../../images/favicon.ico">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+      <meta name="generator" content="zensical-0.1.2">
     
     
   
   
     
-      <title>Settings · *arr - Jellyfin Enhanced</title>
+      <title>Settings - Jellyfin Enhanced</title>
     
   
 
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/classic/main.0006804e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/classic/palette.813d4b3f.min.css">
       
       
 
@@ -49,9 +58,9 @@
       
         
         
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noto+Sans:300,300i,400,400i,700,700i%7CNoto+Sans+Mono:400,400i,700,700i&amp;display=fallback">
-        <style>:root{--md-text-font:"Noto Sans";--md-code-font:"Noto Sans Mono"}</style>
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Ubuntu:300,300i,400,400i,500,500i,700,700i%7CUbuntu+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Ubuntu";--md-code-font:"Ubuntu Mono"}</style>
       
     
     
@@ -59,23 +68,13 @@
     
       <link rel="stylesheet" href="../../stylesheets/touch.css">
     
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
     
       
 
     
     
-  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
-            html.glightbox-open { overflow: initial; height: 100%; }
-            .gslide-title { margin-top: 0px; user-select: text; }
-            .gslide-desc { color: #666; user-select: text; }
-            .gslide-image img { background: white; }
-            .gscrollbar-fixer { padding-right: 15px; }
-            .gdesc-inner { font-size: 0.75rem; }
-            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
-            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
-            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
-        </style></head>
+  </head>
   
   
     
@@ -90,20 +89,17 @@
     
     <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
     <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
-    <label class="md-overlay" for="__drawer"></label>
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
     <div data-md-component="skip">
-      
-        
-        <a href="#arr-settings" class="md-skip">
-          Skip to content
-        </a>
-      
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
     </div>
     <div data-md-component="announce">
       
     </div>
     
-      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
         
       </div>
     
@@ -119,7 +115,7 @@
     </a>
     <label class="md-header__button md-icon" for="__drawer">
       
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
     </label>
     <div class="md-header__title" data-md-component="header-title">
       <div class="md-header__ellipsis">
@@ -130,8 +126,6 @@
         </div>
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
-              <span class="je-topic-area">*arr</span>
-            
             
               Settings
             
@@ -146,20 +140,20 @@
     
     
     
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
     
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
       </label>
     
   
     
     
     
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
     
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
       </label>
     
   
@@ -171,50 +165,17 @@
     
     
     
+    
       
       
         <label class="md-header__button md-icon" for="__search">
           
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
         </label>
-        <div class="md-search" data-md-component="search" role="dialog">
-  <label class="md-search__overlay" for="__search"></label>
-  <div class="md-search__inner" role="search">
-    <form class="md-search__form" name="search">
-      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
-      <label class="md-search__icon md-icon" for="__search">
-        
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
-        
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path></svg>
-      </label>
-      <nav class="md-search__options" aria-label="Search">
-        
-          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
-            
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
-          </a>
-        
-        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
-          
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
-        </button>
-      </nav>
-      
-        <div class="md-search__suggest" data-md-component="search-suggest"></div>
-      
-    </form>
-    <div class="md-search__output">
-      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
-        <div class="md-search-result" data-md-component="search-result">
-          <div class="md-search-result__meta">
-            Initializing search
-          </div>
-          <ol class="md-search-result__list" role="presentation"></ol>
-        </div>
-      </div>
-    </div>
-  </div>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
 </div>
       
     
@@ -223,7 +184,7 @@
         <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
   </div>
   <div class="md-source__repository">
     n00bcodr/Jellyfin-Enhanced
@@ -250,7 +211,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 5.69 5 4.5V18h-2v-6H9v6H7v-7.81zM12 3 2 12h3v8h6v-6h2v6h6v-8h3"></path></svg>
+    
   
   <span class="je-tab-label">Home</span>
 
@@ -267,12 +228,12 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../getting-started/" class="md-tabs__link">
+        <a href="../../open-in-jellyfin/" class="md-tabs__link">
           
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"/></svg>
   
   <span class="je-tab-label">Getting Started</span>
 
@@ -295,9 +256,32 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"/></svg>
   
   <span class="je-tab-label">Enhanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/tags/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"/></svg>
+  
+  <span class="je-tab-label">Tags & Badges</span>
 
         </a>
       </li>
@@ -318,7 +302,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"/></svg>
   
   <span class="je-tab-label">Spoiler Guard</span>
 
@@ -341,7 +325,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"/></svg>
   
   <span class="je-tab-label">Seerr</span>
 
@@ -366,7 +350,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"/></svg>
   
   <span class="je-tab-label">*arr</span>
 
@@ -389,9 +373,9 @@
   
   
   
-    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2m1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
   
-  <span class="je-tab-label">Elsewhere &amp; Reviews</span>
+  <span class="je-tab-label">Elsewhere & Reviews</span>
 
         </a>
       </li>
@@ -412,9 +396,32 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"/></svg>
   
   <span class="je-tab-label">Other</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/community-analytics/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"/></svg>
+  
+  <span class="je-tab-label">Community Analytics</span>
 
         </a>
       </li>
@@ -435,7 +442,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>
   
   <span class="je-tab-label">Advanced</span>
 
@@ -458,7 +465,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"/></svg>
   
   <span class="je-tab-label">Help</span>
 
@@ -485,7 +492,7 @@
           
             
               
-              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
                     
@@ -494,7 +501,9 @@
   
 
 
-<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
     <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
       <span class="je-mark" aria-hidden="true"></span>
@@ -506,7 +515,7 @@
       <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
   </div>
   <div class="md-source__repository">
     n00bcodr/Jellyfin-Enhanced
@@ -514,7 +523,7 @@
 </a>
     </div>
   
-  <ul class="md-nav__list" data-md-scrollfix="">
+  <ul class="md-nav__list" data-md-scrollfix>
     
       
       
@@ -527,8 +536,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 5.69 5 4.5V18h-2v-6H9v6H7v-7.81zM12 3 2 12h3v8h6v-6h2v6h6v-8h3"></path></svg>
   
   <span class="md-ellipsis">
     Home
@@ -549,6 +556,8 @@
   
     
     
+      
+        
       
         
           
@@ -577,7 +586,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
           <div class="md-nav__link md-nav__container">
@@ -586,7 +595,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"/></svg>
   
   <span class="md-ellipsis">
     Getting Started
@@ -608,7 +617,31 @@
             <span class="md-nav__icon md-icon"></span>
             Getting Started
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../open-in-jellyfin/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Open in Jellyfin
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
             
               
             
@@ -623,8 +656,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 5v6h1.17L12 13.17 9.83 11H11V5zm2-2H9v6H5l7 7 7-7h-4zm4 15H5v2h14z"></path></svg>
   
   <span class="md-ellipsis">
     Installation
@@ -650,8 +681,6 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18V4H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4v-2H3zm10 6H9v1.78c-.61.55-1 1.33-1 2.22s.39 1.67 1 2.22V20h4v-1.78c.61-.55 1-1.34 1-2.22s-.39-1.67-1-2.22zm-2 5.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5M22 8h-6c-.5 0-1 .5-1 1v10c0 .5.5 1 1 1h6c.5 0 1-.5 1-1V9c0-.5-.5-1-1-1m-1 10h-4v-8h4z"></path></svg>
-  
   <span class="md-ellipsis">
     Compatibility
     
@@ -675,8 +704,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 13c-1.86 0-3.41 1.28-3.86 3H2v2h2.14c.45 1.72 2 3 3.86 3s3.41-1.28 3.86-3H22v-2H11.86c-.45-1.72-2-3-3.86-3m0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2M19.86 6c-.45-1.72-2-3-3.86-3s-3.41 1.28-3.86 3H2v2h10.14c.45 1.72 2 3 3.86 3s3.41-1.28 3.86-3H22V6zM16 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2"></path></svg>
   
   <span class="md-ellipsis">
     Settings Overview
@@ -702,10 +729,8 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 5v2h-4V5zM9 5v6H5V5zm10 8v6h-4v-6zM9 17v2H5v-2zM21 3h-8v6h8zM11 3H3v10h8zm10 8h-8v10h8zm-10 4H3v6h8z"></path></svg>
-  
   <span class="md-ellipsis">
-    JE Pages &amp; Tabs
+    JE Pages & Tabs
     
   </span>
   
@@ -728,7 +753,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"/></svg>
   
   <span class="md-ellipsis">
     Troubleshooting
@@ -762,8 +787,6 @@
       
         
       
-        
-      
     
     
     
@@ -777,7 +800,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
@@ -785,7 +808,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"/></svg>
   
   <span class="md-ellipsis">
     Enhanced
@@ -801,7 +824,7 @@
             <span class="md-nav__icon md-icon"></span>
             Enhanced
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -815,36 +838,10 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
   
   <span class="md-ellipsis">
     Features
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../enhanced/tags/" class="md-nav__link">
-        
-  
-  
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"></path></svg>
-  
-  <span class="md-ellipsis">
-    Tags &amp; Badges
     
   </span>
   
@@ -867,10 +864,221 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"/></svg>
+  
+  <span class="md-ellipsis">
+    Tags & Badges
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Tags & Badges
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-layouts/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Layouts & Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-quality/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Quality, Genre & Language
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-groups/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Ratings, Awards & More
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-status/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Status Badges
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-server/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Server & Styles
     
   </span>
   
@@ -914,15 +1122,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
             
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"/></svg>
   
   <span class="md-ellipsis">
     Spoiler Guard
@@ -933,12 +1141,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             Spoiler Guard
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -952,7 +1160,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
   
   <span class="md-ellipsis">
     Features
@@ -978,7 +1186,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
@@ -1027,15 +1235,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
             
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"/></svg>
   
   <span class="md-ellipsis">
     Seerr
@@ -1046,12 +1254,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             Seerr
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1065,7 +1273,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
   
   <span class="md-ellipsis">
     Features
@@ -1091,7 +1299,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
@@ -1116,8 +1324,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm0 2.18 7 3.12v4.92c0 1.7-.5 3.43-1.35 4.95C16 14.94 13.26 14.5 12 14.5s-4 .44-5.65 1.67C5.5 14.65 5 12.92 5 11.22V6.3zM12 6a3.5 3.5 0 0 0-3.5 3.5A3.5 3.5 0 0 0 12 13a3.5 3.5 0 0 0 3.5-3.5A3.5 3.5 0 0 0 12 6m0 2a1.5 1.5 0 0 1 1.5 1.5A1.5 1.5 0 0 1 12 11a1.5 1.5 0 0 1-1.5-1.5A1.5 1.5 0 0 1 12 8m0 8.5c1.57 0 3.64.61 4.53 1.34C15.29 19.38 13.7 20.55 12 21c-1.7-.45-3.29-1.62-4.53-3.16.9-.73 2.96-1.34 4.53-1.34"></path></svg>
   
   <span class="md-ellipsis">
     Permission Audit
@@ -1171,15 +1377,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked="">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
             
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"/></svg>
   
   <span class="md-ellipsis">
     *arr
@@ -1190,12 +1396,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_6">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             *arr
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1209,7 +1415,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
   
   <span class="md-ellipsis">
     Features
@@ -1244,7 +1450,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
@@ -1255,12 +1461,12 @@
           <span class="md-nav__icon md-icon"></span>
         </label>
       
-      <a href="./" class="md-nav__link md-nav__link--active">
+      <a href="././" class="md-nav__link md-nav__link--active">
         
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
@@ -1271,6 +1477,7 @@
       </a>
       
         
+
 
   
 
@@ -1285,14 +1492,14 @@
       <span class="md-nav__icon md-icon"></span>
       On this page
     </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
   <a href="#setup" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Setup
-      
+      </span>
     </span>
   </a>
   
@@ -1302,9 +1509,9 @@
           <li class="md-nav__item">
   <a href="#css-customization" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         CSS Customization
-      
+      </span>
     </span>
   </a>
   
@@ -1318,9 +1525,9 @@
         <li class="md-nav__item">
   <a href="#multi-instance-configuration" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Multi-Instance Configuration
-      
+      </span>
     </span>
   </a>
   
@@ -1330,9 +1537,9 @@
           <li class="md-nav__item">
   <a href="#adding-an-instance" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Adding an Instance
-      
+      </span>
     </span>
   </a>
   
@@ -1341,9 +1548,9 @@
           <li class="md-nav__item">
   <a href="#instance-fields" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Instance Fields
-      
+      </span>
     </span>
   </a>
   
@@ -1352,9 +1559,9 @@
           <li class="md-nav__item">
   <a href="#import-from-seerr" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Import from Seerr
-      
+      </span>
     </span>
   </a>
   
@@ -1363,9 +1570,9 @@
           <li class="md-nav__item">
   <a href="#disabling-an-instance" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Disabling an Instance
-      
+      </span>
     </span>
   </a>
   
@@ -1374,9 +1581,9 @@
           <li class="md-nav__item">
   <a href="#url-mappings-per-instance" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         URL Mappings (per-instance)
-      
+      </span>
     </span>
   </a>
   
@@ -1390,9 +1597,9 @@
         <li class="md-nav__item">
   <a href="#link-behaviour" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Link Behaviour
-      
+      </span>
     </span>
   </a>
   
@@ -1402,9 +1609,9 @@
           <li class="md-nav__item">
   <a href="#single-instance" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Single Instance
-      
+      </span>
     </span>
   </a>
   
@@ -1413,9 +1620,9 @@
           <li class="md-nav__item">
   <a href="#multiple-instances-dropdown" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Multiple Instances (Dropdown)
-      
+      </span>
     </span>
   </a>
   
@@ -1429,9 +1636,9 @@
         <li class="md-nav__item">
   <a href="#legacy-single-instance-fields" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Legacy Single-Instance Fields
-      
+      </span>
     </span>
   </a>
   
@@ -1440,9 +1647,9 @@
         <li class="md-nav__item">
   <a href="#bazarr" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Bazarr
-      
+      </span>
     </span>
   </a>
   
@@ -1451,9 +1658,9 @@
         <li class="md-nav__item">
   <a href="#shoko" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Shoko
-      
+      </span>
     </span>
   </a>
   
@@ -1463,9 +1670,9 @@
           <li class="md-nav__item">
   <a href="#generating-a-shoko-api-key" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Generating a Shoko API Key
-      
+      </span>
     </span>
   </a>
   
@@ -1474,9 +1681,9 @@
           <li class="md-nav__item">
   <a href="#setup_1" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Setup
-      
+      </span>
     </span>
   </a>
   
@@ -1485,9 +1692,9 @@
           <li class="md-nav__item">
   <a href="#instance-fields_1" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Instance Fields
-      
+      </span>
     </span>
   </a>
   
@@ -1501,9 +1708,9 @@
         <li class="md-nav__item">
   <a href="#tag-synchronization" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Tag synchronization
-      
+      </span>
     </span>
   </a>
   
@@ -1512,9 +1719,9 @@
         <li class="md-nav__item">
   <a href="#calendar-page-settings" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Calendar Page Settings
-      
+      </span>
     </span>
   </a>
   
@@ -1523,9 +1730,9 @@
         <li class="md-nav__item">
   <a href="#requests-page-settings" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Requests Page Settings
-      
+      </span>
     </span>
   </a>
   
@@ -1534,9 +1741,9 @@
         <li class="md-nav__item">
   <a href="#page-placement" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Page placement
-      
+      </span>
     </span>
   </a>
   
@@ -1546,9 +1753,9 @@
           <li class="md-nav__item">
   <a href="#native-home-tabs" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Native Home tabs
-      
+      </span>
     </span>
   </a>
   
@@ -1557,9 +1764,9 @@
           <li class="md-nav__item">
   <a href="#plugin-pages" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Plugin Pages
-      
+      </span>
     </span>
   </a>
   
@@ -1568,9 +1775,9 @@
           <li class="md-nav__item">
   <a href="#custom-tabs" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Custom Tabs
-      
+      </span>
     </span>
   </a>
   
@@ -1584,9 +1791,9 @@
         <li class="md-nav__item">
   <a href="#personal-settings" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Personal settings
-      
+      </span>
     </span>
   </a>
   
@@ -1596,9 +1803,9 @@
           <li class="md-nav__item">
   <a href="#hidden-content-settings" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Hidden Content settings
-      
+      </span>
     </span>
   </a>
   
@@ -1630,7 +1837,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"/></svg>
   
   <span class="md-ellipsis">
     Troubleshooting
@@ -1677,16 +1884,18 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
         
           
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
             
   
   
   
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2m1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+  
   <span class="md-ellipsis">
-    Elsewhere &amp; Reviews
+    Elsewhere & Reviews
     
   </span>
   
@@ -1694,12 +1903,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
-            Elsewhere &amp; Reviews
+            Elsewhere & Reviews
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1713,7 +1922,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
   
   <span class="md-ellipsis">
     Features
@@ -1739,7 +1948,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
@@ -1786,15 +1995,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
         
           
-          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
             
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"/></svg>
   
   <span class="md-ellipsis">
     Other
@@ -1805,12 +2014,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
             <span class="md-nav__icon md-icon"></span>
             Other
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1824,7 +2033,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
   
   <span class="md-ellipsis">
     Features
@@ -1850,7 +2059,142 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"/></svg>
+  
+  <span class="md-ellipsis">
+    Community Analytics
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            Community Analytics
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    What's collected
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics-dashboard/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Live Dashboard
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
@@ -1888,8 +2232,6 @@
       
         
       
-        
-      
     
     
     
@@ -1903,15 +2245,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
         
           
-          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="0">
             
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>
   
   <span class="md-ellipsis">
     Advanced
@@ -1922,12 +2264,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_9">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
             <span class="md-nav__icon md-icon"></span>
             Advanced
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1940,8 +2282,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 22A10 10 0 0 1 2 12 10 10 0 0 1 12 2c5.5 0 10 4 10 9a6 6 0 0 1-6 6h-1.8c-.3 0-.5.2-.5.5 0 .1.1.2.1.3.4.5.6 1.1.6 1.7.1 1.4-1 2.5-2.4 2.5m0-18a8 8 0 0 0-8 8 8 8 0 0 0 8 8c.3 0 .5-.2.5-.5 0-.2-.1-.3-.1-.4-.4-.5-.6-1-.6-1.6 0-1.4 1.1-2.5 2.5-2.5H16a4 4 0 0 0 4-4c0-3.9-3.6-7-8-7m-5.5 6c.8 0 1.5.7 1.5 1.5S7.3 13 6.5 13 5 12.3 5 11.5 5.7 10 6.5 10m3-4c.8 0 1.5.7 1.5 1.5S10.3 9 9.5 9 8 8.3 8 7.5 8.7 6 9.5 6m5 0c.8 0 1.5.7 1.5 1.5S15.3 9 14.5 9 13 8.3 13 7.5 13.7 6 14.5 6m3 4c.8 0 1.5.7 1.5 1.5s-.7 1.5-1.5 1.5-1.5-.7-1.5-1.5.7-1.5 1.5-1.5"></path></svg>
   
   <span class="md-ellipsis">
     CSS Customization
@@ -1967,36 +2307,8 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 7H5a2 2 0 0 0-2 2v8h2v-4h2v4h2V9a2 2 0 0 0-2-2m0 4H5V9h2m7-2h-4v10h2v-4h2a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2m0 4h-2V9h2m6 0v6h1v2h-4v-2h1V9h-1V7h4v2Z"></path></svg>
-  
   <span class="md-ellipsis">
     API
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../advanced/community-analytics/" class="md-nav__link">
-        
-  
-  
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"></path></svg>
-  
-  <span class="md-ellipsis">
-    Community Analytics
     
   </span>
   
@@ -2018,8 +2330,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 13H7v5h5v2H5V10h2v1h5zM8 4v2H4V4zm2-2H2v6h8zm10 9v2h-4v-2zm2-2h-8v6h8zm-2 9v2h-4v-2zm2-2h-8v6h8z"></path></svg>
   
   <span class="md-ellipsis">
     Project Structure
@@ -2100,15 +2410,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
         
           
-          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="0">
             
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"/></svg>
   
   <span class="md-ellipsis">
     Help
@@ -2119,12 +2429,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_10">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
             <span class="md-nav__icon md-icon"></span>
             Help
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -2137,8 +2447,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 18h2v-2h-2zm1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-14a4 4 0 0 0-4 4h2a2 2 0 0 1 2-2 2 2 0 0 1 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5a4 4 0 0 0-4-4"></path></svg>
   
   <span class="md-ellipsis">
     FAQ
@@ -2164,8 +2472,6 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 8h-2.81c-.45-.8-1.07-1.5-1.82-2L17 4.41 15.59 3l-2.17 2.17a6 6 0 0 0-2.83 0L8.41 3 7 4.41 8.62 6c-.75.5-1.36 1.21-1.81 2H4v2h2.09c-.06.33-.09.66-.09 1v1H4v2h2v1c0 .34.03.67.09 1H4v2h2.81A5.99 5.99 0 0 0 15 20.18c.91-.52 1.67-1.28 2.19-2.18H20v-2h-2.09c.06-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.03-.67-.09-1H20zm-4 7a4 4 0 0 1-4 4 4 4 0 0 1-4-4v-4a4 4 0 0 1 4-4 4 4 0 0 1 4 4zm-2-5v2h-4v-2zm-4 4h4v2h-4z"></path></svg>
-  
   <span class="md-ellipsis">
     Report Issues
     
@@ -2189,8 +2495,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11h3v2h-3zM1 11h3v2H1zM13 1v3h-2V1zM4.92 3.5l2.13 2.14-1.42 1.41L3.5 4.93zm12.03 2.13 2.12-2.13 1.43 1.43-2.13 2.12zM12 6a6 6 0 0 1 6 6c0 2.22-1.21 4.16-3 5.2V19a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-1.8c-1.79-1.04-3-2.98-3-5.2a6 6 0 0 1 6-6m2 15v1a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1zm-3-3h2v-2.13c1.73-.44 3-2.01 3-3.87a4 4 0 0 0-4-4 4 4 0 0 0-4 4c0 1.86 1.27 3.43 3 3.87z"></path></svg>
   
   <span class="md-ellipsis">
     Feature Requests
@@ -2216,8 +2520,6 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"></path></svg>
-  
   <span class="md-ellipsis">
     Contributing Translations
     
@@ -2241,8 +2543,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15 4v7H5.17L4 12.17V4zm1-2H3a1 1 0 0 0-1 1v14l4-4h10a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1m5 4h-2v9H6v2a1 1 0 0 0 1 1h11l4 4V7a1 1 0 0 0-1-1"></path></svg>
   
   <span class="md-ellipsis">
     Support + Community
@@ -2268,8 +2568,6 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 13.5c0 1.76-1.3 3.22-3 3.46V20a2 2 0 0 1-2 2h-3.8v-.3a2.7 2.7 0 0 0-2.7-2.7c-1.5 0-2.7 1.21-2.7 2.7v.3H4a2 2 0 0 1-2-2v-3.8h.3C3.79 16.2 5 15 5 13.5s-1.21-2.7-2.7-2.7H2V7a2 2 0 0 1 2-2h3.04c.24-1.7 1.7-3 3.46-3s3.22 1.3 3.46 3H17a2 2 0 0 1 2 2v3.04c1.7.24 3 1.7 3 3.46M17 15h1.5a1.5 1.5 0 0 0 1.5-1.5 1.5 1.5 0 0 0-1.5-1.5H17V7h-5V5.5A1.5 1.5 0 0 0 10.5 4 1.5 1.5 0 0 0 9 5.5V7H4v2.12c1.76.68 3 2.38 3 4.38s-1.25 3.7-3 4.38V20h2.12a4.7 4.7 0 0 1 4.38-3c2 0 3.7 1.25 4.38 3H17z"></path></svg>
-  
   <span class="md-ellipsis">
     Related Projects
     
@@ -2293,8 +2591,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 9h2V7h-2m1 13c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-18A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m-1 15h2v-6h-2z"></path></svg>
   
   <span class="md-ellipsis">
     About
@@ -2322,411 +2618,28 @@
               </div>
             
             
-              
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
-                <div class="md-sidebar__scrollwrap">
-                  <div class="md-sidebar__inner">
-                    
-
-  
-
-<nav class="md-nav md-nav--secondary" aria-label="On this page">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
-      
-        <li class="md-nav__item">
-  <a href="#setup" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Setup
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Setup">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#css-customization" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        CSS Customization
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#multi-instance-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Multi-Instance Configuration
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Multi-Instance Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#adding-an-instance" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Adding an Instance
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#instance-fields" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Instance Fields
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#import-from-seerr" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Import from Seerr
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#disabling-an-instance" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Disabling an Instance
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#url-mappings-per-instance" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        URL Mappings (per-instance)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#link-behaviour" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Link Behaviour
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Link Behaviour">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#single-instance" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Single Instance
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#multiple-instances-dropdown" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Multiple Instances (Dropdown)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#legacy-single-instance-fields" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Legacy Single-Instance Fields
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#bazarr" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Bazarr
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#shoko" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Shoko
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Shoko">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#generating-a-shoko-api-key" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Generating a Shoko API Key
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#setup_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Setup
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#instance-fields_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Instance Fields
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#tag-synchronization" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tag synchronization
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#calendar-page-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Calendar Page Settings
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#requests-page-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Requests Page Settings
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#page-placement" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Page placement
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Page placement">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#native-home-tabs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Native Home tabs
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#plugin-pages" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Plugin Pages
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#custom-tabs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Custom Tabs
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#personal-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Personal settings
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Personal settings">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#hidden-content-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Hidden Content settings
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-                  </div>
-                </div>
-              </div>
-            
           
           
             <div class="md-content" data-md-component="content">
               
               <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
                 
-  
-    
-    
-    
-    <nav class="je-sectionbar" aria-label="*arr pages">
-      <a class="je-sectionbar__area" href="../arr-features/">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
-        <span>*arr</span>
-      </a>
-      
-        <ul class="je-sectionbar__pages">
-          
-            
-              <li>
-                <a class="je-chip" href="../arr-features/">Features</a>
-              </li>
-            
-          
-            
-              <li>
-                <a class="je-chip je-chip--active" href="./" aria-current="page">Settings</a>
-              </li>
-            
-          
-            
-              <li>
-                <a class="je-chip" href="../troubleshooting-support/">Troubleshooting</a>
-              </li>
-            
-          
-        </ul>
-      
-    </nav>
   
   
                   
 
-
   
   
 
 
-<h1 id="arr-settings">*arr Settings<a class="headerlink" href="#arr-settings" title="Permanent link">¶</a></h1>
-<p>Use <strong>Jellyfin Enhanced</strong> → <strong>*arr</strong> for connections, item links, and tag sync, and <strong>Pages</strong> → <strong>Calendar Page</strong> or <strong>Requests Page</strong> for page controls.</p>
+<h1 id="arr-settings">*arr Settings<a class="headerlink" href="#arr-settings" title="Permanent link">&para;</a></h1>
+<p>Use <strong>Jellyfin Enhanced</strong> → <a href="../../open-in-jellyfin/?tab=arr"><strong>*arr</strong></a> for connections, item links, and tag sync, and <strong>Pages</strong> → <a href="../../open-in-jellyfin/?tab=pages&amp;card=calendar-page"><strong>Calendar Page</strong></a> or <a href="../../open-in-jellyfin/?tab=pages&amp;card=requests-page"><strong>Requests Page</strong></a> for page controls.</p>
 <p>Administrator settings apply server-wide unless marked personal. For workflows, see <a href="../arr-features/">*arr features</a>; for missing links, data, or navigation, see <a href="../troubleshooting-support/">troubleshooting</a>.</p>
-<h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">¶</a></h2>
-<p>Connect only the services you need for the features you want. The table below shows what each feature requires.</p>
+<h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
+<p>Connect only the services your chosen features need; the table shows which.</p>
 <ol>
-<li>Configure your services under <strong>Jellyfin Enhanced</strong> → <strong>*arr</strong>.</li>
+<li>Configure your services under <strong>Jellyfin Enhanced</strong> → <a href="../../open-in-jellyfin/?tab=arr"><strong>*arr</strong></a>.</li>
 <li>Choose the features you want to enable.</li>
 <li>Click <strong>Save Settings</strong> and reload the web client.</li>
 </ol>
@@ -2764,11 +2677,12 @@
 <summary>How API keys are used</summary>
 <p>API keys are stored in Jellyfin's plugin configuration and used for server requests. Administrators can view and edit them in settings. JE's browser features receive Sonarr/Radarr connection details without the API keys.</p>
 </details>
-<h3 id="css-customization">CSS Customization<a class="headerlink" href="#css-customization" title="Permanent link">¶</a></h3>
+<h3 id="css-customization">CSS Customization<a class="headerlink" href="#css-customization" title="Permanent link">&para;</a></h3>
 <p>See <a href="../arr-features/#custom-styling">tag-link styling</a> and <a href="../../advanced/css-customization/">CSS customization</a> for supported hooks and examples.</p>
-<h2 id="multi-instance-configuration">Multi-Instance Configuration<a class="headerlink" href="#multi-instance-configuration" title="Permanent link">¶</a></h2>
-<p>Add one card per Sonarr or Radarr server so you can manage each connection separately. Open <strong>*arr</strong> → <strong>Sonarr</strong> or <strong>Radarr</strong> to get started.</p>
-<h3 id="adding-an-instance">Adding an Instance<a class="headerlink" href="#adding-an-instance" title="Permanent link">¶</a></h3>
+<h2 id="multi-instance-configuration">Multi-Instance Configuration<a class="headerlink" href="#multi-instance-configuration" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=arr&amp;card=sonarr">*arr &gt; Sonarr</a></p>
+<p>Add one card per Sonarr or Radarr server so you can manage each connection separately.</p>
+<h3 id="adding-an-instance">Adding an Instance<a class="headerlink" href="#adding-an-instance" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Click <strong>+ Add Sonarr instance</strong> or <strong>+ Add Radarr instance</strong>.</li>
 <li>Expand the card and enter its name, <strong>URL</strong>, and <strong>API Key</strong>.</li>
@@ -2780,9 +2694,9 @@
 <p class="admonition-title">Complete both connection fields</p>
 <p>Only cards with both <strong>URL</strong> and <strong>API Key</strong> are saved. Incomplete cards are omitted; a card with a URL but no key produces a warning.</p>
 </div>
-<h3 id="instance-fields">Instance Fields<a class="headerlink" href="#instance-fields" title="Permanent link">¶</a></h3>
+<h3 id="instance-fields">Instance Fields<a class="headerlink" href="#instance-fields" title="Permanent link">&para;</a></h3>
 <p>Use a distinct name to recognize each server in links and pages. The checkbox beside the collapsed card's name enables or disables the instance.</p>
-<p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/admin/arr.webp" data-desc-position="bottom"><img alt="Sonarr and Radarr instance configuration" src="../../images/admin/arr.webp"></a></p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/arr.webp"><img alt="Sonarr and Radarr instance configuration" src="../../images/admin/arr.webp" /></a></p>
 <table>
 <thead>
 <tr>
@@ -2824,15 +2738,15 @@
 <p>Both instance lists default to empty (<code>[]</code>). Saving a blank name substitutes <strong>Sonarr</strong> or <strong>Radarr</strong>. The summary checkbox's accessible label is <code>Enable &lt;name&gt; instance</code>.</p>
 <p><strong>Test</strong> checks unsaved values against <code>/api/v3/system/status</code> without saving them. A successful test confirms that the service answered, but does not guarantee that queue, Calendar, or title lookups will work.</p>
 </details>
-<h3 id="import-from-seerr">Import from Seerr<a class="headerlink" href="#import-from-seerr" title="Permanent link">¶</a></h3>
+<h3 id="import-from-seerr">Import from Seerr<a class="headerlink" href="#import-from-seerr" title="Permanent link">&para;</a></h3>
 <p>Copy Sonarr/Radarr connections from Seerr to save entering them manually. This is a one-time copy, not ongoing synchronization.</p>
 <div class="admonition note">
 <p class="admonition-title">Seerr key permission</p>
 <p>The configured Seerr key needs Administrator permission to read service settings.</p>
 </div>
 <ol>
-<li>Save an enabled, complete Seerr connection under <strong>Seerr</strong>. It needs <strong>Enable Seerr integration</strong> (default off), <strong>Seerr URL(s) (One per line)</strong> (default empty), and <strong>Seerr API Key</strong> (default empty). See <a href="../../seerr/seerr-settings/">Seerr settings</a>.</li>
-<li>Under <strong>Sonarr</strong> or <strong>Radarr</strong>, click <strong>Import from Seerr</strong>.</li>
+<li>Save an enabled, complete Seerr connection under <a href="../../open-in-jellyfin/?tab=seerr&amp;card=seerr-connection-setup"><strong>Seerr</strong></a>. It needs <strong>Enable Seerr integration</strong> (default off), <strong>Seerr URL(s) (One per line)</strong> (default empty), and <strong>Seerr API Key</strong> (default empty). See <a href="../../seerr/seerr-settings/">Seerr settings</a>.</li>
+<li>Under <a href="../../open-in-jellyfin/?tab=arr&amp;card=sonarr"><strong>Sonarr</strong></a> or <a href="../../open-in-jellyfin/?tab=arr&amp;card=radarr"><strong>Radarr</strong></a>, click <strong>Import from Seerr</strong>.</li>
 <li>Select the instances and review the <strong>Internal</strong> and <strong>External</strong> Jellyfin addresses used for mapping rows.</li>
 <li>Click <strong>Import Selected</strong>, review the resulting cards, then click <strong>Save Settings</strong>. <strong>Cancel</strong> closes the picker without importing.</li>
 </ol>
@@ -2840,7 +2754,7 @@
 <summary>What the import copies</summary>
 <p>Import uses the first nonempty newline-separated Seerr URL. It copies name, hostname/port/base-path URL, API key, and mapping rows into enabled cards. Exact URL duplicates are marked <strong>already imported</strong> and cannot be selected.</p>
 </details>
-<h3 id="disabling-an-instance">Disabling an Instance<a class="headerlink" href="#disabling-an-instance" title="Permanent link">¶</a></h3>
+<h3 id="disabling-an-instance">Disabling an Instance<a class="headerlink" href="#disabling-an-instance" title="Permanent link">&para;</a></h3>
 <p>Disable an instance to skip it while keeping its connection.</p>
 <ol>
 <li>Uncheck the summary checkbox.</li>
@@ -2850,7 +2764,7 @@
 <summary>Editing and removing a disabled instance</summary>
 <p>The card body becomes disabled. Re-enable the checkbox to edit it or use <strong>Remove</strong>. Removal asks for confirmation and takes effect only after <strong>Save Settings</strong>.</p>
 </details>
-<h3 id="url-mappings-per-instance">URL Mappings (per-instance)<a class="headerlink" href="#url-mappings-per-instance" title="Permanent link">¶</a></h3>
+<h3 id="url-mappings-per-instance">URL Mappings (per-instance)<a class="headerlink" href="#url-mappings-per-instance" title="Permanent link">&para;</a></h3>
 <p>Use mappings when your browser needs a different service address from the Jellyfin server.</p>
 <ol>
 <li>Open <strong>URL Mappings (optional)</strong> on the instance.</li>
@@ -2866,10 +2780,10 @@
 <p>The left side must match the Jellyfin server address used by the client, including the base path. Matching ignores case and trailing slashes; the first match wins. If nothing matches, the instance's <strong>URL</strong> becomes the browser address. Mappings are independent per instance, with no inherited global mapping.</p>
 <p>The server continues using <strong>URL</strong> for API calls. <strong>Validate Mappings</strong> checks syntax and that both sides differ; it does not test network access or credentials. See <a href="../arr-features/#url-mappings">URL mapping usage</a>.</p>
 </details>
-<h2 id="link-behaviour">Link Behaviour<a class="headerlink" href="#link-behaviour" title="Permanent link">¶</a></h2>
+<h2 id="link-behaviour">Link Behaviour<a class="headerlink" href="#link-behaviour" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=arr&amp;card=arr-ui-links">*arr &gt; *arr UI Links</a></p>
 <p>Add service links so you can open a title in Sonarr, Radarr, or Bazarr from Jellyfin. These links are for administrators.</p>
 <ol>
-<li>Open <strong>*arr</strong> → <strong>*arr UI Links</strong>.</li>
 <li>Turn on <strong>Enable *arr Links on Detail Pages</strong> and choose icons or text.</li>
 <li>Click <strong>Save Settings</strong> and reload the web client.</li>
 </ol>
@@ -2903,32 +2817,32 @@
 <summary>Title-matching requirements</summary>
 <p>The detail page must show a TMDB external link. Sonarr additionally needs TVDB; Radarr uses the movie's TMDB ID. Unmatched titles have no Sonarr/Radarr link.</p>
 </details>
-<h3 id="single-instance">Single Instance<a class="headerlink" href="#single-instance" title="Permanent link">¶</a></h3>
+<h3 id="single-instance">Single Instance<a class="headerlink" href="#single-instance" title="Permanent link">&para;</a></h3>
 <p>One matching instance opens directly. Enable <strong>Show status badge for single-instance</strong> and <strong>Show links as text</strong> to see Sonarr episode-file counts or Radarr <strong>Downloaded</strong>/<strong>Missing</strong> badges.</p>
 <p>Hover the link for its instance name, status, file size, and root folder when supplied, even with <strong>Show status badge for single-instance</strong> off.</p>
-<p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/arr/single-link.webp" data-desc-position="bottom"><img alt="Single Radarr detail link with a tooltip showing Downloaded status, file size and root folder" src="../../images/arr/single-link.webp"></a></p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/arr/single-link.webp"><img alt="Single Radarr detail link with a tooltip showing Downloaded status, file size and root folder" src="../../images/arr/single-link.webp" /></a></p>
 <details class="info">
 <summary>Icon mode and missing statistics</summary>
 <p>Icon-mode tooltips retain available details. If Sonarr reports no statistics, the badge reads <code>0/0</code> with gray status.</p>
 </details>
-<h3 id="multiple-instances-dropdown">Multiple Instances (Dropdown)<a class="headerlink" href="#multiple-instances-dropdown" title="Permanent link">¶</a></h3>
+<h3 id="multiple-instances-dropdown">Multiple Instances (Dropdown)<a class="headerlink" href="#multiple-instances-dropdown" title="Permanent link">&para;</a></h3>
 <p>Multiple matching instances produce a dropdown with names, status dots, counts/download status, and file sizes when supplied. Green means complete, amber means partially downloaded Sonarr episodes, and gray means a matching title with no downloaded files. Instances that do not contain the title are omitted.</p>
-<p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/arr/dropdown.webp" data-desc-position="bottom"><img alt="Radarr instance dropdown with status and file size" src="../../images/arr/dropdown.webp"></a></p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/arr/dropdown.webp"><img alt="Radarr instance dropdown with status and file size" src="../../images/arr/dropdown.webp" /></a></p>
 <div class="admonition note">
 <p class="admonition-title">Metadata icons override text links</p>
-<p>Under <strong>Extras</strong>, <strong>Enable Metadata Icons (Druidblack)</strong> defaults off. Turning it on forces <strong>Show links as text</strong> off. It is a server setting, not a personal service-link override.</p>
+<p>Under <a href="../../open-in-jellyfin/?tab=extras&amp;card=metadata-icons-sidebar-links"><strong>Extras</strong></a>, <strong>Enable Metadata Icons (Druidblack)</strong> defaults off. Turning it on forces <strong>Show links as text</strong> off. It is a server setting, not a personal service-link override.</p>
 </div>
-<h2 id="legacy-single-instance-fields">Legacy Single-Instance Fields<a class="headerlink" href="#legacy-single-instance-fields" title="Permanent link">¶</a></h2>
+<h2 id="legacy-single-instance-fields">Legacy Single-Instance Fields<a class="headerlink" href="#legacy-single-instance-fields" title="Permanent link">&para;</a></h2>
 <p>JE keeps older connection fields for compatibility. Restoring an older configuration requires a backup; downgrading alone does not restore it.</p>
 <details class="info">
 <summary>Stored fields and compatibility</summary>
 <p>Legacy <code>SonarrUrl</code>, <code>SonarrApiKey</code>, <code>SonarrUrlMappings</code>, <code>RadarrUrl</code>, <code>RadarrApiKey</code>, and <code>RadarrUrlMappings</code> all default empty. These are stored compatibility fields, not separate controls in the current tab.</p>
 <p>Explicitly empty instance lists can use complete legacy URL/key pairs. Saving a readable list mirrors its first collected instance into the legacy fields, including a disabled first instance. Saving no instances clears them. Unreadable stored lists and their legacy fields are preserved on ordinary save, without legacy fallback.</p>
 </details>
-<h2 id="bazarr">Bazarr<a class="headerlink" href="#bazarr" title="Permanent link">¶</a></h2>
+<h2 id="bazarr">Bazarr<a class="headerlink" href="#bazarr" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=arr&amp;card=bazarr">*arr &gt; Bazarr</a></p>
 <p>Bazarr adds links to its movie and series overviews so you can manage subtitles. You can configure one Bazarr connection.</p>
 <ol>
-<li>Open <strong>*arr</strong> → <strong>Bazarr</strong>.</li>
 <li>Enter <strong>Bazarr URL</strong> and, if needed, <strong>Bazarr URL Mappings</strong>.</li>
 <li>Click <strong>Save Settings</strong>.</li>
 </ol>
@@ -2957,25 +2871,26 @@
 <summary>Bazarr link requirements and limits</summary>
 <p>Bazarr has no API-key input, tag sync, Calendar source, queue, or History integration. Its detail links require administrator service links and a visible TMDB link. They open <code>/movies/</code> or <code>/series/</code>, not a specific item.</p>
 </details>
-<h2 id="shoko">Shoko<a class="headerlink" href="#shoko" title="Permanent link">¶</a></h2>
+<h2 id="shoko">Shoko<a class="headerlink" href="#shoko" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=arr&amp;card=shoko">*arr &gt; Shoko</a></p>
 <p>Connect Shoko to include anime events in Calendar. You can use Shoko as the only Calendar source.</p>
 <div class="admonition note">
 <p class="admonition-title">Enter both Shoko connection fields</p>
 <p>Both <strong>Shoko URL</strong> and <strong>Shoko API Key</strong> must be present. Partial configuration produces a Calendar error.</p>
 </div>
-<h3 id="generating-a-shoko-api-key">Generating a Shoko API Key<a class="headerlink" href="#generating-a-shoko-api-key" title="Permanent link">¶</a></h3>
+<h3 id="generating-a-shoko-api-key">Generating a Shoko API Key<a class="headerlink" href="#generating-a-shoko-api-key" title="Permanent link">&para;</a></h3>
 <ol>
 <li>In Shoko's web UI, open <strong>Settings</strong> → <strong>API Keys</strong> → <strong>Add API Key</strong>.</li>
 <li>Copy the key into <strong>Shoko API Key</strong>.</li>
 </ol>
-<h3 id="setup_1">Setup<a class="headerlink" href="#setup_1" title="Permanent link">¶</a></h3>
+<h3 id="setup_1">Setup<a class="headerlink" href="#setup_1" title="Permanent link">&para;</a></h3>
 <ol>
-<li>Open <strong>*arr</strong> → <strong>Shoko</strong> and enter <strong>Shoko URL</strong> and <strong>Shoko API Key</strong>.</li>
+<li>Open <a href="../../open-in-jellyfin/?tab=arr&amp;card=shoko"><strong>*arr</strong> → <strong>Shoko</strong></a> and enter <strong>Shoko URL</strong> and <strong>Shoko API Key</strong>.</li>
 <li>Optionally configure <strong>Shoko URL Mappings</strong>.</li>
 <li>Click <strong>Save Settings</strong>.</li>
-<li>Enable Calendar under <strong>Pages</strong>. No Sonarr/Radarr connection is needed for a Shoko-only Calendar.</li>
+<li>Enable Calendar under <a href="../../open-in-jellyfin/?tab=pages&amp;card=calendar-page"><strong>Pages</strong></a>. No Sonarr/Radarr connection is needed for a Shoko-only Calendar.</li>
 </ol>
-<h3 id="instance-fields_1">Instance Fields<a class="headerlink" href="#instance-fields_1" title="Permanent link">¶</a></h3>
+<h3 id="instance-fields_1">Instance Fields<a class="headerlink" href="#instance-fields_1" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -3038,10 +2953,11 @@
 <p>Shoko supports one server and has no instance-name or enable-checkbox control. Connections use <strong>Shoko API Key</strong> and time out after 15 seconds. With all six episode types off, no anime events appear. Missing and restricted Shoko content is excluded; selecting episode types does not include restricted content.</p>
 <p>Matching uses <code>Shoko Series</code> and <code>Shoko Episode</code> provider IDs, normally supplied by Shokofin. Unmatched anime may lack Jellyfin artwork and navigation, but administrators can still get <strong>Open in Shoko</strong> on the Calendar source icon. See <a href="../arr-features/#anime-calendar-events-shoko">anime event limits</a>.</p>
 </details>
-<h2 id="tag-synchronization">Tag synchronization<a class="headerlink" href="#tag-synchronization" title="Permanent link">¶</a></h2>
+<h2 id="tag-synchronization">Tag synchronization<a class="headerlink" href="#tag-synchronization" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=arr&amp;card=tags-sync">*arr &gt; Tags Sync</a></p>
 <p>Copy Sonarr/Radarr tags into Jellyfin metadata and show them as clickable links. Run the scheduled task to sync them.</p>
 <ol>
-<li>Open <strong>*arr</strong> → <strong>Tags Sync</strong> and turn on <strong>Enable Tags Sync</strong>.</li>
+<li>Turn on <strong>Enable Tags Sync</strong>.</li>
 <li>Choose a nonempty <strong>Tag Prefix</strong> and review cleanup. Filters are under <strong>Tag Filters</strong>.</li>
 <li>Click <strong>Save Settings</strong>.</li>
 <li>Run <strong>Sync Tags from *arr to Jellyfin</strong> from <strong>Scheduled Tasks</strong>.</li>
@@ -3102,14 +3018,15 @@
 <p>Settings save a blank <strong>Tag Prefix</strong> as the default, <code>JE Arr Tag:</code>. When the stored prefix is blank or unset, sync and displayed tag links both use <code>JE Arr Tag:</code>. Avoid blank prefixes. Changing the prefix leaves previously prefixed metadata in place.</p>
 <p>Filters ignore capitalization in tag names, but displayed links require matching prefix capitalization. Movies match by TMDB, series by IMDb. See <a href="../arr-features/#arr-tags">ARR Tags</a> for cleanup limits, working filter examples, and styling.</p>
 </details>
-<h2 id="calendar-page-settings">Calendar Page Settings<a class="headerlink" href="#calendar-page-settings" title="Permanent link">¶</a></h2>
+<h2 id="calendar-page-settings">Calendar Page Settings<a class="headerlink" href="#calendar-page-settings" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=pages&amp;card=calendar-page">Pages &gt; Calendar Page</a></p>
 <p>Choose how Calendar looks and which releases it shows. These are admin (server) settings.</p>
 <ol>
-<li>Open <strong>Pages</strong> → <strong>Calendar Page</strong> and turn on <strong>Enable Calendar Page</strong>.</li>
+<li>Turn on <strong>Enable Calendar Page</strong>.</li>
 <li>Choose page placement and display options.</li>
 <li>Click <strong>Save Settings</strong> and reload the web client.</li>
 </ol>
-<p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/admin/calendar-options.webp" data-desc-position="bottom"><img alt="Calendar weekday, time and visibility defaults" src="../../images/admin/calendar-options.webp"></a></p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/calendar-options.webp"><img alt="Calendar weekday, time and visibility defaults" src="../../images/admin/calendar-options.webp" /></a></p>
 <table>
 <thead>
 <tr>
@@ -3162,7 +3079,7 @@
 <tr>
 <td><strong>Highlight Watched Series</strong></td>
 <td>Off</td>
-<td>Marks the event's matched played/started episode; movie events also use played/started state.</td>
+<td>Marks the event's matched played/started episode (movie events also use played/started state) and adds a <strong>Watched</strong> filter.</td>
 </tr>
 <tr>
 <td><strong>Filter by Library Access</strong></td>
@@ -3184,19 +3101,20 @@
 <details class="info">
 <summary>Highlighting and access limits</summary>
 <p>Watchlist highlighting uses Jellyfin's like (Likes) flag, not the favorite (heart) flag. Library filtering checks matched-item access and infers unmatched-title access from Calendar root folders. Unknown roots remain visible.</p>
-<p>Under <strong>Seerr</strong>, <strong>Add requested media to Watchlist</strong> and <strong>Sync Seerr Watchlist → Jellyfin</strong> set the like flag for matching library items; see <a href="../../seerr/seerr-settings/">Seerr settings</a>.</p>
+<p>Under <a href="../../open-in-jellyfin/?tab=seerr&amp;card=watchlist"><strong>Seerr</strong></a>, <strong>Add requested media to Watchlist</strong> and <strong>Sync Seerr Watchlist → Jellyfin</strong> set the like flag for matching library items; see <a href="../../seerr/seerr-settings/">Seerr settings</a>.</p>
 <p>Requested-only display requires Seerr data for the linked viewer and matches TMDB ID plus media type. It excludes Shoko events and can be empty when request data is unavailable. These options only change what you see in Calendar; they do not restrict access to Calendar data from the server. Library filtering is best-effort for future titles; unmatched Shoko events have no root folder to check. Broader Calendar visibility does not grant playback access.</p>
 </details>
 <p>Standalone address: <code>/web/index.html#/calendar</code>, including your Jellyfin base path. Use the Plugin Pages entry when that installed integration is selected. See <a href="../arr-features/#calendar-page">Calendar usage</a> and <a href="#page-placement">page placement</a>.</p>
-<h2 id="requests-page-settings">Requests Page Settings<a class="headerlink" href="#requests-page-settings" title="Permanent link">¶</a></h2>
+<h2 id="requests-page-settings">Requests Page Settings<a class="headerlink" href="#requests-page-settings" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=pages&amp;card=requests-page">Pages &gt; Requests Page</a></p>
 <p>Use one shared Requests page to follow downloads, requests, and import results. Sonarr/Radarr supply Downloads and History; Seerr supplies Requests and optional Issues.</p>
 <ol>
-<li>Open <strong>Pages</strong> → <strong>Requests Page</strong> and turn on <strong>Enable Requests Page</strong>.</li>
+<li>Turn on <strong>Enable Requests Page</strong>.</li>
 <li>Choose sections, access rules, placement, and refresh options.</li>
 <li>Click <strong>Save Settings</strong> and reload the web client.</li>
 </ol>
 <p>These are admin (server) settings:</p>
-<p><a class="glightbox" data-type="image" data-width="100%" data-height="auto" href="../../images/admin/requests-options.webp" data-desc-position="bottom"><img alt="Requests page downloads, issues and history settings" src="../../images/admin/requests-options.webp"></a></p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/requests-options.webp"><img alt="Requests page downloads, issues and history settings" src="../../images/admin/requests-options.webp" /></a></p>
 <table>
 <thead>
 <tr>
@@ -3284,15 +3202,15 @@
 <p>Queue and History have separate shared caches whose lifetimes follow the interval, clamped to 5–300 seconds internally. Manual refresh may return cached results.</p>
 </details>
 <p>Standalone address: <code>/web/index.html#/downloads</code>, including your Jellyfin base path. Use the configured integration entry in Plugin Pages mode. See <a href="../arr-features/#downloads-page">downloads and History</a>, <a href="../../seerr/seerr-features/">Seerr features</a>, and <a href="#page-placement">page placement</a>.</p>
-<h2 id="page-placement">Page placement<a class="headerlink" href="#page-placement" title="Permanent link">¶</a></h2>
+<h2 id="page-placement">Page placement<a class="headerlink" href="#page-placement" title="Permanent link">&para;</a></h2>
 <p>Choose where you open each enabled page. Native Home tabs need no companion plugin; Plugin Pages and Custom Tabs need their corresponding plugins.</p>
-<h3 id="native-home-tabs">Native Home tabs<a class="headerlink" href="#native-home-tabs" title="Permanent link">¶</a></h3>
+<h3 id="native-home-tabs">Native Home tabs<a class="headerlink" href="#native-home-tabs" title="Permanent link">&para;</a></h3>
 <p>Use <strong>Add Calendar as a native Home tab</strong> or <strong>Add Requests as a native Home tab</strong> for navigation without a companion plugin. See <a href="../../getting-started/pages-and-tabs/#choose-a-placement">JE Pages &amp; Tabs</a> for setup, layout behavior, and generated Home links.</p>
-<h3 id="plugin-pages">Plugin Pages<a class="headerlink" href="#plugin-pages" title="Permanent link">¶</a></h3>
+<h3 id="plugin-pages">Plugin Pages<a class="headerlink" href="#plugin-pages" title="Permanent link">&para;</a></h3>
 <p>Use <strong>Use Plugin Pages</strong> for Calendar or <strong>Use Plugin Pages for Requests</strong> with the companion installed. Follow <a href="../../getting-started/pages-and-tabs/#plugin-pages-setup-and-fallback">Plugin Pages setup and fallback</a> for registration, restart requirements, and navigation.</p>
-<h3 id="custom-tabs">Custom Tabs<a class="headerlink" href="#custom-tabs" title="Permanent link">¶</a></h3>
+<h3 id="custom-tabs">Custom Tabs<a class="headerlink" href="#custom-tabs" title="Permanent link">&para;</a></h3>
 <p>Use <strong>Use Custom Tabs</strong> for Calendar or <strong>Use Custom Tabs for Requests</strong> to embed the page on Home. Follow <a href="../../getting-started/pages-and-tabs/#custom-tabs-automatic-or-manual-entries">Custom Tabs setup</a> for prerequisites, managed entries, manual HTML markers, and detection recovery.</p>
-<h2 id="personal-settings">Personal settings<a class="headerlink" href="#personal-settings" title="Permanent link">¶</a></h2>
+<h2 id="personal-settings">Personal settings<a class="headerlink" href="#personal-settings" title="Permanent link">&para;</a></h2>
 <p>Choose your preferred Calendar view and presentation directly in Calendar. These controls save personal preferences; they are not admin defaults or settings-panel toggles.</p>
 <ol>
 <li>Open <strong>Calendar</strong>.</li>
@@ -3310,7 +3228,7 @@
 <tr>
 <td><strong>Day</strong> / <strong>Week</strong> / <strong>Month</strong> / <strong>Agenda</strong></td>
 <td><strong>Agenda</strong></td>
-<td>Saves your preferred Calendar view in your personal settings.</td>
+<td>Saves your preferred Calendar view in your personal settings. Agenda covers 30 days.</td>
 </tr>
 <tr>
 <td><strong>List</strong> / <strong>Backdrop</strong> / <strong>Cards</strong></td>
@@ -3328,10 +3246,10 @@
 <summary>What personal preferences cover</summary>
 <p>Your selected filter chips are not saved as personal preferences. Service connections, service-link settings, tag-sync settings, and Calendar access/highlight options are controlled by the administrator.</p>
 </details>
-<h3 id="hidden-content-settings">Hidden Content settings<a class="headerlink" href="#hidden-content-settings" title="Permanent link">¶</a></h3>
+<h3 id="hidden-content-settings">Hidden Content settings<a class="headerlink" href="#hidden-content-settings" title="Permanent link">&para;</a></h3>
 <p>Hide matching items from Calendar, Downloads, and Requests. The administrator sets starting values, and you can change your personal filters.</p>
 <ol>
-<li>As an administrator, enable <strong>Enable Hidden Content</strong> and review defaults under <strong>Pages</strong> → <strong>Hidden Content</strong> → <strong>More Settings</strong>.</li>
+<li>As an administrator, enable <strong>Enable Hidden Content</strong> and review defaults under <a href="../../open-in-jellyfin/?tab=pages&amp;card=hidden-content"><strong>Pages</strong> → <strong>Hidden Content</strong></a> → <strong>More Settings</strong>.</li>
 <li>In your personal <strong>Hidden Content</strong> settings, enable <strong>Enable Content Hiding</strong> and choose the surface filters.</li>
 </ol>
 <p>Admin (server) settings:</p>
@@ -3410,6 +3328,8 @@
 
 
 
+
+
                 
 
               </article>
@@ -3421,9 +3341,9 @@
 <script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
         </div>
         
-          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
   
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
   Back to top
 </button>
         
@@ -3433,17 +3353,17 @@
   
     
       
-      <nav class="md-footer__inner md-grid" aria-label="Footer">
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../arr-features/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Features (*arr)">
+          <a href="../arr-features/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Features">
             <div class="md-footer__button md-icon">
               
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"/></svg>
             </div>
             <div class="md-footer__title">
               <span class="md-footer__direction">
-                Previous · *arr
+                Previous
               </span>
               <div class="md-ellipsis">
                 Features
@@ -3453,10 +3373,10 @@
         
         
           
-          <a href="../troubleshooting-support/" class="md-footer__link md-footer__link--next" aria-label="Next: Troubleshooting (*arr)">
+          <a href="../troubleshooting-support/" class="md-footer__link md-footer__link--next" aria-label="Next: Troubleshooting">
             <div class="md-footer__title">
               <span class="md-footer__direction">
-                Next · *arr
+                Next
               </span>
               <div class="md-ellipsis">
                 Troubleshooting
@@ -3464,7 +3384,7 @@
             </div>
             <div class="md-footer__button md-icon">
               
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z"></path></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
             </div>
           </a>
         
@@ -3479,13 +3399,13 @@
   </p>
   
     <div class="md-copyright__highlight">
-      Copyright ©2026 n00bcodr. Made with 💜 for Jellyfin and the community
+      Copyright &copy;2026 n00bcodr. Made with 💜 for Jellyfin and the community
     </div>
   
   
     Made with
-    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
-      Material for MkDocs
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
     </a>
   
 </div>
@@ -3498,7 +3418,7 @@
     
     
     <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
     </a>
   
     
@@ -3506,7 +3426,7 @@
     
     
     <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"></path></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
     </a>
   
 </div>
@@ -3516,25 +3436,28 @@
 </footer>
       
     </div>
-    <div class="md-dialog" data-md-component="dialog">
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
       <div class="md-dialog__inner md-typeset"></div>
     </div>
     
-      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+      
+<div class="md-progress" data-md-component="progress" role="progressbar" aria-label="Loading"></div>
     
     
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link", "announce.dismiss"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.instant","navigation.instant.progress","navigation.tracking","navigation.tabs","navigation.tabs.sticky","navigation.sections","navigation.indexes","navigation.top","navigation.footer","toc.follow","toc.integrate","search.suggest","search.highlight","search.share","content.code.copy","content.code.annotate","content.tabs.link","announce.dismiss"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"default":"latest","provider":"mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../javascripts/extra.js"></script>
       
     
-  
-<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": false, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
-document$.subscribe(()=>{ lightbox.reload(); });
-</script></body></html>
+  </body>
+</html>

@@ -1,4 +1,7 @@
-<!DOCTYPE html><html lang="en" class="no-js"><head>
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
     
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -12,7 +15,8 @@
         <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/dev/advanced/css-customization/">
       
       
-        <link rel="prev" href="../../other/other-settings/">
+      
+        <link rel="prev" href="../community-analytics-settings/">
       
       
         <link rel="next" href="../api/">
@@ -22,21 +26,26 @@
       
       
       <link rel="icon" href="../../images/favicon.ico">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+      <meta name="generator" content="zensical-0.1.2">
     
     
   
   
     
-      <title>CSS Customization · Advanced - Jellyfin Enhanced</title>
+      <title>CSS Customization - Jellyfin Enhanced</title>
     
   
 
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/classic/main.0006804e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/classic/palette.813d4b3f.min.css">
       
       
 
@@ -49,9 +58,9 @@
       
         
         
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noto+Sans:300,300i,400,400i,700,700i%7CNoto+Sans+Mono:400,400i,700,700i&amp;display=fallback">
-        <style>:root{--md-text-font:"Noto Sans";--md-code-font:"Noto Sans Mono"}</style>
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Ubuntu:300,300i,400,400i,500,500i,700,700i%7CUbuntu+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Ubuntu";--md-code-font:"Ubuntu Mono"}</style>
       
     
     
@@ -59,23 +68,13 @@
     
       <link rel="stylesheet" href="../../stylesheets/touch.css">
     
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
     
       
 
     
     
-  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
-            html.glightbox-open { overflow: initial; height: 100%; }
-            .gslide-title { margin-top: 0px; user-select: text; }
-            .gslide-desc { color: #666; user-select: text; }
-            .gslide-image img { background: white; }
-            .gscrollbar-fixer { padding-right: 15px; }
-            .gdesc-inner { font-size: 0.75rem; }
-            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
-            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
-            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
-        </style></head>
+  </head>
   
   
     
@@ -90,20 +89,17 @@
     
     <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
     <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
-    <label class="md-overlay" for="__drawer"></label>
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
     <div data-md-component="skip">
-      
-        
-        <a href="#css-custom-styling" class="md-skip">
-          Skip to content
-        </a>
-      
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
     </div>
     <div data-md-component="announce">
       
     </div>
     
-      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
         
       </div>
     
@@ -119,7 +115,7 @@
     </a>
     <label class="md-header__button md-icon" for="__drawer">
       
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
     </label>
     <div class="md-header__title" data-md-component="header-title">
       <div class="md-header__ellipsis">
@@ -130,8 +126,6 @@
         </div>
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
-              <span class="je-topic-area">Advanced</span>
-            
             
               CSS Customization
             
@@ -146,20 +140,20 @@
     
     
     
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
     
-      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
       </label>
     
   
     
     
     
-    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
     
-      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
       </label>
     
   
@@ -171,50 +165,17 @@
     
     
     
+    
       
       
         <label class="md-header__button md-icon" for="__search">
           
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
         </label>
-        <div class="md-search" data-md-component="search" role="dialog">
-  <label class="md-search__overlay" for="__search"></label>
-  <div class="md-search__inner" role="search">
-    <form class="md-search__form" name="search">
-      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
-      <label class="md-search__icon md-icon" for="__search">
-        
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
-        
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path></svg>
-      </label>
-      <nav class="md-search__options" aria-label="Search">
-        
-          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
-            
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
-          </a>
-        
-        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
-          
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
-        </button>
-      </nav>
-      
-        <div class="md-search__suggest" data-md-component="search-suggest"></div>
-      
-    </form>
-    <div class="md-search__output">
-      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
-        <div class="md-search-result" data-md-component="search-result">
-          <div class="md-search-result__meta">
-            Initializing search
-          </div>
-          <ol class="md-search-result__list" role="presentation"></ol>
-        </div>
-      </div>
-    </div>
-  </div>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
 </div>
       
     
@@ -223,7 +184,7 @@
         <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
   </div>
   <div class="md-source__repository">
     n00bcodr/Jellyfin-Enhanced
@@ -250,7 +211,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 5.69 5 4.5V18h-2v-6H9v6H7v-7.81zM12 3 2 12h3v8h6v-6h2v6h6v-8h3"></path></svg>
+    
   
   <span class="je-tab-label">Home</span>
 
@@ -267,12 +228,12 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../getting-started/" class="md-tabs__link">
+        <a href="../../open-in-jellyfin/" class="md-tabs__link">
           
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"/></svg>
   
   <span class="je-tab-label">Getting Started</span>
 
@@ -295,9 +256,32 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"/></svg>
   
   <span class="je-tab-label">Enhanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/tags/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"/></svg>
+  
+  <span class="je-tab-label">Tags & Badges</span>
 
         </a>
       </li>
@@ -318,7 +302,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"/></svg>
   
   <span class="je-tab-label">Spoiler Guard</span>
 
@@ -341,7 +325,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"/></svg>
   
   <span class="je-tab-label">Seerr</span>
 
@@ -364,7 +348,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"/></svg>
   
   <span class="je-tab-label">*arr</span>
 
@@ -387,9 +371,9 @@
   
   
   
-    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2m1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
   
-  <span class="je-tab-label">Elsewhere &amp; Reviews</span>
+  <span class="je-tab-label">Elsewhere & Reviews</span>
 
         </a>
       </li>
@@ -410,9 +394,32 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"/></svg>
   
   <span class="je-tab-label">Other</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../community-analytics/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"/></svg>
+  
+  <span class="je-tab-label">Community Analytics</span>
 
         </a>
       </li>
@@ -430,12 +437,12 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+        <a href="././" class="md-tabs__link">
           
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>
   
   <span class="je-tab-label">Advanced</span>
 
@@ -458,7 +465,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"/></svg>
   
   <span class="je-tab-label">Help</span>
 
@@ -485,7 +492,7 @@
           
             
               
-              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
                     
@@ -494,7 +501,9 @@
   
 
 
-<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
     <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
       <span class="je-mark" aria-hidden="true"></span>
@@ -506,7 +515,7 @@
       <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
   </div>
   <div class="md-source__repository">
     n00bcodr/Jellyfin-Enhanced
@@ -514,7 +523,7 @@
 </a>
     </div>
   
-  <ul class="md-nav__list" data-md-scrollfix="">
+  <ul class="md-nav__list" data-md-scrollfix>
     
       
       
@@ -527,8 +536,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 5.69 5 4.5V18h-2v-6H9v6H7v-7.81zM12 3 2 12h3v8h6v-6h2v6h6v-8h3"></path></svg>
   
   <span class="md-ellipsis">
     Home
@@ -549,6 +556,8 @@
   
     
     
+      
+        
       
         
           
@@ -577,7 +586,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
           <div class="md-nav__link md-nav__container">
@@ -586,7 +595,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"/></svg>
   
   <span class="md-ellipsis">
     Getting Started
@@ -608,7 +617,31 @@
             <span class="md-nav__icon md-icon"></span>
             Getting Started
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../open-in-jellyfin/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Open in Jellyfin
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
             
               
             
@@ -623,8 +656,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 5v6h1.17L12 13.17 9.83 11H11V5zm2-2H9v6H5l7 7 7-7h-4zm4 15H5v2h14z"></path></svg>
   
   <span class="md-ellipsis">
     Installation
@@ -650,8 +681,6 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18V4H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4v-2H3zm10 6H9v1.78c-.61.55-1 1.33-1 2.22s.39 1.67 1 2.22V20h4v-1.78c.61-.55 1-1.34 1-2.22s-.39-1.67-1-2.22zm-2 5.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5M22 8h-6c-.5 0-1 .5-1 1v10c0 .5.5 1 1 1h6c.5 0 1-.5 1-1V9c0-.5-.5-1-1-1m-1 10h-4v-8h4z"></path></svg>
-  
   <span class="md-ellipsis">
     Compatibility
     
@@ -675,8 +704,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 13c-1.86 0-3.41 1.28-3.86 3H2v2h2.14c.45 1.72 2 3 3.86 3s3.41-1.28 3.86-3H22v-2H11.86c-.45-1.72-2-3-3.86-3m0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2M19.86 6c-.45-1.72-2-3-3.86-3s-3.41 1.28-3.86 3H2v2h10.14c.45 1.72 2 3 3.86 3s3.41-1.28 3.86-3H22V6zM16 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2"></path></svg>
   
   <span class="md-ellipsis">
     Settings Overview
@@ -702,10 +729,8 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 5v2h-4V5zM9 5v6H5V5zm10 8v6h-4v-6zM9 17v2H5v-2zM21 3h-8v6h8zM11 3H3v10h8zm10 8h-8v10h8zm-10 4H3v6h8z"></path></svg>
-  
   <span class="md-ellipsis">
-    JE Pages &amp; Tabs
+    JE Pages & Tabs
     
   </span>
   
@@ -728,7 +753,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"/></svg>
   
   <span class="md-ellipsis">
     Troubleshooting
@@ -762,8 +787,6 @@
       
         
       
-        
-      
     
     
     
@@ -777,7 +800,7 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
@@ -785,7 +808,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"/></svg>
   
   <span class="md-ellipsis">
     Enhanced
@@ -801,7 +824,7 @@
             <span class="md-nav__icon md-icon"></span>
             Enhanced
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -815,36 +838,10 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
   
   <span class="md-ellipsis">
     Features
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../enhanced/tags/" class="md-nav__link">
-        
-  
-  
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"></path></svg>
-  
-  <span class="md-ellipsis">
-    Tags &amp; Badges
     
   </span>
   
@@ -867,10 +864,221 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"/></svg>
+  
+  <span class="md-ellipsis">
+    Tags & Badges
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Tags & Badges
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-layouts/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Layouts & Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-quality/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Quality, Genre & Language
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-groups/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Ratings, Awards & More
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-status/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Status Badges
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-server/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Server & Styles
     
   </span>
   
@@ -914,15 +1122,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
             
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"/></svg>
   
   <span class="md-ellipsis">
     Spoiler Guard
@@ -933,12 +1141,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             Spoiler Guard
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -952,7 +1160,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
   
   <span class="md-ellipsis">
     Features
@@ -978,7 +1186,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
@@ -1027,15 +1235,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
             
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"/></svg>
   
   <span class="md-ellipsis">
     Seerr
@@ -1046,12 +1254,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             Seerr
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1065,7 +1273,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
   
   <span class="md-ellipsis">
     Features
@@ -1091,7 +1299,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
@@ -1116,8 +1324,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm0 2.18 7 3.12v4.92c0 1.7-.5 3.43-1.35 4.95C16 14.94 13.26 14.5 12 14.5s-4 .44-5.65 1.67C5.5 14.65 5 12.92 5 11.22V6.3zM12 6a3.5 3.5 0 0 0-3.5 3.5A3.5 3.5 0 0 0 12 13a3.5 3.5 0 0 0 3.5-3.5A3.5 3.5 0 0 0 12 6m0 2a1.5 1.5 0 0 1 1.5 1.5A1.5 1.5 0 0 1 12 11a1.5 1.5 0 0 1-1.5-1.5A1.5 1.5 0 0 1 12 8m0 8.5c1.57 0 3.64.61 4.53 1.34C15.29 19.38 13.7 20.55 12 21c-1.7-.45-3.29-1.62-4.53-3.16.9-.73 2.96-1.34 4.53-1.34"></path></svg>
   
   <span class="md-ellipsis">
     Permission Audit
@@ -1166,15 +1372,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
             
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"/></svg>
   
   <span class="md-ellipsis">
     *arr
@@ -1185,12 +1391,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             *arr
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1204,7 +1410,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
   
   <span class="md-ellipsis">
     Features
@@ -1230,7 +1436,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
@@ -1256,7 +1462,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"/></svg>
   
   <span class="md-ellipsis">
     Troubleshooting
@@ -1303,16 +1509,18 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
         
           
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
             
   
   
   
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2m1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+  
   <span class="md-ellipsis">
-    Elsewhere &amp; Reviews
+    Elsewhere & Reviews
     
   </span>
   
@@ -1320,12 +1528,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
             <span class="md-nav__icon md-icon"></span>
-            Elsewhere &amp; Reviews
+            Elsewhere & Reviews
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1339,7 +1547,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
   
   <span class="md-ellipsis">
     Features
@@ -1365,7 +1573,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
@@ -1412,15 +1620,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
         
           
-          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
             
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"/></svg>
   
   <span class="md-ellipsis">
     Other
@@ -1431,12 +1639,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_8">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
             <span class="md-nav__icon md-icon"></span>
             Other
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1450,7 +1658,7 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
   
   <span class="md-ellipsis">
     Features
@@ -1476,7 +1684,142 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"/></svg>
+  
+  <span class="md-ellipsis">
+    Community Analytics
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            Community Analytics
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../community-analytics/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    What's collected
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../community-analytics-dashboard/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Live Dashboard
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../community-analytics-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
   
   <span class="md-ellipsis">
     Settings
@@ -1516,8 +1859,6 @@
       
         
       
-        
-      
     
     
     
@@ -1534,15 +1875,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" checked="">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" checked>
         
           
-          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="">
             
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>
   
   <span class="md-ellipsis">
     Advanced
@@ -1553,12 +1894,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_9">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_11">
             <span class="md-nav__icon md-icon"></span>
             Advanced
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -1581,8 +1922,6 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 22A10 10 0 0 1 2 12 10 10 0 0 1 12 2c5.5 0 10 4 10 9a6 6 0 0 1-6 6h-1.8c-.3 0-.5.2-.5.5 0 .1.1.2.1.3.4.5.6 1.1.6 1.7.1 1.4-1 2.5-2.4 2.5m0-18a8 8 0 0 0-8 8 8 8 0 0 0 8 8c.3 0 .5-.2.5-.5 0-.2-.1-.3-.1-.4-.4-.5-.6-1-.6-1.6 0-1.4 1.1-2.5 2.5-2.5H16a4 4 0 0 0 4-4c0-3.9-3.6-7-8-7m-5.5 6c.8 0 1.5.7 1.5 1.5S7.3 13 6.5 13 5 12.3 5 11.5 5.7 10 6.5 10m3-4c.8 0 1.5.7 1.5 1.5S10.3 9 9.5 9 8 8.3 8 7.5 8.7 6 9.5 6m5 0c.8 0 1.5.7 1.5 1.5S15.3 9 14.5 9 13 8.3 13 7.5 13.7 6 14.5 6m3 4c.8 0 1.5.7 1.5 1.5s-.7 1.5-1.5 1.5-1.5-.7-1.5-1.5.7-1.5 1.5-1.5"></path></svg>
-  
   <span class="md-ellipsis">
     CSS Customization
     
@@ -1592,12 +1931,10 @@
           <span class="md-nav__icon md-icon"></span>
         </label>
       
-      <a href="./" class="md-nav__link md-nav__link--active">
+      <a href="././" class="md-nav__link md-nav__link--active">
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 22A10 10 0 0 1 2 12 10 10 0 0 1 12 2c5.5 0 10 4 10 9a6 6 0 0 1-6 6h-1.8c-.3 0-.5.2-.5.5 0 .1.1.2.1.3.4.5.6 1.1.6 1.7.1 1.4-1 2.5-2.4 2.5m0-18a8 8 0 0 0-8 8 8 8 0 0 0 8 8c.3 0 .5-.2.5-.5 0-.2-.1-.3-.1-.4-.4-.5-.6-1-.6-1.6 0-1.4 1.1-2.5 2.5-2.5H16a4 4 0 0 0 4-4c0-3.9-3.6-7-8-7m-5.5 6c.8 0 1.5.7 1.5 1.5S7.3 13 6.5 13 5 12.3 5 11.5 5.7 10 6.5 10m3-4c.8 0 1.5.7 1.5 1.5S10.3 9 9.5 9 8 8.3 8 7.5 8.7 6 9.5 6m5 0c.8 0 1.5.7 1.5 1.5S15.3 9 14.5 9 13 8.3 13 7.5 13.7 6 14.5 6m3 4c.8 0 1.5.7 1.5 1.5s-.7 1.5-1.5 1.5-1.5-.7-1.5-1.5.7-1.5 1.5-1.5"></path></svg>
   
   <span class="md-ellipsis">
     CSS Customization
@@ -1608,6 +1945,7 @@
       </a>
       
         
+
 
   
 
@@ -1622,14 +1960,14 @@
       <span class="md-nav__icon md-icon"></span>
       On this page
     </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
   <a href="#applying-custom-css" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Applying Custom CSS
-      
+      </span>
     </span>
   </a>
   
@@ -1639,9 +1977,9 @@
           <li class="md-nav__item">
   <a href="#when-a-rule-has-no-effect" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         When a rule has no effect
-      
+      </span>
     </span>
   </a>
   
@@ -1655,9 +1993,9 @@
         <li class="md-nav__item">
   <a href="#pause-screen" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Pause Screen
-      
+      </span>
     </span>
   </a>
   
@@ -1667,9 +2005,9 @@
           <li class="md-nav__item">
   <a href="#elements-and-visibility" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Elements and visibility
-      
+      </span>
     </span>
   </a>
   
@@ -1678,9 +2016,9 @@
           <li class="md-nav__item">
   <a href="#css-variables" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         CSS variables
-      
+      </span>
     </span>
   </a>
   
@@ -1694,9 +2032,9 @@
         <li class="md-nav__item">
   <a href="#tags" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Tags
-      
+      </span>
     </span>
   </a>
   
@@ -1706,9 +2044,9 @@
           <li class="md-nav__item">
   <a href="#prerequisites-and-placement" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Prerequisites and placement
-      
+      </span>
     </span>
   </a>
   
@@ -1717,9 +2055,9 @@
           <li class="md-nav__item">
   <a href="#tag-styles-and-native-posters" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Tag Styles and native posters
-      
+      </span>
     </span>
   </a>
   
@@ -1728,9 +2066,9 @@
           <li class="md-nav__item">
   <a href="#quality-tags" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Quality Tags
-      
+      </span>
     </span>
   </a>
   
@@ -1740,9 +2078,9 @@
           <li class="md-nav__item">
   <a href="#sound-tag-language-selection" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Sound-tag language selection
-      
+      </span>
     </span>
   </a>
   
@@ -1756,9 +2094,9 @@
           <li class="md-nav__item">
   <a href="#genre-tags-css" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Genre Tags CSS
-      
+      </span>
     </span>
   </a>
   
@@ -1767,9 +2105,9 @@
           <li class="md-nav__item">
   <a href="#language-tags-css" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Language Tags CSS
-      
+      </span>
     </span>
   </a>
   
@@ -1778,9 +2116,9 @@
           <li class="md-nav__item">
   <a href="#rating-tags-css" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Rating Tags CSS
-      
+      </span>
     </span>
   </a>
   
@@ -1790,9 +2128,9 @@
           <li class="md-nav__item">
   <a href="#user-review-poster-chips" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         User-review poster chips
-      
+      </span>
     </span>
   </a>
   
@@ -1806,9 +2144,9 @@
           <li class="md-nav__item">
   <a href="#logo-tags-css" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Logo Tags CSS
-      
+      </span>
     </span>
   </a>
   
@@ -1817,9 +2155,9 @@
           <li class="md-nav__item">
   <a href="#age-rating-tags-css" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Age Rating Tags CSS
-      
+      </span>
     </span>
   </a>
   
@@ -1828,9 +2166,9 @@
           <li class="md-nav__item">
   <a href="#status-tags-css" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Status Tags CSS
-      
+      </span>
     </span>
   </a>
   
@@ -1839,9 +2177,9 @@
           <li class="md-nav__item">
   <a href="#custom-tags-css" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Custom Tags CSS
-      
+      </span>
     </span>
   </a>
   
@@ -1850,9 +2188,9 @@
           <li class="md-nav__item">
   <a href="#people-tags-css" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         People Tags CSS
-      
+      </span>
     </span>
   </a>
   
@@ -1861,9 +2199,9 @@
           <li class="md-nav__item">
   <a href="#arr-tag-links" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         *arr Tag Links
-      
+      </span>
     </span>
   </a>
   
@@ -1873,9 +2211,9 @@
           <li class="md-nav__item">
   <a href="#link-structure-and-attributes" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Link structure and attributes
-      
+      </span>
     </span>
   </a>
   
@@ -1884,9 +2222,9 @@
           <li class="md-nav__item">
   <a href="#common-recipes" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Common recipes
-      
+      </span>
     </span>
   </a>
   
@@ -1895,9 +2233,9 @@
           <li class="md-nav__item">
   <a href="#configurable-icons" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Configurable icons
-      
+      </span>
     </span>
   </a>
   
@@ -1916,9 +2254,9 @@
         <li class="md-nav__item">
   <a href="#enhanced-panel" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Enhanced Panel
-      
+      </span>
     </span>
   </a>
   
@@ -1928,9 +2266,9 @@
           <li class="md-nav__item">
   <a href="#automatic-theme-detection" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Automatic theme detection
-      
+      </span>
     </span>
   </a>
   
@@ -1939,9 +2277,9 @@
           <li class="md-nav__item">
   <a href="#shell-and-navigation-hooks" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Shell and navigation hooks
-      
+      </span>
     </span>
   </a>
   
@@ -1950,9 +2288,9 @@
           <li class="md-nav__item">
   <a href="#panel-surfaces-and-header" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Panel surfaces and header
-      
+      </span>
     </span>
   </a>
   
@@ -1961,9 +2299,9 @@
           <li class="md-nav__item">
   <a href="#navigation-and-headings" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Navigation and headings
-      
+      </span>
     </span>
   </a>
   
@@ -1972,9 +2310,9 @@
           <li class="md-nav__item">
   <a href="#controls-and-previews" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Controls and previews
-      
+      </span>
     </span>
   </a>
   
@@ -1983,9 +2321,9 @@
           <li class="md-nav__item">
   <a href="#shortcut-keys-and-about-actions" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Shortcut keys and About actions
-      
+      </span>
     </span>
   </a>
   
@@ -1999,9 +2337,9 @@
         <li class="md-nav__item">
   <a href="#notifications" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Notifications
-      
+      </span>
     </span>
   </a>
   
@@ -2010,9 +2348,9 @@
         <li class="md-nav__item">
   <a href="#player-rating-surfaces" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Player rating surfaces
-      
+      </span>
     </span>
   </a>
   
@@ -2021,9 +2359,9 @@
         <li class="md-nav__item">
   <a href="#subtitle-sync-list" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Subtitle sync list
-      
+      </span>
     </span>
   </a>
   
@@ -2032,9 +2370,9 @@
         <li class="md-nav__item">
   <a href="#other-styling-hooks" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Other styling hooks
-      
+      </span>
     </span>
   </a>
   
@@ -2044,9 +2382,9 @@
           <li class="md-nav__item">
   <a href="#tag-size-and-gap-hooks" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Tag size and gap hooks
-      
+      </span>
     </span>
   </a>
   
@@ -2055,9 +2393,9 @@
           <li class="md-nav__item">
   <a href="#awards-chips" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Awards chips
-      
+      </span>
     </span>
   </a>
   
@@ -2066,9 +2404,9 @@
           <li class="md-nav__item">
   <a href="#quality-stream-display" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Quality stream display
-      
+      </span>
     </span>
   </a>
   
@@ -2077,9 +2415,9 @@
           <li class="md-nav__item">
   <a href="#technical-quality-sdh-and-scenes-hooks" class="md-nav__link">
     <span class="md-ellipsis">
-      
+      <span class="md-typeset">
         Technical quality, SDH and Scenes hooks
-      
+      </span>
     </span>
   </a>
   
@@ -2111,36 +2449,8 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 7H5a2 2 0 0 0-2 2v8h2v-4h2v4h2V9a2 2 0 0 0-2-2m0 4H5V9h2m7-2h-4v10h2v-4h2a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2m0 4h-2V9h2m6 0v6h1v2h-4v-2h1V9h-1V7h4v2Z"></path></svg>
-  
   <span class="md-ellipsis">
     API
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../community-analytics/" class="md-nav__link">
-        
-  
-  
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"></path></svg>
-  
-  <span class="md-ellipsis">
-    Community Analytics
     
   </span>
   
@@ -2162,8 +2472,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 13H7v5h5v2H5V10h2v1h5zM8 4v2H4V4zm2-2H2v6h8zm10 9v2h-4v-2zm2-2h-8v6h8zm-2 9v2h-4v-2zm2-2h-8v6h8z"></path></svg>
   
   <span class="md-ellipsis">
     Project Structure
@@ -2244,15 +2552,15 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
         
           
-          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="0">
             
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"></path></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"/></svg>
   
   <span class="md-ellipsis">
     Help
@@ -2263,12 +2571,12 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_10">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
             <span class="md-nav__icon md-icon"></span>
             Help
           </label>
-          <ul class="md-nav__list" data-md-scrollfix="">
+          <ul class="md-nav__list" data-md-scrollfix>
             
               
                 
@@ -2281,8 +2589,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 18h2v-2h-2zm1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-14a4 4 0 0 0-4 4h2a2 2 0 0 1 2-2 2 2 0 0 1 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5a4 4 0 0 0-4-4"></path></svg>
   
   <span class="md-ellipsis">
     FAQ
@@ -2308,8 +2614,6 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 8h-2.81c-.45-.8-1.07-1.5-1.82-2L17 4.41 15.59 3l-2.17 2.17a6 6 0 0 0-2.83 0L8.41 3 7 4.41 8.62 6c-.75.5-1.36 1.21-1.81 2H4v2h2.09c-.06.33-.09.66-.09 1v1H4v2h2v1c0 .34.03.67.09 1H4v2h2.81A5.99 5.99 0 0 0 15 20.18c.91-.52 1.67-1.28 2.19-2.18H20v-2h-2.09c.06-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.03-.67-.09-1H20zm-4 7a4 4 0 0 1-4 4 4 4 0 0 1-4-4v-4a4 4 0 0 1 4-4 4 4 0 0 1 4 4zm-2-5v2h-4v-2zm-4 4h4v2h-4z"></path></svg>
-  
   <span class="md-ellipsis">
     Report Issues
     
@@ -2333,8 +2637,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11h3v2h-3zM1 11h3v2H1zM13 1v3h-2V1zM4.92 3.5l2.13 2.14-1.42 1.41L3.5 4.93zm12.03 2.13 2.12-2.13 1.43 1.43-2.13 2.12zM12 6a6 6 0 0 1 6 6c0 2.22-1.21 4.16-3 5.2V19a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-1.8c-1.79-1.04-3-2.98-3-5.2a6 6 0 0 1 6-6m2 15v1a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-1zm-3-3h2v-2.13c1.73-.44 3-2.01 3-3.87a4 4 0 0 0-4-4 4 4 0 0 0-4 4c0 1.86 1.27 3.43 3 3.87z"></path></svg>
   
   <span class="md-ellipsis">
     Feature Requests
@@ -2360,8 +2662,6 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"></path></svg>
-  
   <span class="md-ellipsis">
     Contributing Translations
     
@@ -2385,8 +2685,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15 4v7H5.17L4 12.17V4zm1-2H3a1 1 0 0 0-1 1v14l4-4h10a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1m5 4h-2v9H6v2a1 1 0 0 0 1 1h11l4 4V7a1 1 0 0 0-1-1"></path></svg>
   
   <span class="md-ellipsis">
     Support + Community
@@ -2412,8 +2710,6 @@
   
   
   
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 13.5c0 1.76-1.3 3.22-3 3.46V20a2 2 0 0 1-2 2h-3.8v-.3a2.7 2.7 0 0 0-2.7-2.7c-1.5 0-2.7 1.21-2.7 2.7v.3H4a2 2 0 0 1-2-2v-3.8h.3C3.79 16.2 5 15 5 13.5s-1.21-2.7-2.7-2.7H2V7a2 2 0 0 1 2-2h3.04c.24-1.7 1.7-3 3.46-3s3.22 1.3 3.46 3H17a2 2 0 0 1 2 2v3.04c1.7.24 3 1.7 3 3.46M17 15h1.5a1.5 1.5 0 0 0 1.5-1.5 1.5 1.5 0 0 0-1.5-1.5H17V7h-5V5.5A1.5 1.5 0 0 0 10.5 4 1.5 1.5 0 0 0 9 5.5V7H4v2.12c1.76.68 3 2.38 3 4.38s-1.25 3.7-3 4.38V20h2.12a4.7 4.7 0 0 1 4.38-3c2 0 3.7 1.25 4.38 3H17z"></path></svg>
-  
   <span class="md-ellipsis">
     Related Projects
     
@@ -2437,8 +2733,6 @@
         
   
   
-  
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 9h2V7h-2m1 13c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8m0-18A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2m-1 15h2v-6h-2z"></path></svg>
   
   <span class="md-ellipsis">
     About
@@ -2466,565 +2760,26 @@
               </div>
             
             
-              
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
-                <div class="md-sidebar__scrollwrap">
-                  <div class="md-sidebar__inner">
-                    
-
-  
-
-<nav class="md-nav md-nav--secondary" aria-label="On this page">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
-      
-        <li class="md-nav__item">
-  <a href="#applying-custom-css" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Applying Custom CSS
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Applying Custom CSS">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#when-a-rule-has-no-effect" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        When a rule has no effect
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#pause-screen" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Pause Screen
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Pause Screen">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#elements-and-visibility" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Elements and visibility
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#css-variables" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        CSS variables
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#tags" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tags
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Tags">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#prerequisites-and-placement" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Prerequisites and placement
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tag-styles-and-native-posters" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tag Styles and native posters
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#quality-tags" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quality Tags
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Quality Tags">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#sound-tag-language-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Sound-tag language selection
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#genre-tags-css" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Genre Tags CSS
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#language-tags-css" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Language Tags CSS
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#rating-tags-css" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Rating Tags CSS
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Rating Tags CSS">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#user-review-poster-chips" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        User-review poster chips
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#logo-tags-css" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Logo Tags CSS
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#age-rating-tags-css" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Age Rating Tags CSS
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#status-tags-css" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Status Tags CSS
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#custom-tags-css" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Custom Tags CSS
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#people-tags-css" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        People Tags CSS
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#arr-tag-links" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        *arr Tag Links
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="*arr Tag Links">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#link-structure-and-attributes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Link structure and attributes
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#common-recipes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Common recipes
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#configurable-icons" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configurable icons
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#enhanced-panel" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Enhanced Panel
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Enhanced Panel">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#automatic-theme-detection" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Automatic theme detection
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#shell-and-navigation-hooks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Shell and navigation hooks
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#panel-surfaces-and-header" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Panel surfaces and header
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#navigation-and-headings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Navigation and headings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#controls-and-previews" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Controls and previews
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#shortcut-keys-and-about-actions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Shortcut keys and About actions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#notifications" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Notifications
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#player-rating-surfaces" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Player rating surfaces
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#subtitle-sync-list" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Subtitle sync list
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#other-styling-hooks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Other styling hooks
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Other styling hooks">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#tag-size-and-gap-hooks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tag size and gap hooks
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#awards-chips" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Awards chips
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#quality-stream-display" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quality stream display
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#technical-quality-sdh-and-scenes-hooks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Technical quality, SDH and Scenes hooks
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-                  </div>
-                </div>
-              </div>
-            
           
           
             <div class="md-content" data-md-component="content">
               
               <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
                 
-  
-    
-    
-    
-    <nav class="je-sectionbar" aria-label="Advanced pages">
-      <a class="je-sectionbar__area" href="./">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"></path></svg>
-        <span>Advanced</span>
-      </a>
-      
-        <ul class="je-sectionbar__pages">
-          
-            
-              <li>
-                <a class="je-chip je-chip--active" href="./" aria-current="page">CSS Customization</a>
-              </li>
-            
-          
-            
-              <li>
-                <a class="je-chip" href="../api/">API</a>
-              </li>
-            
-          
-            
-              <li>
-                <a class="je-chip" href="../community-analytics/">Community Analytics</a>
-              </li>
-            
-          
-            
-              <li>
-                <a class="je-chip" href="../project-structure/">Project Structure</a>
-              </li>
-            
-          
-            
-              <li>
-                <a class="je-chip" href="../admin-media-tags/">Admin Media Tags Tab</a>
-              </li>
-            
-          
-        </ul>
-      
-    </nav>
   
   
                   
 
-
   
   
 
 
-<h1 id="css-custom-styling">CSS Custom Styling<a class="headerlink" href="#css-custom-styling" title="Permanent link">¶</a></h1>
+<h1 id="css-custom-styling">CSS Custom Styling<a class="headerlink" href="#css-custom-styling" title="Permanent link">&para;</a></h1>
 <p>Use Custom CSS to change the appearance of Jellyfin Enhanced's web overlays, tags, settings panel, and notifications.</p>
 <p>These recipes target elements created by JE's injected web client. The feature must be enabled and its metadata available before CSS can style it.</p>
 <p>For feature setup and client requirements, see <a href="../../getting-started/compatibility/">Compatibility</a>, <a href="../../enhanced/tags/">Tags &amp; Badges</a>, and <a href="../../enhanced/enhanced-settings/">Enhanced Settings</a>.</p>
-<h2 id="applying-custom-css">Applying Custom CSS<a class="headerlink" href="#applying-custom-css" title="Permanent link">¶</a></h2>
+<h2 id="applying-custom-css">Applying Custom CSS<a class="headerlink" href="#applying-custom-css" title="Permanent link">&para;</a></h2>
 <p>As a Jellyfin administrator:</p>
 <ol>
 <li>Open <strong>Dashboard</strong> → <strong>Branding</strong>.</li>
@@ -3034,7 +2789,7 @@
 </ol>
 <p>This applies CSS server-wide to web clients that load Jellyfin's Custom CSS. Test the result on desktop and phone layouts.</p>
 <p>To undo a recipe, remove its rules, save, and reload.</p>
-<h3 id="when-a-rule-has-no-effect">When a rule has no effect<a class="headerlink" href="#when-a-rule-has-no-effect" title="Permanent link">¶</a></h3>
+<h3 id="when-a-rule-has-no-effect">When a rule has no effect<a class="headerlink" href="#when-a-rule-has-no-effect" title="Permanent link">&para;</a></h3>
 <p>Inspect the element in your browser's developer tools and check its actual classes, attributes, and computed styles. A disabled feature, absent metadata, or a native poster image can leave nothing for the selector to match.</p>
 <p>The examples use <code>!important</code> where needed to beat built-in colors, inline styles, or responsive rules. Scope changes to a JE container and keep hover, selected, disabled, and focus states usable.</p>
 <details class="info">
@@ -3048,7 +2803,7 @@
 <p>JE appends shared styles, pause-screen styles, and Tag Styles overrides to the document head. On Jellyfin 12 web, Custom CSS is rendered in the body, after those head styles. Equal-specificity rules can therefore win even if JE injected its style later in time.</p>
 <p>The panel also embeds its own style element in the body. Inspect the winning declaration instead of assuming all styles have the same order, especially on Jellyfin 10.11.</p>
 </details>
-<h2 id="pause-screen">Pause Screen<a class="headerlink" href="#pause-screen" title="Permanent link">¶</a></h2>
+<h2 id="pause-screen">Pause Screen<a class="headerlink" href="#pause-screen" title="Permanent link">&para;</a></h2>
 <p>The pause screen shows artwork, item details, plot, and a progress snapshot while playback is paused. Enable it in your personal <strong>Playback Settings</strong>, pause a video, and leave the player idle to preview your CSS.</p>
 <p>The administrator sets the default; viewers can override it in the Enhanced panel.</p>
 <table>
@@ -3074,7 +2829,7 @@
 </table>
 <p>Clicks, touches, key presses, scrolling, and mouse movement beyond the movement threshold reset the inactivity timer.</p>
 <p>Missing logo or disc artwork stays hidden. Artwork lookup considers the item and applicable parent/series artwork.</p>
-<h3 id="elements-and-visibility">Elements and visibility<a class="headerlink" href="#elements-and-visibility" title="Permanent link">¶</a></h3>
+<h3 id="elements-and-visibility">Elements and visibility<a class="headerlink" href="#elements-and-visibility" title="Permanent link">&para;</a></h3>
 <p>Use these selectors to style or hide individual parts of the pause screen.</p>
 <table>
 <thead>
@@ -3190,7 +2945,7 @@
 <p>Hide individual regions rather than the dialog itself. While active, JE adds <code>.pause-screen-active</code> to the HTML root and suppresses parts of the player's controls. Hiding the whole dialog with CSS leaves that state active.</p>
 <p>Keep the close button and the focus helpers (<code>#pause-screen-focus-start</code>, <code>#pause-screen-focus-end</code>) usable, or turn off <strong>Custom Pause Screen</strong> to remove the feature.</p>
 </div>
-<h3 id="css-variables">CSS variables<a class="headerlink" href="#css-variables" title="Permanent link">¶</a></h3>
+<h3 id="css-variables">CSS variables<a class="headerlink" href="#css-variables" title="Permanent link">&para;</a></h3>
 <p>These are CSS custom properties, separate from plugin settings. Assign them to <code>#pause-screen-overlay</code> so its children inherit your values instead of the responsive root defaults.</p>
 <table>
 <thead>
@@ -3320,9 +3075,9 @@
 <p>Built-in layouts adjust root defaults at widths of 1400px and 768px, and in landscape at heights of 500px or less.</p>
 <p>Some phone positions, font sizes, and plot dimensions are set directly on elements, so variables do not control every dimension. Narrow layouts hide the disc; the later landscape rule can show it again. Reduced-motion preferences stop its rotation.</p>
 </details>
-<h2 id="tags">Tags<a class="headerlink" href="#tags" title="Permanent link">¶</a></h2>
+<h2 id="tags">Tags<a class="headerlink" href="#tags" title="Permanent link">&para;</a></h2>
 <p>Poster tags use separate containers for quality, genre, language, rating, and age-rating badges. People tags decorate cast portraits on detail pages. Enable the relevant personal setting in <strong>Media Tags</strong> before trying a recipe.</p>
-<h3 id="prerequisites-and-placement">Prerequisites and placement<a class="headerlink" href="#prerequisites-and-placement" title="Permanent link">¶</a></h3>
+<h3 id="prerequisites-and-placement">Prerequisites and placement<a class="headerlink" href="#prerequisites-and-placement" title="Permanent link">&para;</a></h3>
 <p>The administrator's <strong>Media Tags</strong> settings (the configuration page's Media Tags tab) provide defaults. All six tag features start off at factory defaults.</p>
 <table>
 <thead>
@@ -3383,7 +3138,7 @@
 <p>New user settings for the eight tag features are seeded from the plugin configuration. Existing non-null user values take precedence over admin defaults. Changing a default does not replace a saved personal choice. See <a href="../../getting-started/settings-overview/">Settings Overview</a> for default management.</p>
 <p>Server and saved user properties use PascalCase. Resolved client settings use camelCase, such as <code>qualityTagsEnabled</code>.</p>
 <p>Users can change <strong>Hide tags on hover</strong> later in their personal <strong>Media Tags</strong> section (<strong>Layout</strong> tab).</p>
-<p>If tag data is stale or missing, also check the server's cache configuration under <strong>Media Tags</strong> → <strong>Server</strong>:</p>
+<p>If tag data is stale or missing, also check the server's cache configuration under <a href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=server"><strong>Media Tags</strong> → <strong>Server</strong></a>:</p>
 <table>
 <thead>
 <tr>
@@ -3405,7 +3160,7 @@
 </tr>
 </tbody>
 </table>
-<p>Exclusion changes affect the next cache rebuild. Click <strong>Save Settings</strong>, then open <strong>Admin</strong> → <strong>Tag Cache</strong> and click <strong>Rebuild Server Tag Cache</strong>. Confirm the full rebuild. See <a href="../../enhanced/tags/">Tags &amp; Badges</a> for cache operation; CSS only styles the resulting elements.</p>
+<p>Exclusion changes affect the next cache rebuild. Click <strong>Save Settings</strong>, then open <a href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=server"><strong>Media Tags</strong> → <strong>Server</strong></a> and click <strong>Rebuild Server Tag Cache</strong>. Confirm the full rebuild. See <a href="../../enhanced/tags/">Tags &amp; Badges</a> for cache operation; CSS only styles the resulting elements.</p>
 <p>Use the <strong>Position</strong> pills on the <strong>Groups</strong> tab and the layout tiles on the <strong>Layout</strong> tab of <strong>Media Tags</strong> to move tag containers.</p>
 <p>The normal poster structure places <code>.je-tag-host</code> inside <code>.cardScalable</code>, before <code>.cardOverlayContainer</code>. Fallback targets are used when that structure is unavailable: a list row's image gets its own <code>.je-tag-host</code>.</p>
 <div class="language-html highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">"cardBox"</span><span class="p">&gt;</span>
@@ -3506,13 +3261,13 @@
 <p>Native poster pixels now include Status and the saved Bands layout. They have no DOM/CSS hooks: use <strong>Tag Styles → Status</strong> to colour the whole group or an individual badge (including schedule/milestone/series-state labels). Web hooks remain <code>.status-tag</code>, <code>data-je-status</code>, <code>.je-tag-slot[data-je-slot="top"|"bottom"]</code> and <code>.je-tag-more</code>; no new web selectors are required. Native strips use fixed image-width sizing and <code>+N</code> without a hover tooltip.</p>
 <p>In the Corners layout, containers carry <code>data-je-corner</code> with one of the nine stored position values (<code>top-left</code>, <code>top-center</code>, <code>top-right</code>, <code>center-left</code>, <code>center</code>, <code>center-right</code>, <code>bottom-left</code>, <code>bottom-center</code>, <code>bottom-right</code>). Containers sharing a corner stack in their slot with a 4px gap (top corners downward, bottom corners upward) instead of inline transforms. When a group is set to top right and the card shows Jellyfin's played or unplayed-count indicator, the host gets <code>data-je-indicator-gap</code> and the <code>tr</code> slot moves below it. Settings saved before layouts existed keep the original rule instead (their host carries <code>data-je-legacy</code>): only the container of a group set to exactly <code>top-right</code> carries <code>data-je-indicator-gap</code> and moves below the indicator, with the containers stacked after it; and on screens up to 480px wide the rating, age rating and status containers sit 4px from the card edges instead of 6px. The centre hooks are <code>tc</code> (top centre), <code>bc</code> (bottom centre), <code>ml</code> (left centre), <code>mr</code> (right centre) and <code>c</code> (centre). The rows use horizontal flex wrapping with centred chips; side anchors use columns aligned to their edge. Their group wrappers use <code>display: contents</code>, retaining the chip classes. Batched measurements set <code>--je-anchor-reserve</code> on these slots to keep them clear of occupied corner stacks; <code>--je-anchor-top</code> and <code>--je-anchor-bottom</code> clear native web overlays. Their excess chips use the same <code>data-je-overflow</code> and <code>.je-tag-more</code> hooks as flowing layouts. The original four corner geometry rules stay unchanged. Position slots rather than containers when you move tags: a container's own <code>top</code>, <code>left</code> or <code>transform</code> no longer places it.</p>
 <p><strong>Edge spacing</strong> other than Default marks a Corners host with <code>data-je-edge="tight"</code> or <code>data-je-edge="flush"</code> and sets <code>--je-edge</code> (<code>3px</code> or <code>0px</code>) on it; every anchor's offset, the corner containers' size limits, the centre budgets' defaults and the indicator gap use it. Default has no marker and keeps the original rules. A flush host clips its chips with <code>overflow: hidden</code> and <code>border-radius: var(--je-card-radius)</code>, where <code>--je-card-radius</code> is the artwork's corner radius, measured once per card; box chips touching an edge get square corners there. For example, <code>.je-tag-host[data-je-edge="flush"] .quality-overlay-label { border-radius: 0; }</code> makes every flush quality chip square.</p>
-<p>A card whose look comes from a lock (see <a href="../../enhanced/tags/#rules-and-locked-items">Rules and locked items</a>) has <code>data-je-locked="1"</code> on its <code>.je-tag-host</code>; nothing styles it by default. For example, <code>.je-tag-host[data-je-locked="1"] { outline: 1px dashed #fff8; }</code> marks locked cards. A server-wide item look does not set it.</p>
-<p>The per-item editor (<a href="../../enhanced/tags/#one-items-look">One item's look</a>) is a dialog <code>.je-tie</code> inside <code>.je-tie-backdrop</code>; its sample card is <code>.je-tie-card</code>, and its row in Jellyfin's ⋮ menu is <code>.actionSheetMenuItem[data-id="je-media-tags"]</code>. Its Undo message is <code>.je-tie-toast</code>.</p>
+<p>A card whose look comes from a lock (see <a href="../../enhanced/tags-layouts/#rules-and-locked-items">Rules and locked items</a>) has <code>data-je-locked="1"</code> on its <code>.je-tag-host</code>; nothing styles it by default. For example, <code>.je-tag-host[data-je-locked="1"] { outline: 1px dashed #fff8; }</code> marks locked cards. A server-wide item look does not set it.</p>
+<p>The per-item editor (<a href="../../enhanced/tags-layouts/#one-items-look">One item's look</a>) is a dialog <code>.je-tie</code> inside <code>.je-tie-backdrop</code>; its sample card is <code>.je-tie-card</code>, and its row in Jellyfin's ⋮ menu is <code>.actionSheetMenuItem[data-id="je-media-tags"]</code>. Its Undo message is <code>.je-tie-toast</code>.</p>
 <p>The Media Tags import, export and preset dialogs (in the settings panel and on the configuration page's Media Tags tab) are <code>.je-pt-backdrop &gt; .je-pt-dialog[role="dialog"]</code>, with <code>.je-pt-change</code> / <code>.je-pt-skip</code> rows (<code>.je-pt-from</code>, <code>.je-pt-to</code>, <code>.je-pt-reason</code>) and <code>.je-pt-btn</code> buttons (<code>[data-primary]</code> for the main action). The panel's preset rows are <code>.je-mth-tp-item</code> inside <code>[data-tp-source="builtIn" | "offered" | "mine"]</code>.</p>
 <p>Poster tags generally ignore pointer input. Container-query sizing adapts badges to card width, with separate mobile rules. Fixed sizes can crowd small posters.</p>
 <p>Processing markers such as <code>data-je-quality-tagged</code>, <code>data-je-genre-tagged</code>, <code>data-je-language-tagged</code>, <code>data-je-rating-tagged</code>, and <code>data-je-age-rating-tagged</code> record processing. They do not guarantee a visible badge.</p>
-<h3 id="tag-styles-and-native-posters">Tag Styles and native posters<a class="headerlink" href="#tag-styles-and-native-posters" title="Permanent link">¶</a></h3>
-<p>Use the built-in <a href="../../enhanced/tags/#tag-styles-and-css">Tag Styles editor</a> for supported colors; that guide covers presets, tabs, scope, opacity, and bulk controls. See <a href="../../enhanced/tags/#native-poster-tags-experimental">Native Poster Tags</a> for native-client setup and refresh requirements. CSS remains useful for web shape, sizing, visibility, and other surfaces.</p>
+<h3 id="tag-styles-and-native-posters">Tag Styles and native posters<a class="headerlink" href="#tag-styles-and-native-posters" title="Permanent link">&para;</a></h3>
+<p>Use the built-in <a href="../../enhanced/tags-server/#tag-styles-and-css">Tag Styles editor</a> for supported colors; that guide covers presets, tabs, scope, opacity, and bulk controls. See <a href="../../enhanced/tags-server/#native-poster-tags-experimental">Native Poster Tags</a> for native-client setup and refresh requirements. CSS remains useful for web shape, sizing, visibility, and other surfaces.</p>
 <p>Web overrides use important selectors. Their specificity is <code>(0,4,0)</code> for quality, <code>(0,3,0)</code> for age and rating chips, and <code>(0,2,0)</code> for the whole genre group (<code>(0,3,0)</code> for one genre, through <code>data-je-genre</code>). These beat simple color recipes; more specific important Custom CSS can override them.</p>
 <p>Critic styles also match user-review chips because those share <code>.rating-tag-critic</code>.</p>
 <p>Under the <strong>Poster</strong> preset, each card's <code>.cardBox</code> (a list row's image element) carries <code>data-je-poster-colour="1"</code>, <code>data-je-poster-key</code> (item, image type, index and image tag) and three custom properties taken from its artwork: <code>--je-tag-bg</code>, <code>--je-tag-border</code> and <code>--je-tag-fg</code>. The Poster rules paint the chips (and the summary pill) with them at the same specificity as the override rules above and before them, so group and tag colours still win. Use the variables in your own CSS to match other elements to the artwork, for example <code>[data-je-poster-colour] .je-tag-more { background: var(--je-tag-bg); color: var(--je-tag-fg); }</code>. A card whose artwork could not be read has no marker and keeps the Default colours.</p>
@@ -3523,7 +3278,7 @@
 <p>The page-wide Tag Styles rules skip tags inside an element with the <code>data-je-tag-styles-scope</code> attribute. The configuration page's Media Tags tab marks its preview (<code>#jeTaPreviewBody</code>) this way and styles it with the server's Tag Styles in the <code>je-tag-admin-preview-styles</code> stylesheet, fetched again after a Tag Styles save, whenever the page is shown again, and after <strong>Take theirs</strong>.</p>
 </details>
 <p>CSS selectors cannot individually restyle pixels drawn into a poster image. Use Tag Styles targeting poster images for supported color changes; native output requires Native Poster Tags.</p>
-<h3 id="quality-tags">Quality Tags<a class="headerlink" href="#quality-tags" title="Permanent link">¶</a></h3>
+<h3 id="quality-tags">Quality Tags<a class="headerlink" href="#quality-tags" title="Permanent link">&para;</a></h3>
 <p>Quality badges use <code>.quality-overlay-label</code> and a normalized <code>data-quality</code> value. Inspect the attribute rather than matching the displayed text: a badge reading <code>ATMOS 7.1</code> has <code>data-quality="ATMOS"</code>.</p>
 <table>
 <thead>
@@ -3576,7 +3331,7 @@
 <li>Standalone channel fallback produces <code>7.1</code> or <code>5.1</code>. <code>2.0</code> can be appended to a codec label but is not a standalone fallback.</li>
 </ul>
 </details>
-<p>Use the <a href="../../enhanced/tags/#quality-tags">Quality Tags category controls</a> before CSS hiding; that guide covers administrator defaults, personal overrides, and category order.</p>
+<p>Use the <a href="../../enhanced/tags-quality/#quality-tags">Quality Tags category controls</a> before CSS hiding; that guide covers administrator defaults, personal overrides, and category order.</p>
 <p><strong>Resize all quality badges:</strong></p>
 <div class="language-css highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">.</span><span class="nc">quality-overlay-label</span><span class="w"> </span><span class="p">{</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span><span class="k">font-size</span><span class="p">:</span><span class="w"> </span><span class="mf">0.8</span><span class="kt">rem</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
@@ -3628,7 +3383,7 @@
 </span><span id="__span-8-23"><a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a><span class="w">    </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#fff</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
 </span><span id="__span-8-24"><a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a><span class="p">}</span>
 </span></code></pre></div>
-<h4 id="sound-tag-language-selection">Sound-tag language selection<a class="headerlink" href="#sound-tag-language-selection" title="Permanent link">¶</a></h4>
+<h4 id="sound-tag-language-selection">Sound-tag language selection<a class="headerlink" href="#sound-tag-language-selection" title="Permanent link">&para;</a></h4>
 <p>Audio preferences can change which sound badge appears for the same item across viewers.</p>
 <table>
 <thead>
@@ -3657,12 +3412,12 @@
 </tbody>
 </table>
 <p>Matching tries regional language matches, then base-language matches, then all tracks. Inspect the resolved badge before targeting an audio <code>data-quality</code> value.</p>
-<h3 id="genre-tags-css">Genre Tags CSS<a class="headerlink" href="#genre-tags-css" title="Permanent link">¶</a></h3>
+<h3 id="genre-tags-css">Genre Tags CSS<a class="headerlink" href="#genre-tags-css" title="Permanent link">&para;</a></h3>
 <p>Use these hooks to style genre icons and their hover labels. Up to three genres appear.</p>
 <ul>
 <li>Icons use <code>.genre-tag &gt; .je-msym-outlined</code>.</li>
 <li>Text uses <code>.genre-text</code> inside <code>.genre-overlay-container</code>.</li>
-<li><code>data-je-genre</code> holds the genre's <a href="../../enhanced/tags/#genre-colours">Tag Styles label</a>: the canonical English genre its icon stands for (<code>horror</code>, <code>science fiction</code>, <code>game-show</code>…), the same for every spelling and translation (<em>Sci-Fi</em> and <em>Ciencia ficción</em> are both <code>science fiction</code>), or <code>other</code>. Tag Styles colour one genre through it: <code>.genre-tag[data-je-genre="horror"]</code>.</li>
+<li><code>data-je-genre</code> holds the genre's <a href="../../enhanced/tags-server/#genre-colours">Tag Styles label</a>: the canonical English genre its icon stands for (<code>horror</code>, <code>science fiction</code>, <code>game-show</code>…), the same for every spelling and translation (<em>Sci-Fi</em> and <em>Ciencia ficción</em> are both <code>science fiction</code>), or <code>other</code>. Tag Styles colour one genre through it: <code>.genre-tag[data-je-genre="horror"]</code>.</li>
 <li>Target the exact name the item has through its title, such as <code>.genre-tag[title="Drama"]</code>.</li>
 </ul>
 <p>By default, text appears on hover and floats inward from the selected corner. To keep labels visible inside wider chips:</p>
@@ -3685,7 +3440,7 @@
 </span></code></pre></div>
 <p>Changing <code>display</code> alone does not reveal text hidden by opacity. Every genre chip carries its <code>.genre-text</code> span; in the Summary and Minimal hover reveal it is shown inline. Long labels can cover more of the poster.</p>
 <p>When a card is revealed (hovered, focused, or a preview's <strong>Hover</strong> view), each floating name is fitted to the room beside its icon and marked <code>data-je-genre-fit</code>: <code>side</code> (beside its icon, with an inline <code>max-width</code>), <code>list</code> (one line under or over a row of icons, with inline <code>left</code>, <code>top</code> and <code>max-width</code>) or <code>hidden</code> (no room; <code>display: none</code>). Names your CSS makes <code>position: static</code>, as above, are never marked or moved. The same pass places a card's <code>.je-tag-more-tip</code> (the names behind its <code>+N</code> chips) with an inline <code>top</code> and marks it <code>data-je-tip-fit</code>: <code>placed</code>, or <code>hidden</code> (no free band; <code>display: none</code>).</p>
-<h3 id="language-tags-css">Language Tags CSS<a class="headerlink" href="#language-tags-css" title="Permanent link">¶</a></h3>
+<h3 id="language-tags-css">Language Tags CSS<a class="headerlink" href="#language-tags-css" title="Permanent link">&para;</a></h3>
 <p>Use <code>.language-overlay-container</code> and <code>.language-flag</code> to style language flags. Personal <strong>Language</strong> → <strong>Priority</strong> changes the eligible chips and their order before caps; hiding a chip with CSS does not promote another language. Tooltips and accessible labels identify Audio/Subtitles, full language names and partial coverage; count badges include the count and audio-language names. Existing chip selectors are unchanged.</p>
 <p>The personal hub editor is scoped to <code>#jellyfin-enhanced-panel .je-language-priority</code>. Its ordered list uses <code>[data-language-priority-list]</code> and <code>[data-language-priority-code]</code>; these are settings controls, separate from poster chips.</p>
 <ul>
@@ -3741,13 +3496,13 @@
 </span></code></pre></div>
 <p>Partial flags normally use opacity <code>0.55</code>, saturation <code>0.5</code>, a dashed outline, and a dark shadow ring.</p>
 <p>This recipe keeps the existing ring and outline offset. Add <code>box-shadow: none !important</code> or <code>outline-offset: 0 !important</code> if desired.</p>
-<h3 id="rating-tags-css">Rating Tags CSS<a class="headerlink" href="#rating-tags-css" title="Permanent link">¶</a></h3>
+<h3 id="rating-tags-css">Rating Tags CSS<a class="headerlink" href="#rating-tags-css" title="Permanent link">&para;</a></h3>
 <p>Use <code>.rating-overlay-container</code>, <code>.rating-tag</code>, and <code>.rating-text</code> to style poster scores. Community and critic chips have separate hooks:</p>
 <ul>
 <li><code>.rating-tag-tmdb</code> displays Jellyfin's <code>CommunityRating</code>; the class name does not guarantee TMDB supplied the metadata. Its star is <code>.rating-star-icon</code>.</li>
 <li>Critic chips use <code>.rating-tag-critic</code> and <code>.rating-tomato-icon.fresh</code> or <code>.rating-tomato-icon.rotten</code>. Scores below 60 are rotten, and scores of 60 or more are fresh.</li>
 </ul>
-<p>Use the <a href="../../enhanced/tags/#rating-tags">Rating Tags scope controls</a> to choose item types and home rows; that guide covers administrator defaults and personal overrides.</p>
+<p>Use the <a href="../../enhanced/tags-groups/#rating-tags">Rating Tags scope controls</a> to choose item types and home rows; that guide covers administrator defaults and personal overrides.</p>
 <p><strong>Change the community-score background:</strong></p>
 <div class="language-css highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="p">.</span><span class="nc">rating-tag-tmdb</span><span class="w"> </span><span class="p">{</span>
 </span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">    </span><span class="k">background</span><span class="p">:</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mf">0.9</span><span class="p">)</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
@@ -3760,9 +3515,9 @@
 </span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Using <code>.rating-tag-critic</code> without the exclusion also hides user-review chips.</p>
-<h4 id="user-review-poster-chips">User-review poster chips<a class="headerlink" href="#user-review-poster-chips" title="Permanent link">¶</a></h4>
+<h4 id="user-review-poster-chips">User-review poster chips<a class="headerlink" href="#user-review-poster-chips" title="Permanent link">&para;</a></h4>
 <p>These chips show the aggregate 1–5 review average converted to a /10 score.</p>
-<p>They require a resolvable TMDB item key, personal <strong>Show Rating Tags</strong>, and the following admin settings under <strong>Elsewhere &amp; Reviews</strong> → <strong>User Reviews</strong>:</p>
+<p>They require a resolvable TMDB item key, personal <strong>Show Rating Tags</strong>, and the following admin settings under <a href="../../open-in-jellyfin/?tab=elsewhere&amp;card=user-reviews"><strong>Elsewhere &amp; Reviews</strong> → <strong>User Reviews</strong></a>:</p>
 <table>
 <thead>
 <tr>
@@ -3797,7 +3552,7 @@
 </span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>See <a href="../../elsewhere/elsewhere-features/#user-reviews">User Reviews</a> for writing and managing reviews.</p>
-<h3 id="logo-tags-css">Logo Tags CSS<a class="headerlink" href="#logo-tags-css" title="Permanent link">¶</a></h3>
+<h3 id="logo-tags-css">Logo Tags CSS<a class="headerlink" href="#logo-tags-css" title="Permanent link">&para;</a></h3>
 <p>The Logos group renders <code>.logo-overlay-container</code> with one <code>.je-logo-chip</code> per logo. Each chip carries <code>data-je-logo-kind</code> (<code>provider</code>, <code>network</code> or <code>studio</code>) and <code>data-je-logo-style</code>: <code>provider</code> (a provider logo on its dark pill), <code>company</code> (a network or studio logo on its light pill) or <code>text</code> (the name chip, also used when an image fails to load). Image chips hold an <code>img.je-logo-img</code> served by the plugin's logo route; the chip's <code>title</code> and the image's <code>alt</code> are the full name.</p>
 <p><strong>Square provider logos without a pill, larger network logos:</strong></p>
 <div class="language-css highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="p">.</span><span class="nc">je-logo-chip</span><span class="o">[</span><span class="nt">data-je-logo-style</span><span class="o">=</span><span class="s2">"provider"</span><span class="o">]</span><span class="w"> </span><span class="p">{</span>
@@ -3811,7 +3566,7 @@
 </span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Tag Styles colour the three pill kinds with stronger important rules on the <strong>Logos</strong> tab. Native Poster Tags draw the default pills (or the Tag Styles colours) and ignore custom CSS.</p>
-<h3 id="age-rating-tags-css">Age Rating Tags CSS<a class="headerlink" href="#age-rating-tags-css" title="Permanent link">¶</a></h3>
+<h3 id="age-rating-tags-css">Age Rating Tags CSS<a class="headerlink" href="#age-rating-tags-css" title="Permanent link">&para;</a></h3>
 <p>Use <code>.age-rating-overlay-container</code> and <code>.age-rating-tag[rating="…"]</code> to style poster certifications.</p>
 <p>The attribute holds a normalized rating, not necessarily the raw metadata spelling. For example, <code>DE-12</code> and <code>FSK 12</code> become <code>FSK-12</code>, and supported unrated names become <code>NR</code>. Inspect it before writing a selector.</p>
 <p><strong>Resize and recolor the poster badge:</strong></p>
@@ -3825,7 +3580,7 @@
 </span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Poster badges independently reuse rating-specific colors from the Colored Ratings stylesheet, stripping its important flags. The TV-MA rule beats those shipped colors but loses to a more specific important admin age Tag Style. The fallback is blue-grey.</p>
-<p>Detail/player certifications use <code>.mediaInfoOfficialRating</code>, a separate surface. The administrator controls their colors under <strong>Extras</strong> → <strong>UI Tweaks</strong>.</p>
+<p>Detail/player certifications use <code>.mediaInfoOfficialRating</code>, a separate surface. The administrator controls their colors under <a href="../../open-in-jellyfin/?tab=extras&amp;card=ui-tweaks"><strong>Extras</strong> → <strong>UI Tweaks</strong></a>.</p>
 <table>
 <thead>
 <tr>
@@ -3847,7 +3602,7 @@
 </span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">    </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#000</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
 </span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="p">}</span>
 </span></code></pre></div>
-<h3 id="status-tags-css">Status Tags CSS<a class="headerlink" href="#status-tags-css" title="Permanent link">¶</a></h3>
+<h3 id="status-tags-css">Status Tags CSS<a class="headerlink" href="#status-tags-css" title="Permanent link">&para;</a></h3>
 <p>Use <code>.status-overlay-container</code> and <code>.status-tag</code> to style the Just Added, New and trending badges. Each badge also carries one kind class: <code>.status-tag--trending</code>, <code>.status-tag--new</code> (New Movie, New Series, New Episode) or <code>.status-tag--added</code> (Just Added). The <code>#N</code> inside a trending badge is <code>.status-tag-rank</code>.</p>
 <p><strong>Give each kind its own colour:</strong></p>
 <div class="language-css highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="p">.</span><span class="nc">status-tag--trending</span><span class="w"> </span><span class="p">{</span>
@@ -3863,7 +3618,7 @@
 </span><span id="__span-18-11"><a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>The default look is a dark translucent pill with a blurred backdrop, the same for every kind except the warmer rank colour. Status Tags are not part of Tag Styles.</p>
-<p>The opt-in <a href="../../enhanced/tags/#leaving-soon-maintainerr">Leaving soon</a> badges are <code>.status-tag--leaving</code> with <code>data-je-status="leaving"</code>; the <a href="../../enhanced/tags/#direct-play-warning">direct-play warning</a> is <code>.status-tag--playback</code> with <code>data-je-status="direct_play"</code> and <code>data-je-dp</code>, which takes pointer events so its <code>title</code> tooltip shows:</p>
+<p>The opt-in <a href="../../enhanced/tags-status/#leaving-soon-maintainerr-or-reclaimerr">Leaving soon</a> badges are <code>.status-tag--leaving</code> with <code>data-je-status="leaving"</code>; the <a href="../../enhanced/tags-status/#direct-play-warning">direct-play warning</a> is <code>.status-tag--playback</code> with <code>data-je-status="direct_play"</code> and <code>data-je-dp</code>, which takes pointer events so its <code>title</code> tooltip shows:</p>
 <div class="language-css highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="p">.</span><span class="nc">status-tag--leaving</span><span class="w"> </span><span class="p">{</span>
 </span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="w">    </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">150</span><span class="p">,</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w"> </span><span class="mf">0.85</span><span class="p">)</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
 </span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="p">}</span>
@@ -3872,8 +3627,8 @@
 </span><span id="__span-19-6"><a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="w">    </span><span class="k">border-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#ffb300</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
 </span><span id="__span-19-7"><a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="p">}</span>
 </span></code></pre></div>
-<h3 id="custom-tags-css">Custom Tags CSS<a class="headerlink" href="#custom-tags-css" title="Permanent link">¶</a></h3>
-<p>Each <a href="../../enhanced/tags/#custom-tags">Custom tag</a> chip is a <code>.custom-tag</code> inside <code>.custom-overlay-container</code>, with the label in <code>.custom-tag-text</code> and, when the rule has an icon, a <code>.custom-tag-icon</code> before it (the chip then also has <code>.custom-tag--icon</code>). <code>data-je-custom</code> holds the label (Tag Styles colour chips through it) and <code>data-je-custom-rule</code> the rule id (<code>tag:</code> or <code>collection:</code> and an opaque hash, for example <code>collection:9f2c1e0b7a6d5c4e</code>; style by label, since the id changes if the rule is re-targeted). The default look is a dark blue-grey chip with a faint border.</p>
+<h3 id="custom-tags-css">Custom Tags CSS<a class="headerlink" href="#custom-tags-css" title="Permanent link">&para;</a></h3>
+<p>Each <a href="../../enhanced/tags-groups/#custom-tags">Custom tag</a> chip is a <code>.custom-tag</code> inside <code>.custom-overlay-container</code>, with the label in <code>.custom-tag-text</code> and, when the rule has an icon, a <code>.custom-tag-icon</code> before it (the chip then also has <code>.custom-tag--icon</code>). <code>data-je-custom</code> holds the label (Tag Styles colour chips through it) and <code>data-je-custom-rule</code> the rule id (<code>tag:</code> or <code>collection:</code> and an opaque hash, for example <code>collection:9f2c1e0b7a6d5c4e</code>; style by label, since the id changes if the rule is re-targeted). The default look is a dark blue-grey chip with a faint border.</p>
 <p><strong>Colour one label and hide the icons:</strong></p>
 <div class="language-css highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="p">.</span><span class="nc">custom-tag</span><span class="o">[</span><span class="nt">data-je-custom</span><span class="o">=</span><span class="s2">"Criterion"</span><span class="o">]</span><span class="w"> </span><span class="p">{</span>
 </span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="w">    </span><span class="k">background-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#111</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
@@ -3885,7 +3640,7 @@
 </span><span id="__span-20-8"><a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Tag Styles (<strong>Custom</strong> tab) sets the same colours without CSS, for native posters too.</p>
-<h3 id="people-tags-css">People Tags CSS<a class="headerlink" href="#people-tags-css" title="Permanent link">¶</a></h3>
+<h3 id="people-tags-css">People Tags CSS<a class="headerlink" href="#people-tags-css" title="Permanent link">&para;</a></h3>
 <p>People tags appear on cast and guest-cast portraits on item detail pages. Use the hooks below to style age chips and birthplace banners.</p>
 <p>Birth/death and item-release metadata determine current age, age at death, and age at release. Birthplace text needs birthplace metadata; flags also need a recognized country.</p>
 <table>
@@ -3959,8 +3714,8 @@
 </span><span id="__span-22-6"><a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="w">    </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="kc">gold</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
 </span><span id="__span-22-7"><a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="p">}</span>
 </span></code></pre></div>
-<h3 id="arr-tag-links">*arr Tag Links<a class="headerlink" href="#arr-tag-links" title="Permanent link">¶</a></h3>
-<p>Enable <strong>Show synced tags as links</strong> under the admin <strong>*arr</strong> → <strong>Tags Sync</strong> section. Matching tags already present on an item become links in <code>.itemExternalLinks</code> on its detail page. Importing tags is a separate operation; see <a href="../../arr/arr-features/">*arr Features</a>.</p>
+<h3 id="arr-tag-links">*arr Tag Links<a class="headerlink" href="#arr-tag-links" title="Permanent link">&para;</a></h3>
+<p>Enable <strong>Show synced tags as links</strong> under the admin <a href="../../open-in-jellyfin/?tab=arr&amp;card=tags-sync"><strong>*arr</strong> → <strong>Tags Sync</strong></a> section. Matching tags already present on an item become links in <code>.itemExternalLinks</code> on its detail page. Importing tags is a separate operation; see <a href="../../arr/arr-features/">*arr Features</a>.</p>
 <table>
 <thead>
 <tr>
@@ -4022,7 +3777,7 @@
 </tbody>
 </table>
 <p>The *<em>Sync Tags from <em>arr to Jellyfin</em></em> task has no default triggers; run it manually or configure a schedule.</p>
-<h4 id="link-structure-and-attributes">Link structure and attributes<a class="headerlink" href="#link-structure-and-attributes" title="Permanent link">¶</a></h4>
+<h4 id="link-structure-and-attributes">Link structure and attributes<a class="headerlink" href="#link-structure-and-attributes" title="Permanent link">&para;</a></h4>
 <p>This illustrative link uses the factory prefix. Replace the item/server placeholders with actual values when inspecting your page:</p>
 <div class="language-html highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="p">&lt;</span><span class="nt">a</span> <span class="na">is</span><span class="o">=</span><span class="s">"emby-linkbutton"</span>
 </span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>   <span class="na">class</span><span class="o">=</span><span class="s">"button-link emby-button arr-tag-link"</span>
@@ -4098,7 +3853,7 @@
 <p>ASCII letters, digits, hyphens, and underscores survive. For example, <code>1 - n00bcodr</code> becomes <code>1-n00bcodr</code>.</p>
 </details>
 <p>Links navigate to <code>#!/list.html?type=tag&amp;tag=&lt;encoded full tag&gt;&amp;serverId=&lt;server&gt;</code>. JE uses <code>Dashboard.navigate</code> when available and the equivalent hash otherwise.</p>
-<h4 id="common-recipes">Common recipes<a class="headerlink" href="#common-recipes" title="Permanent link">¶</a></h4>
+<h4 id="common-recipes">Common recipes<a class="headerlink" href="#common-recipes" title="Permanent link">&para;</a></h4>
 <p>Use these recipes to change link labels, visibility, icons, or colors.</p>
 <p><strong>Rename a visible label:</strong></p>
 <div class="language-css highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="p">.</span><span class="nc">itemExternalLinks</span><span class="w"> </span><span class="nt">a</span><span class="p">.</span><span class="nc">arr-tag-link</span><span class="o">[</span><span class="nt">data-tag-name</span><span class="o">=</span><span class="s2">"1 - n00bcodr"</span><span class="o">]</span><span class="w"> </span><span class="p">.</span><span class="nc">arr-tag-link-text</span><span class="w"> </span><span class="p">{</span>
@@ -4151,7 +3906,7 @@
 </span><span id="__span-28-13"><a id="__codelineno-28-13" name="__codelineno-28-13" href="#__codelineno-28-13"></a><span class="w">    </span><span class="k">color</span><span class="p">:</span><span class="w"> </span><span class="mh">#8dd0ff</span><span class="p">;</span>
 </span><span id="__span-28-14"><a id="__codelineno-28-14" name="__codelineno-28-14" href="#__codelineno-28-14"></a><span class="p">}</span>
 </span></code></pre></div>
-<h4 id="configurable-icons">Configurable icons<a class="headerlink" href="#configurable-icons" title="Permanent link">¶</a></h4>
+<h4 id="configurable-icons">Configurable icons<a class="headerlink" href="#configurable-icons" title="Permanent link">&para;</a></h4>
 <p>These admin settings control configurable JE icons:</p>
 <table>
 <thead>
@@ -4194,10 +3949,10 @@
 </span></code></pre></div>
 <p>Target the outer <code>.arr-tag-link-icon</code> to handle all renderers. A CSS <code>::before</code> replacement stays visible even with configurable icons off.</p>
 <p>Genre and people tags emit their own Material Symbols hooks and are not governed by this configurable icon switch.</p>
-<h2 id="enhanced-panel">Enhanced Panel<a class="headerlink" href="#enhanced-panel" title="Permanent link">¶</a></h2>
+<h2 id="enhanced-panel">Enhanced Panel<a class="headerlink" href="#enhanced-panel" title="Permanent link">&para;</a></h2>
 <p>Open <strong>Enhanced Panel</strong> from the sidebar to preview panel styling.</p>
 <p>Other entry points use <strong>Jellyfin Enhanced</strong> or <strong>Jellyfin Enhanced - User Settings</strong>, depending on the surface. See <a href="../../getting-started/settings-overview/">Settings Overview</a> for access and personal settings.</p>
-<h3 id="automatic-theme-detection">Automatic theme detection<a class="headerlink" href="#automatic-theme-detection" title="Permanent link">¶</a></h3>
+<h3 id="automatic-theme-detection">Automatic theme detection<a class="headerlink" href="#automatic-theme-detection" title="Permanent link">&para;</a></h3>
 <p>Check these variables when customizing how the panel uses your theme's colors and effects.</p>
 <p>JE checks identifying root CSS variables for Jellyfish, ElegantFin, and Zesty, in that order. The first nonempty identifier other than <code>none</code> wins. Other themes receive Default styling. These variables are supplied by themes, not defined by JE.</p>
 <table>
@@ -4232,7 +3987,7 @@
 <p>Missing values have fallbacks. Detection is cached, but JE reads the selected theme's values again when constructing a panel and inserts them as literal styles.</p>
 <p>Zesty's <code>--rounding</code> feeds JE's blur input. Some surfaces, including the panel root and phone content background, also have fixed defaults.</p>
 </details>
-<h3 id="shell-and-navigation-hooks">Shell and navigation hooks<a class="headerlink" href="#shell-and-navigation-hooks" title="Permanent link">¶</a></h3>
+<h3 id="shell-and-navigation-hooks">Shell and navigation hooks<a class="headerlink" href="#shell-and-navigation-hooks" title="Permanent link">&para;</a></h3>
 <p>Use these hooks to style the panel's layout and section navigation. Scope these classes to <code>#jellyfin-enhanced-panel</code>.</p>
 <table>
 <thead>
@@ -4305,7 +4060,7 @@
 </ul>
 <p>Search matches pane text and filters navigation entries; Back returns to the list. Preserve <code>.active</code>, inactive-pane visibility, <code>.je-pane-open</code>, and the phone layers' <code>inert</code> focus restrictions.</p>
 <p>Entry-point hooks outside the panel are <code>.jellyfinEnhancedSection</code>, <code>#jellyfinEnhancedSettingsLink</code>, <code>#jellyfinEnhancedUserMenuLink</code>, <code>#jellyfinEnhancedUserPrefsLink</code>, and <code>#enhancedSettingsBtn</code>. The player entry is hidden under <code>.layout-desktop</code>.</p>
-<h3 id="panel-surfaces-and-header">Panel surfaces and header<a class="headerlink" href="#panel-surfaces-and-header" title="Permanent link">¶</a></h3>
+<h3 id="panel-surfaces-and-header">Panel surfaces and header<a class="headerlink" href="#panel-surfaces-and-header" title="Permanent link">&para;</a></h3>
 <p>Changing the root background alone leaves backgrounds on the body, navigation, and phone content area intact. This recipe changes those surfaces together:</p>
 <div class="language-css highlight"><pre><span></span><code><span id="__span-30-1"><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="p">#</span><span class="nn">jellyfin-enhanced-panel</span><span class="w"> </span><span class="p">{</span>
 </span><span id="__span-30-2"><a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a><span class="w">    </span><span class="k">background</span><span class="p">:</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">25</span><span class="p">,</span><span class="w"> </span><span class="mi">35</span><span class="p">,</span><span class="w"> </span><span class="mi">45</span><span class="p">,</span><span class="w"> </span><span class="mf">0.85</span><span class="p">)</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
@@ -4345,7 +4100,7 @@
 </span></code></pre></div>
 <p>The panel's first element is an embedded style element, so select <code>.panel-header</code> directly. The title is the header's first child.</p>
 <p>On phones, transparent content can reveal the navigation layer beneath. Use an opaque <code>.je-panel-main</code> background if that is distracting.</p>
-<h3 id="navigation-and-headings">Navigation and headings<a class="headerlink" href="#navigation-and-headings" title="Permanent link">¶</a></h3>
+<h3 id="navigation-and-headings">Navigation and headings<a class="headerlink" href="#navigation-and-headings" title="Permanent link">&para;</a></h3>
 <p>This recipe changes navigation-button colors, the selected-entry marker, and section headings.</p>
 <div class="language-css highlight"><pre><span></span><code><span id="__span-31-1"><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a><span class="p">#</span><span class="nn">jellyfin-enhanced-panel</span><span class="w"> </span><span class="p">.</span><span class="nc">tab-button</span><span class="w"> </span><span class="p">{</span>
 </span><span id="__span-31-2"><a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a><span class="w">    </span><span class="k">background</span><span class="p">:</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mf">0.2</span><span class="p">)</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
@@ -4371,7 +4126,7 @@
 </span><span id="__span-31-22"><a id="__codelineno-31-22" name="__codelineno-31-22" href="#__codelineno-31-22"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Current sections use panes and navigation buttons. Settings-section <code>details</code>/<code>summary</code> recipes from older panel versions do not match this structure.</p>
-<h3 id="controls-and-previews">Controls and previews<a class="headerlink" href="#controls-and-previews" title="Permanent link">¶</a></h3>
+<h3 id="controls-and-previews">Controls and previews<a class="headerlink" href="#controls-and-previews" title="Permanent link">&para;</a></h3>
 <p>Use these hooks for targeted styling. Prefix each selector with <code>#jellyfin-enhanced-panel</code>.</p>
 <p>Conditional controls appear only when their feature is available.</p>
 <table>
@@ -4475,7 +4230,7 @@
 </span><span id="__span-32-2"><a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a><span class="w">    </span><span class="k">accent-color</span><span class="p">:</span><span class="w"> </span><span class="mh">#aa5cc3</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
 </span><span id="__span-32-3"><a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a><span class="p">}</span>
 </span></code></pre></div>
-<h3 id="shortcut-keys-and-about-actions">Shortcut keys and About actions<a class="headerlink" href="#shortcut-keys-and-about-actions" title="Permanent link">¶</a></h3>
+<h3 id="shortcut-keys-and-about-actions">Shortcut keys and About actions<a class="headerlink" href="#shortcut-keys-and-about-actions" title="Permanent link">&para;</a></h3>
 <p>Use the following recipe to style shortcut keys while keeping editing feedback visible.</p>
 <p>Shortcut hooks include <code>.shortcuts-container</code>, <code>#shortcuts-content</code>, <code>.shortcut-key[data-action="…"]</code>, <code>.shortcut-toggle</code>, <code>.modified-indicator</code>, and <code>.shake-error</code>.</p>
 <p>Readonly chips have <code>data-readonly="1"</code> and are excluded from editing. Editable chips listen while focused; keep their focus, listening, and error feedback visible.</p>
@@ -4509,7 +4264,7 @@
 </span><span id="__span-34-9"><a id="__codelineno-34-9" name="__codelineno-34-9" href="#__codelineno-34-9"></a><span class="w">    </span><span class="k">background</span><span class="p">:</span><span class="w"> </span><span class="nb">rgba</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mf">0.15</span><span class="p">)</span><span class="w"> </span><span class="cp">!important</span><span class="p">;</span>
 </span><span id="__span-34-10"><a id="__codelineno-34-10" name="__codelineno-34-10" href="#__codelineno-34-10"></a><span class="p">}</span>
 </span></code></pre></div>
-<h2 id="notifications">Notifications<a class="headerlink" href="#notifications" title="Permanent link">¶</a></h2>
+<h2 id="notifications">Notifications<a class="headerlink" href="#notifications" title="Permanent link">&para;</a></h2>
 <p>Use these recipes to change toast and release-note styling. Both are separate body-level elements, so panel-scoped rules do not reach them.</p>
 <ul>
 <li>Toasts use <code>.jellyfin-enhanced-toast</code> with ordinary inline styles and transform animation.</li>
@@ -4549,7 +4304,7 @@
 </table>
 <p>Release notes uses a separate 20-second idle-close timer. CSS transitions do not change JavaScript removal timers.</p>
 <p>Keep transform animation intact when changing notification styling.</p>
-<h2 id="player-rating-surfaces">Player rating surfaces<a class="headerlink" href="#player-rating-surfaces" title="Permanent link">¶</a></h2>
+<h2 id="player-rating-surfaces">Player rating surfaces<a class="headerlink" href="#player-rating-surfaces" title="Permanent link">&para;</a></h2>
 <p>Player ratings have different hooks from poster badges. Enable the relevant admin setting, start playback, and inspect the player controls or startup card.</p>
 <table>
 <thead>
@@ -4589,7 +4344,7 @@
 </span><span id="__span-36-7"><a id="__codelineno-36-7" name="__codelineno-36-7" href="#__codelineno-36-7"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Keep <code>.je-visible</code> and the timed visibility behavior intact. See <a href="../../enhanced/enhanced-features/#playback-controls">Enhanced Features</a> for playback features.</p>
-<h2 id="subtitle-sync-list">Subtitle sync list<a class="headerlink" href="#subtitle-sync-list" title="Permanent link">¶</a></h2>
+<h2 id="subtitle-sync-list">Subtitle sync list<a class="headerlink" href="#subtitle-sync-list" title="Permanent link">&para;</a></h2>
 <p>The <a href="../../enhanced/enhanced-features/#subtitle-sync">Subtitle Sync</a> button is <code>#je-subtitle-sync-btn</code>, placed right after the player's <code>.btnSubtitles</code>. The list is <code>#je-subtitle-sync</code> (the backdrop) around <code>.je-subsync-dialog</code>.</p>
 <table>
 <thead>
@@ -4627,7 +4382,7 @@
 </span><span id="__span-37-7"><a id="__codelineno-37-7" name="__codelineno-37-7" href="#__codelineno-37-7"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Keep rows' <code>hidden</code> attribute working: searching hides rows with it.</p>
-<h2 id="other-styling-hooks">Other styling hooks<a class="headerlink" href="#other-styling-hooks" title="Permanent link">¶</a></h2>
+<h2 id="other-styling-hooks">Other styling hooks<a class="headerlink" href="#other-styling-hooks" title="Permanent link">&para;</a></h2>
 <p>These surfaces appear outside the Enhanced panel. Follow the linked feature guides for setup, then inspect the actual elements before applying styles.</p>
 <p>Turn on the relevant per-user setting in <strong>Random Button Settings</strong> or <strong>UI Settings</strong>.</p>
 <p>The table shows factory plugin/client defaults. New user settings are seeded from the administrator's defaults.</p>
@@ -4727,7 +4482,7 @@
 </span></code></pre></div>
 <p>The animation override stops both random-button hover and loading animation. Keep loading and disabled actions identifiable.</p>
 <p>In the Seerr form, the radio input must remain immediately before its option span. Checked/focus styles use that sibling relationship and consume <code>--primary-accent-color</code> with a fallback.</p>
-<h3 id="tag-size-and-gap-hooks">Tag size and gap hooks<a class="headerlink" href="#tag-size-and-gap-hooks" title="Permanent link">¶</a></h3>
+<h3 id="tag-size-and-gap-hooks">Tag size and gap hooks<a class="headerlink" href="#tag-size-and-gap-hooks" title="Permanent link">&para;</a></h3>
 <p>The layout controller sets two unitless custom properties on each <code>.je-tag-host</code> and its external <code>.je-tag-caption</code> outlet:</p>
 <table>
 <thead>
@@ -4757,17 +4512,19 @@
 </span><span id="__span-39-4"><a id="__codelineno-39-4" name="__codelineno-39-4" href="#__codelineno-39-4"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Saved size and gap choices also affect native posters; custom web CSS does not affect composited images. Prefer the built-in controls when the same appearance is needed in both.</p>
-<h3 id="awards-chips">Awards chips<a class="headerlink" href="#awards-chips" title="Permanent link">¶</a></h3>
+<h3 id="awards-chips">Awards chips<a class="headerlink" href="#awards-chips" title="Permanent link">&para;</a></h3>
 <p>The Awards wrapper is <code>.awards-overlay-container</code>, placed by the shared tag layout controller. Each <code>.awards-tag[data-je-award]</code> contains <code>.awards-tag-logo</code> (decorative bundled SVG) and a text span. Stable ids are <code>imdbTop250</code>, <code>certifiedFresh</code>, <code>oscar</code>, <code>emmy</code>, <code>letterboxdTop250</code>. The chip's title and accessible label include rank/year when known. On linked posters the layout wraps chips in <code>.awards-link</code> anchors (<code>tabindex="-1"</code>) so hover titles and poster navigation remain reachable. Layout slots, caption outlets, caps and hover suppression apply as for other groups. Tag Styles supplies Awards group and per-label background/text/inner-border colours. SVG source colours remain their identifying colours; CSS cannot change native image pixels.</p>
-<h3 id="quality-stream-display">Quality stream display<a class="headerlink" href="#quality-stream-display" title="Permanent link">¶</a></h3>
+<h3 id="quality-stream-display">Quality stream display<a class="headerlink" href="#quality-stream-display" title="Permanent link">&para;</a></h3>
 <p>All-mode chips reuse <code>.quality-overlay-label</code>, <code>.audio-codec</code>, <code>.video-format</code> and <code>.video-codec</code> inside <code>.quality-overlay-container</code>. Each distinct sound codec/channel combination is a separate chip; <code>data-quality</code> retains its base codec for existing colour selectors. SDR uses <code>.video-codec[data-quality="SDR"]</code> and is also an editable Tag Styles label. There is no new wrapper or per-card layout measurement. Minimum-resolution and Hide SDR filtering remove chips before layout and overflow fitting, so CSS does not need to hide them.</p>
-<h3 id="technical-quality-sdh-and-scenes-hooks">Technical quality, SDH and Scenes hooks<a class="headerlink" href="#technical-quality-sdh-and-scenes-hooks" title="Permanent link">¶</a></h3>
+<h3 id="technical-quality-sdh-and-scenes-hooks">Technical quality, SDH and Scenes hooks<a class="headerlink" href="#technical-quality-sdh-and-scenes-hooks" title="Permanent link">&para;</a></h3>
 <p>Technical chips retain <code>.quality-overlay-label.other-quality</code> with <code>data-je-quality-category="runtime"</code>, <code>"aspectRatio"</code> or <code>"frameRate"</code>; <code>data-quality</code> uses the same stable category id. <code>data-je-compact</code> contains the shortened display text. They inherit Quality Tag Styles. SDH subtitle chips keep <code>.language-chip</code>, <code>.language-cc</code> and <code>data-je-language="subtitles"</code>, and add <code>data-je-sdh="true"</code>; the marker and accessible tooltip survive Summary presentation. Status scene chips use <code>.status-tag--scenes</code> and <code>data-je-status="post_credits"</code> / <code>"mid_credits"</code>, available as Status labels in Tag Styles. These hooks exist only when the corresponding chips are shown.</p>
 <p>Flush box chips and genre chips (<code>.genre-tag</code>) retain their border-box size, with transparent touching-side borders, square corners against the edge and <code>clip-path</code> clipping only those sides of the shadow. The inward shadow and border keep their group styles, and a genre's floating <code>.genre-text</code> name is not clipped. Language flag images keep their shape. Centre rows use <code>--je-anchor-reserve</code> to fit between indicators; <code>data-je-flush-detached</code> marks a top-centre row that must move below them because its first chip cannot fit. Bottom-centre Flush uses the progress bar's top edge directly. These rules apply only to Corners hosts with <code>data-je-edge="flush"</code>.</p>
 <p>Flush also styles direct <code>.je-tag-more</code> overflow chips. Configured Rating/Awards inner rings keep <code>outline-offset: -1px</code>; touching chips paint the ring through an inert <code>::after</code> border with only inward sides. Centre chips retain their ordinary outline. Scoped Media Tags previews use the same Flush rules.</p>
 <p>Middle-side Corners slots (<code>data-je-slot="ml"</code> / <code>"mr"</code>) receive <code>--je-anchor-width</code> from the batched fit pass. A first centre chip constrained to its slot carries <code>data-je-fit-width</code> and <code>--je-chip-fit-width</code>; its text uses an ellipsis. For link-wrapped Awards and Language chips, the wrapper carries the width budget through to the actual chip; truncate the label inside that chip to preserve its rounded inward edge, border and ring. Flush paint reaches the chip through its transparent link. These are measured geometry hooks: overriding them can overlap the opposite side. Genre hover names remain inside the same width budget.</p>
 <p>Language text chips (<code>.language-chip</code>, including <code>.language-code</code> and <code>.language-count-badge</code>) share <code>tagRenderer.chipBaseCss</code> with quality chips. <code>data-je-language-label</code> is the lowercase displayed code or <code>dual</code>/<code>multi</code>; Tag Styles paints it over the kind and language-group colours. <code>.language-flag</code> images keep their ring, and <code>.language-flag-partial</code> only adds the dashed treatment on images (text chips dim).</p>
 <p>The item editor sample (<code>.je-tie-card</code>) is focusable and labelled. Its <code>.je-tie-view [data-view]</code> buttons pin <strong>Hover</strong> or return to <strong>Resting</strong>; pointer and focus interaction share the hub preview helper and toggle <code>.je-tag-reveal</code> on that sample.</p>
+
+
 
 
 
@@ -4791,9 +4548,9 @@
 <script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
         </div>
         
-          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
   
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
   Back to top
 </button>
         
@@ -4803,17 +4560,17 @@
   
     
       
-      <nav class="md-footer__inner md-grid" aria-label="Footer">
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../other/other-settings/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Settings (Other)">
+          <a href="../community-analytics-settings/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Settings">
             <div class="md-footer__button md-icon">
               
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"></path></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"/></svg>
             </div>
             <div class="md-footer__title">
               <span class="md-footer__direction">
-                Previous · Other
+                Previous
               </span>
               <div class="md-ellipsis">
                 Settings
@@ -4823,10 +4580,10 @@
         
         
           
-          <a href="../api/" class="md-footer__link md-footer__link--next" aria-label="Next: API (Advanced)">
+          <a href="../api/" class="md-footer__link md-footer__link--next" aria-label="Next: API">
             <div class="md-footer__title">
               <span class="md-footer__direction">
-                Next · Advanced
+                Next
               </span>
               <div class="md-ellipsis">
                 API
@@ -4834,7 +4591,7 @@
             </div>
             <div class="md-footer__button md-icon">
               
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z"></path></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
             </div>
           </a>
         
@@ -4849,13 +4606,13 @@
   </p>
   
     <div class="md-copyright__highlight">
-      Copyright ©2026 n00bcodr. Made with 💜 for Jellyfin and the community
+      Copyright &copy;2026 n00bcodr. Made with 💜 for Jellyfin and the community
     </div>
   
   
     Made with
-    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
-      Material for MkDocs
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
     </a>
   
 </div>
@@ -4868,7 +4625,7 @@
     
     
     <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
     </a>
   
     
@@ -4876,7 +4633,7 @@
     
     
     <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"></path></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
     </a>
   
 </div>
@@ -4886,25 +4643,28 @@
 </footer>
       
     </div>
-    <div class="md-dialog" data-md-component="dialog">
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
       <div class="md-dialog__inner md-typeset"></div>
     </div>
     
-      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+      
+<div class="md-progress" data-md-component="progress" role="progressbar" aria-label="Loading"></div>
     
     
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link", "announce.dismiss"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.instant","navigation.instant.progress","navigation.tracking","navigation.tabs","navigation.tabs.sticky","navigation.sections","navigation.indexes","navigation.top","navigation.footer","toc.follow","toc.integrate","search.suggest","search.highlight","search.share","content.code.copy","content.code.annotate","content.tabs.link","announce.dismiss"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"default":"latest","provider":"mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
       
         <script src="../../javascripts/extra.js"></script>
       
     
-  
-<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": false, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
-document$.subscribe(()=>{ lightbox.reload(); });
-</script></body></html>
+  </body>
+</html>

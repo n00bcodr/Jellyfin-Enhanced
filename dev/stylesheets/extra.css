@@ -367,6 +367,24 @@ body {
     box-shadow: 0 24px 48px -16px rgba(0, 0, 0, .6);
   }
 }
+/* Zensical's header search is a button that opens a dialog: give it the same pill look */
+.md-search__button {
+  width: 11.7rem;
+  height: 1.8rem;
+  border-radius: var(--je-pill);
+  background: var(--je-surface-2);
+  border: 1px solid var(--je-border);
+  color: var(--je-text-subtle);
+  font-size: .7rem;
+  transition: background-color .2s, border-color .2s, color .2s;
+}
+.md-search__button:is(:hover, :focus-visible) {
+  background: var(--je-surface-3);
+  border-color: var(--je-border-strong);
+  color: var(--je-text-strong);
+}
+.md-search__button::before { background-color: currentColor; top: .38rem; }
+.md-search__button::after { top: .3rem; background: var(--je-surface-3); color: var(--je-text-muted); border-radius: .3rem; }
 .md-search__scrollwrap,
 .md-search-result,
 .md-search-result__meta { background: var(--je-bg-raised); }
@@ -672,7 +690,6 @@ body {
   /* page outline inside the drawer: lighter rows */
   .md-nav--primary .md-nav--secondary .md-nav__link { font-weight: 400; font-size: .7rem; padding-top: .45rem; padding-bottom: .45rem; }
   .md-nav--primary .md-nav--secondary .md-nav__link::before { display: none; }
-  .md-nav--primary .md-nav--secondary .md-nav__title { display: none; }
 }
 
 /* ---------------------------------------------------------------------
@@ -822,7 +839,7 @@ body {
 .md-typeset h3,
 .md-typeset h4,
 .md-typeset h5,
-.md-typeset h6 { color: var(--je-text-strong); font-weight: 700; letter-spacing: -.01em; }
+.md-typeset h6 { color: var(--je-text-strong); font-weight: 700; letter-spacing: 0; }
 
 .md-typeset h1 {
   font-size: 1.85em;
@@ -841,40 +858,50 @@ body {
   background: var(--je-brand);
 }
 
-/* h2 = the plugin's fieldset legend bar */
+/* h2 = a plain section title with a thin rule; h3 = a lighter sub-title */
 .md-typeset h2 {
-  font-size: 1.12em;
+  font-size: 1.3em;
   line-height: 1.35;
-  margin: 2.4em 0 1em;
-  padding: .62em .9em;
-  border: 1px solid var(--je-border);
-  border-radius: var(--je-radius);
-  background: var(--je-legend);
+  margin: 2.2em 0 .8em;
+  padding: 0 0 .35em;
+  border: 0;
+  border-bottom: 1px solid var(--je-border);
+  border-radius: 0;
+  background: none;
 }
-/* h3 = a settings-row title with the accent marker */
 .md-typeset h3 {
-  position: relative;
-  font-size: 1em;
+  font-size: 1.05em;
   line-height: 1.4;
-  margin: 2em 0 .7em;
-  padding-left: .8em;
-}
-.md-typeset h3::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: .2em;
-  bottom: .2em;
-  width: 3px;
-  border-radius: 3px;
-  background: var(--je-accent);
+  margin: 1.8em 0 .6em;
+  color: var(--je-accent);
 }
 .md-typeset h4 { font-size: .9em; margin: 1.6em 0 .6em; color: var(--je-text-strong); }
 .md-typeset h5, .md-typeset h6 { font-size: .8em; color: var(--je-text-muted); text-transform: none; }
-.md-typeset h2 + h3 { margin-top: 1.2em; }
+.md-typeset h2 + h3 { margin-top: 1em; }
 
 /* permalink anchors */
 .md-typeset .headerlink { color: var(--je-text-subtle); }
+/* show a link icon instead of the pilcrow (Material Design "link", same icon set as the rest of the site) */
+.md-typeset .headerlink {
+  font-size: 0;
+  line-height: 0;
+  position: absolute;
+  inset-inline-end: .9rem;
+  top: 50%;
+  translate: 0 -50%;
+}
+.md-typeset :is(h1, h2, h3, h4, h5, h6) { position: relative; padding-inline-end: 2.4rem; }
+.md-typeset .headerlink::before {
+  content: "";
+  display: inline-block;
+  width: .9rem;
+  height: .9rem;
+  vertical-align: -.1em;
+  background-color: currentColor;
+  -webkit-mask: var(--je-link-icon) center / contain no-repeat;
+  mask: var(--je-link-icon) center / contain no-repeat;
+}
+:root { --je-link-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7a5 5 0 0 0 0 10h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1M8 13h8v-2H8zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4a5 5 0 0 0 0-10"/></svg>'); }
 .md-typeset .headerlink:is(:hover, :focus) ,
 .md-typeset :target > .headerlink { color: var(--je-accent); }
 
@@ -1193,8 +1220,9 @@ body {
     white-space: nowrap;
   }
   .md-typeset table:not([class])[data-je-stack="stack"] tr {
-    margin: 0 0 .4rem;
-    padding: .6rem .75rem .65rem;
+    margin: 0 0 .3rem;
+    padding: .5rem .7rem .55rem;
+    line-height: 1.55;
     background: var(--je-row);
     border: 1px solid var(--je-border);
     border-left: 3px solid var(--je-accent-border);
@@ -1214,7 +1242,7 @@ body {
     font-size: .76rem;
     font-weight: 700;
   }
-  .md-typeset table:not([class])[data-je-stack="stack"] td + td { margin-top: .35rem; }
+  .md-typeset table:not([class])[data-je-stack="stack"] td + td { margin-top: .25rem; }
   /* the column name sits above longer values … */
   .md-typeset table:not([class])[data-je-stack="stack"] td + td::before {
     content: attr(data-label);
@@ -1797,7 +1825,7 @@ body {
   body[data-md-color-scheme="default"] { background: var(--je-backdrop), var(--je-panel); background-attachment: fixed; background-repeat: no-repeat; }
   .md-main__inner { margin-top: .5rem; }
   .md-content__inner { padding-top: .6rem; }
-  .md-typeset h2 { padding: .55em .75em; margin-top: 2em; }
+  .md-typeset h2 { margin-top: 1.8em; }
 }
 
 /* ---------------------------------------------------------------------
@@ -1817,3 +1845,110 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* "Open in Jellyfin" links (open-in-jellyfin.md) open the setting on the reader's own server, in a new tab.
+   Inline: a small split chip (icon block, text, arrow). Standalone (.je-open): a card with the same split. */
+.md-typeset a[href*="open-in-jellyfin/?"] {
+  --je-blue: #00a4dc;
+  color: var(--je-blue); text-decoration: none;
+  border: 1px solid var(--je-blue); overflow: hidden;
+}
+.md-typeset a[href*="open-in-jellyfin/?"] strong { color: inherit; font-weight: 600; }
+.md-typeset a[href*="open-in-jellyfin/?"]::after {
+  content: ""; width: .85em; height: .85em; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* Chip */
+.md-typeset a[href*="open-in-jellyfin/?"]:not(.je-open) {
+  display: inline-flex; align-items: center; vertical-align: middle; gap: .35em;
+  padding: 0 .6em 0 0; border-radius: .4em; font-size: .9em; line-height: 1.6;
+}
+.md-typeset a[href*="open-in-jellyfin/?"]:not(.je-open)::before {
+  content: ""; align-self: stretch; width: 1.7em; margin-right: .2em;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='8' rx='3'/%3E%3Crect x='3' y='12' width='18' height='8' rx='3'/%3E%3Cpath d='M7 8v.01M7 16v.01M11 8h6M11 16h6'/%3E%3C/svg%3E") no-repeat center / 1em, var(--je-blue);
+}
+
+/* Badge card */
+.md-typeset a.je-open {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: .8em;
+  max-width: 21rem; margin: .3em 0 .8em; padding: .45rem .8rem .45rem 3.4rem;
+  border-radius: .5em; line-height: 1.3; font-size: .68rem; color: var(--md-default-fg-color--light);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='8' rx='3'/%3E%3Crect x='3' y='12' width='18' height='8' rx='3'/%3E%3Cpath d='M7 8v.01M7 16v.01M11 8h6M11 16h6'/%3E%3C/svg%3E") no-repeat .7rem center / 1.2rem, linear-gradient(var(--je-blue), var(--je-blue)) no-repeat left / 2.6rem 100%;
+}
+.md-typeset a.je-open::before {
+  content: "Open on your Jellyfin server"; grid-column: 1; font-size: .78rem; font-weight: 600; color: var(--md-default-fg-color);
+}
+.md-typeset a.je-open::after { grid-column: 2; grid-row: 1 / span 2; width: .9rem; height: .9rem; color: var(--je-blue); }
+.md-typeset a.je-open:hover { background-color: color-mix(in srgb, var(--je-blue) 8%, transparent); }
+
+/* Quiet variant: a plain inline link that keeps only the small arrow (for lists of settings in a table). */
+.md-typeset a[href*="open-in-jellyfin/?"].je-quiet {
+  display: inline; border: 0; padding: 0; font-size: inherit; line-height: inherit; font-weight: inherit; overflow: visible;
+}
+.md-typeset a[href*="open-in-jellyfin/?"].je-quiet::before { display: none; }
+.md-typeset a[href*="open-in-jellyfin/?"].je-quiet::after { display: inline-block; margin-left: .25em; vertical-align: -.1em; width: .75em; height: .75em; }
+.md-typeset a[href*="open-in-jellyfin/?"].je-quiet:hover { text-decoration: underline; }
+
+/* Page title of open-in-jellyfin.md: the same icon block as the links. */
+.md-typeset h1.je-title::before {
+  content: ""; display: inline-block; vertical-align: -.2em; margin-right: .5em; width: 1.4em; height: 1.4em; border-radius: .35em;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='8' rx='3'/%3E%3Crect x='3' y='12' width='18' height='8' rx='3'/%3E%3Cpath d='M7 8v.01M7 16v.01M11 8h6M11 16h6'/%3E%3C/svg%3E") no-repeat center / .85em, #00a4dc;
+}
+
+/* Prototype: section cards on settings-style pages (see extra.js), after the plugin's configuration page:
+   a fieldset-like card with an accent-gradient title bar. */
+.md-typeset .je-card {
+  margin: 1.4em 0;
+  border: 1px solid var(--je-border);
+  border-radius: var(--je-radius-l);
+  background: var(--je-tabbed-bg);
+  overflow: clip;
+}
+.md-typeset .je-card > :is(h2, h3) {
+  margin: 0;
+  padding: .7em 1em;
+  border: 0;
+  border-bottom: 1px solid var(--je-border);
+  border-radius: 0;
+  background: var(--je-legend);
+  color: var(--je-text-strong);
+}
+.md-typeset .je-card > h3 { font-size: 1.05em; }
+.md-typeset .je-card > h3::before { display: none; }
+.md-typeset .je-card__body { padding: .2em 1.1em 1em; }
+.md-typeset .je-card__body > :first-child { margin-top: .9em; }
+.md-typeset .je-card__body > :last-child { margin-bottom: 0; }
+@media screen and (max-width: 44.984375em) {
+  .md-typeset .je-card__body { padding: .1em .8em .8em; }
+}
+
+/* The page's own sections in the left sidebar (toc.integrate): a lighter, tighter tree than the page list above it. */
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary .md-nav--secondary > .md-nav__list { margin: .1rem 0 .4rem .95rem; padding: 0; border-left: 2px solid var(--je-border); }
+  .md-nav--primary .md-nav--secondary .md-nav__item > .md-nav__link,
+  .md-nav--primary .md-nav--secondary .md-nav__item > .md-nav__container > a.md-nav__link {
+    margin: 0 .2rem; padding: .28rem .55rem; gap: 0; font-size: .64rem; font-weight: 400; line-height: 1.3; color: var(--je-text-muted);
+  }
+  .md-nav--primary .md-nav--secondary > .md-nav__list > .md-nav__item > .md-nav__link { font-weight: 600; color: var(--je-text); }
+  .md-nav--primary .md-nav--secondary .md-nav .md-nav__link { padding-left: 1rem; font-size: .62rem; }
+  .md-nav--primary .md-nav--secondary .md-nav__link--active,
+  .md-nav--primary .md-nav--secondary .md-nav__link--active:hover { color: var(--je-accent-text); font-weight: 600; background: var(--je-surface-2); }
+  .md-nav--primary .md-nav--secondary .md-nav__link:hover { background: var(--je-surface-2); color: var(--je-text-strong); }
+}
+
+/* Open in Jellyfin: server address input matches the pill buttons beside it */
+.je-open-input {
+  flex: 1;
+  min-width: 16em;
+  padding: .5em 1.1em;
+  border-radius: var(--je-pill);
+  border: 1px solid var(--je-border);
+  background: var(--je-surface-2);
+  color: var(--je-text-strong);
+  font: inherit;
+  transition: background-color .2s, border-color .2s;
+}
+.je-open-input::placeholder { color: var(--je-text-subtle); }
+.je-open-input:hover { border-color: var(--je-border-strong); }
+.je-open-input:focus { outline: none; border-color: var(--je-accent); box-shadow: 0 0 0 3px var(--je-accent-tint-20); }
