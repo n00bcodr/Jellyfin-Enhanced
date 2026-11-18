@@ -528,7 +528,7 @@ test('the layout controller\'s marks on the host are not a move: no measuring pa
   h.backdrop.track(h.host);
   await h.flush();
   const before = h.backdrop.stats().measures;
-  for (const mark of ['data-je-flow', 'data-je-live', 'data-je-fade']) { h.host.setAttribute(mark, '1'); await h.flush(); h.host.removeAttribute(mark); await h.flush(); }
+  for (const mark of ['data-je-flow', 'data-je-live']) { h.host.setAttribute(mark, '1'); await h.flush(); h.host.removeAttribute(mark); await h.flush(); }
   assert.equal(h.backdrop.stats().measures, before);
   // Anything else on the host still is.
   h.host.setAttribute('data-je-layout', 'bands');

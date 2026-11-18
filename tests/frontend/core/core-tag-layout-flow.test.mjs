@@ -18,13 +18,38 @@ const entry = () => ({
   StreamData: { Streams: [{ Type: 'Video', Codec: 'hevc', Height: 2160, DisplayTitle: '4K HEVC' }], Sources: [{ Path: 'Movie (2020).mkv', Name: 'Movie (2020)' }], ItemName: 'Movie', ItemPath: 'Movie (2020).mkv' },
 });
 
+/**
+ * Give every element of every card a box, the way a laid-out page would: each slot's groups stacked in its
+ * corner. `moved(el, flow)` may shift a box ([dx, dy]) in one layout only, as custom CSS written against the
+ * positioned layout does where flow ignores it.
+ */
+function layOut(h, { width = 200, height = 300, groupSize = 40, moved = () => null } = {}) {
+  const proto = h.window.Element.prototype;
+  const rect = (x, y, w, hh) => ({ x, y, left: x, top: y, right: x + w, bottom: y + hh, width: w, height: hh });
+  proto.getBoundingClientRect = function () {
+    const host = this.closest('.je-tag-host');
+    const shift = (host && moved(this, host.dataset.jeFlow === '1' && !host.dataset.jeLive)) || [0, 0];
+    if (this.classList.contains('je-tag-host')) return rect(0, 0, width, height);
+    if (this.classList.contains('je-tag-slot')) return rect(6 + shift[0], 6 + shift[1], width - 12, height - 12);
+    const slot = this.closest('.je-tag-slot')?.dataset.jeSlot;
+    if (!slot || this.parentElement?.classList.contains('je-tag-slot') !== true) return rect(0, 0, 0, 0);
+    const index = Array.from(this.parentElement.children).indexOf(this);
+    const x = slot.endsWith('l') ? 6 : width - 6 - groupSize;
+    const y = slot.startsWith('t') ? 6 + index * (groupSize + 4) : height - 6 - (index + 1) * groupSize - index * 4;
+    return rect(x + shift[0], y + shift[1], groupSize, groupSize);
+  };
+  Object.defineProperty(h.window.HTMLElement.prototype, 'clientWidth', { configurable: true, get() { return this.classList.contains('je-tag-host') ? width : 0; } });
+}
+
 /** The real renderers and layout controller over one card, in a browser that has (or lacks) what flow needs. */
 function setup(t, { html = card(), settings = {}, plugin = {}, supports = () => true, globals = {} } = {}) {
   const renderers = new Map();
   const asked = [];
+  // Frames run by hand (settle), so "after the next paint" is a point in the test.
+  const frames = [];
   const h = createHarness({
     html,
-    globals: { CSS: { supports: (...args) => { asked.push(args.join(': ')); return supports(...args); } }, ...globals },
+    globals: { CSS: { supports: (...args) => { asked.push(args.join(': ')); return supports(...args); } }, requestAnimationFrame: fn => { frames.push(fn); return frames.length; }, ...globals },
     JE: {
       currentSettings: { qualityTagsEnabled: true, ratingTagsEnabled: true, ageRatingTagsEnabled: true, qualityTagsPreferredAudioLanguage: 'none', ...settings },
       pluginConfig: { TagCacheServerMode: true, ...plugin },
@@ -44,10 +69,16 @@ function setup(t, { html = card(), settings = {}, plugin = {}, supports = () => 
   const JE = h.JE;
   JE.initializeQualityTags(); JE.initializeGenreTags(); JE.initializeRatingTags(); JE.initializeAgeRatingTags();
   const host = () => h.document.querySelector('.je-tag-host');
+  /** Run the frames queued so far, and the ones they queue (the after-paint passes). */
+  const settle = () => { for (let i = 0; i < 20 && frames.length; i++) for (const fn of frames.splice(0)) fn(); };
+  Object.assign(h, { host, settle });
+  // A laid-out page: every host has a size and every slot and group a box, the same in either layout.
+  layOut(h);
   return Object.assign(h, {
-    layout: JE.core.tagLayout, host, asked, renderers,
+    layout: JE.core.tagLayout, asked, renderers,
     render() { for (const [, r] of renderers) if (r.isEnabled() && r.renderFromServerCache) r.renderFromServerCache(host(), entry(), ID); },
-    flow: () => host().dataset.jeFlow,
+    /** The mark once the page has settled (a kind of slot is asked about after the paint that first shows it). */
+    flow: () => { settle(); return host().dataset.jeFlow; },
     async apply(changes) { Object.assign(JE.currentSettings, changes); await JE.reinitializeTagLayout(); },
     /** A language group wrapper with one flag, dimmed when partial. */
     flags(partial) {
@@ -84,21 +115,30 @@ function pointer(h, type, target, relatedTarget = null) {
   target.dispatchEvent(event);
 }
 
-/** Make `card.matches(':hover')` answer as if the pointer were (or were not) on the card. */
-function hover(h, on) {
-  const card = h.document.querySelector('.card');
+/** Make a card answer `matches(':hover')` and `matches(':focus-within')` as if the pointer were on it or it held focus. */
+function hover(h, on, card = h.document.querySelector('.card'), focused = false) {
   const matches = h.window.Element.prototype.matches;
-  card.matches = function (selector) { return selector === ':hover' ? on : matches.call(this, selector); };
+  card.matches = function (selector) { return selector === ':hover' ? on : selector === ':focus-within' ? focused : matches.call(this, selector); };
   return card;
 }
+/** Timers by hand: `due(ms)` runs the pending ones of that delay. */
+function handTimers() {
+  const timers = [];
+  return {
+    globals: { setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimeout: id => { if (timers[id - 1]) timers[id - 1].fn = null; } },
+    pending: ms => timers.filter(x => x.fn && x.ms === ms).length,
+    due(ms) { for (const timer of timers.filter(x => x.fn && x.ms === ms)) { const fn = timer.fn; timer.fn = null; fn(); } },
+  };
+}
+const OTHER = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 test('the pointer on a card with genre icons lays it out positioned so their names can float, and it rests again once the pointer has gone', async t => {
   const timers = [];
   const h = setup(t, { settings: { genreTagsEnabled: true }, globals: { setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimeout: id => { if (timers[id - 1]) timers[id - 1].fn = null; } } });
   h.render();
   const host = h.host();
-  const card = hover(h, true);
   assert.equal(h.flow(), '1');
+  const card = hover(h, true);
   // The names start at opacity 0 for the pass that first renders them, then are let go to fade in.
   const seen = [];
   const read = h.window.getComputedStyle;
@@ -129,25 +169,98 @@ test('the pointer on a card with genre icons lays it out positioned so their nam
   assert.equal(host.dataset.jeLive, '1');
 });
 
-test('nothing goes live for focus, for a card without genre icons, or while Hide Tags on Hover hides the card under the pointer', async t => {
-  const h = setup(t, { settings: { genreTagsEnabled: true } });
+test('a card that holds focus or has the pointer on it is laid out positioned, genre icons or not; a pointer that hides the tags changes nothing', async t => {
+  const timers = handTimers();
+  const h = setup(t, { globals: timers.globals });
   h.render();
   const host = h.host();
-  const card = hover(h, true);
-  card.querySelector('.cardImageContainer').dispatchEvent(new h.window.Event('focusin', { bubbles: true }));
-  assert.equal(host.hasAttribute('data-je-live'), false, 'focus does not show genre names');
-  pointer(h, 'pointerout', card.querySelector('.cardImageContainer'), h.document.body);
+  assert.equal(h.flow(), '1');
+  assert.equal(host.querySelector('.genre-tag'), null);
+  const card = hover(h, false, undefined, true);
+  const image = card.querySelector('.cardImageContainer');
+  // Focus: CSS written for a focused card finds the layout it was written against.
+  image.dispatchEvent(new h.window.Event('focusin', { bubbles: true }));
+  assert.equal(host.dataset.jeLive, '1');
+  assert.equal(h.flow(), '1', 'the mark stays: only the live state lifts the flow rules');
+  hover(h, false, card, false);
+  const out = new h.window.Event('focusout', { bubbles: true });
+  Object.defineProperty(out, 'relatedTarget', { value: h.document.body });
+  image.dispatchEvent(out);
+  assert.equal(host.dataset.jeLive, '1', 'not at once');
+  timers.due(200);
+  assert.equal(host.hasAttribute('data-je-live'), false, 'at rest again');
+  // The pointer, where it hides the tags: the host fades out, there is nothing to lay out for.
   h.document.body.classList.add('je-tags-hide-on-hover');
-  pointer(h, 'pointerover', card.querySelector('.cardImageContainer'));
-  assert.equal(host.hasAttribute('data-je-live'), false, 'the host fades out instead: nothing to show');
+  hover(h, true, card);
+  pointer(h, 'pointerover', image);
+  assert.equal(host.hasAttribute('data-je-live'), false);
+  pointer(h, 'pointerout', image, h.document.body);
+  timers.due(200);
+  // The pointer, where it does not.
   h.document.body.classList.remove('je-tags-hide-on-hover');
-  h.layout.removeGroup(host, 'genre');
-  pointer(h, 'pointerover', card.querySelector('.cardImageContainer'));
-  assert.equal(host.hasAttribute('data-je-live'), false, 'no names to float');
+  pointer(h, 'pointerover', image);
+  assert.equal(host.dataset.jeLive, '1', 'no genre names needed: a rule for .card:hover may move or layer any tag');
 });
 
-test('genre icons arriving on a card the pointer is already on show their names at once', async t => {
+test('focus first, then the pointer: the card is live from the focus on, so its genre names are bounded where they are rendered', async t => {
+  const timers = handTimers();
+  const h = setup(t, { settings: { genreTagsEnabled: true }, globals: timers.globals });
+  h.render();
+  const host = h.host();
+  assert.equal(h.flow(), '1');
+  assert.equal(host.hasAttribute('data-je-genre-bound'), false);
+  const card = hover(h, false, undefined, true);
+  const image = card.querySelector('.cardImageContainer');
+  image.dispatchEvent(new h.window.Event('focusin', { bubbles: true }));
+  assert.equal(host.dataset.jeLive, '1');
+  assert.equal(host.dataset.jeGenreBound, '1', 'bounded while live');
+  hover(h, true, card, true);
+  pointer(h, 'pointerover', image);
+  assert.equal(host.dataset.jeLive, '1', 'the names can show: the host was never left in flow under the pointer');
+  // At rest a card renders no genre name: a fit pass on it must not bound names from empty boxes.
+  hover(h, false, card, false);
+  pointer(h, 'pointerout', image, h.document.body);
+  timers.due(200);
+  assert.equal(host.hasAttribute('data-je-live'), false);
+  for (const name of host.querySelectorAll('.genre-text')) { delete name.dataset.jeGenreFit; name.style.removeProperty('max-width'); }
+  h.layout.flushFit?.();
+  image.dispatchEvent(new h.window.Event('focusin', { bubbles: true }));
+  hover(h, false, card, false);
+  assert.ok(Array.from(host.querySelectorAll('.genre-text')).every(name => !name.style.maxWidth || host.dataset.jeLive), 'no bound written from a resting card');
+});
+
+test('a touch leaves its card hovered and sends no pointerout later: the host rests when the pointer shows up elsewhere', async t => {
+  const timers = handTimers();
+  const h = setup(t, { html: card() + card(OTHER), settings: { genreTagsEnabled: true }, globals: timers.globals });
+  const [a, b] = Array.from(h.document.querySelectorAll('.card'));
+  const hostOf = el => el.querySelector('.je-tag-host');
+  for (const el of [a, b]) for (const [, r] of h.renderers) if (r.isEnabled() && r.renderFromServerCache) r.renderFromServerCache(hostOf(el), entry(), el.dataset.id);
+  h.settle();
+  assert.deepEqual([hostOf(a).dataset.jeFlow, hostOf(b).dataset.jeFlow], ['1', '1']);
+  // Tap A: over, down, up, out, and the card stays :hover.
+  hover(h, true, a); hover(h, false, b);
+  pointer(h, 'pointerover', a.querySelector('.cardImageContainer'));
+  pointer(h, 'pointerout', a.querySelector('.cardImageContainer'), h.document.body);
+  timers.due(200);
+  assert.equal(hostOf(a).dataset.jeLive, '1', 'still hovered: its names are showing');
+  assert.equal(timers.pending(200), 0);
+  // Tap B: hover moves on, and nothing tells A.
+  hover(h, false, a); hover(h, true, b);
+  pointer(h, 'pointerover', b.querySelector('.cardImageContainer'));
+  assert.equal(hostOf(b).dataset.jeLive, '1');
+  timers.due(200);
+  assert.equal(hostOf(a).hasAttribute('data-je-live'), false, 'A is at rest again');
+  // A card cleared while live does not keep the state for its next item.
+  h.layout.clearCard(hostOf(b));
+  assert.equal(hostOf(b).hasAttribute('data-je-live'), false);
+});
+
+test('tags arriving on a card the pointer is already on are laid out positioned at once', async t => {
   const h = setup(t, { settings: { genreTagsEnabled: true } });
+  // Another card of the kind has been seen: the browser's answer is known when this one is drawn.
+  h.render();
+  assert.equal(h.flow(), '1');
+  h.layout.clearCard(h.host());
   hover(h, true);
   h.render();
   assert.equal(h.flow(), '1');
@@ -204,7 +317,7 @@ test('only library cards flow: a preview sample styles its own host', t => {
 });
 
 test('a browser missing any piece the flow rules are written with keeps every card positioned', t => {
-  for (const missing of ['container-type: size', 'max-height: 1cqh', 'overflow: clip', 'transition-timing-function: linear(0, 1)']) {
+  for (const missing of ['container-type: size', 'max-height: 1cqh', 'overflow: clip']) {
     const h = setup(t, { supports: (prop, value) => `${prop}: ${value}` !== missing });
     h.render();
     assert.equal(h.flow(), undefined, `without ${missing}`);
@@ -212,7 +325,7 @@ test('a browser missing any piece the flow rules are written with keeps every ca
   }
   const h = setup(t);
   h.render();
-  assert.deepEqual([...new Set(h.asked)].sort(), ['container-type: size', 'max-height: 1cqh', 'overflow: clip', 'transition-timing-function: linear(0, 1)'].sort(), 'asked once, for exactly these');
+  assert.deepEqual([...new Set(h.asked)].sort(), ['container-type: size', 'max-height: 1cqh', 'overflow: clip'].sort(), 'asked once, for exactly these');
 });
 
 test('the switch turns flow off for cards already on the page, and back on', t => {
@@ -265,9 +378,8 @@ test('the stylesheet lays a flow card out as grid items with the same insets, an
   };
   // The host: one cell every slot shares, and a size container so a height limit can be said in cqh.
   assert.match(rule(FLOW), /display: grid; grid-template: minmax\(0, 1fr\) \/ minmax\(0, 1fr\); container-type: size;/);
-  // Slots and groups are no longer positioned; slots stop fading one by one only on a card marked to fade as one.
+  // Slots and groups are no longer positioned (and keep their own fade under Hide Tags on Hover).
   assert.match(rule(SLOT), /position: static; grid-area: 1 \/ 1; min-width: 0; min-height: 0; \}/);
-  assert.match(rule(`${FLOW}[data-je-fade] > .je-tag-slot`), /transition: none;/);
   assert.match(rule(`${SLOT} > [data-je-group]`), /position: static;/);
   // The corner inset (6px, or the edge spacing's) as a margin, and the indicator offset on top of it.
   assert.match(rule(`${SLOT}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"])`), /margin: var\(--je-edge, 6px\);/);
@@ -294,16 +406,6 @@ test('the stylesheet lays a flow card out as grid items with the same insets, an
   assert.ok(css.includes('.je-tag-host[data-je-legacy][data-je-flow]:not([data-je-live]) > .je-tag-slot:is([data-je-slot="bl"], [data-je-slot="br"]) > * { margin-top: 4px;}'));
 });
 
-test('the positioned rules are untouched, and Hide Tags on Hover leaves the slots of a card that fades as one to its host', t => {
-  const h = setup(t);
-  const css = h.layout.buildStyles();
-  assert.match(css, /\.je-tag-host > \.je-tag-slot \{\s*position: absolute;\s*display: flex;/);
-  assert.match(css, /\.je-tag-host > \.je-tag-slot > \[data-je-group\] \{\s*position: relative;/);
-  assert.match(css, /\[data-je-slot="br"\] \{\s*inset: 6px;/);
-  assert.ok(css.includes('body.je-tags-hide-on-hover .card:hover .je-tag-host:not([data-je-fade]) > .je-tag-slot:not([data-je-slot="hover"]),'));
-  assert.equal(css.includes('body.je-tags-hide-on-hover .card:hover .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),'), false);
-});
-
 /** The real pipeline's start-up, keeping the stylesheets it injects. */
 function pipelineSheets(t) {
   const sheets = new Map();
@@ -326,90 +428,18 @@ function pipelineSheets(t) {
   return Object.assign(h, { sheets });
 }
 
-test('a card marked to fade as one does so on the two old fades multiplied, and eases back; every other card keeps the old rules', t => {
-  const h = pipelineSheets(t);
-  const css = h.sheets.get('je-tag-hover-fade').replace(/\s+/g, ' ');
-  const HOVERED = 'body.je-tags-hide-on-hover .card:hover .je-tag-host';
-  const LAYOUTS = ':not([data-je-layout="summary"]):not([data-je-layout="minimal"])';
-  // The rule every card had stays as it was (with each slot's own fade, in the layout sheet).
-  assert.ok(css.includes(`${HOVERED}${LAYOUTS} { opacity: 0 !important; transition: opacity 0.15s ease; }`));
-  // Back in: the host eases where its slots used to.
-  assert.ok(css.includes('body.je-tags-hide-on-hover .je-tag-host[data-je-fade] { transition: opacity 0.15s ease; }'));
-  // Out: 1 - (1 - ease(t))^2 for cubic-bezier(0.25, 0.1, 0.25, 1), within a third of one colour level everywhere.
-  const out = new RegExp(`${HOVERED.replace(/[.[\]]/g, '\\$&')}\\[data-je-fade\\]${LAYOUTS.replace(/[.[\]()"=]/g, '\\$&')} \\{ transition: opacity 0\\.15s (linear\\([^)]*\\)); \\}`).exec(css);
-  assert.ok(out, 'the hovered host has a sampled easing');
-  const stops = out[1].slice('linear('.length, -1).split(', ').map(stop => stop.split(' ')).map(([value, at], i, all) => [Number(value), at ? parseFloat(at) / 100 : i / (all.length - 1)]);
-  /** CSS `ease` at time x (bisection on the curve's x polynomial). */
-  const ease = x => { let lo = 0, hi = 1; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; const cx = 3 * (1 - m) ** 2 * m * 0.25 + 3 * (1 - m) * m * m * 0.25 + m ** 3; if (cx < x) lo = m; else hi = m; } const m = (lo + hi) / 2; return 3 * (1 - m) ** 2 * m * 0.1 + 3 * (1 - m) * m * m + m ** 3; };
-  const curve = x => 1 - (1 - ease(x)) ** 2;
-  assert.deepEqual([stops[0], stops.at(-1)], [[0, 0], [1, 1]]);
-  let worst = 0;
-  for (let k = 1; k < 2000; k++) {
-    const x = k / 2000;
-    const i = stops.findIndex(([, at]) => at >= x);
-    const [v0, x0] = stops[i - 1], [v1, x1] = stops[i];
-    worst = Math.max(worst, Math.abs(v0 + (v1 - v0) * (x - x0) / (x1 - x0) - curve(x)));
-  }
-  assert.ok(worst * 255 < 0.34, `at most ${(worst * 255).toFixed(3)} of a colour level from the curve`);
-  // Reduced motion never had the slot fade: the host eases out and snaps back.
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ body\.je-tags-hide-on-hover \.je-tag-host\[data-je-fade\] \{ transition: none; \} body\.je-tags-hide-on-hover \.card:hover \.je-tag-host\[data-je-fade\]:not\(\[data-je-layout="summary"\]\):not\(\[data-je-layout="minimal"\]\) \{ transition: opacity 0\.15s ease; \} \}/);
-});
-
-/** Give every element of the card a box, the way a laid-out page would: each slot's groups stacked in its corner. */
-function layOut(h, { width = 200, height = 300, groupSize = 40 } = {}) {
-  const proto = h.window.Element.prototype;
-  const rect = (x, y, w, hh) => ({ x, y, left: x, top: y, right: x + w, bottom: y + hh, width: w, height: hh });
-  const original = proto.getBoundingClientRect;
-  proto.getBoundingClientRect = function () {
-    if (this.classList.contains('je-tag-host')) return rect(0, 0, width, height);
-    if (this.classList.contains('je-tag-slot')) return rect(6, 6, width - 12, height - 12);
-    const slot = this.closest('.je-tag-slot')?.dataset.jeSlot;
-    if (!slot || !this.dataset.jeGroup) return rect(0, 0, 0, 0);
-    const index = Array.from(this.parentElement.children).indexOf(this);
-    const x = slot.endsWith('l') ? 6 : width - 6 - groupSize;
-    const y = slot.startsWith('t') ? 6 + index * (groupSize + 4) : height - 6 - (index + 1) * groupSize - index * 4;
-    return rect(x, y, groupSize, groupSize);
-  };
-  Object.defineProperty(h.host(), 'clientWidth', { configurable: true, get: () => width });
-  return () => { proto.getBoundingClientRect = original; };
-}
-const frame = h => new Promise(resolve => h.window.requestAnimationFrame(() => resolve()));
-
-test('a flow card whose slots are clear of each other is marked to fade as one; overlapping slots keep the five fades', async t => {
+test('the positioned rules and Hide Tags on Hover are as they were: the host and every slot fade, on every card', t => {
   const h = setup(t);
-  h.document.body.classList.add('je-tags-hide-on-hover');
-  layOut(h);
-  h.render();
-  assert.equal(h.flow(), '1');
-  assert.equal(h.host().hasAttribute('data-je-fade'), false, 'nothing is assumed before the card is measured');
-  await frame(h);
-  assert.equal(h.host().dataset.jeFade, 'one', 'top-left quality and bottom-right rating are far apart on a 200x300 card');
-  // A card so small its corner stacks come within paint reach of each other.
-  layOut(h, { width: 90, height: 96 });
-  h.layout.refreshPresentation();
-  await frame(h);
-  assert.equal(h.flow(), '1');
-  assert.equal(h.host().hasAttribute('data-je-fade'), false, 'chips of two slots may overlap: the host and every slot fade, as before');
-});
-
-test('nothing is measured while the pointer does not hide tags, and a card that stops flowing loses the mark', async t => {
-  const h = setup(t, { settings: V1 });
-  layOut(h);
-  let reads = 0;
-  const proto = h.window.Element.prototype;
-  const rect = proto.getBoundingClientRect;
-  proto.getBoundingClientRect = function () { reads++; return rect.call(this); };
-  h.render();
-  await frame(h);
-  assert.equal(h.host().hasAttribute('data-je-fade'), false);
-  assert.equal(reads, 0, 'no fade to choose: no layout read');
-  h.document.body.classList.add('je-tags-hide-on-hover');
-  h.layout.refreshPresentation();
-  await frame(h);
-  assert.equal(h.host().dataset.jeFade, 'one');
-  await h.apply({ tagLayout: 'summary' });
-  assert.equal(h.flow(), undefined);
-  assert.equal(h.host().hasAttribute('data-je-fade'), false);
+  const css = h.layout.buildStyles();
+  assert.match(css, /\.je-tag-host > \.je-tag-slot \{\s*position: absolute;\s*display: flex;/);
+  assert.match(css, /\.je-tag-host > \.je-tag-slot > \[data-je-group\] \{\s*position: relative;/);
+  assert.match(css, /\[data-je-slot="br"\] \{\s*inset: 6px;/);
+  assert.ok(css.includes('body.je-tags-hide-on-hover .card:hover .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),'));
+  assert.equal(css.includes('data-je-fade'), false);
+  // The host's own fade (the pipeline's sheet) is the one rule it always was: a flow card fades exactly like any other,
+  // also part way through a fade the pointer cut short.
+  const fade = pipelineSheets(t).sheets.get('je-tag-hover-fade').replace(/\s+/g, ' ').trim();
+  assert.equal(fade, 'body.je-tags-hide-on-hover .card:hover .je-tag-host:not([data-je-layout="summary"]):not([data-je-layout="minimal"]) { opacity: 0 !important; transition: opacity 0.15s ease; }');
 });
 
 /** Add a custom stylesheet the way Jellyfin's custom CSS box does. */
@@ -420,23 +450,79 @@ function customCss(h, text) {
   return style;
 }
 
-test('custom CSS that nudges a group, moves a slot or re-lays a corner stack keeps its cards positioned, where it always worked', async t => {
-  for (const [css, why] of [
-    ['.rating-overlay-container { top: -4px !important; left: -4px !important; }', 'a group nudged with top/left'],
-    ['.je-tag-slot[data-je-slot="tl"] { top: 14px !important; left: 14px !important; }', 'a slot with another inset'],
-    ['.je-tag-slot[data-je-slot="br"] { flex-direction: row-reverse !important; }', 'a corner stack turned into a row'],
-    // (Longhands: jsdom does not expand the gap shorthand.)
-    ['.je-tag-slot[data-je-slot="br"] { row-gap: 12px !important; column-gap: 12px !important; }', 'a rising stack with another gap'],
+/** Draw the entry's tags into one host of a page with several cards. */
+function renderInto(h, host, e = entry()) {
+  for (const [, r] of h.renderers) if (r.isEnabled() && r.renderFromServerCache) r.renderFromServerCache(host, e, host.closest('.card').dataset.id);
+}
+const hostsOf = h => Array.from(h.document.querySelectorAll('.je-tag-host'));
+
+test('a kind of slot is asked about once, after the paint that first shows it, and its card rests in flow from then on', t => {
+  const h = setup(t, { html: card() + card(OTHER) });
+  const [first, second] = hostsOf(h);
+  renderInto(h, first);
+  assert.equal(first.dataset.jeFlow, undefined, 'drawn positioned: the browser has not laid this kind out both ways yet');
+  assert.equal(h.layout.flowStats().probes, 0, 'and nothing is measured while the card is being drawn');
+  h.settle();
+  assert.equal(first.dataset.jeFlow, '1');
+  const asked = h.layout.flowStats().probes;
+  assert.ok(asked > 0);
+  // A second card of the same kinds is in flow as it is drawn, with nothing asked.
+  renderInto(h, second);
+  assert.equal(second.dataset.jeFlow, '1');
+  h.settle();
+  h.layout.refreshPresentation();
+  h.settle();
+  assert.equal(h.layout.flowStats().probes, asked);
+  assert.deepEqual(hostsOf(h).map(host => host.dataset.jeFlow), ['1', '1']);
+});
+
+test('custom CSS that moves a box keeps its kind of card positioned, with no opt-out: the browser lays it out differently in flow', t => {
+  // What `.age-rating-overlay-container { top: -4px; left: -4px; }` does: honoured where the group is
+  // positioned, ignored by a static grid item. A margin, an order, an alignment or padding on the host
+  // show up the same way: as a box that is somewhere else.
+  for (const [what, moved] of [
+    ['a group nudged', (el, flow) => (!flow && el.classList.contains('age-rating-overlay-container') ? [-4, -4] : null)],
+    ['a slot with another inset or margin', (el, flow) => (flow && el.dataset.jeSlot === 'br' ? [0, 30] : null)],
   ]) {
-    const h = setup(t);
-    h.render();
-    assert.equal(h.flow(), '1');
-    // (After JE's own sheets, as jsdom's cascade is by order alone; a browser honours !important wherever the rule sits.)
-    customCss(h, css);
-    await h.apply({});
-    assert.ok(h.host().querySelector('.rating-tag'));
-    assert.equal(h.flow(), undefined, why);
+    const h = setup(t, { html: card() + card(OTHER) });
+    layOut(h, { moved });
+    const [withAge, without] = hostsOf(h);
+    renderInto(h, withAge);
+    renderInto(h, without, { ...entry(), OfficialRating: null, CommunityRating: null, CriticRating: null });
+    h.settle();
+    assert.ok(withAge.querySelector('.age-rating-tag'));
+    assert.equal(withAge.dataset.jeFlow, undefined, what);
+    assert.equal(without.dataset.jeFlow, '1', `${what}: a card the rule does not reach is not held back`);
+    assert.equal(without.querySelector('.je-tag-slot[data-je-slot="br"]'), null);
+    // The answer is remembered: drawing the cards again measures nothing.
+    const asked = h.layout.flowStats().probes;
+    h.layout.refreshPresentation();
+    h.settle();
+    assert.equal(h.layout.flowStats().probes, asked);
+    assert.equal(withAge.dataset.jeFlow, undefined);
   }
+});
+
+test('a card that cannot be measured stays positioned until one of its kind can', t => {
+  const h = setup(t, { html: card() + card(OTHER) });
+  const [hidden, shown] = hostsOf(h);
+  // In a tab that is not shown: no size, no boxes to compare.
+  Object.defineProperty(hidden, 'clientWidth', { configurable: true, get: () => 0 });
+  renderInto(h, hidden);
+  h.settle();
+  assert.equal(hidden.dataset.jeFlow, undefined);
+  assert.equal(h.layout.flowStats().probes, 0);
+  renderInto(h, shown);
+  h.settle();
+  assert.deepEqual([hidden.dataset.jeFlow, shown.dataset.jeFlow], ['1', '1'], 'the answer the shown card brought frees the hidden one too');
+});
+
+test('a quality or language group the page no longer clips keeps its card positioned', t => {
+  const h = setup(t);
+  // (Longhands: jsdom does not expand the overflow shorthand.)
+  customCss(h, '.quality-overlay-container { overflow-x: visible !important; overflow-y: visible !important; }');
+  h.render();
+  assert.equal(h.flow(), undefined, 'flow would clip it again');
 });
 
 test('custom CSS that makes a chip a layer (opacity, transform, filter, z-index, position) keeps its cards positioned', async t => {
@@ -455,29 +541,81 @@ test('custom CSS that makes a chip a layer (opacity, transform, filter, z-index,
   }
 });
 
-test('only the cards the custom rule reaches stay positioned, and the styles are asked once per kind of element', async t => {
-  const h = setup(t, { html: card() + card('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb') });
-  const hosts = () => Array.from(h.document.querySelectorAll('.je-tag-host'));
-  const renderInto = (host, e) => { for (const [, r] of h.renderers) if (r.isEnabled() && r.renderFromServerCache) r.renderFromServerCache(host, e, host.closest('.card').dataset.id); };
-  const withAge = entry();
-  const without = { ...entry(), OfficialRating: null };
-  renderInto(hosts()[0], withAge);
-  // (After JE's own sheets: see the test above.)
-  customCss(h, '.age-rating-overlay-container { top: 3px !important; }');
-  let asked = 0;
-  const read = h.window.getComputedStyle;
-  h.window.getComputedStyle = function (...args) { asked++; return read.apply(this, args); };
-  await h.apply({});
-  const first = asked;
+test('only the cards a layering rule reaches stay positioned, and the styles are read once per kind of element', async t => {
+  const h = setup(t, { html: card() + card(OTHER) });
+  const [withAge, without] = hostsOf(h);
+  customCss(h, '.age-rating-tag { opacity: 0.9; }');
+  renderInto(h, withAge);
+  h.settle();
+  const first = h.layout.flowStats().inspections;
   assert.ok(first > 0);
-  renderInto(hosts()[1], without);
-  assert.equal(hosts()[0].dataset.jeFlow, undefined, 'its age rating group is nudged');
-  assert.equal(hosts()[1].dataset.jeFlow, '1', 'no age rating group on this card: nothing custom reaches it');
-  assert.equal(asked, first, 'the second card holds no kind of element the first did not');
-  // The same card drawn again asks nothing.
+  renderInto(h, without, { ...entry(), OfficialRating: null });
+  h.settle();
+  assert.equal(withAge.dataset.jeFlow, undefined, 'its age rating chip is translucent');
+  assert.equal(without.dataset.jeFlow, '1', 'no age rating chip on this card: nothing custom reaches it');
+  // (The second card's bottom-right slot holds other things, so that slot and its rating group are a kind of their own.)
+  const second = h.layout.flowStats().inspections;
   h.layout.refreshPresentation();
-  assert.equal(asked, first);
-  // New settings (or a user switch) forget the verdicts: the page's CSS may have changed with them.
+  h.settle();
+  assert.equal(h.layout.flowStats().inspections, second, 'the same cards drawn again read nothing');
+  // New settings (or a user switch) forget the answers: the page's CSS may have changed with them.
   await h.apply({});
-  assert.ok(asked > first);
+  renderInto(h, withAge);
+  h.settle();
+  assert.ok(h.layout.flowStats().inspections > second);
+});
+
+test('a rule that tells one chip\'s part from another\'s, or one type of card from another, is seen', t => {
+  // The critic chip's text is read first; the community chip's has the same tag and class.
+  const parts = setup(t);
+  customCss(parts, '.rating-tag-tmdb .rating-text { opacity: 0.6; }');
+  parts.render();
+  assert.ok(parts.host().querySelector('.rating-tag-tmdb .rating-text') && parts.host().querySelector('.rating-tag-critic .rating-text'));
+  assert.equal(parts.flow(), undefined);
+
+  const types = setup(t, { html: card() + card(OTHER).replace('data-type="Movie"', 'data-type="Series"') });
+  customCss(types, '.card[data-type="Series"] .rating-tag { opacity: 0.8; }');
+  const [movie, series] = hostsOf(types);
+  renderInto(types, movie);
+  types.settle();
+  renderInto(types, series);
+  types.settle();
+  assert.deepEqual([movie.dataset.jeFlow, series.dataset.jeFlow], ['1', undefined]);
+});
+
+test('a style sheet that arrives after the cards were drawn is seen when a card is next placed, and every card is looked at again', t => {
+  const h = setup(t, { html: card() + card(OTHER) });
+  const [first, second] = hostsOf(h);
+  renderInto(h, first);
+  renderInto(h, second);
+  h.settle();
+  assert.deepEqual([first.dataset.jeFlow, second.dataset.jeFlow], ['1', '1']);
+  customCss(h, '.quality-overlay-label { opacity: 0.85; } :root { --x: 1; }');
+  // Any placement notices the new sheet; the other card is not touched by it.
+  h.layout.commitGroup(first, 'language', h.flags(false));
+  h.settle();
+  assert.deepEqual([first.dataset.jeFlow, second.dataset.jeFlow], [undefined, undefined]);
+  // And the switch is read again with it.
+  const off = customCss(h, ':root { --je-tag-flow: off; }');
+  h.document.documentElement.style.setProperty('--je-tag-flow', 'off');
+  h.layout.commitGroup(first, 'language', h.flags(false));
+  h.settle();
+  off.remove();
+  h.document.documentElement.style.removeProperty('--je-tag-flow');
+  for (const style of h.document.head.querySelectorAll('style')) if (style.textContent.includes('opacity: 0.85')) style.remove();
+  h.layout.commitGroup(first, 'language', h.flags(false));
+  h.settle();
+  assert.deepEqual([first.dataset.jeFlow, second.dataset.jeFlow], ['1', '1'], 'gone again: both rest in flow');
+});
+
+test('an element the fitting pass adds inside a group already inspected is inspected too', t => {
+  const h = setup(t);
+  customCss(h, '.je-tag-more { opacity: 0.8; }');
+  h.render();
+  assert.equal(h.flow(), '1');
+  const more = h.document.createElement('span');
+  more.className = 'je-tag-more';
+  h.host().querySelector('.quality-overlay-container').appendChild(more);
+  h.layout.commitGroup(h.host(), 'language', h.flags(false));
+  assert.equal(h.flow(), undefined);
 });

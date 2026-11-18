@@ -547,7 +547,7 @@
         }
 
         /** The layout controller's own marks on a host (core/tag-layout.js): how the card is laid out and fades, never where a tag is. */
-        const HOST_MARKS = new Set(['data-je-flow', 'data-je-live', 'data-je-fade']);
+        const HOST_MARKS = new Set(['data-je-flow', 'data-je-live']);
 
         /** @param {ResizeObserverEntry[]} entries A watched card changed size. */
         /** @param {string} url @returns {string} Its origin ('' when it cannot be told). */
