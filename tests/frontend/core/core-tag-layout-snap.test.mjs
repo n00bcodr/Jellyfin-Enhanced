@@ -280,6 +280,27 @@ test('nothing is measured until the browser has said which grid it snaps to; ano
   assert.deepEqual(h.snap('rating'), [px(nudge(154.15, 2)), px(nudge(250.35, 2))]);
 });
 
+test('while the browser has not said which grid it snaps to, the cards wait and no idle period is asked for on their account', t => {
+  const idles = [];
+  const h = setup(t, { globals: { requestIdleCallback: fn => { idles.push(fn); return idles.length; } } });
+  h.render();
+  // The idle pass decides the card's resting layout; the card cannot be measured yet, and the pass does not keep
+  // coming back for it.
+  let ran = 0;
+  for (; ran < 20 && idles.length; ran++) { idles.shift()({ timeRemaining: () => 50, didTimeout: false }); h.settle(); }
+  assert.ok(ran < 6, `the pass came to an end (${ran} idle periods)`);
+  assert.equal(h.host.dataset.jeFlow, '1');
+  assert.equal(h.layout.snapStats().waiting, 1, 'the card waits to be measured');
+  assert.deepEqual(h.snap('rating'), ['', '']);
+  // The browser says: the pass is asked for, and measures it.
+  h.grid();
+  assert.equal(idles.length, 1);
+  for (let i = 0; i < 6 && idles.length; i++) { idles.shift()({ timeRemaining: () => 50, didTimeout: false }); h.settle(); }
+  assert.deepEqual(h.snap('rating'), [px(nudge(154.15)), px(nudge(250.35))]);
+  assert.equal(h.layout.snapStats().waiting, 0);
+  assert.equal(idles.length, 0);
+});
+
 test('Firefox and WebKit paint a contained box where they paint a plain one: nothing is nudged, measured or watched there', t => {
   for (const vendor of ['', 'Apple Computer, Inc.']) {
     const h = setup(t, { vendor });
@@ -484,6 +505,39 @@ test('a scaled card is not measured: distances read under a scale are not the la
   assert.equal(quiet()[0], after);
 });
 
+test('a card a fraction of a pixel off the size it is laid out at is not measured, once the browser has said that size', t => {
+  const timers = handTimers();
+  const h = setup(t, { globals: timers.globals });
+  h.show();
+  const cardEl = h.document.querySelector('.card');
+  // The size observer has reported the card's box, to the layout unit.
+  h.sized(h.host, HOST[0], HOST[1]);
+  timers.due(120);
+  h.settle();
+  const before = h.snap('rating');
+  const passes = () => h.layout.snapStats();
+  const deferred = passes().deferred;
+  // A tenth of a pixel larger (the tail of a zoom): inside the rounding of the layout's whole-pixel size, but not the size reported.
+  h.state.zoom = 1.0004;
+  h.add('status');
+  h.settle();
+  assert.equal(passes().deferred, deferred + 1, 'it waits');
+  assert.deepEqual(h.snap('status'), ['', '']);
+  assert.deepEqual(h.snap('rating'), before);
+  h.state.zoom = 1;
+  cardEl.dispatchEvent(new h.window.Event('transitionend', { bubbles: true }));
+  timers.due(120);
+  h.settle();
+  assert.deepEqual(h.snap('status'), [px(nudge(120.7)), '']);
+  // A report that is not this layout's size (the card has another size since, to be reported next frame) is not gone by.
+  h.sized(h.host, HOST[0] + 30, HOST[1]);
+  timers.due(120);
+  h.settle();
+  h.layout.removeGroup(h.host, 'status');
+  h.settle();
+  assert.equal(passes().deferred, deferred + 1, 'measured, not taken for scaled');
+});
+
 test('a card on its way back from its hover size is measured when it has arrived, not when the pointer leaves', t => {
   const timers = handTimers();
   const h = setup(t, { globals: timers.globals });
@@ -520,6 +574,23 @@ test('a card on its way back from its hover size is measured when it has arrived
   timers.due(120);
   h.settle();
   assert.deepEqual(h.snap('rating'), [px(nudge(154.15)), px(nudge(250.35))]);
+  // Focus leaving a card that grew for it: the same wait for the way back.
+  h.state.zoom = 1.05;
+  h.add('ageRating', 'age-rating-overlay-container');
+  h.settle();
+  const waited = h.layout.snapStats().passes;
+  running = [{ playState: 'running', transitionProperty: 'scale' }];
+  h.state.zoom = 1.002;
+  cardEl.dispatchEvent(new h.window.FocusEvent('focusout', { bubbles: true, relatedTarget: h.document.body }));
+  timers.due(120);
+  h.settle();
+  assert.equal(h.layout.snapStats().passes, waited, 'not measured on its way back');
+  running = [];
+  h.state.zoom = 1;
+  cardEl.dispatchEvent(new h.window.Event('transitionend', { bubbles: true }));
+  timers.due(120);
+  h.settle();
+  assert.ok(h.layout.snapStats().passes > waited, 'measured once it is back');
 });
 
 test('a scaled card whose scale ends with a transition is measured when it ends, the pointer gone', t => {

@@ -1745,10 +1745,13 @@
             }
             // One coalesced layout pass for the slice instead of one per card.
             JE.core.tagRenderer.applyCornerStacking(hosts);
-            // What a card costs is learnt from cards that were drawn. A slice with nothing to draw from (the
-            // first load, before the server's tag data has come) takes next to no time: counted, it made
-            // the cost look like nothing, and the slice that then drew the page's cards took forty of them.
+            // What a card costs is learnt from the cards that were drawn. A slice with nothing to draw from
+            // takes next to no time. While the server's tag data is still on its way (a first load) that
+            // says nothing of what its cards will cost: counted, it made the cost look like nothing, and the
+            // slice that then drew the page's cards took forty of them. With no data to wait for, cards
+            // that draw nothing are all there is to do, and are gone through as fast as they go.
             if (drawn) recordRenderCost(performance.now() - started, drawn);
+            else if (!loadInFlight) recordRenderCost(performance.now() - started, chunk.length);
             continueScan();
         }
 

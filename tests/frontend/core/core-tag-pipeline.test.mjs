@@ -184,6 +184,24 @@ test('slices with nothing to draw from do not make cards look free: the first sl
  assert.deepEqual([...new Set(rendered)].sort(),ids,'and the slices after it draw the rest');
 });
 
+test('with no server tag data to wait for, cards that draw nothing are gone through as fast as they go', async t => {
+ // The server cache is off and the local caches are cold: every card is a miss, queued for the batch fetch, which
+ // starts once the whole page has been scanned. Those slices cost next to nothing and are sized for it.
+ const ids=Array.from({length:120},(_,i)=>i.toString(16).padStart(32,'0'));
+ const idle=[],timers=[],calls=[];
+ const h=createHarness({html:ids.map(id=>card.replace('AA-BB',id)).join(''),
+  globals:{requestIdleCallback:fn=>{idle.push(fn);return idle.length;},setTimeout:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearTimeout(){}},
+  apiClient:{ajax:async options=>{calls.push(options);return {Items:[]};}},
+  JE:{pluginConfig:{TagCacheServerMode:false},currentSettings:{qualityTagsEnabled:true},helpers:{onBodyMutation(){},onNavigate(){}},core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}}}});
+ t.after(()=>h.close());h.load('tags/tag-pipeline.js');
+ h.JE.tagPipeline.registerRenderer('probe',{isEnabled:()=>true,render(){},renderFromCache:()=>false});
+ h.JE.tagPipeline.scheduleScan();
+ let slices=0;
+ for(;slices<60&&idle.length;slices++){idle.shift()({timeRemaining:()=>50,didTimeout:false});await settle();}
+ assert.ok(slices<=8,`the scan of 120 cards took ${slices} idle periods (24 at five cards each)`);
+ assert.ok(timers.some(timer=>timer.ms===150),'and the batch fetch is on its way');
+});
+
 /**
  * The pipeline over a stub IndexedDB store holding one complete copy with the
  * given meta; records which requests and store calls happen.

@@ -2177,19 +2177,28 @@
     }
 
     /**
-     * How many cards the next slice of the idle pass takes: what fits in
-     * the slice's time at what a card has cost so far, and in what the idle
-     * period has left.
+     * How long the next slice of the idle pass may take (ms): a slice's
+     * time, and no more than the idle period has left.
      * @param {IdleDeadline} [deadline] - The idle period's (none where there is no requestIdleCallback).
      * @returns {number}
      */
-    function idleSliceCards(deadline) {
+    function idleSliceRoom(deadline) {
         let room = IDLE_SLICE_MS;
         try {
             // Run because it had waited too long, not because the browser is idle: half a slice.
             if (deadline && deadline.didTimeout) room = IDLE_SLICE_MS / 2;
             else if (deadline && typeof deadline.timeRemaining === 'function') room = Math.min(IDLE_SLICE_MS, deadline.timeRemaining());
         } catch { /* a deadline that cannot be read: a whole slice */ }
+        return room;
+    }
+
+    /**
+     * How many cards fit in a slice's time at what a card has cost so far:
+     * two at least, so the pass always ends.
+     * @param {number} room - ms.
+     * @returns {number}
+     */
+    function idleSliceCards(room) {
         return Math.max(IDLE_SLICE_MIN_CARDS, Math.min(IDLE_SLICE_MAX_CARDS, Math.floor(room / Math.max(idleMsPerCard, 0.05))));
     }
 
@@ -2209,9 +2218,31 @@
     function flushIdle(deadline) {
         alikeScheduled = false;
         if (flowQueued !== flowSeen) { scheduleAlike(); return; }
-        const started = performance.now();
+        const began = performance.now();
+        const room = idleSliceRoom(deadline);
+        // One slice of cards that had something done to them. Cards with nothing to do (hidden, under the
+        // pointer, about to be fitted, gone) take no time and leave nothing for a frame to do: after a slice of
+        // those alone the next follows at once, while the slice's time lasts.
+        for (;;) {
+            const started = performance.now();
+            const worked = idleSlice(idleSliceCards(room - (started - began)));
+            // What a card costs is learnt from cards that were worked on: counted, the others made a card look
+            // free, and the slice after a run of them took every card it was allowed.
+            if (worked > 0) idleMsPerCard = idleMsPerCard * 0.5 + ((performance.now() - started) / worked) * 0.5;
+            const more = pendingAlike.size > 0 || pendingFreed.size > 0 || (pendingSnap.size > 0 && snapReady());
+            if (!more) return;
+            if (worked > 0 || performance.now() - began >= room) break;
+        }
+        scheduleAlike(true);
+    }
+
+    /**
+     * One slice of the idle pass (flushIdle).
+     * @param {number} count - How many cards it takes (one only measured again, or only marked, counts for a quarter).
+     * @returns {number} How many of them had something done (counted the same way): the rest cost nothing.
+     */
+    function idleSlice(count) {
         const snapping = pendingSnap.size > 0 && snapReady();
-        const room = idleSliceCards(deadline);
         // The cards waiting to be measured in the order they came (one queued again to be checked in flow comes
         // after every card that has not had its turn), then those waiting for their resting layout alone, then
         // those an answer has freed.
@@ -2224,19 +2255,19 @@
         let taken = 0;
         if (snapping) {
             for (const ctrl of pendingSnap) {
-                if (taken >= room) break;
+                if (taken >= count) break;
                 measuring.push(ctrl);
                 if (pendingAlike.has(ctrl)) { deciding.push(ctrl); taken += 1; } else taken += IDLE_LIGHT_CARD;
             }
         }
         for (const ctrl of pendingAlike) {
-            if (taken >= room) break;
+            if (taken >= count) break;
             if (snapping && pendingSnap.has(ctrl)) continue;
             deciding.push(ctrl);
             taken += 1;
         }
         for (const ctrl of pendingFreed) {
-            if (taken >= room) break;
+            if (taken >= count) break;
             freed.push(ctrl);
             taken += IDLE_LIGHT_CARD;
         }
@@ -2247,16 +2278,18 @@
         // so the browser lays the cards out once for both. A card whose layout the marks change lies where it
         // lay to within what the comparison allows, which is more than a layout unit: it is queued again
         // (markFlow) and checked in a later idle period, when the reading is free.
+        const measuredBefore = snapCounters.cards;
         const plans = measuring.length ? measureSnap(measuring) : null;
-        flushAlike(deciding);
+        const measured = snapCounters.cards - measuredBefore;
+        const decided = flushAlike(deciding);
         // Cards an earlier slice's answers freed: nothing of theirs is read, their kinds are known.
+        let marked = 0;
         for (const ctrl of freed) {
             if (!ctrl.host.isConnected || controllers.get(ctrl.host) !== ctrl || !ctrl.layout || ctrl.host.dataset.jeFlow === '1') continue;
-            if (decideFlow(ctrl, resolveLayout(ctrl)) === true) markFlow(ctrl, true, true);
+            if (decideFlow(ctrl, resolveLayout(ctrl)) === true) { markFlow(ctrl, true, true); marked++; }
         }
         if (plans) applySnap(plans);
-        if (taken > 0) idleMsPerCard = idleMsPerCard * 0.5 + ((performance.now() - started) / taken) * 0.5;
-        if (pendingAlike.size || pendingFreed.size || (pendingSnap.size && snapReady())) scheduleAlike(true);
+        return decided + IDLE_LIGHT_CARD * (Math.max(0, measured - decided) + marked);
     }
 
     /**
@@ -2332,6 +2365,7 @@
      * both ways, the styles of kinds of element not seen yet are read, and
      * every queued card is marked for flow or left positioned.
      * @param {CardController[]} [cards] - The cards of this slice, already taken off the queue (default: every queued card).
+     * @returns {number} How many of them were decided (the others had nothing done: gone, hidden, under the pointer).
      */
     function flushAlike(cards) {
         if (!cards) { cards = Array.from(pendingAlike); pendingAlike.clear(); }
@@ -2343,9 +2377,15 @@
         const deciding = [];
         for (const ctrl of list) {
             const host = ctrl.host;
-            // A live card is not at rest: decided when it is. A hidden one has no boxes to compare: when it gets a size.
-            if (host.dataset.jeLive) continue;
-            if (!(host.clientWidth > 0)) { awaitSize(ctrl); continue; }
+            // A live card is not at rest: decided when it is. A hidden one has no boxes to compare: when it gets a
+            // size. Unless an earlier slice has answered for every kind it holds: then it is marked as the cards
+            // those answers freed are, with nothing of its own read.
+            const waits = !!host.dataset.jeLive || !(host.clientWidth > 0);
+            if (waits) {
+                if (decideFlow(ctrl, resolveLayout(ctrl)) === true) markFlow(ctrl, true, true);
+                else if (!host.dataset.jeLive) awaitSize(ctrl);
+                continue;
+            }
             const conf = resolveLayout(ctrl);
             deciding.push([ctrl, conf]);
             if (flowFor(ctrl, conf, true) !== true) continue;
@@ -2366,12 +2406,13 @@
         }
         // The answers reach every card they free, not only the ones that asked: those take their turn in the
         // slices that follow (flushIdle), like any card.
-        if (!probes.length) return;
+        if (!probes.length) return deciding.length;
         for (const el of document.querySelectorAll('.je-tag-host:not([data-je-flow])')) {
             const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
             if (!ctrl || !ctrl.layout || pendingAlike.has(ctrl) || pendingFreed.has(ctrl)) continue;
             if (decideFlow(ctrl, resolveLayout(ctrl)) === true) pendingFreed.add(ctrl);
         }
+        return deciding.length;
     }
 
     // ── Layers of the page's making ────────────────────────────────────
@@ -2877,8 +2918,8 @@
      * What a top band holds, for telling a change of its lines that its
      * margins made from any other (reads only; where it is asked, the
      * layout stands): the room across inside its padding, and the size of
-     * every item laid out in it, in layout units. Margins move items and
-     * change none of this.
+     * every item laid out in it, in layout units, and its gap. Margins
+     * move items and change none of this.
      * @param {HTMLElement} slot
      * @returns {string}
      */
@@ -2892,7 +2933,7 @@
                 const rect = child.getBoundingClientRect();
                 if (rect.width > 0 && rect.height > 0) rects.push(rect);
             }
-            return bandHolds(box.width - pad('left') - pad('right'), rects);
+            return bandHolds(box.width - pad('left') - pad('right'), style.columnGap, rects);
         } catch {
             return '';
         }
@@ -2900,11 +2941,12 @@
 
     /**
      * @param {number} room - The room across inside the band's padding, CSS px.
+     * @param {string} gap - The band's computed column gap.
      * @param {Array<{width: number, height: number}>} rects - The boxes of the items laid out in it, in order.
      * @returns {string} bandSignature's text for them.
      */
-    function bandHolds(room, rects) {
-        return `${toUnits(room)}:${rects.map((rect) => `${toUnits(rect.width)}x${toUnits(rect.height)}`).join(',')}`;
+    function bandHolds(room, gap, rects) {
+        return `${toUnits(room)}:${gap}:${rects.map((rect) => `${toUnits(rect.width)}x${toUnits(rect.height)}`).join(',')}`;
     }
 
     /** @type {WeakSet<Element>} top bands being watched */
@@ -2936,6 +2978,9 @@
         sizes.snapHeight = known ? sizes.observedHeight : height;
     }
 
+    /** A box this far (CSS px) from the size the observer reported for it is scaled: two layout units, which is more than a report and a measured box differ by. */
+    const SCALED_PX = 0.03;
+
     /**
      * Whether a card's box is not the size it is laid out at: it is scaled
      * (hovered or focused under a theme, animating), and distances read
@@ -2945,8 +2990,18 @@
      * @returns {boolean}
      */
     function scaled(host, rect) {
-        // (The layout's own size is known to the pixel; a scale that hides inside that rounding moves nothing by a layout unit.)
-        return Math.abs(rect.width - host.offsetWidth) > 0.51 || Math.abs(rect.height - host.offsetHeight) > 0.51;
+        // The size observer reports the box as it is laid out, to the layout unit: against that, a card a
+        // fraction of a pixel off its size shows (the last frames of a zoom on its way back, when it would be
+        // measured and nudged for a size it is about to leave). The report is used where it agrees with the
+        // layout's size in whole pixels, which is always known; without one, that rounding is all there is, and
+        // a scale that hides inside it is taken for none.
+        const sizes = fittedWidths.get(host);
+        const width = host.offsetWidth;
+        const height = host.offsetHeight;
+        if (sizes && sizes.boxWidth !== undefined && sizes.boxHeight !== undefined && Math.abs(sizes.boxWidth - width) <= 0.5 && Math.abs(sizes.boxHeight - height) <= 0.5) {
+            return Math.abs(rect.width - sizes.boxWidth) > SCALED_PX || Math.abs(rect.height - sizes.boxHeight) > SCALED_PX;
+        }
+        return Math.abs(rect.width - width) > 0.51 || Math.abs(rect.height - height) > 0.51;
     }
 
     /**
@@ -3141,7 +3196,7 @@
             start = toUnits(box.left + pad('left') - origin.x);
             end = toUnits(box.right - pad('right') - origin.x);
             // What this pass found: a report of another number of lines, of a band that holds the same, is held against it.
-            bandRooms.set(slot, { height: box.height - pad('top') - pad('bottom'), held: bandHolds(box.width - pad('left') - pad('right'), items.map((item) => item.rect)) });
+            bandRooms.set(slot, { height: box.height - pad('top') - pad('bottom'), held: bandHolds(box.width - pad('left') - pad('right'), style.columnGap, items.map((item) => item.rect)) });
         } catch { return out; }
         /** @type {number[][]} */
         const lines = [];
@@ -3668,7 +3723,8 @@
      * next observation reports that change, and is the size that pass fitted.
      * `snapWidth` and `snapHeight` are the size the whole-pixel pass last
      * measured the card at (noteSnapSize; undefined: it never did).
-     * @type {WeakMap<HTMLElement, {observed: number, observedHeight: number, fitted: number, fittedHeight: number, measured: {width: number, height: number}|null, snapWidth?: number, snapHeight?: number}>}
+     * `boxWidth` and `boxHeight` are the border box as last observed (scaled).
+     * @type {WeakMap<HTMLElement, {observed: number, observedHeight: number, fitted: number, fittedHeight: number, measured: {width: number, height: number}|null, snapWidth?: number, snapHeight?: number, boxWidth?: number, boxHeight?: number}>}
      */
     const fittedWidths = new WeakMap();
     /** Observed sizes closer than this are the same size (float noise, below a layout unit). */
@@ -3719,6 +3775,10 @@
             if (unmeasured.delete(ctrl)) syncFlow(ctrl, resolveLayout(ctrl));
             sizes.observed = width;
             sizes.observedHeight = height;
+            // The whole box as it is laid out (scaled), where the browser says.
+            const box = entry.borderBoxSize && entry.borderBoxSize[0];
+            sizes.boxWidth = box ? box.inlineSize : undefined;
+            sizes.boxHeight = box ? box.blockSize : undefined;
             // Another size than the whole-pixel pass measured at (flushSnap): the card's containers lie elsewhere.
             if (sizes.snapWidth !== undefined && (Math.abs(width - sizes.snapWidth) >= SNAP_SAME_PX || Math.abs(height - /** @type {number} */ (sizes.snapHeight)) >= SNAP_SAME_PX)) {
                 sizes.snapWidth = width;

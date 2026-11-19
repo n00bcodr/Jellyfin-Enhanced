@@ -761,7 +761,7 @@ test('a card that cannot be measured stays positioned until one of its kind can'
 });
 
 /** A page of cards whose idle periods the test hands out one at a time, on a clock it moves by hand. */
-function idlePage(t, cards, { readMs = 0 } = {}) {
+function idlePage(t, cards, { readMs = 0, hidden = () => false } = {}) {
   const idles = [];
   const ids = Array.from({ length: cards }, (_, i) => i.toString(16).padStart(32, 'c'));
   const h = setup(t, { html: ids.map(id => card(id)).join(''), globals: { requestIdleCallback: fn => { idles.push(fn); return idles.length; } } });
@@ -770,6 +770,8 @@ function idlePage(t, cards, { readMs = 0 } = {}) {
   // Every box read takes `readMs` of the clock: a device where the pass is slow.
   if (readMs) { const read = h.window.Element.prototype.getBoundingClientRect; h.window.Element.prototype.getBoundingClientRect = function () { clock.now += readMs; return read.call(this); }; }
   const hosts = hostsOf(h);
+  // `hidden(i)`: the card is in a view that is not shown (no size).
+  hosts.forEach((host, i) => { if (hidden(i)) Object.defineProperty(host, 'clientWidth', { configurable: true, get: () => 0 }); });
   for (const host of hosts) renderInto(h, host);
   h.settle();
   const inFlow = () => hosts.filter(host => host.dataset.jeFlow === '1').length;
@@ -816,6 +818,36 @@ test('on a device where a card is dear, slices stay small', t => {
   assert.equal(second, 2, 'the least a slice takes');
   for (let i = 0; i < 6 && idles.length; i++) idle(50);
   assert.equal(inFlow(), 12, 'every card still gets its turn');
+});
+
+test('cards with nothing to do cost a slice nothing: they do not make a card look free, and do not hold the others up', t => {
+  // Twenty cards of a view that is not shown were queued first (a style sheet arriving queues every card of the
+  // page, Jellyfin's cached views included), then twelve that are shown.
+  const { h, idle, idles, hosts } = idlePage(t, 32, { hidden: i => i < 20 });
+  idle(50);
+  // One idle period: the hidden cards are gone through at once, eight to a slice (nothing is read or written for
+  // them), and the slice that reaches the shown cards, in the same period, takes what is left of its eight: not the
+  // forty-eight a card costing nothing allows.
+  assert.equal(idle(50), 4);
+  assert.equal(h.layout.idleStats().msPerCard, 0.75, 'what a card costs was learnt from the four that were decided, once');
+  assert.deepEqual(hosts.slice(0, 20).map(host => host.dataset.jeFlow), Array(20).fill(undefined), 'a hidden card of a kind not seen yet waits');
+  // The answer those four brought frees the hidden cards as well: they are marked in the slices that follow, with
+  // the shown cards that are left.
+  for (let i = 0; i < 6 && idles.length; i++) idle(50);
+  assert.equal(hosts.filter(host => host.dataset.jeFlow === '1').length, 32);
+  assert.equal(idles.length, 0);
+});
+
+test('a hidden card whose kinds an earlier slice has answered for is marked in its own slice', t => {
+  // Ten shown cards, then three in a view that is not shown. The first slice asks the page about their kind; the
+  // hidden ones come up in the second, with nothing to ask: they are marked like the cards an answer frees.
+  const { idle, hosts, idles } = idlePage(t, 13, { hidden: i => i >= 10 });
+  idle(50);
+  assert.equal(idle(50), 8);
+  assert.deepEqual(hosts.slice(10).map(host => host.dataset.jeFlow), [undefined, undefined, undefined]);
+  assert.equal(idle(50), 13);
+  assert.deepEqual(hosts.slice(10).map(host => host.dataset.jeFlow), ['1', '1', '1']);
+  assert.equal(idles.length, 0);
 });
 
 test('a quality or language group the page no longer clips keeps its card positioned', t => {

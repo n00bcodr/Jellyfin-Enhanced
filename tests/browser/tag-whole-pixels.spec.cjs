@@ -208,7 +208,11 @@ for (const [scale, name, settings] of [[1.25, 'Corners', {}], [1.25, 'Bands', { 
 test('a card a theme zooms under the pointer is left alone while the pointer is about it, and is on its pixels once it is back', async ({ page }, info) => {
   test.skip(info.project.name !== 'chromium', 'a pointer over a desktop page; nothing is nudged outside Chromium\'s family');
   test.setTimeout(60000);
-  await open(page, {}, `.card:hover .cardBox { transform: scale(1.06); transition: transform .15s }
+  // (The way back is drawn out here: the card is within a tenth of a pixel of its size after 50 ms and stays there
+  // for most of a second, which is when a card that only waited for the pointer to leave would be measured. So
+  // close, it does not read as scaled.)
+  await open(page, {}, `.card:hover .cardBox { transform: scale(1.06) }
+    .cardBox { transition: transform 1s linear(0, 0.99 5%, 0.992 95%, 1) }
     .probe { position: absolute; top: 45%; width: 26px; height: 26px; padding: 0; border: 0; opacity: 0; pointer-events: auto }`, true, true);
   await page.evaluate(() => {
     document.querySelectorAll('.cardScalable').forEach((box) => { for (let i = 0; i < 3; i++) { const button = document.createElement('button'); button.className = 'probe'; button.style.left = `${24 + i * 46}px`; box.appendChild(button); } });
@@ -217,24 +221,34 @@ test('a card a theme zooms under the pointer is left alone while the pointer is 
   const stats = () => page.evaluate(() => JellyfinEnhanced.core.tagLayout.snapStats());
   const card = page.locator('.card').first();
   const at = async (locator) => { const box = await locator.boundingBox(); return [box.x + box.width / 2, box.y + box.height / 2]; };
+  const redraw = (text) => page.evaluate((text) => {
+    const el = document.createElement('div'); el.className = 'status-overlay-container'; el.innerHTML = `<div class="status-tag">${text}</div>`;
+    JellyfinEnhanced.core.tagLayout.commitGroup(document.querySelector('.je-tag-host'), 'status', el);
+  }, text);
+  const first = () => offGrid(page).then(list => list.slice(0, 5).filter(c => c.off > 0.001));
   // The pointer comes onto the card, the card grows, and a tag is drawn again on it meanwhile: it cannot be measured now.
   await page.mouse.move(...(await at(card.locator('.probe').first())));
-  await page.waitForTimeout(400);
-  await page.evaluate(() => {
-    const el = document.createElement('div'); el.className = 'status-overlay-container'; el.innerHTML = '<div class="status-tag">Ended</div>';
-    JellyfinEnhanced.core.tagLayout.commitGroup(document.querySelector('.je-tag-host'), 'status', el);
-  });
+  await page.waitForTimeout(1300);
+  await redraw('Ended');
+  await page.waitForTimeout(700);
+  expect((await stats()).deferred, 'the zoomed card waits').toBeGreaterThan(0);
+  // The pointer leaves at once: the card is measured when it is back at its size, not on its way there.
+  await page.mouse.move(820, 380);
+  await page.waitForTimeout(1600);
+  await settled(page);
+  expect(await first(), 'every container of the card on its pixel once it is back').toEqual([]);
+  // Again, and this time the pointer goes from button to button on the card for a second and a half first.
+  await page.mouse.move(...(await at(card.locator('.probe').first())));
+  await page.waitForTimeout(1300);
+  await redraw('Returning');
   await page.waitForTimeout(700);
   const waiting = await stats();
-  expect(waiting.deferred, 'the zoomed card waits').toBeGreaterThan(0);
-  // The pointer goes from button to button on the card for a second and a half.
   for (let i = 1; i <= 24; i++) { await page.mouse.move(...(await at(card.locator('.probe').nth(i % 3))), { steps: 2 }); await page.waitForTimeout(50); }
   await page.waitForTimeout(400);
   const about = await stats();
   expect([about.passes, about.deferred], 'nothing measured while the pointer was about the card').toEqual([waiting.passes, waiting.deferred]);
-  // It leaves: the card goes back to its size, and is measured there.
   await page.mouse.move(820, 380);
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(1600);
   await settled(page);
   expect((await stats()).passes).toBeGreaterThan(about.passes);
   expect((await offGrid(page)).filter(c => c.off > 0.001), 'every container on its pixel once the card is back').toEqual([]);
@@ -381,6 +395,8 @@ for (const [scale, groups, rtl] of [[1, ['status', 'ageRating', 'quality', 'lang
       expect(new Set(bare).size, 'bands of two, three and more lines').toBeGreaterThan(2);
       await page.evaluate(([widths, groups]) => { JellyfinEnhanced.core.tagLayout.wholePixels = true; window.cards(widths, groups); }, [widths, groups]);
       await bandsRest(page);
+      // (The cards were measured a slice at a time, not all 640 in one go.)
+      expect(await page.evaluate(() => JellyfinEnhanced.core.tagLayout.snapStats().passes)).toBeGreaterThan(8);
       const rest = await bandsWatch(page);
       expect(rest.lines).toEqual(bare);
       expect([rest.changes, rest.passes, rest.held]).toEqual([0, 0, 0]);
