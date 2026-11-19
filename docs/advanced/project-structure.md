@@ -54,7 +54,7 @@ If a bundle request fails, or the bundle does not define a group's modules (for 
 
 If no usable groups file is available (bootstrap carries no `ComponentGroups` and the embedded `js/component-groups.json` cannot be loaded, or the file is invalid), the loader treats every module as `core` and requests `bundle.js?v=…` without `g`, as it did before groups existed.
 
-Administrator setting, under **Admin** → **Developer Settings**:
+Administrator setting, under [**Admin** → **Developer Settings**](../open-in-jellyfin.md?tab=admin&card=developer-settings):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -422,7 +422,7 @@ See [Seerr Features](../seerr/seerr-features.md) for permissions and integration
 
 Calendar combines Radarr, Sonarr and Shoko data. Shoko retrieval lives in the main controller, with Jellyfin posters and deep-link handling in the calendar modules; there is no separate `ShokoService.cs`. Shoko is configured when both URL and API key are present. Check it alone and alongside *arr sources when changing calendar behavior. See [*arr Settings](../arr/arr-settings.md) for setup.
 
-Administrator settings under **\*arr** → **Shoko**:
+Administrator settings under [**\*arr** → **Shoko**](../open-in-jellyfin.md?tab=arr&card=shoko):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -468,7 +468,7 @@ Administrator settings under **\*arr** → **Shoko**:
 
 `Services/PosterTags/Resolution/StatusRules.cs` resolves the same first-match status decision server-side and reads embedded locale resources. `PosterTagStatusProvider.cs` obtains shared daily TMDB ranks and series schedules plus caller-filtered parent aggregates. `PosterTagPlan.cs` plans static top/bottom Bands and their overflow; `PosterTagRenderer.cs` paints strips, status chips and the dedicated overflow tile. `tests/fixtures/native-overflow/` holds browser measurements and isolated chip pixels for Corners/Bands, exercised by backend tests and `tests/browser/native-overflow.spec.cjs`. Status-enabled settings digests use a five-minute URL bucket. `tests/poster/parity/status-fixtures.mjs` exercises each status family and timezone boundaries against the real web renderer and native resolver; the integrated profiles also cover Bands, density, order and profile inheritance.
 
-See [Tag Styles and CSS](../enhanced/tags.md#tag-styles-and-css) and [Native Poster Tags](../enhanced/tags.md#native-poster-tags-experimental) for controls and defaults. Tag Styles change colors, not size, shape or position. Administrator controls under **Display** map to these properties:
+See [Tag Styles and CSS](../enhanced/tags-server.md#tag-styles-and-css) and [Native Poster Tags](../enhanced/tags-server.md#native-poster-tags-experimental) for controls and defaults. Tag Styles change colors, not size, shape or position. Administrator controls under **Display** map to these properties:
 
 | Setting | Property |
 |---|---|
@@ -720,7 +720,7 @@ Repository-root files support development, documentation and release metadata:
 | Location | Purpose |
 |---|---|
 | `README.md`, `CONTRIBUTING.md` | Project overview and contribution/build/check guidance. |
-| `mkdocs.yml`, `docs/` | MkDocs navigation, enabled extensions and site content. Documentation is separate from embedded plugin resources. |
+| `mkdocs.yml`, `docs/` | Navigation, enabled extensions and site content. The docs are built with Zensical, which reads `mkdocs.yml`, so the file keeps its name. Documentation is separate from embedded plugin resources. |
 | `manifest.json` | Release/plugin catalog metadata; distinct from the component manifest and generated-asset manifest. |
 | `package.json`, `package-lock.json` | Test tooling/dependencies; production client bundling is performed by C#, without an npm bundler. |
 | `css/ratings.css`, `images/mdblist-logos/` | Rating color-table input and MDBList logo sources. |
@@ -771,7 +771,7 @@ docs/
 overrides/                            # Theme template overrides (copies of Material 9.6.12 templates with marked changes)
 ```
 
-`mkdocs.yml` owns navigation and Markdown extensions. Site screenshots (WebP) and short screen recordings (MP4) live in the `docs/images/<area>/` folders above; Spoiler Guard's sit beside its pages in `docs/spoiler-guard/`. `docs/images/readme/` holds the README images. Keep the flat `docs/images/ratings.png`, `theme-selector.png`, `colored-activity-icons.png`, `login-image.png` and `plugin-icons.png`: the admin page loads them from `main` for its **View Screenshot** previews. `overrides/` copies a few Material 9.6.12 templates, so refresh it if the Material version pin in `.github/workflows/docs.yml` changes.
+`mkdocs.yml` owns navigation and Markdown extensions. Site screenshots (WebP) and short screen recordings (MP4) live in the `docs/images/<area>/` folders above; Spoiler Guard's sit beside its pages in `docs/spoiler-guard/`. `docs/images/readme/` holds the README images. Keep the flat `docs/images/ratings.png`, `theme-selector.png`, `colored-activity-icons.png`, `login-image.png` and `plugin-icons.png`: the admin page loads them from `main` for its **View Screenshot** previews. `overrides/` holds the header, footer, navigation and icon templates for the `classic` theme variant. Pull requests that touch the docs build the site without publishing it, so a docs break shows up before merge.
 
 These are documentation assets, separate from runtime fonts, native rendering assets and root feature assets. The admin **Docs** tab loads the hosted site from the browser, rather than an offline copy embedded in the assembly.
 
@@ -864,7 +864,7 @@ The inventory at `tests/docs/production-inventory.json` records lexical producti
 | Workflows | Purpose |
 |---|---|
 | `regression.yml` | Regression suites, lock checks and production inventory. |
-| `docs.yml` | Generated config groups, MkDocs Material 9.6.12 build and Pages deployment. |
+| `docs.yml` | Generated config groups, Zensical build, versioned Pages deployment with mike, and a build-only run on pull requests. |
 | `translation_validation.yml`, `check-unused-translations.yml` | Locale validation and unused-key reporting. |
 | `validate-manifest.yml` | Release manifest validation. |
 | `codeql.yml`, `dependency-review.yml`, `security-scan.yml`, `scorecards.yml` | Static analysis, dependency/security checks and repository scorecard. |

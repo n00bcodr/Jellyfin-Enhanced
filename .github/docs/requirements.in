@@ -1,4 +1,6 @@
-mkdocs-material==9.8.0
+zensical
 mdx-truly-sane-lists
-mkdocs-glightbox==0.5.3
-mike==2.1.3
+# Dependencies of mike, the Zensical-compatible fork that docs.yml installs from a pinned commit
+jinja2
+pyparsing
+verspec

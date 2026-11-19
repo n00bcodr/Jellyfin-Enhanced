@@ -278,15 +278,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     if (string.IsNullOrWhiteSpace(actingUser)) return rows;
                     var own = ReclaimerrSession.ActsAsUser(config) ? await ResolveUserAsync(config, actingUser!, token).ConfigureAwait(false) : null;
-                    if (own != null) doc = await ReclaimerrSession.SendAsUserAsync(_http, config, own, HttpMethod.Get, "/api/delete-requests/my", null, Timeout, null, token).ConfigureAwait(false);
-                    else if (ReclaimerrSession.HasAccount(config))
+                    var seen = new HashSet<int>();
+                    if (own != null)
+                    {
+                        // Their own list; it can be refused (no Requests page access), which must not hide the rest.
+                        try
+                        {
+                            doc = await ReclaimerrSession.SendAsUserAsync(_http, config, own, HttpMethod.Get, "/api/delete-requests/my", null, Timeout, null, token).ConfigureAwait(false);
+                            foreach (var r in Parse(doc, null)) if (seen.Add(r.Id)) rows.Add(r);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            _logger.Warning($"[Reclaimerr] Could not read {actingUser}'s own deletion requests ({MaintainerrHttp.Describe(ex)}); grant that Reclaimerr account the Requests page.");
+                        }
+                    }
+
+                    if (ReclaimerrSession.HasAccount(config))
                     {
                         // Filed through the service account: they belong to it, so pick this user's out by the text the request carries.
                         var prefix = $"Requested by {actingUser!.Trim()} from Jellyfin";
                         doc = await ReclaimerrSession.SendAsync(_http, config, HttpMethod.Get, "/api/delete-requests", null, Timeout, null, token).ConfigureAwait(false);
-                        return Parse(doc, r => r.Reason != null && r.Reason.StartsWith(prefix, StringComparison.Ordinal));
+                        foreach (var r in Parse(doc, r => r.Reason != null && r.Reason.StartsWith(prefix, StringComparison.Ordinal))) if (seen.Add(r.Id)) rows.Add(r);
                     }
-                    else return rows;
+
+                    return rows;
                 }
                 else doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/delete-requests?status_filter=pending", actingUser, token).ConfigureAwait(false);
                 return Parse(doc, null);
@@ -327,6 +342,65 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (requestId <= 0) throw new MaintainerrActions.ActionException("Unknown request.");
             await SessionAsync(config, HttpMethod.Post, $"/api/delete-requests/{requestId}/{(approve ? "approve" : "deny")}", new { admin_notes = string.IsNullOrWhiteSpace(note) ? null : note.Trim() }, actingUser, token, adminAction: true).ConfigureAwait(false);
             _logger.Info($"[Reclaimerr] {actingUser ?? "an administrator"} {(approve ? "approved" : "denied")} deletion request {requestId}.");
+        }
+
+        /// <summary>Permissions an administrator may hand to the accounts created for Jellyfin users (never <c>manage_users</c>).</summary>
+        public static readonly string[] GrantablePermissions = { "request", "auto_approve", "manage_requests", "manage_protection", "manage_reclaim" };
+        /// <summary>Reclaimerr pages an account can be given.</summary>
+        public static readonly string[] GrantablePages = { "dashboard", "movies", "series", "requests", "protected", "candidates", "duplicates", "calendar", "storage", "history", "settings" };
+
+        /// <summary>Result of <see cref="CreateAccountsAsync"/>: the new <c>Jellyfin name, Reclaimerr name</c> pairs, how many already had an account, and the ones that could not be created.</summary>
+        public sealed record AccountsResult(List<(string Jellyfin, string Reclaimerr)> Created, int Existing, List<string> Skipped);
+
+        /// <summary>
+        /// Create a Reclaimerr account (User role, no password to sign in with: they come in through the trusted-proxy sign-in) for
+        /// every Jellyfin user that has none, with the permissions and pages given. A user who is mapped, linked or already has an
+        /// account of the same name is left as it is. Reclaimerr's rules: 5 to 32 letters, digits, <c>_</c> or <c>-</c>; other
+        /// characters become <c>_</c>, and a name that is still too short or long is reported, not created.
+        /// </summary>
+        public async Task<AccountsResult> CreateAccountsAsync(PluginConfiguration config, IEnumerable<string> jellyfinNames, IEnumerable<string> permissions, IEnumerable<string> pages, CancellationToken token)
+        {
+            if (!ReclaimerrSession.HasAccount(config)) throw new MaintainerrActions.ActionException("Create the service account first.");
+            var perms = permissions.Where(p => GrantablePermissions.Contains(p)).Distinct().ToList();
+            var allowed = pages.Where(p => GrantablePages.Contains(p)).Distinct().ToList();
+            if (allowed.Count == 0) throw new MaintainerrActions.ActionException("Pick at least one page.");
+
+            var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var users = await ReclaimerrSession.SendAsync(_http, config, HttpMethod.Get, "/api/account/users", null, Timeout, null, token).ConfigureAwait(false))
+            {
+                var list = users.RootElement;
+                if (list.ValueKind == JsonValueKind.Object && list.TryGetProperty("items", out var inner)) list = inner;
+                if (list.ValueKind == JsonValueKind.Array)
+                    foreach (var u in list.EnumerateArray())
+                        if (u.ValueKind == JsonValueKind.Object && u.TryGetProperty("username", out var n) && n.ValueKind == JsonValueKind.String && n.GetString() is { Length: > 0 } s) taken.Add(s);
+            }
+
+            var linked = await ReadIdentitiesAsync(config, token).ConfigureAwait(false);
+            var result = new AccountsResult(new(), 0, new());
+            var existing = 0;
+            foreach (var jf in jellyfinNames.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (ReclaimerrSession.MappedUser(config, jf) != null || linked.ContainsKey(jf.ToLowerInvariant()) || taken.Contains(jf)) { existing++; continue; }
+                var name = System.Text.RegularExpressions.Regex.Replace(jf, "[^a-zA-Z0-9_-]", "_");
+                if (name.Length < 5) name += "_user"; // Reclaimerr's own Jellyfin sign-ins get the same suffix
+                if (name.Length > 32) { result.Skipped.Add($"{jf}: Reclaimerr allows at most 32 characters"); continue; }
+                if (taken.Contains(name)) { result.Skipped.Add($"{jf}: an account named {name} already exists (map it by hand)"); continue; }
+                var password = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24)).Replace('+', '-').Replace('/', '_');
+                var body = new { username = name, password, display_name = jf.Length is >= 3 and <= 32 ? jf : null, role = "user", permissions = perms, allowed_pages = allowed, use_default_page_access = false, require_password_change = false };
+                try
+                {
+                    using (await ReclaimerrSession.SendAsync(_http, config, HttpMethod.Post, "/api/account/users", JsonSerializer.Serialize(body), Timeout, null, token).ConfigureAwait(false)) { }
+                    taken.Add(name);
+                    result.Created.Add((jf, name));
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    result.Skipped.Add($"{jf}: {MaintainerrHttp.Describe(ex)}");
+                }
+            }
+
+            _logger.Info($"[Reclaimerr] Created {result.Created.Count} account(s) for Jellyfin users ({existing} already had one, {result.Skipped.Count} skipped).");
+            return result with { Existing = existing };
         }
 
         private readonly Dictionary<(string Type, int Id), string?> _tmdbOfMedia = new();

@@ -25,7 +25,7 @@ Seerr adds movies and series you can request alongside Jellyfin's own search res
 
 ![Library matches and Seerr results for a Spider-Man search](../images/seerr/search-results.webp)
 
-#### Requesting:
+#### Requesting
 
 **How to use:**
 
@@ -47,13 +47,7 @@ To narrow results by year, search for `Title (YYYY)`, including the closing pare
 
 ![Seerr-only search with a year in the query](../images/seerr/year-filter.webp)
 
-Admin settings under **Seerr** → **Search & Requests** ([full reference](seerr-settings.md#search-and-collection-results)):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Show Seerr Results in Search** | On | Adds Seerr search when the integration is enabled and the viewer is linked. |
-| **Exclude search items already in library** | Off | Removes library matches, including partially owned series and movies owned in lower quality. |
-| **Show Collections in Seerr Results** | On | Adds collections derived from matching movies when Seerr search is on. |
+Admin settings under [**Seerr** → **Search & Requests**](../open-in-jellyfin.md?tab=seerr&card=search-requests); every option and default is in the [full reference](seerr-settings.md#search-and-collection-results).
 
 !!! note "Search exclusions"
 
@@ -90,7 +84,7 @@ Choose which seasons to request when Seerr allows partial TV requests.
 
     Library season-presence checks can make deleted seasons requestable again even while Seerr still reports them available. Request eligibility also depends on the selected quality's status and Seerr's authorization.
 
-#### 4K TV Requesting:
+#### 4K TV Requesting
 
 Request series in 4K when your Seerr setup supports it.
 
@@ -104,12 +98,7 @@ Movie cards also offer **Request in 4K** when **Enable 4K Requests** is on. Choo
 
 ![Request split button with the Request in 4K choice on a Seerr card](../images/seerr/request-4k-popup.webp)
 
-Admin settings under **Seerr** → **Search & Requests**:
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable 4K Requests** | Off | Exposes 4K movie requests. Requires a suitable Seerr 4K Radarr destination and permissions. |
-| **Enable 4K TV Requests** | Off | Exposes 4K series requests. Requires a suitable Seerr 4K Sonarr destination and permissions. |
+Admin settings under [**Seerr** → **Search & Requests**](../open-in-jellyfin.md?tab=seerr&card=search-requests); every option and default is in [Seerr settings → Enable 4K TV Requests](seerr-settings.md#enable-4k-tv-requests).
 
 Normal and 4K statuses are separate. These switches expose actions; Seerr still decides whether a request is accepted. See [4K settings](seerr-settings.md#enable-4k-tv-requests).
 
@@ -117,7 +106,7 @@ Normal and 4K statuses are separate. These switches expose actions; Seerr still 
 
     In More Info, unrequested series can show **Request**, follow-up requests can show **Request More**, and **Request in 4K** can be a dropdown choice or a standalone button when normal requests are unavailable.
 
-#### Series without a TVDB match:
+#### Series without a TVDB match
 
 You can match a series manually when its TMDB metadata has no TVDB ID.
 
@@ -139,11 +128,7 @@ Choose where and how Seerr downloads a request when your account has access to a
 
 **How to use:** In the request dialog, choose **Destination Server**, **Quality Profile**, and **Root Folder**. Fill every required choice before submitting.
 
-Admin settings under **Seerr** → **Search & Requests** ([full reference](seerr-settings.md#show-advanced-request-options)):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Show advanced request options** | Off | Shows destination choices to authorized linked users. |
+Admin settings under [**Seerr** → **Search & Requests**](../open-in-jellyfin.md?tab=seerr&card=search-requests); every option and default is in the [full reference](seerr-settings.md#show-advanced-request-options).
 
 ??? info "How it works"
 
@@ -159,11 +144,7 @@ Quota information helps you see how many requests you have left and when another
 
 ![Movie request quota shown above the Request button in the More Info view](../images/seerr/quota.webp)
 
-Admin settings under **Seerr** → **Search & Requests** ([full reference](seerr-settings.md#show-advanced-request-options)):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Show request quota info** | On | Shows finite Seerr quota usage, window, and estimated next-slot timing, and enables detailed quota-error handling. |
+Admin settings under [**Seerr** → **Search & Requests**](../open-in-jellyfin.md?tab=seerr&card=search-requests); every option and default is in the [full reference](seerr-settings.md#show-advanced-request-options).
 
 ??? note "Details"
 
@@ -181,21 +162,15 @@ Request several movies from a collection in one place.
 2. Choose movies individually or with **Select All Movies**.
 3. Press **Request Selected Movies**.
 
-Admin settings under **Seerr** → **Search & Requests**:
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Show Collections in Seerr Results** | On | Adds search collection cards from matching movies. Depends on **Show Seerr Results in Search**. |
+Admin settings under [**Seerr** → **Search & Requests**](../open-in-jellyfin.md?tab=seerr&card=search-requests); every option and default is in [Seerr settings → Search and collection results](seerr-settings.md#search-and-collection-results).
 
 ??? note "Details"
 
     Available movies and entries with normal-quality Pending/Processing media status are disabled. Other entries start checked, including partially available or blocklisted entries whose requests may fail upstream. Requests are sequential and normal quality; feedback reports successful and failed counts. A quota error recognized while quota information is enabled stops the remaining batch. A separate TMDB key supplies fallback collection metadata if Seerr returns no collection.
 
-#### Request Status Indicators:
+#### Request Status Indicators
 
 Status labels help you see whether a title is available or a request needs attention. Cards, More Info chips, season rows, and Requests cards summarize related but different Seerr states.
-
-**How to use:** Read the label on the card or season row using the guide below.
 
 | Status | Meaning |
 | --- | --- |
@@ -225,21 +200,13 @@ Find more to watch in **Similar** and **Recommended** rows on movie and series d
 
 **How to use:**
 
-1. Turn on either row under **Seerr** → **Discovery & UI Extras** → **Item Pages Discovery**.
+1. Turn on either row under [**Seerr** → **Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras) → **Item Pages Discovery**.
 2. Open an eligible movie or series detail page and browse the rows.
 3. To request more seasons, press **Request More** beside the season list when it is available. On Jellyfin 12, this list is headed **Series**. This opens season selection.
 
 ![Request More action beside a series season list](../images/seerr/request-more.webp)
 
-Admin settings ([full reference](seerr-settings.md#item-pages-discovery)):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Show similar items** | On | Adds **Similar**. |
-| **Show recommended items** | On | Adds **Recommended** independently. |
-| **Show "Request More" button on Series** | On | Adds follow-up season requesting when eligible. |
-| **Exclude items already in library** | On | Filters shared discovery/recommendation cards. |
-| **Exclude blocklisted items** | Off | Filters media with Seerr's blocked media status, rather than declined requests. |
+Admin settings; every option and default is in the [full reference](seerr-settings.md#item-pages-discovery).
 
 !!! note "Requirements"
 
@@ -267,15 +234,7 @@ More Info lets you read about a title, check its availability, and request it wi
 
 ![Two phone views of Reacher in More Info, showing Request More and season availability badges](../images/seerr/more-info-phone.webp)
 
-Admin settings under **Seerr** → **Discovery & UI Extras** ([full reference](seerr-settings.md#more-info-and-detail-links)):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Open results in "More Info" modal** | On | Uses JE's modal for result details and the Seerr detail link. |
-| **Link available items' posters straight to Jellyfin** | Off | Makes available posters open Jellyfin directly; available title links already do. |
-| **Show Seerr link on item detail pages** | On | Adds a link for TMDB-identified movies/series. |
-| **Show as text instead of icon** | Off | Changes the enabled detail link to text. |
-| **Show Streaming Providers on Posters** | Off | Adds up to four subscription-provider icons using the admin Elsewhere region/provider filters (or each user's Seerr streaming region when that Elsewhere option is on); needs a TMDB key or the Seerr integration. |
+Admin settings under [**Seerr** → **Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras); every option and default is in the [full reference](seerr-settings.md#more-info-and-detail-links).
 
 ??? note "Details"
 
@@ -302,7 +261,7 @@ Related admin settings ([Spoiler Guard reference](../spoiler-guard/spoiler-guard
 
 !!! note "Requires Spoiler Guard"
 
-    Your admin must enable Spoiler Guard. Your choice is stored with your pending protected titles.
+    A server admin must enable Spoiler Guard. Your choice is stored with your pending protected titles.
 
 #### Hidden Content on Seerr results
 
@@ -310,7 +269,7 @@ Hide a title for your Jellyfin account, even before it reaches your library.
 
 **How to use:** Use **Hide** on an enabled Seerr card. Use **Unhide** or restore it through Hidden Content. See [Hidden Content](../enhanced/enhanced-features.md#content-management) for management and [its settings](../enhanced/enhanced-settings.md) for personal overrides.
 
-The server master switch is under **Pages** → **Hidden Content**. The following are admin defaults that users can override, except for the master switch:
+The server master switch is under [**Pages** → **Hidden Content**](../open-in-jellyfin.md?tab=pages&card=hidden-content). The following are admin defaults that users can override, except for the master switch:
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -340,15 +299,7 @@ Find related movies and series beyond your library on Jellyfin genre, studio/net
 
 #### Available Discovery Types
 
-Admin settings under **Seerr** → **Discovery & UI Extras** → **"More" Discovery** ([full reference](seerr-settings.md#more-discovery)):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Show "More from Network"** | On | Adds discovery for known networks and production companies. |
-| **Show "More Genre"** | On | Adds genre discovery. |
-| **Show "More Tag"** | On | Adds tag discovery using a matched TMDB keyword. |
-| **Show "More from Actor"** | On | Adds actor/crew credits using a TMDB ID or name search. |
-| **Show missing collection movies** | On | Shows missing movies with request buttons on BoxSet pages that have a TMDB collection ID. |
+Admin settings under [**Seerr** → **Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras) → **"More" Discovery**; every option and default is in the [full reference](seerr-settings.md#more-discovery).
 
 Network/studio pages can combine movies and series. Studio-produced series come from TMDB and require the separate TMDB key; those cards initially show status only for series already in the library, so open a card for fuller status. Some networks have no matching movie-company feed. Seerr-backed genre, keyword, and person discovery do not require a separate TMDB key.
 
@@ -401,16 +352,11 @@ On a person page, each card says what the person did in that title, on a line un
 
     For a title protected by [Spoiler Guard](../spoiler-guard/spoiler-guard-features.md#what-spoiler-guard-protects), the part played is left out when titles or descriptions are hidden, and a hidden score or vote count still sorts the title under **Top rated** and **Most votes** without being shown. The **Score** and **Votes** filters treat a hidden score or vote count as missing.
 
-Admin settings under **Seerr** → **Discovery & UI Extras** → **Filters in the "More" sections** ([full reference](seerr-settings.md#discovery-filters)) turn each filter off for everyone. All are on by default.
+Admin settings under [**Seerr** → **Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras) → **Filters in the "More" sections** ([full reference](seerr-settings.md#discovery-filters)) turn each filter off for everyone. All are on by default.
 
 #### Configure
 
-Discovery and recommendation cards share these admin filters under **Item Pages Discovery**:
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Exclude items already in library** | On | Removes library matches from shared discovery/recommendation cards. |
-| **Exclude blocklisted items** | Off | Removes Seerr blocklisted media from those cards. |
+Discovery and recommendation cards share these admin filters under **Item Pages Discovery**; every option and default is in [Seerr settings → Item Pages Discovery](seerr-settings.md#item-pages-discovery).
 
 These are separate from **Exclude search items already in library**. Availability still depends on matching metadata, configured services, and linked user access.
 
@@ -443,15 +389,7 @@ Browse trending, popular, and upcoming titles in **Seerr Recommendations**. This
 
 ![Movie genre, TV genre and studio tiles on the Seerr Recommendations page](../images/seerr/recommendations-tiles.webp)
 
-Admin settings under **Pages** → **Seerr Recommendations Page** ([full navigation reference](seerr-settings.md#seerr-recommendations-page)):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Recommendations Page** | Off | Enables the page for linked viewers with configured, enabled Seerr. |
-| **Add Recommendations as a native Home tab** | Off | Adds a Home tab without a companion plugin. |
-| **Use Plugin Pages** | Off | Uses Plugin Pages integration. |
-| **Use Custom Tabs** | Off | Embeds Recommendations with Custom Tabs; incompatible with its native tab. |
-| **Add the Custom Tabs entry for me** | Off | Creates/removes the managed Custom Tabs entry with that mode. |
+Admin settings under [**Pages** → **Seerr Recommendations Page**](../open-in-jellyfin.md?tab=pages&card=seerr-recommendations-page); every option and default is in the [full navigation reference](seerr-settings.md#seerr-recommendations-page).
 
 !!! note "Addresses"
 
@@ -533,12 +471,7 @@ Report video, audio, subtitle, or other media problems to Seerr without leaving 
   <figcaption>The demonstration fills an episode report and cancels before submission.</figcaption>
 </figure>
 
-Admin settings under **Seerr** → **Discovery & UI Extras** ([full reference](seerr-settings.md#show-report-issue-button)):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Show "Report Issue" button on items** | Off | Adds reporting to eligible detail pages. |
-| **Show open issue indicator** | Off | Shows an orange report icon and open-issue count, capped at `9+`; requires the report-button switch. |
+Admin settings under [**Seerr** → **Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras); every option and default is in the [full reference](seerr-settings.md#show-report-issue-button).
 
 !!! note "Reporting requirements"
 
@@ -568,16 +501,13 @@ Enable the shared page to browse requests in Jellyfin.
 
 **How to use:**
 
-1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Pages** → **Requests Page**.
+1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced** → [**Pages**](../open-in-jellyfin.md?tab=pages) → [**Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page).
 2. Turn on **Enable Requests Page**.
 3. Press **Save Settings**.
 
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Requests Page** | Off | Enables the shared page. |
-| **Show Seerr Issues Section** | Off | Adds issue browsing for authorized users when Seerr is enabled. |
+Every option and default: [Seerr settings → Requests Page Management](seerr-settings.md#enable-requests-page).
 
-These are admin settings under **Pages**, not **Seerr**. See [Requests Page Management](seerr-settings.md#requests-page-management) for navigation choices, manual Custom Tabs HTML, and download/history visibility settings.
+These are admin settings under [**Pages**](../open-in-jellyfin.md?tab=pages&card=requests-page), not **Seerr**. See [Requests Page Management](seerr-settings.md#requests-page-management) for navigation choices, manual Custom Tabs HTML, and download/history visibility settings.
 
 !!! note "Connection requirements"
 
@@ -591,14 +521,7 @@ These are admin settings under **Pages**, not **Seerr**. See [Requests Page Mana
 
 Auto-refresh keeps the page updated while you browse.
 
-**How to use:** Enable auto-refresh and choose its interval below.
-
-Admin settings under **Pages** → **Requests Page**:
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Auto-Refresh** | On | Refreshes requests and the enabled downloads/issues/history sections. |
-| **Poll Interval (seconds)** | 30 | Interval when enabled; input range 30–300 seconds. |
+Admin settings under [**Pages** → **Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page); every option and default is in [Seerr settings → Auto-Refresh Settings](seerr-settings.md#auto-refresh-settings).
 
 ??? info "How it works"
 
@@ -656,11 +579,7 @@ Browse Seerr issues in Jellyfin when your account has viewing permission. Your p
 2. Press an issue's eye button to open the report modal.
 3. Click its card to open the Jellyfin item when a library ID exists.
 
-Admin setting under **Pages** → **Requests Page**:
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Show Seerr Issues Section** | Off | Adds the section when the page and Seerr are enabled. |
+Admin setting under [**Pages** → **Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page); every option and default is in [Seerr settings → Show Seerr Issues Section](seerr-settings.md#show-seerr-issues-section).
 
 ??? note "Details"
 
@@ -672,7 +591,7 @@ JE adds items between your Seerr and Jellyfin watchlists. You can sync in either
 
 **How to use:**
 
-1. Enable the desired direction under **Seerr** → **Watchlist** and save.
+1. Enable the desired direction under [**Seerr** → **Watchlist**](../open-in-jellyfin.md?tab=seerr&card=watchlist) and save.
 2. Adjust or run its task under **Dashboard** → **Scheduled Tasks**.
 3. To add requested media when library items arrive or change, also restart Jellyfin or run **Jellyfin Enhanced Startup** once after enabling it.
 
@@ -680,13 +599,7 @@ Admin settings ([full reference](seerr-settings.md#add-requested-media-to-watchl
 
 ![Watchlist synchronization and recently added scan settings](../images/admin/watchlist.webp)
 
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Add requested media to Watchlist** | Off | Watches movie/series library additions and updates and adds matching requested titles for their requesters, including requests made outside JE. |
-| **Sync Seerr Watchlist → Jellyfin** | Off | Enables the incoming scheduled task. |
-| **Sync Jellyfin Watchlist → Seerr** | Off | Enables the outgoing scheduled task. |
-| **Prevent re-adding removed items** | On | Remembers processed incoming items so manual Jellyfin watchlist removal persists during future sync/monitoring. |
-| **Memory retention (days):** | 365 | Retains processed-item memory; input range 1–3650, used when prevention is enabled. |
+Every option and default: [Seerr settings → Watchlist settings](seerr-settings.md#add-requested-media-to-watchlist).
 
 ??? info "How it works"
 
@@ -714,7 +627,6 @@ Bring Jellyfin movie and series watchlist entries into Seerr.
 
     It uses the first configured URL, linked accounts, and TMDB-identified movie/series watchlist items. It skips entries already on Seerr's watchlist and excludes blocked users. It never removes anything; see Watchlist Removal Sync below.
 
-
 #### Watchlist Removal Sync
 
 Copy removals between the two watchlists. Adding and removing are separate choices.
@@ -731,8 +643,6 @@ Watching an item counts as a removal, because KefinTweaks drops watched items fr
 
 Re-addition prevention remembers processed items for a limited time.
 
-**How to use:** Choose **Memory retention (days):** above to control how long JE remembers them.
-
 ??? note "Details"
 
     Processed-item memory is stored in `processed-watchlist-items.json` using processing timestamps, not removal dates. Incoming sync cleans expired entries when prevention is enabled. After expiry, a still-eligible item can be added again; watched items are not exempt from incoming addition. Scheduled library matching is not scoped to the user's library access, so review this automation separately from protected UI parental filtering.
@@ -740,8 +650,6 @@ Re-addition prevention remembers processed items for a limited time.
 ### Icon States
 
 The Seerr search icon shows whether your connection and account link are working. An active icon does not itself grant request permission.
-
-**How to use:** Check the icon and its tooltip against the states below.
 
 | Icon | State | Meaning |
 | :---: | --- | --- |
@@ -814,7 +722,7 @@ Map the Jellyfin server address used by your client to a browser-accessible Seer
 
 **How to use:**
 
-1. Open **Seerr** → **Seerr Connection Setup** → **Advanced URL Mappings**.
+1. Open [**Seerr** → **Seerr Connection Setup**](../open-in-jellyfin.md?tab=seerr&card=seerr-connection-setup) → **Advanced URL Mappings**.
 2. Enter one `jellyfin_url|seerr_url` pair per line.
 3. Press **Validate Mappings**, then save.
 
@@ -840,7 +748,7 @@ Server automations can request the next season or collection movie based on play
 
 **How to use:**
 
-1. Enable the desired feature under **Seerr** → **Auto Season Requests** or **Auto Movie Requests**.
+1. Enable the desired feature under [**Seerr** → **Auto Season Requests**](../open-in-jellyfin.md?tab=seerr&card=auto-season-requests) or **Auto Movie Requests**.
 2. Save, then restart Jellyfin or run **Jellyfin Enhanced Startup** once to start monitoring playback.
 
 !!! warning "Review automation access"
@@ -853,7 +761,7 @@ Server automations can request the next season or collection movie based on play
 
     Requested-media watchlist monitoring also initializes at startup when enabled, but does exclude blocked users.
 
-#### Auto Season Request:
+#### Auto Season Request
 
 Request the next numeric season as you approach the end of the current one.
 
@@ -863,11 +771,7 @@ Admin settings ([full reference](seerr-settings.md#auto-season-requests)):
 
 ![Automatic season and movie request configuration](../images/admin/automatic-requests.webp)
 
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Automatic Advance Season Requests** | Off | Enables playback-triggered next-season checks. |
-| **Require All Prior Episodes Watched** | Off | Requires earlier locally present episodes in the current season to be watched/marked watched; current and later episodes need not be watched. |
-| **Episodes Remaining Threshold** | 2 | Maximum remaining episodes for the trigger; input range 1–20. |
+Every option and default: [Seerr settings → Auto Season Requests](seerr-settings.md#auto-season-requests).
 
 ??? info "How it works"
 
@@ -875,22 +779,11 @@ Admin settings ([full reference](seerr-settings.md#auto-season-requests)):
 
     Start detection requires playback at most two minutes in and below 5%; stop detection requires completion or at least 90%. The series needs a TMDB ID; counts are read through Seerr without a separate TMDB key. The next season must contain episodes and must not already be available/requested. Recent season requests are deduplicated across users for about an hour.
 
-#### Auto Movie Request:
+#### Auto Movie Request
 
 Request the next collection movie when you play a movie from that collection.
 
-**How to use:** Enable the automation, choose either or both playback triggers, and select a quality profile mode below.
-
-Admin trigger settings ([complete trigger and destination reference](seerr-settings.md#auto-movie-requests)):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Enable Auto Movie Requests** | Off | Enables playback-triggered collection checks. Requires a TMDB ID, collection membership, JE's TMDB key, and linked user access. |
-| **When movie starts** | Off | Checks at most five minutes in and below 5% playback. |
-| **After X minutes watched** | On | Checks when playback position reaches the threshold. Seeking or resuming can satisfy it. |
-| **Minutes Watched Threshold:** | 20 | Position threshold in minutes; input range 1–180. |
-| **Only request if released** | On | A valid future release date prevents submission; missing/unparseable dates do not. |
-| **Quality Profile Mode:** | **Default** | Uses Seerr defaults, copies the first existing request with **Original**, or sends configured choices with **Custom** (a 4K Radarr server is requested as a 4K request). |
+Admin trigger settings; every option and default is in the [complete trigger and destination reference](seerr-settings.md#auto-movie-requests).
 
 ??? info "How it works"
 
@@ -898,21 +791,17 @@ Admin trigger settings ([complete trigger and destination reference](seerr-setti
 
     User/movie checks are throttled to about once per hour. **Original** copies Seerr request settings rather than the watched file's quality. Unusable original settings and an empty **Custom** configuration fall back to **Default**. The default **Use default instead of 4K fallback** behavior also falls back when original settings were 4K.
 
-#### Auto Request Removal:
+#### Auto Request Removal
 
 Delete a request from Seerr once the person who asked for it has watched it.
 
-**How to use:** Open **Seerr** → **Auto Request Removal** and enable **Remove Watched Requests**. The **Remove watched requests from Seerr** scheduled task does the removal once a day: a request goes on the first run after its requester has watched it.
+**How to use:** Open [**Seerr** → **Auto Request Removal**](../open-in-jellyfin.md?tab=seerr&card=auto-request-removal) and enable **Remove Watched Requests**. The **Remove watched requests from Seerr** scheduled task does the removal once a day: a request goes on the first run after its requester has watched it.
 
 !!! warning "Destructive: use with caution"
 
     A deleted request cannot be restored, and its history is gone from Seerr. If request quotas are enabled in Seerr, removing a request also gives that quota back to the user, because Seerr counts quota from the requests that still exist. The same applies to the **Remove request** button on the Requests page.
 
-Admin settings ([full reference](seerr-settings.md#auto-request-removal)):
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Remove Watched Requests** | Off | Deletes approved or completed requests that their requester has watched. |
+Admin settings; every option and default is in the [full reference](seerr-settings.md#auto-request-removal).
 
 ??? info "How it works"
 

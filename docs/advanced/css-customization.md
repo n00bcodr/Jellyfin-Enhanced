@@ -191,14 +191,14 @@ Server and saved user properties use PascalCase. Resolved client settings use ca
 
 Users can change **Hide tags on hover** later in their personal **Media Tags** section (**Layout** tab).
 
-If tag data is stale or missing, also check the server's cache configuration under **Media Tags** → **Server**:
+If tag data is stale or missing, also check the server's cache configuration under [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server):
 
 | Setting (admin) | Default | What it does |
 | --- | --- | --- |
 | **Exclude libraries from the tag cache** | Off | `TagCacheExcludeLibraries`: enables library exclusions. |
 | **Libraries to exclude** | Empty | `TagCacheExcludedLibraryIds`: selected libraries to skip; an empty selection excludes nothing. |
 
-Exclusion changes affect the next cache rebuild. Click **Save Settings**, then open **Admin** → **Tag Cache** and click **Rebuild Server Tag Cache**. Confirm the full rebuild. See [Tags & Badges](../enhanced/tags.md) for cache operation; CSS only styles the resulting elements.
+Exclusion changes affect the next cache rebuild. Click **Save Settings**, then open [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server) and click **Rebuild Server Tag Cache**. Confirm the full rebuild. See [Tags & Badges](../enhanced/tags.md) for cache operation; CSS only styles the resulting elements.
 
 Use the **Position** pills on the **Groups** tab and the layout tiles on the **Layout** tab of **Media Tags** to move tag containers.
 
@@ -258,9 +258,9 @@ Your CSS decides too, with nothing to add to it. A kind of card rests in flow on
 
 **Whole pixels.** In Chromium-based browsers the genre, quality, language, rating, age rating, status and logo containers (`[data-je-group]` children of a slot) may carry `--je-snap-x` and `--je-snap-y`, each a fraction of a pixel. A container whose corner falls between two pixels of the screen is moved by that fraction, so its chips are drawn from a whole pixel as they always were (the containers used to get that from layout containment, which they no longer have). The stylesheet applies the two values as margins that cancel (`margin-left` with `margin-right`, `margin-top` with `margin-bottom`), so nothing around the container moves, and every rule of ours that gives a container a margin adds them. (In Bands' top band, where auto margins spread the groups, a group between the two ends of a line also carries `--je-band-left`: its auto margin as a length, taken off again the moment the card or one of its groups changes size.) A `margin` your CSS sets on a group container replaces them: the container keeps your margin and is not moved, which can soften the edges of its chips by a fraction of a pixel. To keep both, add the values to yours, for example `margin-top: calc(4px + var(--je-snap-y, 0px)); margin-bottom: calc(0px - var(--je-snap-y, 0px));`. A card is measured in idle time once its tags are drawn and the page has come to rest, and again when its size changes, an image in its tags loads or a font arrives; never while the page loads or scrolls. Firefox and Safari draw contained and plain boxes alike, so nothing is set there.
 
-A card whose look comes from a lock (see [Rules and locked items](../enhanced/tags.md#rules-and-locked-items)) has `data-je-locked="1"` on its `.je-tag-host`; nothing styles it by default. For example, `.je-tag-host[data-je-locked="1"] { outline: 1px dashed #fff8; }` marks locked cards. A server-wide item look does not set it.
+A card whose look comes from a lock (see [Rules and locked items](../enhanced/tags-layouts.md#rules-and-locked-items)) has `data-je-locked="1"` on its `.je-tag-host`; nothing styles it by default. For example, `.je-tag-host[data-je-locked="1"] { outline: 1px dashed #fff8; }` marks locked cards. A server-wide item look does not set it.
 
-The per-item editor ([One item's look](../enhanced/tags.md#one-items-look)) is a dialog `.je-tie` inside `.je-tie-backdrop`; its sample card is `.je-tie-card`, and its row in Jellyfin's ⋮ menu is `.actionSheetMenuItem[data-id="je-media-tags"]`. Its Undo message is `.je-tie-toast`.
+The per-item editor ([One item's look](../enhanced/tags-layouts.md#one-items-look)) is a dialog `.je-tie` inside `.je-tie-backdrop`; its sample card is `.je-tie-card`, and its row in Jellyfin's ⋮ menu is `.actionSheetMenuItem[data-id="je-media-tags"]`. Its Undo message is `.je-tie-toast`.
 
 The Media Tags import, export and preset dialogs (in the settings panel and on the configuration page's Media Tags tab) are `.je-pt-backdrop > .je-pt-dialog[role="dialog"]`, with `.je-pt-change` / `.je-pt-skip` rows (`.je-pt-from`, `.je-pt-to`, `.je-pt-reason`) and `.je-pt-btn` buttons (`[data-primary]` for the main action). The panel's preset rows are `.je-mth-tp-item` inside `[data-tp-source="builtIn" | "offered" | "mine"]`.
 
@@ -270,7 +270,7 @@ Processing markers such as `data-je-quality-tagged`, `data-je-genre-tagged`, `da
 
 ### Tag Styles and native posters
 
-Use the built-in [Tag Styles editor](../enhanced/tags.md#tag-styles-and-css) for supported colors; that guide covers presets, tabs, scope, opacity, and bulk controls. See [Native Poster Tags](../enhanced/tags.md#native-poster-tags-experimental) for native-client setup and refresh requirements. CSS remains useful for web shape, sizing, visibility, and other surfaces.
+Use the built-in [Tag Styles editor](../enhanced/tags-server.md#tag-styles-and-css) for supported colors; that guide covers presets, tabs, scope, opacity, and bulk controls. See [Native Poster Tags](../enhanced/tags-server.md#native-poster-tags-experimental) for native-client setup and refresh requirements. CSS remains useful for web shape, sizing, visibility, and other surfaces.
 
 Web overrides use important selectors. Their specificity is `(0,4,0)` for quality, `(0,3,0)` for age and rating chips, and `(0,2,0)` for the whole genre group (`(0,3,0)` for one genre, through `data-je-genre`). These beat simple color recipes; more specific important Custom CSS can override them.
 
@@ -310,7 +310,7 @@ The codec class names are historical: `.video-format` means video codec, while `
     - Source detection requires a `.disc` media stub and selects one source badge.
     - Standalone channel fallback produces `7.1` or `5.1`. `2.0` can be appended to a codec label but is not a standalone fallback.
 
-Use the [Quality Tags category controls](../enhanced/tags.md#quality-tags) before CSS hiding; that guide covers administrator defaults, personal overrides, and category order.
+Use the [Quality Tags category controls](../enhanced/tags-quality.md#quality-tags) before CSS hiding; that guide covers administrator defaults, personal overrides, and category order.
 
 **Resize all quality badges:**
 
@@ -396,7 +396,7 @@ Use these hooks to style genre icons and their hover labels. Up to three genres 
 
 - Icons use `.genre-tag > .je-msym-outlined`.
 - Text uses `.genre-text` inside `.genre-overlay-container`.
-- `data-je-genre` holds the genre's [Tag Styles label](../enhanced/tags.md#genre-colours): the canonical English genre its icon stands for (`horror`, `science fiction`, `game-show`…), the same for every spelling and translation (*Sci-Fi* and *Ciencia ficción* are both `science fiction`), or `other`. Tag Styles colour one genre through it: `.genre-tag[data-je-genre="horror"]`.
+- `data-je-genre` holds the genre's [Tag Styles label](../enhanced/tags-server.md#genre-colours): the canonical English genre its icon stands for (`horror`, `science fiction`, `game-show`…), the same for every spelling and translation (*Sci-Fi* and *Ciencia ficción* are both `science fiction`), or `other`. Tag Styles colour one genre through it: `.genre-tag[data-je-genre="horror"]`.
 - Target the exact name the item has through its title, such as `.genre-tag[title="Drama"]`.
 
 By default, text appears on hover and floats inward from the selected corner. To keep labels visible inside wider chips:
@@ -478,7 +478,7 @@ Use `.rating-overlay-container`, `.rating-tag`, and `.rating-text` to style post
 - `.rating-tag-tmdb` displays Jellyfin's `CommunityRating`; the class name does not guarantee TMDB supplied the metadata. Its star is `.rating-star-icon`.
 - Critic chips use `.rating-tag-critic` and `.rating-tomato-icon.fresh` or `.rating-tomato-icon.rotten`. Scores below 60 are rotten, and scores of 60 or more are fresh.
 
-Use the [Rating Tags scope controls](../enhanced/tags.md#rating-tags) to choose item types and home rows; that guide covers administrator defaults and personal overrides.
+Use the [Rating Tags scope controls](../enhanced/tags-groups.md#rating-tags) to choose item types and home rows; that guide covers administrator defaults and personal overrides.
 
 **Change the community-score background:**
 
@@ -504,7 +504,7 @@ Using `.rating-tag-critic` without the exclusion also hides user-review chips.
 
 These chips show the aggregate 1–5 review average converted to a /10 score.
 
-They require a resolvable TMDB item key, personal **Show Rating Tags**, and the following admin settings under **Elsewhere & Reviews** → **User Reviews**:
+They require a resolvable TMDB item key, personal **Show Rating Tags**, and the following admin settings under [**Elsewhere & Reviews** → **User Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=user-reviews):
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -566,7 +566,7 @@ The attribute holds a normalized rating, not necessarily the raw metadata spelli
 
 Poster badges independently reuse rating-specific colors from the Colored Ratings stylesheet, stripping its important flags. The TV-MA rule beats those shipped colors but loses to a more specific important admin age Tag Style. The fallback is blue-grey.
 
-Detail/player certifications use `.mediaInfoOfficialRating`, a separate surface. The administrator controls their colors under **Extras** → **UI Tweaks**.
+Detail/player certifications use `.mediaInfoOfficialRating`, a separate surface. The administrator controls their colors under [**Extras** → **UI Tweaks**](../open-in-jellyfin.md?tab=extras&card=ui-tweaks).
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -602,7 +602,7 @@ Use `.status-overlay-container` and `.status-tag` to style the Just Added, New a
 
 The default look is a dark translucent pill with a blurred backdrop, the same for every kind except the warmer rank colour. At rest the blur is not a `backdrop-filter`: the artwork behind the tag is blurred once and painted under it as a background image of its `.je-tag-slot` (inline style), so a `background-color` you give `.status-tag` still sits over the blur, and an opaque one hides it. The live `backdrop-filter: blur(6px)` is there whenever that picture is not: its host then carries `data-je-blur`. That is from the moment the tag is drawn until its picture is ready; while the pointer is on the card with its tags on show, or focus is in it (Jellyfin's overlay lies under the tags then); and wherever a picture would not be what the filter shows: artwork that cannot be read or that your CSS filters, hides or fades, another chip under the tag, a tag that is itself translucent (`opacity` on `.status-tag` or its `.status-overlay-container`), a corner radius given as a percentage or an ellipse, a card while a transform scales it. Because the picture belongs to the slot, fade or hide a status tag through its `.je-tag-slot` (as Hide Tags on Hover does), not through `.status-tag` alone: a rule that only applies on `:hover` while the tags are hidden on hover is not seen and would leave the blurred patch behind. The settings panel's sample cards always have the live filter. Status Tags are not part of Tag Styles.
 
-The opt-in [Leaving soon](../enhanced/tags.md#leaving-soon-maintainerr) badges are `.status-tag--leaving` with `data-je-status="leaving"`; the [direct-play warning](../enhanced/tags.md#direct-play-warning) is `.status-tag--playback` with `data-je-status="direct_play"` and `data-je-dp`, which takes pointer events so its `title` tooltip shows:
+The opt-in [Leaving soon](../enhanced/tags-status.md#leaving-soon-maintainerr-or-reclaimerr) badges are `.status-tag--leaving` with `data-je-status="leaving"`; the [direct-play warning](../enhanced/tags-status.md#direct-play-warning) is `.status-tag--playback` with `data-je-status="direct_play"` and `data-je-dp`, which takes pointer events so its `title` tooltip shows:
 
 ```css
 .status-tag--leaving {
@@ -616,7 +616,7 @@ The opt-in [Leaving soon](../enhanced/tags.md#leaving-soon-maintainerr) badges a
 
 ### Custom Tags CSS
 
-Each [Custom tag](../enhanced/tags.md#custom-tags) chip is a `.custom-tag` inside `.custom-overlay-container`, with the label in `.custom-tag-text` and, when the rule has an icon, a `.custom-tag-icon` before it (the chip then also has `.custom-tag--icon`). `data-je-custom` holds the label (Tag Styles colour chips through it) and `data-je-custom-rule` the rule id (`tag:` or `collection:` and an opaque hash, for example `collection:9f2c1e0b7a6d5c4e`; style by label, since the id changes if the rule is re-targeted). The default look is a dark blue-grey chip with a faint border.
+Each [Custom tag](../enhanced/tags-groups.md#custom-tags) chip is a `.custom-tag` inside `.custom-overlay-container`, with the label in `.custom-tag-text` and, when the rule has an icon, a `.custom-tag-icon` before it (the chip then also has `.custom-tag--icon`). `data-je-custom` holds the label (Tag Styles colour chips through it) and `data-je-custom-rule` the rule id (`tag:` or `collection:` and an opaque hash, for example `collection:9f2c1e0b7a6d5c4e`; style by label, since the id changes if the rule is re-targeted). The default look is a dark blue-grey chip with a faint border.
 
 **Colour one label and hide the icons:**
 
@@ -683,7 +683,7 @@ Deceased image treatment and the cross can be styled separately:
 
 ### *arr Tag Links
 
-Enable **Show synced tags as links** under the admin **\*arr** → **Tags Sync** section. Matching tags already present on an item become links in `.itemExternalLinks` on its detail page. Importing tags is a separate operation; see [*arr Features](../arr/arr-features.md).
+Enable **Show synced tags as links** under the admin [**\*arr** → **Tags Sync**](../open-in-jellyfin.md?tab=arr&card=tags-sync) section. Matching tags already present on an item become links in `.itemExternalLinks` on its detail page. Importing tags is a separate operation; see [*arr Features](../arr/arr-features.md).
 
 | Setting (admin) | Default | What it does |
 | --- | --- | --- |
