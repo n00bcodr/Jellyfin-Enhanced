@@ -27,7 +27,9 @@ async function open(page, settings) {
     .card { display: inline-block; width: 181.34375px; margin-right: 17.84375px; contain: content }
     .cardBox { container-type: inline-size }
     .cardScalable { position: relative; contain: layout style; height: 272.015625px }
-    .cardImageContainer { position: absolute; inset: 0; border-radius: 8px; background: linear-gradient(135deg, #a63, #36a 60%, #3a6) }
+    /* Square artwork. (Where a chip's shadow reaches an anti-aliased rounded corner of the artwork, Chromium
+       rasters those few pixels differently from one run to the next, however the containers are placed.) */
+    .cardImageContainer { position: absolute; inset: 0; background: linear-gradient(135deg, #a63, #36a 60%, #3a6) }
     .je-tag-host { position: absolute !important; inset: 0; pointer-events: none }
     /* The icon font is not on this page: without it a genre icon is a long word that runs out of its circle and across the card's edge. */
     .je-msym-outlined { font-size: 0 !important }

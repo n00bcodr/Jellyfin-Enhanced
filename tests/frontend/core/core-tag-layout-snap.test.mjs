@@ -116,6 +116,9 @@ function setup(t, { settings = {}, vendor = 'Google Inc.', ratio = 1, boxes = BO
   };
   Object.defineProperty(h.window.HTMLElement.prototype, 'clientWidth', { configurable: true, get() { return this.classList.contains('je-tag-host') ? state.host[0] : 0; } });
   Object.defineProperty(h.window.HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return this.classList.contains('je-tag-host') ? state.host[1] : 0; } });
+  // The layout's own size, to the pixel: a scale does not change it.
+  Object.defineProperty(h.window.HTMLElement.prototype, 'offsetWidth', { configurable: true, get() { return this.classList.contains('je-tag-host') ? Math.round(state.host[0]) : 0; } });
+  Object.defineProperty(h.window.HTMLElement.prototype, 'offsetHeight', { configurable: true, get() { return this.classList.contains('je-tag-host') ? Math.round(state.host[1]) : 0; } });
   Object.defineProperty(h.window.HTMLImageElement.prototype, 'complete', { configurable: true, get() { return true; } });
   // Jellyfin's image box has layout and style containment: the pixel grid of what is inside starts at its corner.
   const styles = h.window.getComputedStyle;
@@ -147,12 +150,12 @@ function setup(t, { settings = {}, vendor = 'Google Inc.', ratio = 1, boxes = BO
     render() { for (const [, r] of renderers) if (r.isEnabled() && r.renderFromServerCache) r.renderFromServerCache(host, entry(), ID); },
     /** Draw the card and let the browser say its grid, then run the passes. */
     show() { this.render(); grid(); settle(); },
-    add(name, cls = `${name}-overlay-container`) { const el = h.document.createElement('div'); el.className = cls; el.innerHTML = '<div class="chip">x</div>'; JE.core.tagLayout.commitGroup(host, name, el); return el; },
+    add(name, cls = `${name}-overlay-container`, chip = 'chip') { const el = h.document.createElement('div'); el.className = cls; el.innerHTML = `<div class="${chip}">x</div>`; JE.core.tagLayout.commitGroup(host, name, el); return el; },
     async apply(changes) { Object.assign(JE.currentSettings, changes); await JE.reinitializeTagLayout(); },
   });
 }
 
-test('each contained group is moved to the whole pixel it was painted from, in one pass after the paint that shows it', t => {
+test('each contained group is moved to the whole pixel it was painted from, in one pass once the page is at rest', t => {
   const h = setup(t);
   h.render();
   assert.deepEqual(h.snap('rating'), ['', ''], 'nothing while the card is being drawn');
@@ -181,6 +184,27 @@ test('a card that goes to rest in flow is measured again as it then stands', t =
   assert.equal(h.host.dataset.jeFlow, '1');
   assert.notEqual(nudge(250.36), nudge(250.35));
   assert.deepEqual(h.snap('rating'), [px(nudge(154.15)), px(nudge(250.36))], 'the nudge is the resting layout\'s');
+});
+
+test('a card that leaves flow for a moment (a status tag back on its live filter under the pointer) is not measured for it', t => {
+  const h = setup(t);
+  h.show();
+  h.add('status', 'status-overlay-container', 'status-tag');
+  h.settle();
+  assert.equal(h.host.dataset.jeFlow, '1');
+  const passes = h.layout.snapStats().passes;
+  h.state.reads = 0;
+  // The painter hands the tag back to the live filter (tags/status-tag-backdrop.js use): the card is positioned meanwhile.
+  h.host.dataset.jeBlur = '1';
+  h.layout.syncFlowOf(h.host);
+  assert.equal(h.host.dataset.jeFlow, undefined);
+  h.settle();
+  delete h.host.dataset.jeBlur;
+  h.layout.syncFlowOf(h.host);
+  h.settle();
+  assert.equal(h.host.dataset.jeFlow, '1');
+  assert.equal(h.layout.snapStats().passes, passes, 'no pass');
+  assert.equal(h.state.reads, 0, 'and no layout read');
 });
 
 test('a half goes up, as the browser rounds it', t => {
@@ -265,32 +289,66 @@ test('Firefox and WebKit paint a contained box where they paint a plain one: not
   }
 });
 
-test('a card is measured again only when its own size or a container\'s changes, once the size has held', t => {
+test('a card is measured again when its size changes, once the size has held; its containers are not watched one by one', t => {
   const timers = handTimers();
   const h = setup(t, { globals: timers.globals });
   h.show();
-  const rating = h.group('rating');
-  assert.equal(h.watching(rating).length, 1, 'each measured container is watched');
-  assert.equal(h.watching(h.host).length >= 1, true);
+  assert.equal(h.watching(h.host).length, 1, 'the host is watched, by the observer that refits cards');
+  for (const name of ['quality', 'genre', 'rating', 'ageRating']) assert.equal(h.watching(h.group(name)).length, 0, `${name}: a watch on every container would be checked on every frame`);
   const passes = h.layout.snapStats().passes;
-  // The first report of a watched element is the size the pass read.
-  h.sized(rating, 40.25, 44.25);
+  // The first report is the size the pass measured at.
   h.sized(h.host, HOST[0], HOST[1]);
   h.settle();
   assert.equal(timers.pending(120), 0);
   assert.equal(h.layout.snapStats().passes, passes, 'the size it was measured at: nothing to do');
-  // A flag image loads, a font arrives: the container is wider, so its right-aligned corner is elsewhere.
-  h.state.boxes.rating = [150.9, 250.35, 43.5, 44.25];
-  h.sized(rating, 43.5, 44.25);
+  // The card is a little wider: its right-aligned containers have other corners.
+  h.state.host = [203.7, HOST[1]];
+  h.state.boxes.rating = [157.45, 250.35, 40.25, 44.25];
+  h.sized(h.host, 203.7, HOST[1]);
   h.settle();
   assert.equal(h.layout.snapStats().passes, passes, 'not on the frame that reports it');
   assert.equal(timers.pending(120), 1);
-  h.sized(rating, 43.5, 44.25);
-  assert.equal(timers.pending(120), 1, 'one wait, restarted');
+  h.sized(h.host, 203.7, HOST[1]);
+  assert.equal(timers.pending(120), 1, 'one wait, for the size to hold');
   timers.due(120);
   h.settle();
-  assert.deepEqual(h.snap('rating'), [px(nudge(150.9)), px(nudge(250.35))]);
+  assert.deepEqual(h.snap('rating'), [px(nudge(157.45)), px(nudge(250.35))]);
   assert.equal(h.layout.snapStats().passes, passes + 1);
+});
+
+test('an image that loads in a tag, or a font that arrives, gives containers other sizes: the card is measured again', t => {
+  const timers = handTimers();
+  let fontsLoaded = null;
+  const h = setup(t, { globals: timers.globals });
+  h.document.fonts = { addEventListener: (type, fn) => { if (type === 'loadingdone') fontsLoaded = fn; } };
+  // A logo chip whose image has not arrived yet.
+  let complete = false;
+  Object.defineProperty(h.window.HTMLImageElement.prototype, 'complete', { configurable: true, get() { return complete; } });
+  h.state.boxes.logos = [6, 100.4, 20, 20];
+  h.render();
+  const logos = h.document.createElement('div');
+  logos.className = 'logo-overlay-container';
+  logos.innerHTML = '<span class="je-logo-chip"><img alt="" src="http://jellyfin.test/logo.png"></span>';
+  h.layout.commitGroup(h.host, 'logos', logos);
+  h.grid();
+  h.settle();
+  assert.deepEqual(h.snap('logos'), ['', px(nudge(100.4))]);
+  const passes = h.layout.snapStats().passes;
+  // It arrives: the chip is taller, and the stack it stands in starts higher.
+  complete = true;
+  h.state.boxes.logos = [6, 92.7, 20, 27.7];
+  h.group('logos').querySelector('img').dispatchEvent(new h.window.Event('load'));
+  timers.due(120);
+  h.settle();
+  assert.deepEqual(h.snap('logos'), ['', px(nudge(92.7))]);
+  assert.ok(h.layout.snapStats().passes > passes, 'measured again (and once more as the card goes to rest in flow)');
+  // A web font swaps in: every chip has another width.
+  assert.equal(typeof fontsLoaded, 'function');
+  h.state.boxes.rating = [151.6, 250.35, 42.8, 44.25];
+  fontsLoaded();
+  timers.due(120);
+  h.settle();
+  assert.deepEqual(h.snap('rating'), [px(nudge(151.6)), px(nudge(250.35))]);
 });
 
 test('a scroll reads no layout, and neither a scroll nor the pointer nor focus has a card measured again', t => {
@@ -325,8 +383,6 @@ test('a scaled card is not measured: distances read under a scale are not the la
   const timers = handTimers();
   const h = setup(t, { globals: timers.globals });
   h.show();
-  h.sized(h.host, HOST[0], HOST[1]);
-  h.sized(h.group('rating'), 40.25, 44.25);
   const before = h.snap('rating');
   // The card grows under the pointer (a theme's hover effect) while a tag arrives.
   h.state.zoom = 1.05;
@@ -502,8 +558,7 @@ test('Bands\' top band: lengths do not follow a card that changes size, so they 
   assert.notEqual(before[1], '', 'the third group of the line carries a length');
   const top = h.host.querySelector('.je-tag-slot[data-je-slot="top"]');
   assert.equal(h.watching(top).length, 1, 'the band\'s own box is watched: its padding follows Jellyfin\'s indicators');
-  // The first report of each is what the pass read.
-  h.sized(h.group('custom'), 2822 / 64, 20);
+  // The first report is the room the pass measured in.
   h.sized(top, 180, 40);
   assert.deepEqual(h.band('custom'), before);
   // An indicator arrives: the band has less room inside its padding.
