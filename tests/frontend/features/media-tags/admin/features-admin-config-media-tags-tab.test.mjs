@@ -773,3 +773,31 @@ test('ATB-R2-001: through the real save store, a confirmation resumed after an a
   assert.deepEqual(h.calls.slice(before), [], 'no read-modify-write and no reset as the next account');
   assert.equal(h.document.querySelector('.jea-dialog'), null, 'no notice for the old account');
 });
+
+// Upstream 84954dc5: Jellyfin's Dashboard.confirm adds a history entry and goes back when it closes, and the router
+// then builds the configuration page a second time, a copy without the sidebar whose Media Tags tab never loads.
+test('the tab\'s confirmations use the page\'s own dialog, not Jellyfin\'s, which builds the page again when it closes', async (t) => {
+  const h = boot(t);
+  const asked = [];
+  let answer = false;
+  h.window.JEAdmin.confirm = async (text, title) => { asked.push(title); return answer; };
+  h.window.Dashboard.confirm = () => assert.fail('Jellyfin\'s dialog adds a history entry and goes back when it closes');
+  await h.settle();
+  h.tabButton('media-tags').click();
+  await h.until(() => h.root.querySelector('#jeTaApplyAll'), 'the Overview drew');
+  const resets = () => h.calls.filter((c) => c.kind === 'post' && c.path.endsWith('/reset-all-users-settings')).length;
+  // Cancel: nothing is applied.
+  h.root.querySelector('#jeTaApplyAll').click();
+  await h.settle(40);
+  assert.deepEqual(asked, ['Apply defaults to all users']);
+  assert.equal(resets(), 0);
+  // Confirmed: the defaults go to every user.
+  answer = true;
+  h.root.querySelector('#jeTaApplyAll').click();
+  await h.until(() => resets() === 1, 'the defaults were applied');
+  // The other confirmations in the tab ask the same way.
+  answer = false;
+  h.root.querySelector('[data-ov="rebuild"]').click();
+  await h.settle(40);
+  assert.deepEqual(asked, ['Apply defaults to all users', 'Apply defaults to all users', 'Rebuild the server tag cache?']);
+});

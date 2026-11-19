@@ -24,6 +24,9 @@
   function dashboard() {
     return host().Dashboard;
   }
+  function pageDialogs() {
+    return host().JEAdmin;
+  }
   function cdnUrl(path) {
     const route = host().jeCdnUrl;
     if (typeof route !== "function") throw new ReferenceError("jeCdnUrl is not defined");
@@ -1763,6 +1766,16 @@
     reportSaveError: (err) => console.error("🪼 Jellyfin Enhanced: could not save the Media Tags settings", err),
     saveDelayMs: SAVE_DELAY_MS
   });
+  function askOnPage(text, title) {
+    const admin = pageDialogs();
+    if (admin && typeof admin.confirm === "function") {
+      try {
+        return Promise.resolve(admin.confirm(text, title)).then((ok) => !!ok, () => false);
+      } catch {
+      }
+    }
+    return askConfirm(text, title);
+  }
   function askConfirm(text, title) {
     return new Promise((resolve) => {
       try {
@@ -1795,7 +1808,7 @@ ${text}`));
     pageUrl,
     mainPageUrl,
     freshTarget,
-    askConfirm,
+    askConfirm: askOnPage,
     undoMs: UNDO_MS,
     tabStoreKey: TAB_STORE_KEY,
     previewStyleId: PREVIEW_STYLE_ID

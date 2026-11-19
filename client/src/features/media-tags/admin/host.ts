@@ -80,10 +80,16 @@ export interface AdminDashboard {
     hideLoadingMsg?(): void;
 }
 
+/** The configuration page's own dialogs (its engine, JEAdmin), which the rest of that page asks with. */
+export interface AdminPageDialogs {
+    confirm?(message: string, title: string): Promise<boolean> | boolean;
+}
+
 interface AdminHostWindow {
     JellyfinEnhanced?: AdminTagsBridge;
     ApiClient?: AdminApiClient;
     Dashboard?: AdminDashboard;
+    JEAdmin?: AdminPageDialogs;
     jeCdnUrl?: (path: string) => string;
 }
 const host = (): Window & AdminHostWindow => window;
@@ -126,6 +132,10 @@ export function currentUserId(client: AdminApiClient): string {
 /** The dashboard, when present. */
 export function dashboard(): AdminDashboard | undefined {
     return host().Dashboard;
+}
+/** The configuration page's dialogs, once its page script has run. */
+export function pageDialogs(): AdminPageDialogs | undefined {
+    return host().JEAdmin;
 }
 /** The configuration page's local CDN route (flags, service logos). */
 export function cdnUrl(path: string): string {

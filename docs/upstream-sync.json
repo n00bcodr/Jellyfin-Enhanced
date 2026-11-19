@@ -3167,6 +3167,34 @@
       ],
       "reason": "Upstream's headline change, component modules loaded in groups and on demand (plugin.js's group loader, js/component-groups.json, Services/ClientScriptBundle.cs serving any set of groups, the bootstrap's ComponentGroups), needs two things this tree freezes and an unattended sync may not change. (1) Two existing contract lines: the optional `g` query parameter on GET bundle.js and GET bundle.js.map turns their route-auth.snapshot.json lines from \"parameters\":[] into \"parameters\":[\"g:Query\"] (recorded with upstream's two signatures applied: step-logs/upstream-sync-evidence/p94-contract-tests.txt). (2) The pinned js/component-scripts.json and client/entries output keys, which gate FE G compares with restructure-base: upstream adds tags/status-tag-backdrop.js (the painted status-tag backdrop, fetched as its own group when the first status tag is drawn) as a module of its own, and its group split is written over upstream's module list, not this tree's. The commit squashes about 45 changes; the rest (resting flow layout and whole-pixel nudges for tag hosts, cheaper status direct-play and schedule observers, tag pipeline, tag cache and DOM observer work, header, splash and pause-screen listeners) needs neither, but several of its parts assume the loader (the painter's request, the window.JE alias, player functions optional until the player group has loaded, the item editor fetching the settings group, the bundle budgets and loader tests), so the commit is left whole rather than split by guesswork. Nothing of it is ported yet.",
       "needs": "A maintainer's decision on how lazy loading takes shape in this tree: accept the two changed bundle.js and bundle.js.map lines and a component-scripts.json/client-entries addition for the painter (a later run then ports the whole commit, those lines in its last commit for review), or name another shape (an added route for group bundles, or group bundles built as outputs of their own), or split the entry: port now what needs neither (the list is in step-logs/upstream-sync-2026-11-19-2210.md) and keep the loader and the painter deferred."
+    },
+    {
+      "sha": "84954dc57d60527ab30af5daf982958301aec0dd",
+      "date": "2026-11-19T22:43:19+08:00",
+      "subject": "fix(admintags): Media Tags confirmations no longer rebuild the configuration page (#1090)",
+      "class": "fix",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [
+        "#1090"
+      ],
+      "release": null,
+      "size": {
+        "files": 2,
+        "insertions": 44,
+        "deletions": 1
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.js",
+        "tests/frontend/features/features-admin-config-media-tags-tab.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "6be487cfbe844549282e602c81ed9211fe4707b9"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p95-*",
+      "notes": "Re-implemented in the media-tags feature: upstream's askOnPage is in client/src/features/media-tags/admin/admin-tags.ts and goes to page.ts as its askConfirm dependency, so every confirmation the tab asks through confirmAction (ctx.confirm: Apply defaults to all users, Rebuild cache, Reset all colours, the import, preset removal, Clear all browser caches) uses JEAdmin.confirm. JEAdmin is read through a new pageDialogs() accessor in the tab's host surface (admin/host.ts), typed with its confirm only. As upstream: the question goes to JEAdmin.confirm as text, the way the page's other confirmations pass theirs (that dialog escapes it except the few formatting tags it allows, and turns line breaks into <br>), an answer that throws or rejects counts as No, Jellyfin's dialog is used only when JEAdmin.confirm is missing, and the prompt after leaving the page with unsaved edits (leaveWithPending) still asks with Jellyfin's dialog. Upstream's test applies as is in tests/frontend/features/media-tags/admin/features-admin-config-media-tags-tab.test.mjs."
     }
   ]
 }

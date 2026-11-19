@@ -22,7 +22,7 @@
  * section modules itself, in SECTION_FILES order. It relies on the JE client
  * bundle the dashboard already runs (core/tag-layout.js and the hub's preview).
  */
-import { adminBridge, apiClient, dashboard, optionalApiClient } from './host';
+import { adminBridge, apiClient, dashboard, optionalApiClient, pageDialogs } from './host';
 import { createLifecycle, type MountState } from './mount';
 import { controlValue, fieldHtml, fieldsHtml, fieldValue, redrawList, type TextKit } from './fields';
 import { fmt, WORDS, type FmtParams } from './format';
@@ -273,6 +273,22 @@ const saves = createSaveStore({
 });
 
 /**
+ * Ask from inside the tab: with the configuration page's own dialog (JEAdmin.confirm), which its other
+ * confirmations use too, and the dashboard's only when that page script is missing. Jellyfin's dialog adds a
+ * history entry and goes back when it closes, and the router then builds the configuration page a second time:
+ * a copy without the page's sidebar whose Media Tags tab never loads.
+ * @param text
+ * @param title
+ */
+function askOnPage(text: string, title: string): Promise<boolean> {
+    const admin = pageDialogs();
+    if (admin && typeof admin.confirm === 'function') {
+        try { return Promise.resolve(admin.confirm(text, title)).then((ok) => !!ok, () => false); } catch { /* fall through */ }
+    }
+    return askConfirm(text, title);
+}
+
+/**
  * Ask with the dashboard's dialog (the browser's when it is missing).
  * @param text
  * @param title
@@ -292,7 +308,7 @@ function askConfirm(text: string, title: string): Promise<boolean> {
 
 const pageDeps: PageDeps = {
     JE: () => JE, kit, saves, sections, tabs: TABS, seededKeys: SEEDED_KEYS, sectionScopes: SECTION_SCOPES, sectionIcons: SECTION_ICONS,
-    docsUrl: DOCS_URL, docsAnchors: DOCS_ANCHORS, pluginId: PLUGIN_ID, pageFields, seedUser, pageUrl, mainPageUrl, freshTarget, askConfirm,
+    docsUrl: DOCS_URL, docsAnchors: DOCS_ANCHORS, pluginId: PLUGIN_ID, pageFields, seedUser, pageUrl, mainPageUrl, freshTarget, askConfirm: askOnPage,
     undoMs: UNDO_MS, tabStoreKey: TAB_STORE_KEY, previewStyleId: PREVIEW_STYLE_ID,
 };
 
