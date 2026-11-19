@@ -181,6 +181,11 @@ for (const [scale, name, settings] of [[1.25, 'Corners', {}], [1.25, 'Bands', { 
       const page = await (await browser.newContext({ viewport: null, deviceScaleFactor: undefined })).newPage();
       await open(page, settings, '', false);
       expect(await page.evaluate(() => JellyfinEnhanced.core.tagLayout.snapStats().scale)).toBe(scale);
+      // Every card was measured, the second time as well (checked in flow, once the size observer had reported its
+      // box): on a dense screen a reported size and a measured box differ in the last digits, and that is no scale.
+      await page.evaluate(() => new Promise(r => setTimeout(r, 600)));
+      await settled(page);
+      expect(await page.evaluate(() => { const stats = JellyfinEnhanced.core.tagLayout.snapStats(); return [stats.deferred, stats.cards >= 6]; })).toEqual([0, true]);
       const nudges = await page.evaluate(() => [...document.querySelectorAll('.je-tag-host [data-je-group]')].flatMap(el => ['--je-snap-x', '--je-snap-y'].map(name => parseFloat(el.style.getPropertyValue(name)) || 0)).filter(Boolean));
       expect(nudges.length).toBeGreaterThan(0);
       // Each is a whole number of layout units (64ths of a device pixel), and at most half a device pixel.
@@ -395,8 +400,9 @@ for (const [scale, groups, rtl] of [[1, ['status', 'ageRating', 'quality', 'lang
       expect(new Set(bare).size, 'bands of two, three and more lines').toBeGreaterThan(2);
       await page.evaluate(([widths, groups]) => { JellyfinEnhanced.core.tagLayout.wholePixels = true; window.cards(widths, groups); }, [widths, groups]);
       await bandsRest(page);
-      // (The cards were measured a slice at a time, not all 640 in one go.)
+      // (The cards were measured a slice at a time, not all 640 in one go, and none was taken for scaled.)
       expect(await page.evaluate(() => JellyfinEnhanced.core.tagLayout.snapStats().passes)).toBeGreaterThan(8);
+      expect(await page.evaluate(() => JellyfinEnhanced.core.tagLayout.snapStats().deferred)).toBe(0);
       const rest = await bandsWatch(page);
       expect(rest.lines).toEqual(bare);
       expect([rest.changes, rest.passes, rest.held]).toEqual([0, 0, 0]);
