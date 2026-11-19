@@ -489,3 +489,18 @@ test("Jellyfin's own 3D format marks a version 3D without release words in its n
   assert.ok(!h.render({ Type: 'Movie', StreamData: { Streams: streams, Sources: [{ Id: 'a', Path: 'Movie.mkv' }] } }, 'm2').includes('3D'));
   assert.ok(h.render({ Type: 'Movie', StreamData: { Streams: streams, Sources: [{ Id: 'a', Path: 'Movie.3D.HSBS.mkv' }] } }, 'm3').includes('3D'));
 });
+
+test('the quality sheet states the shared chip box once and keeps every label colour', t => {
+  const h = setup(t);
+  h.renderers.get('quality').injectCss();
+  const css = h.document.getElementById('quality-tag-enhanced-style').textContent;
+  // The chip box used to be repeated before each of the label colours.
+  assert.equal(css.match(/font-variant-caps:\s*small-caps/g).length, 1);
+  assert.ok(css.length < 40000, `${css.length} characters (it was 374 KB)`);
+  const coloured = [...css.matchAll(/\.quality-overlay-container \.quality-overlay-label\[data-quality="([^"]+)"\]\s*\{\s*background: [^;]+ !important;\s*color: [^;]+ !important;/g)].map(m => m[1]);
+  assert.ok(coloured.length > 80, `${coloured.length} label colours`);
+  assert.equal(new Set(coloured).size, coloured.length, 'one rule a label');
+  for (const label of ['4K', '1080p', 'HEVC', 'ATMOS', 'LOW-RES']) assert.ok(coloured.includes(label), label);
+  // A chip without a transform: an identity one made every chip a layer of its own.
+  assert.ok(!/transform\s*:/.test(css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/text-transform\s*:/g, '')), 'no transform on quality chips');
+});

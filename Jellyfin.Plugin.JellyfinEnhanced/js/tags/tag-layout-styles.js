@@ -24,6 +24,27 @@
     /** Corners slots of a card with a non-default edge spacing (data-je-edge, set by core/tag-layout.js). */
     const EDGE = '.je-tag-host[data-je-layout="corners"][data-je-edge] > .je-tag-slot';
     const FLUSH = '.je-tag-host[data-je-layout="corners"][data-je-edge="flush"] > .je-tag-slot';
+    /**
+     * A card whose resting tags are laid out in flow (core/tag-layout.js
+     * flowFor marks its host), except while the pointer is on it with its
+     * tags on show or focus is in it (data-je-live): the positioned rules
+     * apply again then.
+     */
+    const FLOW = '.je-tag-host[data-je-flow]:not([data-je-live])';
+    const FLOW_SLOT = `${FLOW} > .je-tag-slot`;
+    /** The two corner stacks that grow upward from the bottom edge. */
+    const FLOW_RISING = `${FLOW_SLOT}:is([data-je-slot="bl"], [data-je-slot="br"])`;
+    /** Most children a rising stack places from its last row up (nine groups at most, and room to spare). */
+    const FLOW_ROWS = 12;
+    /**
+     * The whole-pixel nudge of a group container (core/tag-layout.js
+     * flushSnap): how far it moves right and down, a fraction of a pixel.
+     * It is always a pair of margins that cancel (left with right, top with
+     * bottom), so the container moves and nothing around it does. Every rule
+     * that gives a group container a margin adds its side of the pair.
+     */
+    const SNAP_X = 'var(--je-snap-x, 0px)';
+    const SNAP_Y = 'var(--je-snap-y, 0px)';
     /** Chips with a box of their own (not the genre circle or a flag image). */
     const BOX_CHIP = ':is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)';
 
@@ -104,6 +125,92 @@
     }
 
     /**
+     * Resting flow: the same boxes and the same paint order with nothing
+     * positioned inside the host.
+     *
+     * Every positioned box is a paint layer of its own, and a card used to
+     * carry about fourteen (four slots, each group, each genre icon): on a
+     * home page of sixty cards the browser walked, hit-tested and re-layered
+     * some nine hundred of them on every frame of a scroll. Here the host is
+     * a one-cell grid and its slots are grid items laid over each other in
+     * that cell, with the corner inset as a margin; groups and chips are
+     * plain flex items. Flex and grid items paint whole and in document
+     * order, which is the order the positioned boxes painted in, so chips
+     * that overlap keep their shadows the same way round.
+     *
+     * The two bottom corners grow upward. A column-reverse flex container
+     * would paint its first child last (Chromium paints reversed flex items
+     * in visual order), so they are grids instead: each child is placed from
+     * the last row up, the stack is aligned to the bottom edge, and the gap
+     * is each child's top margin (an unrendered child then leaves no gap, as
+     * in the flex stack; the spare margin above the top child shows nothing).
+     * A grid item's percentage height is its row's, so the containers' height
+     * limit is restated there against the host, which is a size container.
+     *
+     * Only hosts the controller marks get these rules: everything else keeps
+     * the positioned layout above, unchanged, and so does a marked host for
+     * as long as its card is hovered (with its tags on show) or focused.
+     * @returns {string} CSS text.
+     */
+    function buildFlowStyles() {
+        const rows = Array.from({ length: FLOW_ROWS }, (_, i) => `${FLOW_RISING} > :nth-child(${i + 1}) { grid-row: ${FLOW_ROWS - i}; }`).join('\n            ');
+        return `
+            ${FLOW} {
+                display: grid;
+                grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+                container-type: size;
+            }
+            ${FLOW_SLOT} {
+                position: static;
+                grid-area: 1 / 1;
+                min-width: 0; min-height: 0;
+            }
+            ${FLOW_SLOT} > [data-je-group] { position: static; }
+
+            /* corners: the inset the four stacks had, as a margin */
+            ${FLOW_SLOT}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) {
+                margin: var(--je-edge, 6px);
+            }
+            .cardScalable:has(.countIndicator, .playedIndicator) > ${FLOW}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
+            .cardIndicators ~ ${FLOW}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
+                margin-top: calc(var(--je-edge, 6px) + ${INDICATOR_OFFSET});
+            }
+            ${FLOW_RISING} {
+                display: grid;
+                grid-template-rows: repeat(${FLOW_ROWS}, auto);
+                grid-template-columns: minmax(0, 1fr);
+                align-content: end;
+                row-gap: 0;
+            }
+            ${FLOW_SLOT}[data-je-slot="bl"] { justify-items: start; }
+            ${FLOW_SLOT}[data-je-slot="br"] { justify-items: end; }
+            ${FLOW_RISING} > * { margin-top: calc(calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)) + ${SNAP_Y}); }
+            ${rows}
+            /* 90% (85% on phones) of the image, as the corner rules above work out to. */
+            ${FLOW_RISING} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) { max-height: 90cqh; }
+            @media (max-width: 480px) {
+                ${FLOW_RISING} > :is(.quality-overlay-container, .genre-overlay-container) { max-height: 85cqh; }
+            }
+
+            /* bands: the top band from the top edge, the bottom band from the bottom */
+            ${FLOW_SLOT}[data-je-slot="top"] { align-self: start; }
+            ${FLOW_SLOT}[data-je-slot="bottom"] { align-self: end; }
+            /* caption: the small poster stack in its corner */
+            ${FLOW_SLOT}[data-je-slot="poster"] { justify-self: start; align-self: start; margin: 6px; }
+
+            /* A genre icon is positioned to hold its floating name. A resting card shows no name
+               (it was there at opacity 0): the icon holds nothing, and the name is left out until
+               the pointer brings the card back to the positioned layout. */
+            ${FLOW} .genre-tag { position: static; }
+            ${FLOW} .genre-tag > .genre-text { display: none; }
+            /* The first style pass of a card going live: a name that was not rendered fades in from here. */
+            .je-tag-host.je-tag-host[data-je-live="in"] .genre-tag > .genre-text { opacity: 0; }
+            /* The same clip (it also trims the chips' shadows at the group's edge) without a scroll container. */
+            ${FLOW} :is(.quality-overlay-container, .language-overlay-container) { overflow: clip; }
+        `;
+    }
+
+    /**
      * Build the shared layout stylesheet.
      * @returns {string} CSS text.
      */
@@ -125,7 +232,8 @@
                 position: relative;
                 flex-shrink: 0;
                 top: auto; right: auto; bottom: auto; left: auto;
-                margin: 0;
+                /* No margin of its own: only the whole-pixel nudge, which is 0 until the controller sets it. */
+                margin: ${SNAP_Y} calc(0px - ${SNAP_X}) calc(0px - ${SNAP_Y}) ${SNAP_X};
             }
 
             /* corners: one stack per corner, first priority at the corner edge */
@@ -248,20 +356,20 @@
             }
             ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
             .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap] {
-                margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - var(--je-indicator-before, 0px));
+                margin-top: calc(max(0px, ${LEGACY_INDICATOR_OFFSET} - var(--je-indicator-before, 0px)) + ${SNAP_Y});
             }
             /* ... and on phones the rating, age rating and status containers sit
                4px from the card edges instead of 6px. */
             @media (max-width: 480px) {
-                ${LEGACY_EDGE('tl')} { margin-left: -2px; }
-                ${LEGACY_EDGE('bl')} { margin-left: -2px; }
-                ${LEGACY_EDGE('tr')} { margin-right: -2px; }
-                ${LEGACY_EDGE('br')} { margin-right: -2px; }
-                ${LEGACY_EDGE('tl')}:first-child, ${LEGACY_EDGE('tr')}:first-child { margin-top: -2px; }
-                ${LEGACY_EDGE('bl')}:first-child, ${LEGACY_EDGE('br')}:first-child { margin-bottom: -2px; }
+                ${LEGACY_EDGE('tl')} { margin-left: calc(-2px + ${SNAP_X}); }
+                ${LEGACY_EDGE('bl')} { margin-left: calc(-2px + ${SNAP_X}); }
+                ${LEGACY_EDGE('tr')} { margin-right: calc(-2px - ${SNAP_X}); }
+                ${LEGACY_EDGE('br')} { margin-right: calc(-2px - ${SNAP_X}); }
+                ${LEGACY_EDGE('tl')}:first-child, ${LEGACY_EDGE('tr')}:first-child { margin-top: calc(-2px + ${SNAP_Y}); }
+                ${LEGACY_EDGE('bl')}:first-child, ${LEGACY_EDGE('br')}:first-child { margin-bottom: calc(-2px - ${SNAP_Y}); }
                 ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap],
                 .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap] {
-                    margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px));
+                    margin-top: calc(max(0px, ${LEGACY_INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px)) + ${SNAP_Y});
                 }
             }
 
@@ -342,8 +450,10 @@
                 min-width: 0;
                 max-width: 100%;
             }
+            /* (An auto margin takes one side of a group's whole-pixel nudge, and shares the line's free space in whole
+               layout units. A nudged line keeps one auto margin and gets the others as lengths: core/tag-layout.js bandNudges.) */
             ${host('bands')}[data-je-slot="top"] > [data-je-group] + [data-je-group] {
-                margin-left: auto;
+                margin-left: var(--je-band-left, auto);
             }
             ${host('bands')}[data-je-slot="top"] > [data-je-group]:first-child {
                 justify-content: flex-start;
@@ -638,6 +748,8 @@
             ${PREVIEW_HIDE} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip {
                 opacity: 0 !important;
             }
+
+            ${buildFlowStyles()}
 
             @media (prefers-reduced-motion: reduce) {
                 ${SLOT}, .je-tag-host > .je-tag-more-tip { transition: none; }

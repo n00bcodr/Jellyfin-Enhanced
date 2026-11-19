@@ -112,6 +112,12 @@
                 // Open bookmark modal to add/view bookmarks
                 if (JE.bookmarks?.showModal) {
                     JE.bookmarks.showModal('add');
+                } else if (JE.pluginConfig?.BookmarksEnabled && JE.loader) {
+                    // The bookmarks module loads with the player (see plugin.js) and may still
+                    // be arriving just after playback starts: open the dialog once it has.
+                    JE.loader.ensure(['bookmarks']).then(() => {
+                        if (JE.isVideoPage() && JE.bookmarks?.showModal) JE.bookmarks.showModal('add');
+                    });
                 } else {
                     console.warn('🪼 Jellyfin Enhanced: New bookmark system not loaded, using fallback');
                 }
@@ -244,19 +250,23 @@
      * Sets up listeners for DOM changes to inject UI elements dynamically.
      */
     function setupDOMObserver() {
+        // The player modules (enhanced/player/) load when the video page opens or a video
+        // starts (the "player" group, see plugin.js), so their functions are optional here:
+        // absent off the video page until then, and for a moment on it while they arrive.
+        // The loader makes a DOM change once they have, which runs this again.
         const runPageSpecificFunctions = () => {
             if (JE.isVideoPage()) {
                 JE.addOsdSettingsButton();
                 JE.addSubtitleSyncButton?.();
-                JE.initializeAutoSkipObserver();
+                JE.initializeAutoSkipObserver?.();
                 JE.applySavedStylesWhenReady();
                 // Attach seek tracker to the video element as soon as it exists; a player
                 // without one (mpv in Jellyfin Desktop) is tracked through the OSD's position text.
                 const video = document.querySelector('video');
-                if (video) JE.attachSeekTracker(video);
+                if (video) JE.attachSeekTracker?.(video);
                 JE.watchOsdPosition?.();
             } else {
-                JE.stopAutoSkip();
+                JE.stopAutoSkip?.();
                 JE.stopWatchingOsdPosition?.();
             }
         };
@@ -412,6 +422,8 @@
 
         // Add Long Press listeners if enabled
         if (JE.currentSettings.longPress2xEnabled) {
+            // `handler` is the name of a player function (enhanced/player/playback.js), looked
+            // up at each event: the player modules load when a video does, after this runs.
             const videoPageCheck = (handler) => (e) => {
                 if (JE.isVideoPage()) {
                     // Long-press 2x is a physical gesture. Synthetic events (e.g. closeActionSheet
@@ -422,19 +434,19 @@
                     if (e.isTrusted === false) return;
                     // Don't interfere with clicks on OSD buttons / the pause screen overlay / Enhanced Panel
                     if (e.target && e.target.closest && e.target.closest('.osdControls, .pause-screen-active, .jellyfin-enhanced-panel')) return;
-                    handler(e);
+                    JE[handler]?.(e);
                 }
             };
 
-            document.addEventListener('mousedown', videoPageCheck(JE.handleLongPressDown), true);
-            document.addEventListener('mouseup', videoPageCheck(JE.handleLongPressUp), true);
-            document.addEventListener('mousemove', videoPageCheck(JE.handleLongPressMove), true);
-            document.addEventListener('click', videoPageCheck(JE.handleLongPressClick), true);
-            document.addEventListener('mouseleave', videoPageCheck(JE.handleLongPressCancel), true);
-            document.addEventListener('touchstart', videoPageCheck(JE.handleLongPressDown), { capture: true, passive: true });
-            document.addEventListener('touchmove', videoPageCheck(JE.handleLongPressMove), { capture: true, passive: true });
-            document.addEventListener('touchend', videoPageCheck(JE.handleLongPressUp), { capture: true, passive: false });
-            document.addEventListener('touchcancel', videoPageCheck(JE.handleLongPressCancel), { capture: true, passive: false });
+            document.addEventListener('mousedown', videoPageCheck('handleLongPressDown'), true);
+            document.addEventListener('mouseup', videoPageCheck('handleLongPressUp'), true);
+            document.addEventListener('mousemove', videoPageCheck('handleLongPressMove'), true);
+            document.addEventListener('click', videoPageCheck('handleLongPressClick'), true);
+            document.addEventListener('mouseleave', videoPageCheck('handleLongPressCancel'), true);
+            document.addEventListener('touchstart', videoPageCheck('handleLongPressDown'), { capture: true, passive: true });
+            document.addEventListener('touchmove', videoPageCheck('handleLongPressMove'), { capture: true, passive: true });
+            document.addEventListener('touchend', videoPageCheck('handleLongPressUp'), { capture: true, passive: false });
+            document.addEventListener('touchcancel', videoPageCheck('handleLongPressCancel'), { capture: true, passive: false });
         }
 
         // Auto PiP only closes a PiP window it opened itself. Chromium browsers (Edge, Chrome) can
@@ -473,7 +485,7 @@
             const video = document.querySelector('video');
             if (!video) return;
 
-            JE.attachSeekTracker(video);
+            JE.attachSeekTracker?.(video);
 
             if (document.hidden) {
                 if (!video.paused && JE.currentSettings.autoPauseEnabled) {

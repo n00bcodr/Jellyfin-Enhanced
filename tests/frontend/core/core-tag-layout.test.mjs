@@ -380,7 +380,7 @@ test('a user switch drops the outgoing user\'s facts; the incoming user\'s layou
  * layout controller and genre renderer over one page of cards. Idle slices,
  * the fetch debounce and each /tag-data response are driven by the test.
  */
-async function setupPipeline(t, { html = modernCard(), settings = {} } = {}) {
+async function setupPipeline(t, { html = modernCard(), settings = {}, attributeRecords = null } = {}) {
   const idle = [], timers = new Map(), calls = [];
   let seq = 0;
   const h = createHarness({
@@ -397,6 +397,18 @@ async function setupPipeline(t, { html = modernCard(), settings = {} } = {}) {
     },
   });
   t.after(() => h.close());
+  if (attributeRecords) {
+    // Every attribute record any observer of the page is handed, as "attribute on element".
+    const Native = h.window.MutationObserver;
+    h.window.MutationObserver = class extends Native {
+      constructor(callback) {
+        super((records, observer) => {
+          for (const r of records) if (r.type === 'attributes') attributeRecords.push(`${r.attributeName} on ${r.target.className.split(' ')[0]}`);
+          callback(records, observer);
+        });
+      }
+    };
+  }
   for (const file of ['core/dom-observer.js', 'core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-pipeline.js', 'tags/tag-layout-styles.js', 'tags/genretags.js']) h.load(file);
   h.JE.initializeGenreTags();
   h.JE.tagPipeline.initialize();
@@ -534,6 +546,47 @@ test('artwork loading for the first time is not a reuse', async t => {
   assert.deepEqual(h.genres(), ['Drama'], 'an episode card\'s artwork may name its series');
   h.scan(); h.fetch();
   assert.equal(h.calls.length, 1);
+});
+
+test('a card image nothing names yet is scanned again when its artwork arrives, without waiting for another change on the page', async t => {
+  // No item id on the card and no artwork: the scan can only pass over it.
+  const html = modernCard().replace(/ data-id="[^"]*"/, '').replace(/ style="[^"]*"/, '');
+  const h = await setupPipeline(t, { html });
+  h.scan(); h.fetch();
+  assert.equal(h.calls.length, 0);
+  // The lazy loader sets the artwork. Nothing is added to the page, and no chip is drawn anywhere to stir a rescan.
+  h.document.querySelector('.cardImageContainer').style.backgroundImage = `url("http://jellyfin.test/Items/${OTHER}/Images/Primary")`;
+  await settle();
+  h.scan(); h.fetch();
+  assert.deepEqual(h.calls.map(call => call.ids), [[OTHER]], 'the artwork names the item and the scan came back by itself');
+  h.calls[0].resolve({ Items: [{ Id: OTHER, Type: 'Movie', Genres: ['Drama'] }] });
+  await settle();
+  assert.deepEqual(h.genres(), ['Drama']);
+});
+
+test('the pipeline hears the artwork of scanned card images only, not every inline style on the page', async t => {
+  const records = [];
+  const h = await setupPipeline(t, { html: `<div class="scrollSlider">${modernCard()}</div>`, attributeRecords: records });
+  // Before the scan: nothing is watched yet (a card's first artwork is no reuse either way).
+  const slider = h.document.querySelector('.scrollSlider');
+  slider.style.transform = 'translateX(-80px)';
+  await settle();
+  assert.deepEqual(records, [], 'a scroller moving its row');
+  h.scan(); h.fetch();
+  h.calls[0].resolve({ Items: [{ Id: ID, Type: 'Movie', Genres: ['Drama'] }] });
+  await settle();
+  assert.deepEqual(h.genres(), ['Drama']);
+  records.length = 0;
+  slider.style.transform = 'translateX(-160px)';
+  h.document.querySelector('.card').style.opacity = '0.5';
+  h.document.querySelector('.je-tag-host').style.setProperty('--x', '1');
+  await settle();
+  assert.deepEqual(records, [], 'inline styles of anything but a scanned card image are not reported');
+  h.document.querySelector('.cardImageContainer').style.backgroundImage = `url("http://jellyfin.test/Items/${OTHER}/Images/Primary")`;
+  h.document.querySelector('.card').setAttribute('data-id', OTHER);
+  await settle();
+  assert.deepEqual(records.sort(), ['data-id on card', 'style on cardImageContainer'], 'the scanned image\'s artwork and the card\'s id are');
+  assert.deepEqual(h.genres(), [], 'and the reuse is acted on');
 });
 
 test('the user review chip joins the rating group and follows its slot and summary', async t => {
@@ -1023,7 +1076,7 @@ test('settings saved before layouts: an exact top-right container below a malfor
   assert.equal(status.dataset.jeIndicatorGap, '1');
   const css = h.document.getElementById('je-tag-layout').textContent;
   const rule = (groups = '') => new RegExp(`\\.cardScalable:has\\(\\.countIndicator, \\.playedIndicator\\) > \\.je-tag-host\\[data-je-legacy\\] > \\.je-tag-slot\\[data-je-slot="tr"\\] > ${groups}\\[data-je-indicator-gap\\],\\s*`
-    + `\\.cardIndicators ~ \\.je-tag-host\\[data-je-legacy\\] > \\.je-tag-slot\\[data-je-slot="tr"\\] > ${groups}\\[data-je-indicator-gap\\] \\{\\s*margin-top: max\\(0px, clamp\\(20px, 3vw, 30px\\)( - 2px)? - var\\(--je-indicator-before, 0px\\)\\);`);
+    + `\\.cardIndicators ~ \\.je-tag-host\\[data-je-legacy\\] > \\.je-tag-slot\\[data-je-slot="tr"\\] > ${groups}\\[data-je-indicator-gap\\] \\{\\s*margin-top: calc\\(max\\(0px, clamp\\(20px, 3vw, 30px\\)( - 2px)? - var\\(--je-indicator-before, 0px\\)\\) \\+ var\\(--je-snap-y, 0px\\)\\);`);
   assert.match(css, rule(), 'every exact container, not only the first in the stack: at least the offset down, or right below the one before');
   assert.match(css, rule(':is\\(\\[data-je-group="rating"\\], \\[data-je-group="ageRating"\\], \\[data-je-group="status"\\]\\)'), 'the 4px phone edge groups too');
   assert.doesNotMatch(css, /\[data-je-indicator-gap\]:first-child/);
@@ -1063,12 +1116,14 @@ test('settings saved before layouts keep the 4px phone edge offsets of rating, a
   const css = h.document.getElementById('je-tag-layout').textContent;
   const phone = css.slice(css.indexOf('@media (max-width: 480px)'));
   const groups = ':is\\(\\[data-je-group="rating"\\], \\[data-je-group="ageRating"\\], \\[data-je-group="status"\\]\\)';
-  for (const [slot, rule] of [['tl', 'margin-left: -2px'], ['bl', 'margin-left: -2px'], ['tr', 'margin-right: -2px'], ['br', 'margin-right: -2px']]) {
+  // Each margin carries its side of the group's whole-pixel nudge (0 until the controller sets one).
+  const X = 'var\\(--je-snap-x, 0px\\)', Y = 'var\\(--je-snap-y, 0px\\)';
+  for (const [slot, rule] of [['tl', `margin-left: calc\\(-2px \\+ ${X}\\)`], ['bl', `margin-left: calc\\(-2px \\+ ${X}\\)`], ['tr', `margin-right: calc\\(-2px - ${X}\\)`], ['br', `margin-right: calc\\(-2px - ${X}\\)`]]) {
     assert.match(phone, new RegExp(`\\.je-tag-host\\[data-je-legacy\\] > \\.je-tag-slot\\[data-je-slot="${slot}"\\] > ${groups} \\{ ${rule}; \\}`), `${slot}: 6px slot inset - 2px = the old 4px`);
   }
-  assert.match(phone, new RegExp(`\\[data-je-slot="tl"\\] > ${groups}:first-child, [^{]*\\[data-je-slot="tr"\\] > ${groups}:first-child \\{ margin-top: -2px; \\}`), 'the edge chip of a top stack');
-  assert.match(phone, new RegExp(`\\[data-je-slot="bl"\\] > ${groups}:first-child, [^{]*\\[data-je-slot="br"\\] > ${groups}:first-child \\{ margin-bottom: -2px; \\}`), 'and of a bottom stack');
-  assert.match(phone, /margin-top: max\(0px, clamp\(20px, 3vw, 30px\) - 2px - var\(--je-indicator-before, 0px\)\);/, 'a rating set to exactly top-right keeps 4px + the indicator offset');
+  assert.match(phone, new RegExp(`\\[data-je-slot="tl"\\] > ${groups}:first-child, [^{]*\\[data-je-slot="tr"\\] > ${groups}:first-child \\{ margin-top: calc\\(-2px \\+ ${Y}\\); \\}`), 'the edge chip of a top stack');
+  assert.match(phone, new RegExp(`\\[data-je-slot="bl"\\] > ${groups}:first-child, [^{]*\\[data-je-slot="br"\\] > ${groups}:first-child \\{ margin-bottom: calc\\(-2px - ${Y}\\); \\}`), 'and of a bottom stack');
+  assert.match(phone, /margin-top: calc\(max\(0px, clamp\(20px, 3vw, 30px\) - 2px - var\(--je-indicator-before, 0px\)\) \+ var\(--je-snap-y, 0px\)\);/, 'a rating set to exactly top-right keeps 4px + the indicator offset');
   assert.match(css.slice(0, css.indexOf('@media (max-width: 480px)')), /\[data-je-slot="tl"\], .*\[data-je-slot="tr"\],\s*.*\[data-je-slot="bl"\], .*\[data-je-slot="br"\] \{\s*inset: 6px;/, 'everything else keeps 6px');
   assert.equal(h.host().dataset.jeLegacy, '1');
 });
@@ -1399,4 +1454,38 @@ test('first ratings use whole overflow only in mixed language rows', t => {
     assert.equal(more.hasAttribute('data-je-overflow'), !mixed);
     if (mixed) { assert.equal(more.textContent, '+1');assert.equal(more.title, '7.7'); }
   }
+});
+
+test('the pointer does not bound genre names on a card whose tags hide on hover; focus still does, and so does a layout with a hover reveal', async t => {
+  const h = setup(t);
+  h.render();
+  const host = h.host();
+  const card = host.closest('.card');
+  assert.ok(host.querySelector('.genre-tag > .genre-text'), 'the card has genre names to bound');
+  // A bound starts by reading the host's box.
+  let reads = 0;
+  host.getBoundingClientRect = () => { reads++; return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 }; };
+  const over = () => host.dispatchEvent(new h.window.Event('pointerover', { bubbles: true }));
+  const out = () => host.dispatchEvent(new h.window.Event('pointerout', { bubbles: true }));
+  over();
+  assert.equal(reads, 1, 'tags stay visible on hover: the names are bounded');
+  out();
+  h.document.body.classList.add('je-tags-hide-on-hover');
+  reads = 0;
+  over(); over(); out(); over();
+  assert.equal(reads, 0, 'the host is transparent while the pointer is on it: nothing to bound, no layout read');
+  // Focus shows the names once the pointer has left, so it bounds them, even with the pointer still on the card.
+  card.dispatchEvent(new h.window.Event('focusin', { bubbles: true }));
+  assert.equal(reads, 1);
+  out();
+  // Summary keeps a reveal of its own under "Hide tags on hover".
+  await h.apply({ tagLayout: 'summary', tagLayoutSettingsVersion: 1 });
+  assert.equal(h.host().dataset.jeLayout, 'summary');
+  const summaryHost = h.host();
+  let summaryReads = 0;
+  summaryHost.getBoundingClientRect = () => { summaryReads++; return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 }; };
+  // Only a host with names or a "+N" tip outside the reveal reads anything; either way the pointer is not skipped there.
+  const expectsRead = !!summaryHost.querySelector(':scope > .je-tag-slot:not([data-je-slot="hover"]) .genre-tag > .genre-text, :scope > .je-tag-more-tip');
+  summaryHost.dispatchEvent(new h.window.Event('pointerover', { bubbles: true }));
+  assert.equal(summaryReads, expectsRead ? 1 : 0);
 });

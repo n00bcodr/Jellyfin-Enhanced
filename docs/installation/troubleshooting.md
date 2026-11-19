@@ -72,7 +72,7 @@ An independently served web client does not automatically receive JE's injection
 Check the script requests for a failed download or a response that contains the wrong kind of content.
 
 1. Filter **Network** requests by `JellyfinEnhanced`.
-2. Check the status, response type, and response body of the script request and `/JellyfinEnhanced/bundle.js?v=…`.
+2. Check the status, response type, and response body of the script request and the `/JellyfinEnhanced/bundle.js?g=…&v=…` requests. JE makes one when the page loads and more later, as you open pages or features that need other scripts.
 3. Check browser messages for blocked scripts, browser extensions, content-security-policy errors, or failed assets.
 
 Administrator diagnostic setting, under [**Admin** → **Developer Settings**](../open-in-jellyfin.md?tab=admin&card=developer-settings):
@@ -87,7 +87,7 @@ Leave **Dev Mode** off for normal use. If you change it for diagnosis, save and 
 
 ??? info "How it works"
 
-    JE normally loads its scripts together from `/JellyfinEnhanced/bundle.js?v=…`. If that request fails, JE can try loading the scripts individually. If you see individual requests, check the console for the original failure and whether loading recovered. You do not need to sign in to request the bundle or its diagnostic source map at `/JellyfinEnhanced/bundle.js.map`.
+    JE loads its scripts in groups, several at a time, from `/JellyfinEnhanced/bundle.js?g=…&v=…`; `g` lists the groups in that request. It loads the groups a page needs when the page loads, and the rest only when you open a page or use a feature that needs them, so a failure can appear later in a session rather than at sign-in. If a request fails, JE tries loading that request's scripts individually. If you see individual requests, check the console for the original failure and whether loading recovered. You do not need to sign in to request the bundles or their diagnostic source map at `/JellyfinEnhanced/bundle.js.map`.
 
     A 404 suggests a missing route or proxy path problem. An HTML login page returned for a JavaScript request suggests proxy authentication or rewriting.
 

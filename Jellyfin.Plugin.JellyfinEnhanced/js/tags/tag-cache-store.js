@@ -58,6 +58,10 @@
     // CurrentCacheSchemaVersion) the stored entries were written with; a copy
     // from another schema is never restored.
     const ENTRY_SCHEMA = 52;
+    // A budgeted slice (putManyIfOwner) always writes this many entries, and
+    // looks at the clock every few puts after that.
+    const BUDGET_MIN_PUTS = 16;
+    const BUDGET_CHECK_EVERY = 4;
 
     /** @type {Promise<IDBDatabase>|null} */
     let dbPromise = null;
@@ -249,26 +253,39 @@
     /**
      * Write one slice of a full rewrite, only while `token` still owns the
      * scope (checked in the same transaction). Each put clones its entry on
-     * the calling thread, so the pipeline writes a full cache in idle slices.
+     * the calling thread, so the pipeline writes a full cache in idle slices;
+     * with `budgetMs` the slice also ends once that much time has gone into
+     * its puts (after at least BUDGET_MIN_PUTS of them), so a slow device
+     * writes shorter slices instead of blocking for a whole one.
      * @param {string} scope
      * @param {string} token
      * @param {Array<[string, object]>} entries - [itemId, entry] pairs
-     * @returns {Promise<boolean>} false when another writer took the scope over
+     * @param {number} [budgetMs] - Stop after this long; omitted, every entry is written.
+     * @returns {Promise<boolean|number>} false when another writer took the scope
+     *   over; true when every entry was written; otherwise how many of the
+     *   leading entries were (the budget ran out, at least one was).
      */
-    async function putManyIfOwner(scope, token, entries) {
+    async function putManyIfOwner(scope, token, entries, budgetMs) {
         const db = await openDb();
         const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
         const request = tx.objectStore(META_STORE).get(scope);
         let owned = false;
+        let written = 0;
         request.onsuccess = () => {
             owned = !!request.result && request.result.pending === token;
             if (!owned) return;
             const items = tx.objectStore(ITEM_STORE);
             const prefix = scope + KEY_SEP;
-            for (const [id, entry] of entries) items.put(entry, prefix + id);
+            const until = budgetMs > 0 ? performance.now() + budgetMs : 0;
+            for (const [id, entry] of entries) {
+                items.put(entry, prefix + id);
+                written++;
+                if (until && written >= BUDGET_MIN_PUTS && written % BUDGET_CHECK_EVERY === 0 && performance.now() >= until) break;
+            }
         };
         await committed(tx);
-        return owned;
+        if (!owned) return false;
+        return written >= entries.length ? true : written;
     }
 
     /**

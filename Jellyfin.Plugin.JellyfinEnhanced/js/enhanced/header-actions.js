@@ -15,7 +15,14 @@
     let overflowNative = [];
     const mirrors = new Map();
     const observed = new Set();
-    const resizeObserver = new ResizeObserver(schedule);
+    /** @type {number|null} More's width as last measured; null until measured, and after anything that can resize it. */
+    let hiddenMoreWidth = null;
+    /** Measure More again on the next pass (sizes, fonts or the header itself changed). */
+    function remeasure() {
+        hiddenMoreWidth = null;
+        schedule();
+    }
+    const resizeObserver = new ResizeObserver(remeasure);
     const sourceObserver = new MutationObserver(records => {
         // The launcher's own display is managed here; observing that write
         // would schedule another layout after every layout.
@@ -315,6 +322,7 @@
             header.classList.add('je-header-actions-host');
             row.classList.add('je-header-actions-row');
             header.prepend(tray);
+            hiddenMoreWidth = null;
             // Drop stand-ins that helpers.js created while the native tray was missing,
             // including one left empty by a user switch.
             document.querySelectorAll('[data-je-header-fallback]').forEach(stale => {
@@ -347,8 +355,20 @@
         let available = Math.max(0, availableWidth() - chrome);
         let fullWidth = visibleSources.reduce((width, source) => width + outerWidth(source), 0) + gap * Math.max(0, visibleSources.length - 1);
         // Measure More before allocating space. This is resolved before paint.
-        launcher.style.setProperty('display', 'inline-flex', 'important');
-        const moreWidth = outerWidth(launcher);
+        // Showing a hidden More to measure it costs two layouts (one to read
+        // its width, one after it is hidden again), on every pass. When
+        // every action fits with at least twice the last measured More width
+        // to spare, its exact width decides nothing below (nothing collapses,
+        // no native action is borrowed), so that pass reuses the measurement.
+        let moreWidth;
+        if (hiddenMoreWidth !== null && launcher.style.display === 'none'
+            && (!visibleSources.length || (fullWidth <= available && available >= hiddenMoreWidth * 2))) {
+            moreWidth = hiddenMoreWidth;
+        } else {
+            launcher.style.setProperty('display', 'inline-flex', 'important');
+            moreWidth = outerWidth(launcher);
+            hiddenMoreWidth = moreWidth;
+        }
         // Hide the legacy title only when even More would otherwise overflow.
         if (visibleSources.length && fullWidth > available && available < moreWidth) {
             row.classList.add('je-launcher-tight');
@@ -508,11 +528,11 @@
             `);
             JE.helpers.onBodyMutation('je-header-actions', onBodyMutation);
             sourceObserver.observe(tray, { subtree: true, childList: true, attributes: true, attributeFilter: ['title', 'aria-label', 'data-header-label', 'disabled', 'hidden', 'style'] });
-            window.addEventListener('resize', schedule);
-            window.visualViewport?.addEventListener('resize', schedule);
+            window.addEventListener('resize', remeasure);
+            window.visualViewport?.addEventListener('resize', remeasure);
             window.visualViewport?.addEventListener('scroll', layoutPanel);
             window.addEventListener('hashchange', closeLauncher);
-            document.fonts?.addEventListener('loadingdone', schedule);
+            document.fonts?.addEventListener('loadingdone', remeasure);
         }
         // Reconnect synchronously so callers can find existing button IDs, but
         // measure only once in the next frame after all features insert theirs.
@@ -534,6 +554,7 @@
         header?.classList.remove('je-header-actions-host');
         row?.classList.remove('je-header-actions-row', 'je-launcher-tight');
         header = row = null;
+        hiddenMoreWidth = null;
         compactMode = false;
         resizeObserver.disconnect();
         observed.clear();

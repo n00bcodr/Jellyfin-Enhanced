@@ -147,6 +147,125 @@ public class ApiAssetTests
     }
 
     [Fact]
+    public void ComponentGroupsPartitionTheManifestAndKeepItsOrder()
+    {
+        var manifest = ClientScriptBundle.GetComponentScripts();
+        var groups = ClientScriptBundle.GetComponentGroups();
+        Assert.Equal(ClientScriptBundle.CoreGroupId, groups[0].Id);
+        Assert.NotEmpty(groups[0].Scripts);
+        Assert.Equal(groups.Count, groups.Select(g => g.Id).Distinct().Count());
+        // Every manifest module is in exactly one group.
+        Assert.Equal(manifest.OrderBy(p => p, StringComparer.Ordinal), groups.SelectMany(g => g.Scripts).OrderBy(p => p, StringComparer.Ordinal));
+        var position = manifest.Select((path, index) => (path, index)).ToDictionary(x => x.path, x => x.index);
+        var earlier = new HashSet<string>();
+        foreach (var group in groups)
+        {
+            // Inside a group, modules run in manifest order; "after" names earlier groups only.
+            Assert.Equal(group.Scripts.OrderBy(p => position[p]), group.Scripts);
+            Assert.All(group.After, id => Assert.Contains(id, earlier));
+            earlier.Add(group.Id);
+        }
+    }
+
+    [Theory]
+    [InlineData("""{"groups":[{"id":"a","modules":["x.js"]},{"id":"a","modules":["y.js"]}]}""")] // repeated id
+    [InlineData("""{"groups":[{"id":"core","modules":["x.js"]}]}""")] // the implicit group cannot be listed
+    [InlineData("""{"groups":[{"id":"Bad Id","modules":["x.js"]}]}""")]
+    [InlineData("""{"groups":[{"id":"a","modules":["missing.js"]}]}""")] // not in the manifest
+    [InlineData("""{"groups":[{"id":"a","modules":["x.js"]},{"id":"b","modules":["x.js"]}]}""")] // in two groups
+    [InlineData("""{"groups":[{"id":"a","after":["b"],"modules":["x.js"]},{"id":"b","modules":["y.js"]}]}""")] // after a later group
+    [InlineData("""{"groups":[{"id":"a","after":["a"],"modules":["x.js"]}]}""")]
+    [InlineData("""{"groups":[{"id":"a","modules":[]}]}""")]
+    [InlineData("""{"groups":[{"id":"a"}]}""")]
+    [InlineData("""{"groups":{}}""")]
+    [InlineData("""[]""")]
+    public void InvalidComponentGroupFilesAreRejected(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        Assert.Throws<InvalidOperationException>(() => ClientScriptBundle.ResolveGroups(new[] { "x.js", "y.js", "z.js" }, document.RootElement));
+    }
+
+    [Fact]
+    public void ComponentGroupsResolveInManifestOrderWithTheRestInCore()
+    {
+        using var document = JsonDocument.Parse("""{"groups":[{"id":"late","modules":["z.js","x.js"]},{"id":"more","after":["late","core"],"modules":["w.js"]}]}""");
+        var groups = ClientScriptBundle.ResolveGroups(new[] { "w.js", "x.js", "y.js", "z.js" }, document.RootElement);
+        Assert.Equal(new[] { "core", "late", "more" }, groups.Select(g => g.Id));
+        Assert.Equal(new[] { "y.js" }, groups[0].Scripts);
+        Assert.Equal(new[] { "x.js", "z.js" }, groups[1].Scripts);
+        Assert.Equal(new[] { "late" }, groups[2].After);
+    }
+
+    [Fact]
+    public void GroupBundleRequestsAcceptOnlyKnownDistinctGroupsAndServeThemInFileOrder()
+    {
+        var ids = ClientScriptBundle.GetComponentGroups().Select(g => g.Id).ToArray();
+        Assert.True(ids.Length > 1, "js/component-groups.json defines no groups");
+        Assert.Equal(new[] { "core" }, ClientScriptBundle.ParseGroupRequest("core"));
+        Assert.Equal(new[] { "core", ids[1] }, ClientScriptBundle.ParseGroupRequest($"{ids[1]},core"));
+        Assert.Equal(ids, ClientScriptBundle.ParseGroupRequest(string.Join(',', ids.Reverse())));
+        foreach (var bad in new string?[] { null, "", ",", "core,", "core,core", "nope", "core,nope", "CORE", " core", "core;x", "../core", string.Join(',', Enumerable.Repeat("core", ClientScriptBundle.MaxGroupsPerRequest + 1)) })
+        {
+            Assert.Null(ClientScriptBundle.ParseGroupRequest(bad));
+        }
+    }
+
+    [Fact]
+    public void GroupBundleDefinesEachGroupAndItsSourceMapPointsAtExactModuleLines()
+    {
+        using var fixture = new CoreFixture();
+        var groups = ClientScriptBundle.GetComponentGroups();
+        var wanted = new[] { groups[0], groups[^1] };
+        var ids = ClientScriptBundle.ParseGroupRequest($"{wanted[1].Id},{wanted[0].Id}")!;
+        var bundle = ClientScriptBundle.GetGroupBundle("regression-version", ids, true, fixture.Logger);
+        var script = Encoding.UTF8.GetString(bundle.Script);
+        var lines = script.Split('\n');
+        var combination = string.Join(',', wanted.Select(g => g.Id));
+        Assert.EndsWith($"//# sourceMappingURL=bundle.js.map?g={combination}&v=regression-version\n", script);
+        // One statement per group, in file order, each announcing how many modules it holds.
+        var first = script.IndexOf($"(window.__JE_BUNDLES = window.__JE_BUNDLES || {{}})[\"{wanted[0].Id}\"] = {{ total: {wanted[0].Scripts.Count}, modules: [", StringComparison.Ordinal);
+        var second = script.IndexOf($"(window.__JE_BUNDLES = window.__JE_BUNDLES || {{}})[\"{wanted[1].Id}\"] = {{ total: {wanted[1].Scripts.Count}, modules: [", StringComparison.Ordinal);
+        Assert.True(first > 0 && second > first);
+        Assert.DoesNotContain("__JE_BUNDLE_MODULES", script);
+
+        using var map = JsonDocument.Parse(bundle.SourceMap);
+        var sections = map.RootElement.GetProperty("sections").EnumerateArray().ToArray();
+        var paths = wanted.SelectMany(g => g.Scripts).ToArray();
+        Assert.Equal(paths.Length, sections.Length);
+        for (var i = 0; i < paths.Length; i++)
+        {
+            var sourceMap = sections[i].GetProperty("map");
+            Assert.Equal($"js/{paths[i]}?v=regression-version", sourceMap.GetProperty("sources")[0].GetString());
+            var line = sections[i].GetProperty("offset").GetProperty("line").GetInt32();
+            using var original = typeof(JellyfinEnhancedController).Assembly.GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.js." + paths[i].Replace('/', '.'))!;
+            using var reader = new StreamReader(original);
+            var source = reader.ReadToEnd();
+            Assert.Equal(source, string.Join('\n', lines.Skip(line)).Substring(0, source.Length));
+        }
+
+        // The same combination is served from the cache; a single group reuses the built piece.
+        var cached = ClientScriptBundle.GetGroupBundle("regression-version", ids, false, fixture.Logger);
+        Assert.Same(cached.Script, ClientScriptBundle.GetGroupBundle("regression-version", ids, false, fixture.Logger).Script);
+        var alone = Encoding.UTF8.GetString(ClientScriptBundle.GetGroupBundle("regression-version", new[] { wanted[1].Id }, false, fixture.Logger).Script);
+        Assert.DoesNotContain($"[\"{wanted[0].Id}\"]", alone);
+        Assert.Contains($"[\"{wanted[1].Id}\"]", alone);
+        var changed = ClientScriptBundle.GetGroupBundle("next-version", ids, false, fixture.Logger);
+        Assert.Contains("v=next-version", Encoding.UTF8.GetString(changed.SourceMap));
+    }
+
+    [Fact]
+    public void EveryGroupTogetherHoldsExactlyTheWholeBundlesModules()
+    {
+        using var fixture = new CoreFixture();
+        var ids = ClientScriptBundle.GetComponentGroups().Select(g => g.Id).ToArray();
+        var grouped = Encoding.UTF8.GetString(ClientScriptBundle.GetGroupBundle("regression-version", ids, true, fixture.Logger).Script);
+        var whole = Encoding.UTF8.GetString(ClientScriptBundle.GetBundle("regression-version", true, fixture.Logger).Script);
+        static string[] Markers(string script) => script.Split('\n').Where(line => line.StartsWith("/* ---- js/", StringComparison.Ordinal)).OrderBy(line => line, StringComparer.Ordinal).ToArray();
+        Assert.Equal(Markers(whole), Markers(grouped));
+        Assert.Equal(ClientScriptBundle.GetComponentScripts().Count, Markers(grouped).Length);
+    }
+
+    [Fact]
     public void AdminSchemaScriptAndStylesheetAreServedAsOneConcatenatedFileEach()
     {
         using var fixture = new CoreFixture();
