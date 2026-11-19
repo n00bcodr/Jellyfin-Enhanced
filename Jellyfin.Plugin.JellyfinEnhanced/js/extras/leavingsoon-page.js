@@ -32,6 +32,23 @@
         return day(deleteAt) - day(Date.now());
     }
 
+    /** A day as the Requests page writes older dates: "23 Nov 2026". */
+    const shortDate = (date) => date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    /** How long ago, as the Requests page words it ("3d ago", then "23 Nov 2026" after a month); the same strings. */
+    function relativeDate(value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '';
+        const diff = Date.now() - date.getTime();
+        if (diff < 0) return shortDate(date);
+        const minutes = Math.floor(diff / 60000), hours = Math.floor(diff / 3600000), days = Math.floor(diff / DAY_MS);
+        if (minutes < 1) return t('requests_just_now');
+        if (minutes < 60) return t('requests_minutes_ago').replace('{minutes}', minutes);
+        if (hours < 24) return t('requests_hours_ago').replace('{hours}', hours);
+        if (days < 30) return t('requests_days_ago').replace('{days}', days);
+        return shortDate(date);
+    }
+
     /** @returns {{text: string, level: string}} The chip for an item's delete time. */
     function chip(deleteAt) {
         const d = daysLeft(deleteAt);
@@ -53,6 +70,7 @@
         if (document.getElementById('je-leavingsoon-styles')) return;
         const style = document.createElement('style');
         style.id = 'je-leavingsoon-styles';
+        // Greys are rgba(128,128,128) so the page reads on dark and light themes alike; text inherits the theme's colour.
         style.textContent = `
 .je-ls { width: 100%; box-sizing: border-box; padding: 20px 3vw 48px; }
 .je-ls-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -64,8 +82,8 @@
 .je-ls-pill, .je-ls-btn { border: 1px solid rgba(128,128,128,.4); background: rgba(128,128,128,.16); color: inherit; border-radius: 999px; padding: 6px 14px; cursor: pointer; font: inherit; font-size: .9em; }
 .je-ls-btn { border-radius: 6px; padding: 5px 10px; font-size: .85em; }
 .je-ls-pill:hover, .je-ls-btn:hover, .je-ls-pill:focus-visible, .je-ls-btn:focus-visible { background: rgba(128,128,128,.34); outline: none; }
-.je-ls-refresh { background: none; border: none; cursor: pointer; color: rgba(255,255,255,.75); padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-.je-ls-refresh:hover, .je-ls-refresh:focus-visible { background: rgba(255,255,255,.08); color: rgba(255,255,255,.95); outline: none; }
+.je-ls-refresh { background: none; border: none; cursor: pointer; color: inherit; opacity: .75; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.je-ls-refresh:hover, .je-ls-refresh:focus-visible { background: rgba(128,128,128,.2); opacity: 1; outline: none; }
 .je-ls-refresh .material-icons { font-size: 22px; }
 .je-ls-refresh.spin .material-icons { animation: je-ls-spin .6s ease; }
 @keyframes je-ls-spin { to { transform: rotate(360deg); } }
@@ -80,52 +98,52 @@
 .je-ls-icon-btn.deny:hover, .je-ls-icon-btn.deny:focus-visible { background: #d03a3a; border-color: #d03a3a; color: #fff; }
 .je-ls-icon-btn.date:hover, .je-ls-icon-btn.date:focus-visible { background: var(--je-ls-accent, #00a4dc); border-color: transparent; color: #fff; }
 .je-ls-pill.active { background: rgba(128,128,128,.34); border-color: var(--je-ls-accent, #00a4dc); font-weight: 600; }
-.je-ls-btn.primary { background: var(--je-ls-accent, #00a4dc); border-color: transparent; color: #fff; }
 .je-ls-btn[disabled] { opacity: .5; cursor: default; }
-.je-ls-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px; }
+.je-ls-btn.danger { background: #d03a3a; border-color: transparent; color: #fff; }
+/* Cards: the Requests page's layout (poster left, details right), one column on a phone. */
+.je-ls-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.1em; }
+.je-ls-card { display: flex; gap: 1em; padding: 1em; border-radius: .5em; background: rgba(128,128,128,.1); min-width: 0; }
+.je-ls-poster { position: relative; width: 80px; height: 120px; flex: none; border-radius: .5em; overflow: hidden; background: rgba(128,128,128,.18); cursor: pointer; }
+.je-ls-poster.plain { cursor: default; }
+.je-ls-poster img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; display: block; }
+.je-ls-poster .je-ls-fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 2.2em; opacity: .35; }
+.je-ls-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .3em; }
+.je-ls-head { display: flex; align-items: baseline; gap: .4em; min-width: 0; }
+.je-ls-name { font-weight: 600; line-height: 1.25; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.je-ls-name.plain { cursor: default; }
+.je-ls-year { opacity: .65; font-size: .85em; flex: none; }
+.je-ls-sub { opacity: .7; font-size: .85em; overflow-wrap: anywhere; }
+.je-ls-note { font-style: italic; }
+.je-ls-badges { display: flex; gap: .4em; flex-wrap: wrap; align-items: center; }
+.je-ls-chip, .je-ls-scope { display: inline-block; padding: .18em .6em; border-radius: 999px; font-size: .68em; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; line-height: 1.4; color: #fff; background: rgba(90,90,90,.85); }
+.je-ls-scope { background: rgba(128,128,128,.28); color: inherit; text-transform: none; font-weight: 600; }
+.je-ls-chip.warn { background: #c77c0a; }
+.je-ls-chip.urgent { background: #c62828; }
+.je-ls-chip.ok { background: #2e7d32; }
+.je-ls-chip.soon { background: rgba(0,164,220,.85); }
+.je-ls-actions, .je-ls-reqactions { margin-top: auto; padding-top: .4em; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.je-ls-reqactions:has(.je-ls-warn) { flex-direction: column; align-items: stretch; gap: 8px; }
+.je-ls-warn { font-size: .82em; line-height: 1.3; color: #ef7a6c; }
+.je-ls-confirm { display: flex; gap: 6px; flex-wrap: wrap; }
+.je-ls-note-input { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(128,128,128,.45); background: rgba(128,128,128,.12); color: inherit; font: inherit; font-size: .85em; }
+.je-ls-who { display: flex; align-items: center; gap: 6px; font-size: .88em; opacity: .9; flex-wrap: wrap; }
+.je-ls-avatar { position: relative; width: 22px; height: 22px; border-radius: 50%; background: var(--je-ls-accent, #00a4dc); color: #fff; font-size: .75em; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; flex: none; }
+.je-ls-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.je-ls-err { font-size: .82em; color: #ef7a6c; overflow-wrap: anywhere; }
+.je-ls-section { margin-top: 34px; }
+.je-ls-section h3 { margin: 0 0 12px; font-size: 1.15em; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+.je-ls-notice { padding: 10px 12px; border-radius: 8px; background: rgba(199,124,10,.18); font-size: .9em; margin-top: 24px; }
+.je-ls-empty { opacity: .7; padding: 40px 0; text-align: center; }
 @media (max-width: 600px) {
   .je-ls-top { gap: 10px; }
   .je-ls-title { flex: 1 0 100%; }
   .je-ls-pills { order: 1; }
   .je-ls-spacer { order: 2; }
   .je-ls-refresh { order: 3; }
-  .je-ls-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; }
-  .je-ls-actions { gap: 8px; }
-  .je-ls-name { font-size: .92em; }
+  .je-ls-grid { grid-template-columns: minmax(0, 1fr); gap: .8em; }
+  .je-ls-card { padding: .8em; gap: .8em; }
+  .je-ls-poster { width: 72px; height: 108px; }
 }
-.je-ls-card { display: flex; flex-direction: column; gap: 8px; }
-.je-ls-poster { position: relative; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden; background: rgba(255,255,255,.07); cursor: pointer; }
-.je-ls-poster img { position: relative; z-index: 1; width: 100%; height: 100%; object-fit: cover; display: block; }
-.je-ls-poster .je-ls-fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 3em; opacity: .35; }
-.je-ls-chip { position: absolute; z-index: 2; left: 8px; bottom: 8px; padding: 3px 9px; border-radius: 999px; font-size: .8em; font-weight: 600; background: rgba(0,0,0,.72); color: #fff; }
-.je-ls-chip.warn { background: #c77c0a; }
-.je-ls-chip.urgent { background: #c62828; }
-.je-ls-chip.ok { background: #2e7d32; }
-.je-ls-name { font-weight: 500; line-height: 1.25; cursor: pointer; }
-.je-ls-sub { opacity: .65; font-size: .85em; }
-.je-ls-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
-.je-ls-section { margin-top: 34px; }
-.je-ls-section h3 { margin: 0 0 12px; font-size: 1.15em; font-weight: 500; display: flex; align-items: center; gap: 8px; }
-.je-ls-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.05); margin-bottom: 8px; flex-wrap: wrap; }
-.je-ls-row .grow { flex: 1; min-width: 180px; }
-.je-ls-reqactions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
-.je-ls-reqactions:not(:has(.je-ls-warn)) { flex-direction: row; gap: 10px; }
-.je-ls-warn { font-size: .82em; line-height: 1.3; color: #ffb4a8; }
-.je-ls-confirm { display: flex; gap: 6px; flex-wrap: wrap; }
-.je-ls-btn.danger { background: #d03a3a; border-color: transparent; color: #fff; }
-.je-ls-poster.plain { cursor: default; }
-.je-ls-req-poster { position: relative; width: 48px; height: 72px; flex: none; border-radius: 6px; overflow: hidden; background: rgba(255,255,255,.08); display: flex; align-items: center; justify-content: center; }
-.je-ls-req-poster.linked { cursor: pointer; }
-.je-ls-req-poster .material-icons { opacity: .35; font-size: 24px; }
-.je-ls-req-poster img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.je-ls-name.plain { cursor: default; }
-.je-ls-who { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: .88em; opacity: .85; flex-wrap: wrap; }
-.je-ls-avatar { position: relative; width: 22px; height: 22px; border-radius: 50%; background: var(--je-ls-accent, #00a4dc); color: #fff; font-size: .75em; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; flex: none; }
-.je-ls-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.je-ls-note { margin-top: 3px; font-style: italic; }
-.je-ls-status { padding: 2px 9px; border-radius: 999px; font-size: .8em; background: rgba(255,255,255,.12); }
-.je-ls-status.approved { background: #2e7d32; } .je-ls-status.denied { background: #8d2b2b; } .je-ls-status.pending { background: #8a6d12; }
-.je-ls-empty { opacity: .7; padding: 40px 0; text-align: center; }
 `;
         document.head.appendChild(style);
         try { document.documentElement.style.setProperty('--je-ls-accent', JE?.themer?.getThemeVariables?.()?.primaryAccent || '#00a4dc'); } catch (_) { /* default accent */ }
@@ -136,10 +154,11 @@
         return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/leaving-soon/list'), dataType: 'json' });
     }
 
-    async function review(id, approve, button) {
+    /** Approve or deny a request; the optional note goes to Reclaimerr (and the requester). */
+    async function review(id, approve, button, note) {
         button.disabled = true;
         try {
-            await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? 'approve' : 'deny'}`), data: JSON.stringify({}), contentType: 'application/json', dataType: 'json' });
+            await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? 'approve' : 'deny'}`), data: JSON.stringify(note ? { note } : {}), contentType: 'application/json', dataType: 'json' });
             JE.toast?.(esc(t(approve ? 'leavingsoon_approved' : 'leavingsoon_denied')));
             refresh();
         } catch (err) {
@@ -150,33 +169,49 @@
         }
     }
 
+    function iconButton(kind, icon, label) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = `je-ls-icon-btn ${kind}`; b.title = label; b.setAttribute('aria-label', label);
+        b.innerHTML = `<i class="material-icons" aria-hidden="true">${icon}</i>`;
+        return b;
+    }
+
+    /** Make the poster and title open the Jellyfin item (when there is one). */
+    function linkToItem(el, itemId) {
+        if (!itemId) return;
+        for (const target of el.querySelectorAll('.je-ls-poster, .je-ls-name')) {
+            target.addEventListener('click', () => navigateToItem(itemId));
+            target.addEventListener('keydown', (e) => { if (e.key === 'Enter') navigateToItem(itemId); });
+        }
+    }
+
+    const formatSize = (bytes) => {
+        if (!Number.isFinite(bytes) || bytes <= 0) return '';
+        const gb = bytes / 1073741824;
+        return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(bytes / 1048576)} MB`;
+    };
+
     function card(item, data) {
         const c = chip(item.deleteAt);
         const el = document.createElement('div');
         el.className = 'je-ls-card';
         el.dataset.type = item.type;
         // One file of a movie kept in several versions is leaving; the title and its other versions stay.
-        const sub = [item.detail, item.year, item.versionOnly ? t('leavingsoon_one_version') : null].filter(Boolean).join(' · ');
-        el.innerHTML = `<div class="je-ls-poster" role="link" tabindex="0"><span class="je-ls-fallback material-icons" aria-hidden="true">movie</span>`
-            + `<img alt="" loading="lazy" src="${esc(ApiClient.getUrl(`Items/${item.id}/Images/Primary`, { maxHeight: 420, quality: 90 }))}"/>`
-            + `<span class="je-ls-chip ${c.level}">${esc(c.text)}</span></div>`
-            + `<div class="je-ls-name" role="link" tabindex="0">${esc(item.name)}</div>`
-            + (sub ? `<div class="je-ls-sub">${esc(sub)}</div>` : '')
-            + (data.actions ? `<div class="je-ls-actions"></div>` : '');
+        const date = Number.isFinite(item.deleteAt) ? shortDate(new Date(item.deleteAt)) : '';
+        el.innerHTML = `<div class="je-ls-poster" role="link" tabindex="0"><span class="je-ls-fallback material-icons" aria-hidden="true">${item.type === 'Movie' ? 'movie' : 'tv'}</span>`
+            + `<img alt="" loading="lazy" src="${esc(ApiClient.getUrl(`Items/${item.id}/Images/Primary`, { maxHeight: 360, quality: 90 }))}"/></div>`
+            + `<div class="je-ls-info"><div class="je-ls-head"><div class="je-ls-name" role="link" tabindex="0" title="${esc(item.name)}">${esc(item.name)}</div>`
+            + (item.year ? `<span class="je-ls-year">(${esc(item.year)})</span>` : '') + `</div>`
+            + (item.detail ? `<div class="je-ls-sub">${esc(item.detail)}</div>` : '')
+            + `<div class="je-ls-badges"><span class="je-ls-chip ${c.level}">${esc(c.text)}</span>`
+            + (item.versionOnly ? `<span class="je-ls-scope">${esc(t('leavingsoon_one_version'))}</span>` : '') + `</div>`
+            + (date || item.size ? `<div class="je-ls-sub">${esc([date ? t('leavingsoon_leaves_on', { date }) : '', formatSize(item.size)].filter(Boolean).join(' · '))}</div>` : '')
+            + (data.actions ? `<div class="je-ls-actions"></div>` : '') + `</div>`;
         const img = el.querySelector('img');
         img?.addEventListener('error', () => img.remove());
-        for (const target of el.querySelectorAll('.je-ls-poster, .je-ls-name')) {
-            target.addEventListener('click', () => navigateToItem(item.id));
-            target.addEventListener('keydown', (e) => { if (e.key === 'Enter') navigateToItem(item.id); });
-        }
+        linkToItem(el, item.id);
         const actions = el.querySelector('.je-ls-actions');
         if (actions) {
-            const iconButton = (kind, icon, label) => {
-                const b = document.createElement('button');
-                b.type = 'button'; b.className = `je-ls-icon-btn ${kind}`; b.title = label; b.setAttribute('aria-label', label);
-                b.innerHTML = `<i class="material-icons" aria-hidden="true">${icon}</i>`;
-                return b;
-            };
             const keep = iconButton('keep', 'shield', t('maintainerr_keep'));
             keep.addEventListener('click', () => JE.removalMenu?.act?.('unmark', { itemId: item.id }, 'maintainerr_kept', data.provider === 'reclaimerr' ? null : { path: 'mark', body: { itemId: item.id }, doneKey: 'maintainerr_marked' }));
             const when = iconButton('date', 'event', t(data.provider === 'reclaimerr' ? 'reclaimerr_change_date' : 'maintainerr_postpone'));
@@ -188,47 +223,64 @@
 
     /** The poster for a request: the Jellyfin item's own when it is in the library, else TMDB's. */
     function requestPoster(r) {
-        if (r.itemId) return ApiClient.getUrl(`Items/${r.itemId}/Images/Primary`, { maxHeight: 220, quality: 90 });
-        return r.posterPath ? `https://image.tmdb.org/t/p/w185${r.posterPath}` : null;
+        if (r.itemId) return ApiClient.getUrl(`Items/${r.itemId}/Images/Primary`, { maxHeight: 360, quality: 90 });
+        if (r.posterPath) return /^https?:\/\//.test(r.posterPath) ? r.posterPath : `https://image.tmdb.org/t/p/w185${r.posterPath}`;
+        return null;
+    }
+
+    /** What exactly a request would delete when that is less than the whole title: a season, an episode or one movie version. */
+    function scopeLabel(r) {
+        if (r.scope === 'season' && r.seasonNumber != null) return t('leavingsoon_scope_season', { season: r.seasonNumber });
+        if (r.scope === 'episode' && r.episodeNumber != null && r.seasonNumber != null) return t('leavingsoon_scope_episode', { season: r.seasonNumber, episode: r.episodeNumber });
+        if (r.scope === 'movie_version') return [t('leavingsoon_scope_version'), r.versionResolution, formatSize(r.versionSize)].filter(Boolean).join(' · ');
+        return '';
+    }
+
+    /** The confirm sentence for approving: it names the scope when that is less than the title, because Reclaimerr deletes on approval. */
+    function confirmText(r) {
+        const scope = scopeLabel(r);
+        return scope ? t('leavingsoon_confirm_delete_scope', { scope }) : t('leavingsoon_confirm_delete');
+    }
+
+    /** @returns {{text: string, level: string}} The state chip of a request. */
+    function requestChip(r) {
+        if (r.executionError) return { text: t('leavingsoon_status_failed'), level: 'urgent' };
+        if (r.deferred) return { text: t('leavingsoon_status_deferred'), level: 'warn' };
+        return { text: t(`leavingsoon_status_${r.status}`) || r.status, level: r.status === 'denied' ? 'urgent' : r.status === 'approved' ? 'ok' : 'warn' };
     }
 
     /**
-     * A deletion request as a card like the leaving cards: poster (opens the item), title, who asked (their Jellyfin
-     * name and avatar), their note, and for administrators the Approve and Deny buttons. Approving deletes the title
-     * from the library at once (Reclaimerr acts on approval), so it asks first.
+     * A deletion request as a card in the Requests page's layout: poster (opens the item), title, state, what it would delete
+     * (a season, an episode or one version, when not the whole title), who asked (their Jellyfin name and avatar), their note,
+     * why a deletion failed, and for administrators the Approve and Deny buttons. Approving deletes from the library at once
+     * (Reclaimerr acts on approval), so it asks first, names the scope and takes an optional note.
      */
     function requestCard(r, admin) {
         const el = document.createElement('div');
         el.className = 'je-ls-card je-ls-reqcard';
-        const when = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '';
+        const when = r.createdAt ? relativeDate(r.createdAt) : '';
         const poster = requestPoster(r);
         const person = r.jellyfinUser || r.requestedBy || '';
+        const state = requestChip(r);
+        const scope = scopeLabel(r);
+        const pending = r.status === 'pending';
         el.innerHTML = `<div class="je-ls-poster${r.itemId ? '' : ' plain'}"${r.itemId ? ' role="link" tabindex="0"' : ''}><span class="je-ls-fallback material-icons" aria-hidden="true">${r.mediaType === 'movie' ? 'movie' : 'tv'}</span>`
-            + (poster ? `<img alt="" loading="lazy" src="${esc(poster)}"/>` : '')
-            + (admin ? '' : `<span class="je-ls-chip ${r.status === 'denied' ? 'urgent' : r.status === 'approved' ? 'ok' : 'warn'}">${esc(t(`leavingsoon_status_${r.status}`) || r.status)}</span>`) + `</div>`
-            + `<div class="je-ls-name${r.itemId ? '' : ' plain'}"${r.itemId ? ' role="link" tabindex="0"' : ''}>${esc(r.title)}</div>`
-            + (r.year ? `<div class="je-ls-sub">${esc(r.year)}</div>` : '')
+            + (poster ? `<img alt="" loading="lazy" src="${esc(poster)}"/>` : '') + `</div>`
+            + `<div class="je-ls-info"><div class="je-ls-head"><div class="je-ls-name${r.itemId ? '' : ' plain'}"${r.itemId ? ' role="link" tabindex="0"' : ''} title="${esc(r.title)}">${esc(r.title)}</div>`
+            + (r.year ? `<span class="je-ls-year">(${esc(r.year)})</span>` : '') + `</div>`
+            + `<div class="je-ls-badges"><span class="je-ls-chip ${state.level}">${esc(state.text)}</span>${scope ? `<span class="je-ls-scope">${esc(scope)}</span>` : ''}</div>`
             + `<div class="je-ls-who"${admin && r.requestedBy ? ` title="${esc(t('leavingsoon_reclaimerr_account', { name: r.requestedBy }))}"` : ''}>`
             + (person ? `<span class="je-ls-avatar" aria-hidden="true">${esc(person.charAt(0).toUpperCase())}${r.jellyfinUserId ? `<img alt="" src="${esc(ApiClient.getUrl(`Users/${r.jellyfinUserId}/Images/Primary`, { maxHeight: 48, quality: 90 }))}"/>` : ''}</span><span>${esc(t('leavingsoon_requested_by', { name: person }))}</span>` : '')
             + `</div>`
             + (when ? `<div class="je-ls-sub">${esc(when)}</div>` : '')
             + (r.note ? `<div class="je-ls-sub je-ls-note">${esc(r.note)}</div>` : '')
-            + (admin ? `<div class="je-ls-reqactions"></div>` : '');
+            + (!admin && r.adminNotes && !/ in Jellyfin\)?$/.test(r.adminNotes) ? `<div class="je-ls-sub je-ls-note">${esc(r.adminNotes)}</div>` : '')
+            + (r.executionError ? `<div class="je-ls-err">${esc(r.executionError)}</div>` : '')
+            + (admin && pending ? `<div class="je-ls-reqactions"></div>` : '') + `</div>`;
         for (const img of el.querySelectorAll('img')) img.addEventListener('error', () => img.remove());
-        if (r.itemId) {
-            for (const target of el.querySelectorAll('.je-ls-poster, .je-ls-name')) {
-                target.addEventListener('click', () => navigateToItem(r.itemId));
-                target.addEventListener('keydown', (e) => { if (e.key === 'Enter') navigateToItem(r.itemId); });
-            }
-        }
+        linkToItem(el, r.itemId);
         const actions = el.querySelector('.je-ls-reqactions');
         if (actions) {
-            const iconButton = (kind, icon, label) => {
-                const b = document.createElement('button');
-                b.type = 'button'; b.className = `je-ls-icon-btn ${kind}`; b.title = label; b.setAttribute('aria-label', label);
-                b.innerHTML = `<i class="material-icons" aria-hidden="true">${icon}</i>`;
-                return b;
-            };
             const showChoice = () => {
                 actions.textContent = '';
                 const ok = iconButton('approve', 'check', t('leavingsoon_approve'));
@@ -237,22 +289,25 @@
                 no.addEventListener('click', () => review(r.id, false, no));
                 actions.append(ok, no);
             };
-            // Approving removes the title from the library now: one more click, with the words.
+            // Approving removes it from the library now: one more click, with the words (scope-aware) and an optional note.
             const showConfirm = () => {
                 actions.textContent = '';
                 const warn = document.createElement('div');
                 warn.className = 'je-ls-warn';
-                warn.textContent = t('leavingsoon_confirm_delete');
+                warn.textContent = confirmText(r);
+                const note = document.createElement('input');
+                note.type = 'text'; note.className = 'je-ls-note-input'; note.maxLength = 300; note.placeholder = t('leavingsoon_note_placeholder');
+                note.setAttribute('aria-label', t('leavingsoon_note_placeholder'));
                 const row = document.createElement('div');
                 row.className = 'je-ls-confirm';
                 const yes = document.createElement('button');
                 yes.type = 'button'; yes.className = 'je-ls-btn danger'; yes.textContent = t('leavingsoon_delete_now');
                 const cancel = document.createElement('button');
                 cancel.type = 'button'; cancel.className = 'je-ls-btn'; cancel.textContent = t('maintainerr_cancel');
-                yes.addEventListener('click', () => review(r.id, true, yes));
+                yes.addEventListener('click', () => review(r.id, true, yes, note.value.trim()));
                 cancel.addEventListener('click', showChoice);
                 row.append(yes, cancel);
-                actions.append(warn, row);
+                actions.append(warn, note, row);
             };
             showChoice();
         }
@@ -287,6 +342,10 @@
             root.appendChild(grid);
         }
         const pending = data.requests || [];
+        if (data.requestsUnavailable) {
+            const note = document.createElement('div'); note.className = 'je-ls-notice'; note.textContent = t('leavingsoon_requests_unavailable');
+            root.appendChild(note);
+        }
         if (data.admin && pending.length) {
             const sec = document.createElement('div'); sec.className = 'je-ls-section';
             sec.innerHTML = `<h3><span class="material-icons" aria-hidden="true">inbox</span>${esc(t('leavingsoon_requests_title', { count: pending.length }))}</h3>`;
