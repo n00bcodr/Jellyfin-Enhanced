@@ -264,8 +264,8 @@ test('a card a theme zooms under the pointer is left alone while the pointer is 
 // above: the band would change height, the nudge would come off, the group would go down again, and so on.
 
 /** A page of Bands cards of given widths, with the real layout controller and stylesheet; each top band holds `groups`. */
-async function bandsPage(page, groups, { rtl = false } = {}) {
-  await page.setContent(`<!doctype html><html${rtl ? ' dir="rtl"' : ''}><style>
+async function bandsPage(page, groups, { rtl = false, slot = 'top', css = '' } = {}) {
+  await page.setContent(`<!doctype html><html${rtl ? ' dir="rtl"' : ''}><style>${css}
     body { margin: 0; background: #223; font-family: sans-serif }
     #cards { position: absolute; left: 10.3px; top: 10.7px; width: 1150px }
     .card { display: inline-block; margin: 0 6.3px 6.3px 0; contain: content }
@@ -275,15 +275,15 @@ async function bandsPage(page, groups, { rtl = false } = {}) {
     .je-tag-host { position: absolute !important; inset: 0; pointer-events: none }
     .status-tag, .plain-tag { display: inline-flex; padding: 2.3px 7.3px; border-radius: 999px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 11.3px; line-height: 1.3; white-space: nowrap }
     </style><div id="cards"></div></html>`);
-  await page.evaluate((groups) => {
+  await page.evaluate(([groups, slot]) => {
     window.JellyfinEnhanced = {
-      currentSettings: { ageRatingTagsEnabled: true, tagLayoutSettingsVersion: 1, tagLayout: 'bands', tagLayouts: { bands: { groups: groups.map(group => ({ group, slot: 'top' })) } } },
+      currentSettings: { ageRatingTagsEnabled: true, tagLayoutSettingsVersion: 1, tagLayout: 'bands', tagLayouts: { bands: { groups: groups.map(group => ({ group, slot })) } } },
       pluginConfig: { TagCacheServerMode: true }, t: k => k,
       session: { getUserId: () => 'a', getServerId: () => 's', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
       _cacheManager: { register() {}, markDirty() {} },
       tagPipeline: { renderers: {}, registerRenderer(name, renderer) { this.renderers[name] = renderer; }, getRenderer(name) { return this.renderers[name]; }, clearProcessed() {}, scheduleScan() {} },
     };
-  }, groups);
+  }, [groups, slot]);
   for (const f of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/ageratingtags.js']) await page.addScriptTag({ path: path.join(root, f) });
   await page.evaluate(() => {
     const JE = JellyfinEnhanced;
@@ -297,6 +297,12 @@ async function bandsPage(page, groups, { rtl = false } = {}) {
       else if (group === 'quality') JE.core.tagLayout.commitGroup(host, 'quality', make('quality-overlay-container', '4K DV'));
       else if (group === 'language') JE.core.tagLayout.commitGroup(host, 'language', make('language-overlay-container', 'EN FR'));
       else if (group === 'custom') JE.core.tagLayout.commitGroup(host, 'custom', make('custom-overlay-container', 'Cut'));
+      else if (group === 'rating') {
+        // Two ratings, the second with an icon drawn by a font (a word until the font has come).
+        const el = make('rating-overlay-container', '8.1');
+        el.insertAdjacentHTML('beforeend', '<div class="plain-tag"><span class="late-icon">favorite</span>9</div>');
+        JE.core.tagLayout.commitGroup(host, 'rating', el);
+      }
     };
     /** Cards of the given widths, each with the given groups in its top band (a custom group is one that never was contained). */
     window.cards = (widths, groups) => {
@@ -440,4 +446,44 @@ test('Bands: a group drawn just after the cards were measured leaves no band off
   expect(late.held).toBe(0);
   expect([late.off, late.across]).toEqual([whole.off, whole.across]);
   expect([late.changes, late.passes]).toEqual([0, 0]);
+});
+
+// An icon is a word until its font has come, several times as wide. Cards fitted before that hide chips there is
+// room for behind a "+N"; when the font has arrived they are fitted again, and end as cards drawn with the font.
+test('Bands: cards fitted before an icon font arrived are fitted again when it has', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 1200, height: 900 });
+  let served = 0;
+  await page.route('**/late-icons.woff2', async (route) => {
+    served++;
+    await new Promise(r => setTimeout(r, 1200));
+    await route.fulfill({ path: path.join(root, 'fonts/materialsymbolsoutlined.woff2'), contentType: 'font/woff2', headers: { 'access-control-allow-origin': '*' } });
+  });
+  const groups = ['quality', 'rating'];
+  await bandsPage(page, groups, { slot: 'bottom', css: `
+    @font-face { font-family: 'Late Icons'; src: url('http://fonts.test/late-icons.woff2') format('woff2'); font-display: block }
+    .late-icon { font-family: 'Late Icons'; font-size: 13px; line-height: 1; margin-right: 2px }` });
+  /** What each card shows in its bottom band: how many chips, and its "+N". */
+  const shown = () => page.evaluate(() => [...document.querySelectorAll('.je-tag-slot[data-je-slot="bottom"]')].map((slot) => {
+    const chips = [...slot.querySelectorAll(':scope > [data-je-group] > *')].filter(c => !c.classList.contains('je-tag-more') && c.getBoundingClientRect().width > 0 && getComputedStyle(c).visibility !== 'hidden');
+    const more = slot.querySelector('.je-tag-more');
+    return `${chips.length}${more && more.getBoundingClientRect().width > 0 ? more.textContent.trim() : ''}`;
+  }));
+  const widths = Array.from({ length: 60 }, (_, k) => 56 + k * 1.1);
+  await page.evaluate(([widths, groups]) => window.cards(widths, groups), [widths, groups]);
+  await bandsRest(page);
+  // The font is still on its way: the icon is the word "favorite", and narrower cards hide the chip that holds it.
+  expect(await page.evaluate(() => document.fonts.status)).toBe('loading');
+  const early = await shown();
+  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(() => new Promise(r => setTimeout(r, 400)));
+  await bandsRest(page);
+  const late = await shown();
+  // The same cards drawn now, with the font there.
+  await page.evaluate(([widths, groups]) => window.cards(widths, groups), [widths, groups]);
+  await bandsRest(page);
+  const fresh = await shown();
+  expect(served).toBe(1);
+  expect(early.filter((state, i) => state !== fresh[i]).length, 'cards whose fit the word spoilt').toBeGreaterThan(3);
+  expect(late).toEqual(fresh);
 });

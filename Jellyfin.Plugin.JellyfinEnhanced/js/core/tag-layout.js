@@ -782,6 +782,7 @@
      * @property {HTMLElement|null} [described] - The card link whose aria-describedby names moreTip.
      * @property {string} lookKey - lookKey of the settings the card is presented with.
      * @property {boolean} [pendingPresentation] - A detached card needs presentation on reconnection.
+     * @property {boolean} [refit] - It is to be fitted again when the state it is waited out of ends (snapLater).
      * @property {string|null} shape - 'portrait', 'landscape' or 'list'; null until the
      *   fitting pass measured a card its classes don't classify (see shapeOfCard).
      * @property {Set<HTMLElement>} layered - Elements of the card the page's CSS moves or makes a layer (layeredFlow).
@@ -2792,6 +2793,32 @@
 
     /** Whether fonts arriving are heard (watchFonts). */
     let fontsWatched = false;
+    /** Faces come in bursts (a family's weights, a script's subsets): the cards are gone through once, this long after the first (ms). */
+    const FONTS_SETTLE_MS = 150;
+    /** @type {ReturnType<typeof setTimeout>|0} */
+    let fontsDue = 0;
+    /**
+     * The characters the faces that arrived since the cards were last gone
+     * through can draw ([from, to] code points); null: not known, so any.
+     * @type {number[][]|null}
+     */
+    let fontRanges = [];
+
+    /**
+     * @param {string} text - A font face's unicode-range ("U+0000-00FF, U+0131, U+4??").
+     * @returns {number[][]} [from, to] code points.
+     */
+    function unicodeRanges(text) {
+        const ranges = [];
+        for (const part of String(text || 'U+0-10FFFF').split(',')) {
+            const found = /U\+([0-9a-f?]+)(?:-([0-9a-f]+))?/i.exec(part);
+            if (!found) continue;
+            const from = parseInt(found[1].replace(/\?/g, '0'), 16);
+            const to = found[2] ? parseInt(found[2], 16) : parseInt(found[1].replace(/\?/g, 'F'), 16);
+            if (from <= to) ranges.push([from, to]);
+        }
+        return ranges;
+    }
 
     /**
      * A font that arrives after tags were drawn gives chips other widths:
@@ -2799,23 +2826,65 @@
      * card fitted before that hid chips there is room for (a "+1" where the
      * chip fits), and nothing else would fit it again; and every
      * right-aligned container has another corner. So when fonts have
-     * finished loading, the cards that are fitted are fitted again, and the
-     * others measured again for their whole pixels.
+     * arrived, the cards they concern are fitted again where they are
+     * fitted, and measured again for their whole pixels otherwise.
+     *
+     * A page loads fonts all the time that no tag is drawn in: Jellyfin's
+     * text font comes in a hundred subsets, one for each script a title
+     * needs, as titles scroll into view. A card is concerned only if a face
+     * that arrived can draw a character of its tags' text, and a load that
+     * brought no face (it failed) concerns none.
      */
     function watchFonts() {
         if (fontsWatched) return;
         fontsWatched = true;
         try {
-            document.fonts?.addEventListener?.('loadingdone', () => {
-                for (const el of document.querySelectorAll('.je-tag-host')) {
-                    const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
-                    if (!ctrl || !ctrl.layout) continue;
-                    // (A card that is fitted is measured after its fit; scheduleFit takes its nudges off for it.)
-                    scheduleFit(ctrl);
-                    if (!pendingFit.has(ctrl) && snapSupported()) snapAgain(ctrl);
+            document.fonts?.addEventListener?.('loadingdone', (event) => {
+                const faces = /** @type {any} */ (event)?.fontfaces;
+                if (faces && !faces.length) return;
+                if (!faces) fontRanges = null;
+                else if (fontRanges) {
+                    try { for (const face of faces) fontRanges.push(...unicodeRanges(face.unicodeRange)); } catch { fontRanges = null; }
                 }
+                if (!fontsDue) fontsDue = setTimeout(refitForFonts, FONTS_SETTLE_MS);
             });
         } catch { /* no font loading to hear of */ }
+    }
+
+    /** Go through the cards the fonts that arrived concern (watchFonts). */
+    function refitForFonts() {
+        fontsDue = 0;
+        const ranges = fontRanges;
+        fontRanges = [];
+        /** @type {Map<number, boolean>} whether a character can be drawn by a face that arrived */
+        const drawn = new Map();
+        const concerns = (/** @type {HTMLElement} */ host) => {
+            if (!ranges) return true;
+            const text = host.textContent || '';
+            for (let i = 0; i < text.length; i++) {
+                const code = /** @type {number} */ (text.codePointAt(i));
+                if (code > 0xffff) i++;
+                if (code <= 0x20) continue;
+                let can = drawn.get(code);
+                if (can === undefined) { can = ranges.some(([from, to]) => code >= from && code <= to); drawn.set(code, can); }
+                if (can) return true;
+            }
+            return false;
+        };
+        for (const el of document.querySelectorAll('.je-tag-host')) {
+            const host = /** @type {HTMLElement} */ (el);
+            const ctrl = controllers.get(host);
+            if (!ctrl || !ctrl.layout || !concerns(host)) continue;
+            // Under the pointer or holding focus a theme may have the card zoomed, and widths read then are
+            // scaled against room that is not: it is fitted when that is over (snapLater).
+            const card = host.closest('.card, .listItem') || host.parentElement;
+            let busy = false;
+            try { busy = !!card && card.matches(':hover, :focus-within'); } catch { busy = false; }
+            if (busy) { ctrl.refit = true; snapLater(ctrl); continue; }
+            // (A card that is fitted is measured after its fit; scheduleFit takes its nudges off for it.)
+            scheduleFit(ctrl);
+            if (!pendingFit.has(ctrl) && snapSupported()) snapAgain(ctrl);
+        }
     }
 
     /**
@@ -3000,8 +3069,13 @@
         sizes.snapHeight = known ? sizes.observedHeight : height;
     }
 
-    /** A box this far (CSS px) from the size the observer reported for it is scaled: two layout units, which is more than a report and a measured box differ by. */
-    const SCALED_PX = 0.03;
+    /**
+     * A box this far (CSS px) from the size the observer reported for it is
+     * scaled. A report and a measured box differ by a layout unit at most
+     * (a 64th of a pixel), and by two for a card hundreds of thousands of
+     * pixels down the page, where a measured box is that coarse.
+     */
+    const SCALED_PX = 0.05;
 
     /**
      * Whether a card's box is not the size it is laid out at: it is scaled
@@ -3020,8 +3094,15 @@
         const sizes = fittedWidths.get(host);
         const width = host.offsetWidth;
         const height = host.offsetHeight;
-        if (sizes && sizes.boxWidth !== undefined && sizes.boxHeight !== undefined && Math.abs(sizes.boxWidth - width) <= 0.5 && Math.abs(sizes.boxHeight - height) <= 0.5) {
-            return Math.abs(rect.width - sizes.boxWidth) > SCALED_PX || Math.abs(rect.height - sizes.boxHeight) > SCALED_PX;
+        if (sizes && sizes.boxWidth !== undefined && sizes.boxHeight !== undefined) {
+            // (The report is inline size first: in a vertical writing mode that is the height. Either way round.)
+            let agrees = false;
+            for (const [across, down] of [[sizes.boxWidth, sizes.boxHeight], [sizes.boxHeight, sizes.boxWidth]]) {
+                if (Math.abs(across - width) > 0.5 || Math.abs(down - height) > 0.5) continue;
+                agrees = true;
+                if (Math.abs(rect.width - across) <= SCALED_PX && Math.abs(rect.height - down) <= SCALED_PX) return false;
+            }
+            if (agrees) return true;
         }
         return Math.abs(rect.width - width) > 0.51 || Math.abs(rect.height - height) > 0.51;
     }
@@ -3067,7 +3148,10 @@
             }
             for (const type of SNAP_AGAIN_EVENTS) card.removeEventListener(type, again, true);
             snapWaiting.delete(host);
-            if (host.isConnected && controllers.get(host) === ctrl && ctrl.layout) scheduleSnap(ctrl, true);
+            if (!(host.isConnected && controllers.get(host) === ctrl && ctrl.layout)) return;
+            // (A font arrived meanwhile: its fit waited too.)
+            if (ctrl.refit) { ctrl.refit = false; scheduleFit(ctrl); }
+            scheduleSnap(ctrl, true);
         };
         for (const type of SNAP_AGAIN_EVENTS) card.addEventListener(type, again, true);
     }

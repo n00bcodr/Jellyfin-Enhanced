@@ -100,7 +100,7 @@ function setup(t, { settings = {}, vendor = 'Google Inc.', ratio = 1, boxes = BO
   h.window.Element.prototype.getBoundingClientRect = function () {
     state.reads++;
     const z = state.zoom;
-    if (this === root || this === host) return rect(ROOT[0], ROOT[1], state.host[0] * z, state.host[1] * z);
+    if (this === root || this === host) return rect(ROOT[0], ROOT[1], state.host[0] * z, state.host[1] * z * (state.zoomY || 1));
     // A slot: inset 6px, or the edges `slotBox` gives (a band runs from edge to edge and has the 6px as padding).
     const [slotLeft, slotRight] = state.slotBox || [6, state.host[0] - 6];
     if (this.classList.contains('je-tag-slot')) return rect(ROOT[0] + slotLeft * z, ROOT[1] + 6 * z, (slotRight - slotLeft) * z, (state.host[1] - 12) * z);
@@ -368,19 +368,19 @@ test('an image that loads in a tag, or a font that arrives, gives containers oth
   // A web font swaps in: every chip has another width.
   assert.equal(typeof fontsLoaded, 'function');
   h.state.boxes.rating = [151.6, 250.35, 42.8, 44.25];
-  fontsLoaded();
+  fontsLoaded({ fontfaces: [{ unicodeRange: 'U+0000-00FF' }] });
+  timers.due(150);
   timers.due(120);
   h.settle();
   assert.deepEqual(h.snap('rating'), [px(nudge(151.6)), px(nudge(250.35))]);
 });
 
-for (const vendor of ['Google Inc.', '']) test(`a font that arrives has the cards that are fitted fitted again${vendor ? '' : ' (in Firefox too, where nothing is nudged)'}`, async t => {
-  // An icon is a word until its font has come, several times as wide: a card fitted before that hid a chip there is
-  // room for, behind a "+1". Nothing else would fit the card again.
-  let fontsLoaded = null;
+/** A Caption card (a fitted layout) on a page whose fonts the test loads by hand, and a count of its fits. */
+async function fittedCard(t, vendor = 'Google Inc.') {
+  let loaded = null;
   const timers = handTimers();
   const h = setup(t, { settings: { tagLayoutSettingsVersion: 1 }, vendor, globals: timers.globals });
-  h.document.fonts = { addEventListener: (type, fn) => { if (type === 'loadingdone') fontsLoaded = fn; } };
+  h.document.fonts = { addEventListener: (type, fn) => { if (type === 'loadingdone') loaded = fn; } };
   h.show();
   await h.apply({ tagLayout: 'caption', tagEdgeSpacing: 'default' });
   h.render();
@@ -388,19 +388,87 @@ for (const vendor of ['Google Inc.', '']) test(`a font that arrives has the card
   h.settle();
   timers.due(120);
   h.settle();
-  assert.equal(typeof fontsLoaded, 'function', 'fonts are heard of once a card is fitted');
+  assert.equal(typeof loaded, 'function', 'fonts are heard of once a card is fitted');
   const nudged = () => [...h.host.querySelectorAll('.je-tag-slot > [data-je-group]')].filter(el => el.style.getPropertyValue('--je-snap-x') || el.style.getPropertyValue('--je-snap-y')).length;
-  assert.equal(nudged() > 0, vendor === 'Google Inc.');
   // The fitting pass starts by reading each card's height.
   const fits = [];
   Object.defineProperty(h.window.HTMLElement.prototype, 'clientHeight', { configurable: true, get() { if (this === h.host) fits.push(nudged()); return this === h.host ? h.state.host[1] : 0; } });
-  fontsLoaded();
-  h.settle();
-  timers.due(120);
-  h.settle();
+  /** Fonts have finished loading: these faces came (unicode ranges; none: a load that failed). */
+  const fonts = (...ranges) => loaded({ fontfaces: ranges.map(unicodeRange => ({ unicodeRange })) });
+  /** The page comes to rest after them. */
+  const rest = () => { timers.due(150); h.settle(); timers.due(120); h.settle(); };
+  return { h, timers, fonts, rest, fits, nudged };
+}
+
+for (const vendor of ['Google Inc.', '']) test(`a font that arrives has the cards that are fitted fitted again${vendor ? '' : ' (in Firefox too, where nothing is nudged)'}`, async t => {
+  // An icon is a word until its font has come, several times as wide: a card fitted before that hid a chip there is
+  // room for, behind a "+1". Nothing else would fit the card again.
+  const { fonts, rest, fits, nudged } = await fittedCard(t, vendor);
+  assert.equal(nudged() > 0, vendor === 'Google Inc.');
+  fonts('U+0000-00FF');
+  rest();
   assert.ok(fits.length > 0, 'the card was fitted again');
   assert.deepEqual(fits.filter(Boolean), [], 'with no nudge on, as any fit');
   assert.equal(nudged() > 0, vendor === 'Google Inc.', 'and it is back on its pixels after it');
+});
+
+test('only fonts that can draw a character of a card\'s tags have it fitted again, once for a burst of them', async t => {
+  const { h, fonts, rest, fits, nudged } = await fittedCard(t);
+  const before = nudged();
+  const passes = h.layout.snapStats().passes;
+  // A load that failed brought no face.
+  fonts();
+  rest();
+  // Subsets of the text font for scripts no tag is written in, as titles in them scroll into view.
+  fonts('U+4E00-9FFF', 'U+3040-309F, U+30A0-30FF');
+  fonts('U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F');
+  rest();
+  assert.deepEqual(fits, [], 'not fitted');
+  assert.equal(nudged(), before, 'its nudges stay on');
+  assert.equal(h.layout.snapStats().passes, passes, 'and it is not measured again');
+  // A family's weights arrive one after the other, and one of them can draw its tags: one fit for all of them.
+  fonts('U+4E00-9FFF');
+  fonts('U+0000-00FF, U+0131, U+2000-206F');
+  fonts('U+0000-00FF');
+  rest();
+  // (A fitting pass reads the card's height more than once: `once` is what one pass reads.)
+  const once = fits.length;
+  assert.ok(once > 0, 'fitted');
+  // A range written with wildcards, and a face that says nothing of what it draws.
+  fonts('U+4??');
+  rest();
+  assert.equal(fits.length, once);
+  fonts('U+0??');
+  rest();
+  assert.equal(fits.length, 2 * once, 'the burst of three had it fitted once, as this one face does');
+  fonts(undefined);
+  rest();
+  assert.equal(fits.length, 3 * once, 'a face of any character concerns every card');
+});
+
+test('a card under the pointer when a font arrives is fitted when the pointer has left', async t => {
+  // A theme may have it zoomed there, and chip widths read then are scaled against room that is not.
+  const { h, timers, fonts, rest, fits } = await fittedCard(t);
+  const cardEl = h.document.querySelector('.card');
+  const matches = cardEl.matches.bind(cardEl);
+  let hovered = true;
+  cardEl.matches = (selector) => (selector === ':hover, :focus-within' || selector === ':hover' ? hovered : matches(selector));
+  fonts('U+0000-00FF');
+  rest();
+  assert.deepEqual(fits, [], 'not while the pointer is on it');
+  hovered = false;
+  cardEl.dispatchEvent(new h.window.Event('pointerleave'));
+  h.settle();
+  timers.due(120);
+  h.settle();
+  const once = fits.length;
+  assert.ok(once > 0, 'fitted once it has left');
+  // Nothing is left to fit when the pointer leaves it a second time.
+  cardEl.dispatchEvent(new h.window.Event('pointerleave'));
+  h.settle();
+  timers.due(120);
+  h.settle();
+  assert.equal(fits.length, once);
 });
 
 test('a scroll reads no layout, and neither a scroll nor the pointer nor focus has a card measured again', t => {
@@ -558,13 +626,44 @@ test('a card a fraction of a pixel off the size it is laid out at is not measure
   timers.due(120);
   h.settle();
   assert.deepEqual(h.snap('status'), [px(nudge(120.7)), '']);
+  // Stretched down its height alone (a reveal that scales one way): the same.
+  h.state.zoomY = 1.0004;
+  h.layout.removeGroup(h.host, 'status');
+  h.settle();
+  assert.equal(passes().deferred, deferred + 2, 'it waits');
+  h.state.zoomY = 1;
+  cardEl.dispatchEvent(new h.window.Event('transitionend', { bubbles: true }));
+  timers.due(120);
+  h.settle();
   // A report that is not this layout's size (the card has another size since, to be reported next frame) is not gone by.
   h.sized(h.host, HOST[0] + 30, HOST[1]);
   timers.due(120);
   h.settle();
+  h.add('status');
+  h.settle();
+  assert.equal(passes().deferred, deferred + 2, 'measured, not taken for scaled');
+});
+
+test('in a vertical writing mode the size reported is the height first: a card that is nearly square is still measured', t => {
+  const timers = handTimers();
+  const h = setup(t, { globals: timers.globals });
+  // Square artwork a fraction taller than wide: both ways round the report agrees with the layout's size in whole pixels.
+  h.state.host = [200.3, 200.45];
+  h.show();
+  const deferred = h.layout.snapStats().deferred;
+  // (inline size, block size) of a vertical page: the height, then the width.
+  h.sized(h.host, 200.45, 200.3);
+  timers.due(120);
+  h.settle();
+  h.add('status');
+  h.settle();
+  assert.equal(h.layout.snapStats().deferred, deferred, 'not taken for scaled');
+  assert.notDeepEqual(h.snap('status'), ['', '']);
+  // And scaled, it is told from that either way round.
+  h.state.zoom = 1.0005;
   h.layout.removeGroup(h.host, 'status');
   h.settle();
-  assert.equal(passes().deferred, deferred + 1, 'measured, not taken for scaled');
+  assert.equal(h.layout.snapStats().deferred, deferred + 1);
 });
 
 test('a card on its way back from its hover size is measured when it has arrived, not when the pointer leaves', t => {
