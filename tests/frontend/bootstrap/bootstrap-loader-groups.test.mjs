@@ -580,6 +580,34 @@ test('with the real manifest and groups file, boot loads exactly the needed grou
   assert.equal(new Set(modulesRun(boot.log)).size, modulesRun(boot.log).length, 'no module ran twice');
 });
 
+test('window.JE names the plugin once boot is complete whenever Bookmarks is enabled, with no group loaded for it', async t => {
+  // The Bookmarks library view used to set this alias on every page, once JE was ready; scripts outside JE use it.
+  const manifest = manifestModules();
+  const groups = rawGroups();
+  const boot = bootLoader(t, { manifest, groups, real: TAB_MODULES, publicConfig: { BookmarksEnabled: true, BookmarksUseNativeTab: true } });
+  assert.equal(boot.window.JE, undefined, 'not while JE is still booting');
+  await boot.booted();
+  assert.equal(boot.plugin.initialized, true);
+  assert.equal(boot.window.JE, boot.window.JellyfinEnhanced);
+  const loaded = boot.asked.flatMap(list => list.split(','));
+  assert.deepEqual(loaded.filter(id => id.startsWith('bookmarks')), [], `neither Bookmarks group was fetched (${boot.asked.join(' | ')})`);
+
+  // Bookmarks off: no alias, as before.
+  const off = basic(t);
+  await off.booted();
+  assert.equal(off.window.JE, undefined);
+
+  // A page that has a window.JE of its own keeps it.
+  const taken = basic(t, { publicConfig: { HiddenContentEnabled: true, BookmarksEnabled: true } });
+  taken.window.JE = { theirs: true };
+  await taken.booted();
+  assert.equal(taken.window.JE.theirs, true);
+  // And without one, the same small world gets the alias.
+  const small = basic(t, { publicConfig: { HiddenContentEnabled: true, BookmarksEnabled: true } });
+  await small.booted();
+  assert.equal(small.window.JE, small.window.JellyfinEnhanced);
+});
+
 test('the status-tag backdrop painter is its own group: no boot and no page change loads it, a direct request loads it alone', async t => {
   const manifest = manifestModules();
   const groups = rawGroups();
