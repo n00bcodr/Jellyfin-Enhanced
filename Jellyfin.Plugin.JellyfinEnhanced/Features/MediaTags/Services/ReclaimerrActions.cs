@@ -28,7 +28,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         [property: System.Text.Json.Serialization.JsonPropertyName("createdAt")] string? CreatedAt,
         [property: System.Text.Json.Serialization.JsonPropertyName("reviewedBy")] string? ReviewedBy,
         [property: System.Text.Json.Serialization.JsonPropertyName("mediaId")] int MediaId = 0,
-        [property: System.Text.Json.Serialization.JsonPropertyName("posterPath")] string? PosterPath = null);
+        [property: System.Text.Json.Serialization.JsonPropertyName("posterPath")] string? PosterPath = null,
+        [property: System.Text.Json.Serialization.JsonPropertyName("scope")] string Scope = "movie",
+        [property: System.Text.Json.Serialization.JsonPropertyName("seasonNumber")] int? SeasonNumber = null,
+        [property: System.Text.Json.Serialization.JsonPropertyName("episodeNumber")] int? EpisodeNumber = null,
+        [property: System.Text.Json.Serialization.JsonPropertyName("versionResolution")] string? VersionResolution = null,
+        [property: System.Text.Json.Serialization.JsonPropertyName("versionSize")] long? VersionSize = null,
+        [property: System.Text.Json.Serialization.JsonPropertyName("adminNotes")] string? AdminNotes = null,
+        [property: System.Text.Json.Serialization.JsonPropertyName("executionError")] string? ExecutionError = null,
+        [property: System.Text.Json.Serialization.JsonPropertyName("deferred")] bool Deferred = false);
 
     /// <summary>
     /// The Reclaimerr counterpart of <see cref="MaintainerrActions"/>, same answers for the item menu:
@@ -55,6 +63,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         private readonly Logger _logger;
 
         internal TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
+        /// <summary>How long the Leaving soon page waits for the deletion requests (both lists and their title lookups).</summary>
+        internal TimeSpan ListBudget { get; set; } = TimeSpan.FromSeconds(8);
         internal Func<DateTimeOffset> Now { get; set; } = () => DateTimeOffset.UtcNow;
 
         public ReclaimerrActions(IHttpClientFactory http, LeavingSoonService leaving, TagCacheService cache, Logger logger)
@@ -258,6 +268,76 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             throw unsure;
         }
 
+        private readonly Dictionary<int, (DateTimeOffset At, long? Size)> _versionSizes = new();
+        private static readonly TimeSpan VersionSizeTtl = TimeSpan.FromMinutes(30);
+
+        /// <summary>
+        /// The size of the one movie file that is leaving (<paramref name="owner"/>: a candidate's id, or a scheduled deletion's id negated),
+        /// which only Reclaimerr knows: a scheduled deletion carries its own estimate, and a candidate names its version, whose size the
+        /// service account reads from the movie's versions. Null when it cannot be told. Kept for 30 minutes (the page asks every refresh).
+        /// </summary>
+        public async Task<long?> VersionSizeAsync(BaseItem item, int owner, PluginConfiguration config, CancellationToken token)
+        {
+            if (owner == 0 || !ReclaimerrSession.HasAccount(config)) return null;
+            lock (_versionSizes)
+            {
+                if (_versionSizes.TryGetValue(owner, out var hit) && Now() - hit.At < VersionSizeTtl) return hit.Size;
+            }
+
+            long? size = null;
+            try
+            {
+                if (owner < 0)
+                {
+                    using var doc = await ReclaimerrSession.SendAsync(_http, config, HttpMethod.Get, "/api/media/scheduled-deletions", null, Timeout, null, token).ConfigureAwait(false);
+                    if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var sd in doc.RootElement.EnumerateArray())
+                        {
+                            if (sd.ValueKind != JsonValueKind.Object || !sd.TryGetProperty("id", out var id) || !id.TryGetInt32(out var n) || n != -owner) continue;
+                            if (sd.TryGetProperty("target", out var target) && target.ValueKind == JsonValueKind.Object && target.TryGetProperty("estimated_space_bytes", out var bytes) && bytes.ValueKind == JsonValueKind.Number && bytes.TryGetInt64(out var b) && b > 0) size = b;
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    using var cand = await TokenAsync(config, HttpMethod.Get, $"/api/v1/candidates/{owner}", null, token).ConfigureAwait(false);
+                    var tmdb = item.GetProviderId(MetadataProvider.Tmdb);
+                    if (cand.RootElement.ValueKind == JsonValueKind.Object && cand.RootElement.TryGetProperty("movie_version_id", out var vid) && vid.ValueKind == JsonValueKind.Number && vid.TryGetInt32(out var versionId) && !string.IsNullOrWhiteSpace(tmdb))
+                    {
+                        // The movie list has no TMDB filter, only a title search: try the title, then the original title, and match the TMDB id.
+                        foreach (var query in new[] { item.Name, item.OriginalTitle }.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).Select(x => "search=" + Uri.EscapeDataString(x!)))
+                        {
+                            using var doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/media/movies?per_page=50&" + query, null, token).ConfigureAwait(false);
+                            if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("items", out var movies) || movies.ValueKind != JsonValueKind.Array) continue;
+                            foreach (var m in movies.EnumerateArray())
+                            {
+                                if (m.ValueKind != JsonValueKind.Object || !m.TryGetProperty("tmdb_id", out var t) || t.ValueKind != JsonValueKind.Number || t.GetInt64().ToString(CultureInfo.InvariantCulture) != tmdb) continue;
+                                if (!m.TryGetProperty("versions", out var versions) || versions.ValueKind != JsonValueKind.Array) continue;
+                                foreach (var v in versions.EnumerateArray())
+                                {
+                                    if (v.TryGetProperty("id", out var vi) && vi.TryGetInt32(out var viId) && viId == versionId && v.TryGetProperty("size", out var sz) && sz.ValueKind == JsonValueKind.Number && sz.TryGetInt64(out var bytes) && bytes > 0) { size = bytes; break; }
+                                }
+
+                                if (size != null) break;
+                            }
+
+                            if (size != null) break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Warning($"[Reclaimerr] Could not read the size of the version leaving ({MaintainerrHttp.Describe(ex)}).");
+                return null;
+            }
+
+            lock (_versionSizes) _versionSizes[owner] = (Now(), size);
+            return size;
+        }
+
         /// <summary>A read that needs a login: the service account when there is one (it sees every user's rows), else the Jellyfin user.</summary>
         private async Task<JsonDocument> SessionJsonAsync(PluginConfiguration config, HttpMethod method, string path, string? actingUser, CancellationToken token)
             => ReclaimerrSession.HasAccount(config) || !ReclaimerrSession.ActsAsUser(config) || string.IsNullOrWhiteSpace(actingUser)
@@ -300,13 +380,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                         // Filed through the service account: they belong to it, so pick this user's out by the text the request carries.
                         var prefix = $"Requested by {actingUser!.Trim()} from Jellyfin";
                         doc = await ReclaimerrSession.SendAsync(_http, config, HttpMethod.Get, "/api/delete-requests", null, Timeout, null, token).ConfigureAwait(false);
-                        foreach (var r in Parse(doc, r => r.Reason != null && r.Reason.StartsWith(prefix, StringComparison.Ordinal))) if (seen.Add(r.Id)) rows.Add(r);
+                        // Only rows the service account itself filed: the text alone could be typed into a request by anyone in Reclaimerr.
+                        var service = config.ReclaimerrUsername.Trim();
+                        foreach (var r in Parse(doc, r => string.Equals(r.RequestedBy, service, StringComparison.OrdinalIgnoreCase) && r.Reason != null && r.Reason.StartsWith(prefix, StringComparison.Ordinal))) if (seen.Add(r.Id)) rows.Add(r);
                     }
 
                     return rows;
                 }
                 else doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/delete-requests?status_filter=pending", actingUser, token).ConfigureAwait(false);
-                return Parse(doc, null);
+                var all = Parse(doc, null);
+                // Approved requests whose deletion failed or is held back by playback would otherwise vanish from the page: keep them in view.
+                try
+                {
+                    doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/delete-requests?status_filter=approved", actingUser, token).ConfigureAwait(false);
+                    all.AddRange(Parse(doc, r => !string.IsNullOrEmpty(r.ExecutionError) || r.Deferred));
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.Warning($"[Reclaimerr] Could not read the approved deletion requests ({MaintainerrHttp.Describe(ex)}).");
+                }
+
+                return all;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -316,7 +410,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             return rows;
         }
 
-        private static List<ReclaimerrRequestRow> Parse(JsonDocument doc, Func<ReclaimerrRequestRow, bool>? keep)
+        internal static List<ReclaimerrRequestRow> Parse(JsonDocument doc, Func<ReclaimerrRequestRow, bool>? keep)
         {
             var rows = new List<ReclaimerrRequestRow>();
             using (doc)
@@ -325,12 +419,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                 if (list.ValueKind == JsonValueKind.Object && list.TryGetProperty("items", out var inner)) list = inner;
                 if (list.ValueKind != JsonValueKind.Array) return rows;
                 string? Str(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+                int? Num(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n : null;
                 foreach (var r in list.EnumerateArray())
                 {
-                    if (r.ValueKind != JsonValueKind.Object || !r.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.Number || !id.TryGetInt32(out var n)) continue;
-                    int? year = r.TryGetProperty("media_year", out var y) && y.ValueKind == JsonValueKind.Number && y.TryGetInt32(out var yy) ? yy : null;
-                    var row = new ReclaimerrRequestRow(n, Str(r, "media_title") ?? "?", year, Str(r, "media_type") ?? "movie", Str(r, "requested_by_username"), Str(r, "reason"), Str(r, "status") ?? "pending", Str(r, "created_at"), Str(r, "reviewed_by_username"),
-                        r.TryGetProperty("media_id", out var mid) && mid.ValueKind == JsonValueKind.Number && mid.TryGetInt32(out var mi) ? mi : 0, Str(r, "poster_url"));
+                    if (r.ValueKind != JsonValueKind.Object || Num(r, "id") is not { } n) continue;
+                    long? size = r.TryGetProperty("version_size", out var vs) && vs.ValueKind == JsonValueKind.Number && vs.TryGetInt64(out var vsz) ? vsz : null;
+                    var deferred = r.TryGetProperty("playback_deferral", out var pd) && pd.ValueKind == JsonValueKind.Object;
+                    var row = new ReclaimerrRequestRow(n, Str(r, "media_title") ?? "?", Num(r, "media_year"), Str(r, "media_type") ?? "movie", Str(r, "requested_by_username"), Str(r, "reason"), Str(r, "status") ?? "pending", Str(r, "created_at"), Str(r, "reviewed_by_username"),
+                        Num(r, "media_id") ?? 0, Str(r, "poster_url"),
+                        Str(r, "target_scope") ?? (Str(r, "media_type") == "series" ? "series" : "movie"), Num(r, "season_number"), Num(r, "episode_number"), Str(r, "version_resolution"), size,
+                        Str(r, "admin_notes"), Str(r, "execution_error"), deferred && string.IsNullOrEmpty(Str(r, "executed_at")));
                     if (keep == null || keep(row)) rows.Add(row);
                 }
             }
@@ -342,7 +440,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         public async Task ReviewRequestAsync(int requestId, bool approve, string? note, string? actingUser, PluginConfiguration config, CancellationToken token)
         {
             if (requestId <= 0) throw new MaintainerrActions.ActionException("Unknown request.");
-            await SessionAsync(config, HttpMethod.Post, $"/api/delete-requests/{requestId}/{(approve ? "approve" : "deny")}", new { admin_notes = string.IsNullOrWhiteSpace(note) ? null : note.Trim() }, actingUser, token, adminAction: true).ConfigureAwait(false);
+            var text = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+            // Reclaimerr records the service account as the reviewer when it sends the review (acting as the user off, no mapping
+            // or link, or Reclaimerr refused the administrator): that call names them in the note so the review is not anonymous.
+            // Upstream 40738412 decides before sending, so a refused administrator's review went out without their name.
+            var byService = text;
+            if (!string.IsNullOrWhiteSpace(actingUser))
+            {
+                var by = $"{(approve ? "Approved" : "Denied")} by {actingUser.Trim()} in Jellyfin";
+                byService = text == null ? by : $"{text} ({by})";
+            }
+
+            await SessionAsync(config, HttpMethod.Post, $"/api/delete-requests/{requestId}/{(approve ? "approve" : "deny")}", new { admin_notes = text }, actingUser, token, adminAction: true, serviceBody: new { admin_notes = byService }).ConfigureAwait(false);
             _logger.Info($"[Reclaimerr] {actingUser ?? "an administrator"} {(approve ? "approved" : "denied")} deletion request {requestId}.");
         }
 
@@ -542,7 +651,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             return map;
         }
 
-        private async Task<bool> SessionAsync(PluginConfiguration config, HttpMethod method, string path, object body, string? actingUser, CancellationToken token, bool adminAction = false)
+        /// <summary>
+        /// Send as the Jellyfin user when acting as the user is on and they have a Reclaimerr account, else (or when Reclaimerr refuses
+        /// them) as the service account, with <paramref name="serviceBody"/> when one is given. True when sent as the user.
+        /// </summary>
+        private async Task<bool> SessionAsync(PluginConfiguration config, HttpMethod method, string path, object body, string? actingUser, CancellationToken token, bool adminAction = false, object? serviceBody = null)
         {
             var json = JsonSerializer.Serialize(body);
             if (ReclaimerrSession.ActsAsUser(config) && !string.IsNullOrWhiteSpace(actingUser))
@@ -565,7 +678,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             }
 
             if (!ReclaimerrSession.HasAccount(config)) throw new MaintainerrActions.ActionException("This needs a Reclaimerr service account (username and password in the Reclaimerr card).");
-            using var __ = await ReclaimerrSession.SendAsync(_http, config, method, path, json, Timeout, null, token).ConfigureAwait(false);
+            using var __ = await ReclaimerrSession.SendAsync(_http, config, method, path, serviceBody == null ? json : JsonSerializer.Serialize(serviceBody), Timeout, null, token).ConfigureAwait(false);
             return false;
         }
 

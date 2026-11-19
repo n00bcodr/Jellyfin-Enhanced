@@ -6,7 +6,9 @@ import CSS from './leaving-soon-page.css';
 // Reclaimerr, whichever is on) will remove, with the days left, for every user (only items they can see: the server's
 // leaving-soon/list leaves the others out). Administrators can also keep an item or change its date from here (the
 // item menu's actions, JE.removalMenu), and with Reclaimerr see the pending deletion requests to approve or deny;
-// anyone else sees their own requests and their state. JE.leavingSoonPage = { injectStyles, renderForCustomTab,
+// anyone else sees their own requests and their state. Cards use the Requests page's layout (upstream 40738412: poster
+// left, details right, the leave date and what leaving frees; a request says what it would delete and how an approved
+// one ended). JE.leavingSoonPage = { injectStyles, renderForCustomTab,
 // stopPolling, chip, daysLeft } so any host container (the native Home tab, a Custom Tabs panel, the Plugin Pages
 // page) mounts the same rendering; leaving-soon-custom-tab.ts finds the containers.
 //
@@ -22,6 +24,8 @@ export interface LeavingItem {
     year?: number | null;
     deleteAt?: number | null;
     versionOnly?: boolean;
+    /** Bytes leaving frees (the movie's file, the series' episode files, or the one version leaving); absent when unknown. */
+    size?: number | null;
 }
 
 /** One deletion request of leaving-soon/list. */
@@ -38,6 +42,17 @@ export interface LeavingRequest {
     jellyfinUserId?: string | null;
     itemId?: string | null;
     posterPath?: string | null;
+    /** What it would delete: movie, series, season, episode or movie_version. */
+    scope?: string | null;
+    seasonNumber?: number | null;
+    episodeNumber?: number | null;
+    versionResolution?: string | null;
+    versionSize?: number | null;
+    adminNotes?: string | null;
+    /** Why an approved deletion failed. */
+    executionError?: string | null;
+    /** Approved, and held back because it is being watched. */
+    deferred?: boolean;
 }
 
 /** The answer of leaving-soon/list. */
@@ -49,6 +64,8 @@ export interface LeavingList {
     items: LeavingItem[];
     requests: LeavingRequest[];
     mine: LeavingRequest[];
+    /** The requests could not be read in time: say so instead of showing none. */
+    requestsUnavailable: boolean;
 }
 
 export interface LeavingChip { text: string; level: string }
@@ -81,7 +98,38 @@ function listOf(value: unknown): LeavingList {
         items,
         requests: rows(data.requests),
         mine: rows(data.mine),
+        requestsUnavailable: data.requestsUnavailable === true,
     };
+}
+
+/** A day as the Requests page writes older dates: "23 Nov 2026". */
+const shortDate = (date: Date): string => date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+/** Bytes as the cards show them: "4.1 GB", else "350 MB"; empty when unknown. */
+function formatSize(bytes: number | null | undefined): string {
+    if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return '';
+    const gb = bytes / 1073741824;
+    return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(bytes / 1048576)} MB`;
+}
+
+/**
+ * A request's poster when the title is not in the library: TMDB's, from a path or a full address on TMDB's image host.
+ * Upstream 40738412 takes any full address Reclaimerr names; another host would be a new request from the browser.
+ */
+function tmdbPoster(path: string | null | undefined): string | null {
+    if (!path) return null;
+    if (path.startsWith('https://image.tmdb.org/')) return path;
+    return path.startsWith('/') ? `https://image.tmdb.org/t/p/w185${path}` : null;
+}
+
+/**
+ * An administrator's note as the requester reads it: without the "(Approved by NAME in Jellyfin)" the server adds when the
+ * service account files a review. Upstream 40738412 hides every note that ends " in Jellyfin", which dropped the note too.
+ */
+function requesterNote(note: string | null | undefined): string {
+    const text = (note ?? '').trim();
+    if (/^(?:Approved|Denied) by .+ in Jellyfin$/.test(text)) return '';
+    return text.replace(/ \((?:Approved|Denied) by [^()]+ in Jellyfin\)$/, '');
 }
 
 /** Jellyfin's item page for an item (jellyfin-web's router, else the hash). */
@@ -118,6 +166,20 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
         return day(deleteAt) - day(Date.now());
     }
 
+    /** How long ago, as the Requests page words it ("3d ago", then "23 Nov 2026" after a month); the same strings. */
+    function relativeDate(value: string): string {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '';
+        const diff = Date.now() - date.getTime();
+        if (diff < 0) return shortDate(date);
+        const minutes = Math.floor(diff / 60000), hours = Math.floor(diff / 3600000), days = Math.floor(diff / DAY_MS);
+        if (minutes < 1) return t('requests_just_now');
+        if (minutes < 60) return t('requests_minutes_ago').replace('{minutes}', String(minutes));
+        if (hours < 24) return t('requests_hours_ago').replace('{hours}', String(hours));
+        if (days < 30) return t('requests_days_ago').replace('{days}', String(days));
+        return shortDate(date);
+    }
+
     /** The chip for an item's delete time. */
     function chip(deleteAt: number | null | undefined): LeavingChip {
         const d = daysLeft(deleteAt);
@@ -128,6 +190,7 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
     }
 
     function injectStyles(): void {
+        // Greys are rgba(128,128,128) so the page reads on dark and light themes alike; text inherits the theme's colour.
         JE.core.ui?.injectCss?.('je-leavingsoon-styles', CSS);
         try { document.documentElement.style.setProperty('--je-ls-accent', JE.themer?.getThemeVariables?.()?.primaryAccent || '#00a4dc'); } catch { /* default accent */ }
     }
@@ -148,11 +211,12 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
         return typeof failure.status === 'number' ? String(failure.status) : '';
     }
 
-    async function review(id: number, approve: boolean, button: HTMLButtonElement): Promise<void> {
+    /** Approve or deny a request; the optional note goes to Reclaimerr (and the requester). */
+    async function review(id: number, approve: boolean, button: HTMLButtonElement, note?: string): Promise<void> {
         button.disabled = true;
         try {
             const client = apiClient();
-            await client.ajax({ type: 'POST', url: client.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? 'approve' : 'deny'}`), data: JSON.stringify({}), contentType: 'application/json', dataType: 'json' });
+            await client.ajax({ type: 'POST', url: client.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? 'approve' : 'deny'}`), data: JSON.stringify(note ? { note } : {}), contentType: 'application/json', dataType: 'json' });
             JE.toast?.(esc(t(approve ? 'leavingsoon_approved' : 'leavingsoon_denied')));
             void refresh();
         } catch (err: unknown) {
@@ -183,15 +247,19 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
         const el = document.createElement('div');
         el.className = 'je-ls-card';
         el.dataset.type = String(item.type ?? '');
-        // One file of a movie kept in several versions is leaving; the title and its other versions stay.
-        const sub = [item.detail, item.year, item.versionOnly ? t('leavingsoon_one_version') : null].filter(Boolean).join(' · ');
-        const poster = apiClient().getUrl(`Items/${encodeURIComponent(String(item.id))}/Images/Primary`, { maxHeight: 420, quality: 90 });
-        el.innerHTML = '<div class="je-ls-poster" role="link" tabindex="0"><span class="je-ls-fallback material-icons" aria-hidden="true">movie</span>'
-            + `<img alt="" loading="lazy" src="${esc(poster)}"/>`
-            + `<span class="je-ls-chip ${esc(c.level)}">${esc(c.text)}</span></div>`
-            + `<div class="je-ls-name" role="link" tabindex="0">${esc(item.name)}</div>`
-            + (sub ? `<div class="je-ls-sub">${esc(sub)}</div>` : '')
-            + (data.actions ? '<div class="je-ls-actions"></div>' : '');
+        const poster = apiClient().getUrl(`Items/${encodeURIComponent(String(item.id))}/Images/Primary`, { maxHeight: 360, quality: 90 });
+        const date = typeof item.deleteAt === 'number' && Number.isFinite(item.deleteAt) ? shortDate(new Date(item.deleteAt)) : '';
+        const when = [date ? t('leavingsoon_leaves_on', { date }) : '', formatSize(item.size)].filter(Boolean).join(' · ');
+        el.innerHTML = `<div class="je-ls-poster" role="link" tabindex="0"><span class="je-ls-fallback material-icons" aria-hidden="true">${item.type === 'Movie' ? 'movie' : 'tv'}</span>`
+            + `<img alt="" loading="lazy" src="${esc(poster)}"/></div>`
+            + `<div class="je-ls-info"><div class="je-ls-head"><div class="je-ls-name" role="link" tabindex="0" title="${esc(item.name)}">${esc(item.name)}</div>`
+            + (item.year ? `<span class="je-ls-year">(${esc(item.year)})</span>` : '') + '</div>'
+            + (item.detail ? `<div class="je-ls-sub">${esc(item.detail)}</div>` : '')
+            + `<div class="je-ls-badges"><span class="je-ls-chip ${esc(c.level)}">${esc(c.text)}</span>`
+            // One file of a movie kept in several versions is leaving; the title and its other versions stay.
+            + (item.versionOnly ? `<span class="je-ls-scope">${esc(t('leavingsoon_one_version'))}</span>` : '') + '</div>'
+            + (when ? `<div class="je-ls-sub">${esc(when)}</div>` : '')
+            + (data.actions ? '<div class="je-ls-actions"></div>' : '') + '</div>';
         const img = el.querySelector('img');
         img?.addEventListener('error', () => img.remove());
         linkTo(el, item.id);
@@ -211,35 +279,55 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
 
     /** The poster for a request: the Jellyfin item's own when it is in the library, else TMDB's. */
     function requestPoster(r: LeavingRequest): string | null {
-        if (r.itemId) return apiClient().getUrl(`Items/${encodeURIComponent(r.itemId)}/Images/Primary`, { maxHeight: 220, quality: 90 });
-        return r.posterPath ? `https://image.tmdb.org/t/p/w185${r.posterPath}` : null;
+        if (r.itemId) return apiClient().getUrl(`Items/${encodeURIComponent(r.itemId)}/Images/Primary`, { maxHeight: 360, quality: 90 });
+        return tmdbPoster(r.posterPath);
+    }
+
+    /** What exactly a request would delete when that is less than the whole title: a season, an episode or one movie version. */
+    function scopeLabel(r: LeavingRequest): string {
+        if (r.scope === 'season' && r.seasonNumber != null) return t('leavingsoon_scope_season', { season: r.seasonNumber });
+        if (r.scope === 'episode' && r.episodeNumber != null && r.seasonNumber != null) return t('leavingsoon_scope_episode', { season: r.seasonNumber, episode: r.episodeNumber });
+        if (r.scope === 'movie_version') return [t('leavingsoon_scope_version'), r.versionResolution, formatSize(r.versionSize)].filter(Boolean).join(' · ');
+        return '';
+    }
+
+    /** The state chip of a request. */
+    function requestChip(r: LeavingRequest): LeavingChip {
+        if (r.executionError) return { text: t('leavingsoon_status_failed'), level: 'urgent' };
+        if (r.deferred) return { text: t('leavingsoon_status_deferred'), level: 'warn' };
+        return { text: t(`leavingsoon_status_${r.status}`) || r.status, level: r.status === 'denied' ? 'urgent' : r.status === 'approved' ? 'ok' : 'warn' };
     }
 
     /**
-     * A deletion request as a card like the leaving cards: poster (opens the item), title, who asked (their Jellyfin
-     * name and avatar), their note, and for administrators the Approve and Deny buttons. Approving deletes the title
-     * from the library at once (Reclaimerr acts on approval), so it asks first.
+     * A deletion request as a card in the Requests page's layout: poster (opens the item), title, state, what it would delete
+     * (a season, an episode or one version, when not the whole title), who asked (their Jellyfin name and avatar), their note,
+     * why a deletion failed, and for administrators the Approve and Deny buttons on a pending one. Approving deletes from the
+     * library at once (Reclaimerr acts on approval), so it asks first, names the scope and takes an optional note.
      */
     function requestCard(r: LeavingRequest, admin: boolean): HTMLElement {
         const el = document.createElement('div');
         el.className = 'je-ls-card je-ls-reqcard';
-        const when = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '';
+        const when = r.createdAt ? relativeDate(r.createdAt) : '';
         const poster = requestPoster(r);
         const person = r.jellyfinUser || r.requestedBy || '';
         const linked = r.itemId ? ' role="link" tabindex="0"' : '';
-        const statusText = t(`leavingsoon_status_${r.status}`);
+        const state = requestChip(r);
+        const scope = scopeLabel(r);
+        const answer = admin ? '' : requesterNote(r.adminNotes);
         const avatar = r.jellyfinUserId ? `<img alt="" src="${esc(apiClient().getUrl(`Users/${encodeURIComponent(r.jellyfinUserId)}/Images/Primary`, { maxHeight: 48, quality: 90 }))}"/>` : '';
         el.innerHTML = `<div class="je-ls-poster${r.itemId ? '' : ' plain'}"${linked}><span class="je-ls-fallback material-icons" aria-hidden="true">${r.mediaType === 'movie' ? 'movie' : 'tv'}</span>`
-            + (poster ? `<img alt="" loading="lazy" src="${esc(poster)}"/>` : '')
-            + (admin ? '' : `<span class="je-ls-chip ${r.status === 'denied' ? 'urgent' : r.status === 'approved' ? 'ok' : 'warn'}">${esc(statusText || r.status)}</span>`) + '</div>'
-            + `<div class="je-ls-name${r.itemId ? '' : ' plain'}"${linked}>${esc(r.title)}</div>`
-            + (r.year ? `<div class="je-ls-sub">${esc(r.year)}</div>` : '')
+            + (poster ? `<img alt="" loading="lazy" src="${esc(poster)}"/>` : '') + '</div>'
+            + `<div class="je-ls-info"><div class="je-ls-head"><div class="je-ls-name${r.itemId ? '' : ' plain'}"${linked} title="${esc(r.title)}">${esc(r.title)}</div>`
+            + (r.year ? `<span class="je-ls-year">(${esc(r.year)})</span>` : '') + '</div>'
+            + `<div class="je-ls-badges"><span class="je-ls-chip ${esc(state.level)}">${esc(state.text)}</span>${scope ? `<span class="je-ls-scope">${esc(scope)}</span>` : ''}</div>`
             + `<div class="je-ls-who"${admin && r.requestedBy ? ` title="${esc(t('leavingsoon_reclaimerr_account', { name: r.requestedBy }))}"` : ''}>`
             + (person ? `<span class="je-ls-avatar" aria-hidden="true">${esc(person.charAt(0).toUpperCase())}${avatar}</span><span>${esc(t('leavingsoon_requested_by', { name: person }))}</span>` : '')
             + '</div>'
             + (when ? `<div class="je-ls-sub">${esc(when)}</div>` : '')
             + (r.note ? `<div class="je-ls-sub je-ls-note">${esc(r.note)}</div>` : '')
-            + (admin ? '<div class="je-ls-reqactions"></div>' : '');
+            + (answer ? `<div class="je-ls-sub je-ls-note">${esc(answer)}</div>` : '')
+            + (r.executionError ? `<div class="je-ls-err">${esc(r.executionError)}</div>` : '')
+            + (admin && r.status === 'pending' ? '<div class="je-ls-reqactions"></div>' : '') + '</div>';
         for (const img of el.querySelectorAll('img')) img.addEventListener('error', () => img.remove());
         if (r.itemId) linkTo(el, r.itemId);
         const actions = el.querySelector<HTMLElement>('.je-ls-reqactions');
@@ -253,12 +341,19 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
                 no.addEventListener('click', () => { void review(r.id, false, no); });
                 box.append(ok, no);
             };
-            // Approving removes the title from the library now: one more click, with the words.
+            // Approving removes it from the library now: one more click, with the words (naming the scope when it is less
+            // than the title) and an optional note for the requester.
             const showConfirm = (): void => {
                 box.textContent = '';
                 const warn = document.createElement('div');
                 warn.className = 'je-ls-warn';
-                warn.textContent = t('leavingsoon_confirm_delete');
+                warn.textContent = scope ? t('leavingsoon_confirm_delete_scope', { scope }) : t('leavingsoon_confirm_delete');
+                const note = document.createElement('input');
+                note.type = 'text';
+                note.className = 'je-ls-note-input';
+                note.maxLength = 300;
+                note.placeholder = t('leavingsoon_note_placeholder');
+                note.setAttribute('aria-label', t('leavingsoon_note_placeholder'));
                 const row = document.createElement('div');
                 row.className = 'je-ls-confirm';
                 const yes = document.createElement('button');
@@ -269,10 +364,10 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
                 cancel.type = 'button';
                 cancel.className = 'je-ls-btn';
                 cancel.textContent = t('maintainerr_cancel');
-                yes.addEventListener('click', () => { void review(r.id, true, yes); });
+                yes.addEventListener('click', () => { void review(r.id, true, yes, note.value.trim()); });
                 cancel.addEventListener('click', showChoice);
                 row.append(yes, cancel);
-                box.append(warn, row);
+                box.append(warn, note, row);
             };
             showChoice();
         }
@@ -355,6 +450,12 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
             grid.className = 'je-ls-grid';
             for (const item of shown) grid.appendChild(card(item, data));
             root.appendChild(grid);
+        }
+        if (data.requestsUnavailable) {
+            const notice = document.createElement('div');
+            notice.className = 'je-ls-notice';
+            notice.textContent = t('leavingsoon_requests_unavailable');
+            root.appendChild(notice);
         }
         if (data.admin && data.requests.length) root.appendChild(section('inbox', t('leavingsoon_requests_title', { count: data.requests.length }), data.requests, true));
         if (!data.admin && data.mine.length) root.appendChild(section('outbox', t('leavingsoon_my_requests'), data.mine, false));

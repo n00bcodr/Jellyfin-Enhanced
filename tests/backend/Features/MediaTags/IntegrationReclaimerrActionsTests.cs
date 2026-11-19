@@ -56,6 +56,8 @@ public sealed class IntegrationReclaimerrActionsTests : IDisposable
         private readonly List<Seen> _seen = new();
         public string Url { get; }
         public Func<Seen, (int Status, string Body)> Answer { get; set; } = _ => (404, "{\"detail\":\"Not Found\"}");
+        /// <summary>How long the answer to a request is held back (a slow Reclaimerr).</summary>
+        public Func<Seen, TimeSpan> Delay { get; set; } = _ => TimeSpan.Zero;
 
         public Server()
         {
@@ -72,6 +74,8 @@ public sealed class IntegrationReclaimerrActionsTests : IDisposable
                 {
                     HttpListenerContext context;
                     try { context = await _listener.GetContextAsync(); } catch { return; }
+                    (int Status, string Body) reply;
+                    TimeSpan wait;
                     try
                     {
                         using var reader = new StreamReader(context.Request.InputStream);
@@ -79,17 +83,34 @@ public sealed class IntegrationReclaimerrActionsTests : IDisposable
                         var seen = new Seen(context.Request.HttpMethod, context.Request.Url!.PathAndQuery, await reader.ReadToEndAsync(),
                             auth != null && auth.StartsWith("Bearer ", StringComparison.Ordinal) ? auth[7..] : null, context.Request.Headers["Remote-User"], context.Request.Headers["Cookie"]);
                         lock (_seen) _seen.Add(seen);
-                        var (status, answer) = Answer(seen);
-                        context.Response.StatusCode = status;
-                        context.Response.ContentType = "application/json";
-                        var bytes = Encoding.UTF8.GetBytes(answer);
-                        context.Response.ContentLength64 = bytes.Length;
-                        await context.Response.OutputStream.WriteAsync(bytes);
+                        reply = Answer(seen);
+                        wait = Delay(seen);
                     }
-                    catch { /* client gone */ }
-                    finally { try { context.Response.Close(); } catch { } }
+                    catch
+                    {
+                        try { context.Response.Close(); } catch { }
+                        continue;
+                    }
+
+                    // A slow answer is held back on its own, so the requests after it are answered meanwhile.
+                    if (wait > TimeSpan.Zero) _ = Task.Run(async () => { await Task.Delay(wait); await Respond(context, reply); });
+                    else await Respond(context, reply);
                 }
             });
+        }
+
+        private static async Task Respond(HttpListenerContext context, (int Status, string Body) reply)
+        {
+            try
+            {
+                context.Response.StatusCode = reply.Status;
+                context.Response.ContentType = "application/json";
+                var bytes = Encoding.UTF8.GetBytes(reply.Body);
+                context.Response.ContentLength64 = bytes.Length;
+                await context.Response.OutputStream.WriteAsync(bytes);
+            }
+            catch { /* client gone */ }
+            finally { try { context.Response.Close(); } catch { } }
         }
 
         public List<Seen> All { get { lock (_seen) return _seen.ToList(); } }
@@ -333,6 +354,191 @@ public sealed class IntegrationReclaimerrActionsTests : IDisposable
             var people = doc.RootElement.GetProperty("requests").EnumerateArray()
                 .Select(r => (r.GetProperty("id").GetInt32(), r.GetProperty("jellyfinUser").GetString(), r.GetProperty("jellyfinUserId").GetString())).ToArray();
             Assert.Equal(new (int, string?, string?)[] { (8, "Pat", pat.Id.ToString("N")), (9, "Sam", sam.Id.ToString("N")), (10, null, null) }, people);
+        }
+    }
+
+    private static JsonElement[] Rows(IActionResult answer, string list)
+    {
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(answer).Value));
+        return doc.RootElement.GetProperty(list).EnumerateArray().Select(r => r.Clone()).ToArray();
+    }
+
+    // Upstream 40738412: approved requests whose deletion failed or waits for playback stay on the page with what they
+    // would delete, and a user's own requests from the service account's list are only the rows it filed itself.
+    [Fact]
+    public async Task Approved_requests_that_failed_or_wait_stay_listed_with_their_scope_and_only_the_service_account_files_for_a_user()
+    {
+        using var server = new Server();
+        server.Answer = s => s switch
+        {
+            { Path: "/api/delete-requests?status_filter=pending" } => (200, "[{\"id\":1,\"media_id\":9,\"media_type\":\"series\",\"media_title\":\"Sherlock\",\"status\":\"pending\",\"target_scope\":\"season\",\"season_number\":2,\"requested_by_username\":\"svc\",\"reason\":\"Requested by Sam from Jellyfin\"}]"),
+            { Path: "/api/delete-requests?status_filter=approved" } => (200, "[{\"id\":2,\"media_id\":3,\"media_type\":\"movie\",\"media_title\":\"Jailer 2\",\"status\":\"approved\",\"version_resolution\":\"2160p\",\"version_size\":3221225472,\"execution_error\":\"Radarr refused\"},"
+                + "{\"id\":3,\"media_id\":4,\"media_type\":\"movie\",\"media_title\":\"Fine\",\"status\":\"approved\",\"executed_at\":\"2026-11-17T00:00:00Z\"},"
+                + "{\"id\":4,\"media_id\":5,\"media_type\":\"movie\",\"media_title\":\"Crash\",\"status\":\"approved\",\"playback_deferral\":{\"until\":\"later\"},\"executed_at\":null}]"),
+            // The service account's whole list: one row it filed for Sam, one anyone could have typed the same words into.
+            { Path: "/api/delete-requests" } => (200, "[{\"id\":5,\"media_id\":31,\"media_type\":\"movie\",\"media_title\":\"Crash\",\"status\":\"pending\",\"requested_by_username\":\"SVC\",\"reason\":\"Requested by Sam from Jellyfin: not my taste\"},"
+                + "{\"id\":6,\"media_id\":32,\"media_type\":\"movie\",\"media_title\":\"Heat\",\"status\":\"pending\",\"requested_by_username\":\"mallory\",\"reason\":\"Requested by Sam from Jellyfin\"}]"),
+            _ => (404, "{\"detail\":\"Not Found\"}"),
+        };
+        var (actions, leaving, cache) = Services(server);
+        _f.Plugin.Configuration.LeavingSoonPageEnabled = true;
+        using (cache)
+        {
+            var admin = new User("admin", "default", "default") { Id = Guid.NewGuid() };
+            var sam = new User("Sam", "default", "default") { Id = Guid.NewGuid() };
+            var users = new Mock<IUserManager>();
+            users.Setup(u => u.GetUserById(admin.Id)).Returns(admin);
+            users.Setup(u => u.GetUserById(sam.Id)).Returns(sam);
+            users.Setup(u => u.GetUserByName("Sam")).Returns(sam);
+
+            var answer = await ControllerAs(admin, true, users.Object, cache).GetLeavingSoonList(leaving, actions, CancellationToken.None);
+            var requests = Rows(answer, "requests");
+            Assert.Equal(new[] { 1, 2, 4 }, requests.Select(r => r.GetProperty("id").GetInt32()).ToArray());
+            Assert.Equal(("season", 2), (requests[0].GetProperty("scope").GetString(), requests[0].GetProperty("seasonNumber").GetInt32()));
+            Assert.Equal(("2160p", 3221225472L, "Radarr refused"), (requests[1].GetProperty("versionResolution").GetString(), requests[1].GetProperty("versionSize").GetInt64(), requests[1].GetProperty("executionError").GetString()));
+            Assert.True(requests[2].GetProperty("deferred").GetBoolean());
+            using (var doc = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(answer).Value)))
+            {
+                Assert.False(doc.RootElement.GetProperty("requestsUnavailable").GetBoolean());
+            }
+
+            Assert.Equal(new[] { 5 }, Ids(await ControllerAs(sam, false, users.Object, cache).GetLeavingSoonList(leaving, actions, CancellationToken.None), "mine"));
+        }
+    }
+
+    // Upstream 40738412: Reclaimerr records the service account as the reviewer when the administrator does not act as
+    // themself, so the note names them. Unlike upstream, also when Reclaimerr refuses the administrator's own sign-in and
+    // the service account steps in: upstream decides before sending, so that review went out anonymous.
+    [Fact]
+    public async Task A_review_the_service_account_sends_names_the_administrator_in_the_note_and_one_sent_as_them_does_not()
+    {
+        using var server = new Server();
+        var refuseBoss = false;
+        server.Answer = s => s switch
+        {
+            { Method: "POST", User: "boss" } when refuseBoss => (401, "{\"detail\":\"Not authenticated\"}"),
+            { Method: "POST" } when s.Path.StartsWith("/api/delete-requests/", StringComparison.Ordinal) => (200, "{}"),
+            _ => (404, "{\"detail\":\"Not Found\"}"),
+        };
+        var (actions, _, cache) = Services(server);
+        _f.Plugin.Configuration.LeavingSoonPageEnabled = true;
+        using (cache)
+        {
+            var admin = new User("Admin", "default", "default") { Id = Guid.NewGuid() };
+            var users = new Mock<IUserManager>();
+            users.Setup(u => u.GetUserById(admin.Id)).Returns(admin);
+            var asAdmin = ControllerAs(admin, true, users.Object, cache);
+            (string? User, string? Note) Last()
+            {
+                var post = server.Posts.Last();
+                using var body = JsonDocument.Parse(post.Body);
+                var note = body.RootElement.GetProperty("admin_notes");
+                return (post.User, note.ValueKind == JsonValueKind.Null ? null : note.GetString());
+            }
+
+            // No mapping or link: the service account files it.
+            Assert.IsType<OkObjectResult>(await asAdmin.ApproveReclaimerrRequest(1, new ReclaimerrReviewRequest { Note = " gone in a week " }, actions, CancellationToken.None));
+            Assert.Equal(("svc", "gone in a week (Approved by Admin in Jellyfin)"), Last());
+            Assert.IsType<OkObjectResult>(await asAdmin.DenyReclaimerrRequest(2, null, actions, CancellationToken.None));
+            Assert.Equal(("svc", "Denied by Admin in Jellyfin"), Last());
+
+            // Mapped and accepted: Reclaimerr itself names them, the note is theirs alone.
+            _f.Plugin.Configuration.ReclaimerrUserMap = "Admin = boss";
+            Assert.IsType<OkObjectResult>(await asAdmin.ApproveReclaimerrRequest(3, new ReclaimerrReviewRequest { Note = "gone" }, actions, CancellationToken.None));
+            Assert.Equal(("boss", "gone"), Last());
+
+            // Mapped but refused: the service account steps in, and its note names them.
+            refuseBoss = true;
+            Assert.IsType<OkObjectResult>(await asAdmin.ApproveReclaimerrRequest(4, new ReclaimerrReviewRequest { Note = "gone" }, actions, CancellationToken.None));
+            Assert.Equal(("svc", "gone (Approved by Admin in Jellyfin)"), Last());
+        }
+    }
+
+    // Upstream 40738412: each leaving card says what leaving frees: a movie's file, a series' episode files, or for one
+    // version of a movie the size of the version Reclaimerr names.
+    [Fact]
+    public async Task Leaving_items_carry_the_size_leaving_frees_and_one_version_the_size_of_that_version()
+    {
+        var film = AddMovie("Film", "550");
+        film.Size = 4_000_000_000;
+        var twice = AddMovie("Jailer 2", "555");
+        twice.Size = 9_000_000_000;
+        var series = new Series { Id = Guid.NewGuid(), Name = "Show" };
+        series.SetProviderId(MetadataProvider.Tmdb, "1399");
+        _items.Add(series);
+        var episodes = new List<BaseItem> { new Episode { Id = Guid.NewGuid(), Size = 1_000 }, new Episode { Id = Guid.NewGuid(), Size = 2_000 }, new Episode { Id = Guid.NewGuid() } };
+        _library.Setup(l => l.GetItemList(It.Is<InternalItemsQuery>(q => q.AncestorIds.Contains(series.Id)))).Returns(episodes);
+        var soon = DateTimeOffset.UtcNow.AddDays(10).ToString("yyyy-MM-ddTHH:mm:ssZ");
+        using var server = new Server();
+        server.Answer = s => s.Path switch
+        {
+            "/api/v1/candidates?per_page=200&page=1" => (200, Candidates((4, 550, "movie", soon), (9, 555, "version", soon), (5, 1399, "series", soon))),
+            "/api/v1/candidates/9" => (200, "{\"id\":9,\"scope\":\"version\",\"movie_version_id\":22,\"tmdb_id\":555}"),
+            "/api/media/movies?per_page=50&search=Jailer%202" => (200, "{\"items\":[{\"tmdb_id\":555,\"versions\":[{\"id\":21,\"size\":8000000000},{\"id\":22,\"size\":3400000000}]}]}"),
+            "/api/media/scheduled-deletions" => (200, "[]"),
+            "/api/delete-requests?status_filter=pending" or "/api/delete-requests?status_filter=approved" or "/api/delete-requests" => (200, "[]"),
+            _ => (404, "{\"detail\":\"Not Found\"}"),
+        };
+        var (actions, leaving, cache) = Services(server);
+        _f.Plugin.Configuration.LeavingSoonPageEnabled = true;
+        using (cache)
+        {
+            Assert.True(await leaving.RefreshAsync(_f.Plugin.Configuration, force: true, CancellationToken.None));
+            var admin = new User("admin", "default", "default") { Id = Guid.NewGuid() };
+            var users = new Mock<IUserManager>();
+            users.Setup(u => u.GetUserById(admin.Id)).Returns(admin);
+            var items = Rows(await ControllerAs(admin, true, users.Object, cache).GetLeavingSoonList(leaving, actions, CancellationToken.None), "items");
+            var sizes = items.ToDictionary(i => i.GetProperty("name").GetString()!, i => i.GetProperty("size").ValueKind == JsonValueKind.Null ? (long?)null : i.GetProperty("size").GetInt64());
+            Assert.Equal(4_000_000_000L, sizes["Film"]);
+            Assert.Equal(3_400_000_000L, sizes["Jailer 2"]);
+            Assert.Equal(3_000L, sizes["Show"]);
+        }
+    }
+
+    // Upstream 40738412: a slow Reclaimerr does not hide the requests as if there were none: the page is told when they
+    // could not be read. Unlike upstream, a title lookup that runs out of the same budget only costs its card the Jellyfin
+    // link; upstream's lookups shared the budget's cancellation, which dropped every request with them.
+    [Fact]
+    public async Task Requests_that_cannot_be_read_in_time_are_reported_and_a_slow_title_lookup_keeps_the_rows()
+    {
+        var movie = AddMovie("Crash", "1640");
+        using var server = new Server();
+        var slow = "/api/delete-requests?status_filter=pending";
+        server.Answer = s => s.Path switch
+        {
+            "/api/delete-requests?status_filter=pending" => (200, "[{\"id\":5,\"media_id\":31,\"media_type\":\"movie\",\"media_title\":\"Crash\",\"status\":\"pending\",\"requested_by_username\":\"svc\",\"reason\":\"Requested by Sam from Jellyfin\"}]"),
+            "/api/delete-requests?status_filter=approved" or "/api/delete-requests" => (200, "[]"),
+            "/api/v1/movies/31" => (200, "{\"id\":31,\"tmdb_id\":1640}"),
+            _ => (404, "{\"detail\":\"Not Found\"}"),
+        };
+        server.Delay = s => s.Path == slow ? TimeSpan.FromSeconds(3) : TimeSpan.Zero;
+        var (actions, leaving, cache) = Services(server);
+        actions.ListBudget = TimeSpan.FromMilliseconds(500);
+        _f.Plugin.Configuration.LeavingSoonPageEnabled = true;
+        using (cache)
+        {
+            var admin = new User("admin", "default", "default") { Id = Guid.NewGuid() };
+            var users = new Mock<IUserManager>();
+            users.Setup(u => u.GetUserById(admin.Id)).Returns(admin);
+            var asAdmin = ControllerAs(admin, true, users.Object, cache);
+
+            var late = await asAdmin.GetLeavingSoonList(leaving, actions, CancellationToken.None);
+            Assert.Empty(Ids(late, "requests"));
+            using (var doc = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(late).Value)))
+            {
+                Assert.True(doc.RootElement.GetProperty("requestsUnavailable").GetBoolean(), "the page must say the requests could not be read");
+            }
+
+            // The rows come quickly and the title lookup is the slow part: the request shows, only without its Jellyfin link.
+            slow = "/api/v1/movies/31";
+            var rows = Rows(await asAdmin.GetLeavingSoonList(leaving, actions, CancellationToken.None), "requests");
+            Assert.Equal(5, Assert.Single(rows).GetProperty("id").GetInt32());
+            Assert.Equal(JsonValueKind.Null, rows[0].GetProperty("itemId").ValueKind);
+
+            // Once the lookup answers in time the link is there.
+            slow = string.Empty;
+            rows = Rows(await asAdmin.GetLeavingSoonList(leaving, actions, CancellationToken.None), "requests");
+            Assert.Equal(movie.Id.ToString("N"), Assert.Single(rows).GetProperty("itemId").GetString());
         }
     }
 

@@ -4,7 +4,7 @@
 
 What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-Enhanced) (`main`) since it branched at `2e0f9251bf`. The source of truth is [`upstream-sync.json`](upstream-sync.json); the procedure is [upstream-sync-procedure.md](upstream-sync-procedure.md).
 
-92 upstream commits: 89 ported, 3 already-present.
+93 upstream commits: 90 ported, 3 already-present.
 
 | # | Upstream | Date | Class | Features | Subject | Status | Rewrite commit | Note |
 |---|---|---|---|---|---|---|---|---|
@@ -100,3 +100,4 @@ What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-
 | 90 | [`ba49f5f2`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/ba49f5f2402e2c30f326f72f1f7730d33d7497ce) | 2026-11-18 | test | media-tags | chore(tests): regenerate production inventory | ported | `ab0fb0e6` | With `3ada0a4e`. Upstream's bot regenerating its production inventory for 3ada0a4e (routes 223 to 224). This tree's tests/docs/production-inventory.json is generated (je12 regen) in that entry's commit, with the same POST JellyfinEnhanced/reclaimerr/create-users route at its file here (Features/MediaTags/JeMediaTagsController.Reclaimerr.cs, action CreateReclaimerrUsers) and this tree's count (227 to 228). |
 | 91 | [`4effcf59`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/4effcf597e6f533b0d3e5170e306bdcc863e1c7b) | 2026-11-18 | fix | activity | fix(activity): show season and episode for episodes in Active Streams | ported | `b607a06b` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p91-* |
 | 92 | [`34c70f16`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/34c70f16a54f554e953d6d0e6561347bba405522) | 2026-11-18 | docs | media-tags | docs(api): document reclaimerr/create-users and bump the route total to 224 | ported | `ab0fb0e6` | With `3ada0a4e`. Upstream documents its new route two hours after the feature; here the row goes in the feature's own commit, since tests/frontend/features/features-api-routes-docs.test.mjs requires a row for every route. docs/advanced/api.md gets upstream's reclaimerr/create-users row as is, after reclaimerr/service-account as upstream places it, and this tree's route totals (227 to 228 where upstream's go 223 to 224). |
+| 93 | [`40738412`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/40738412590981e300f2033bb661b4c7333825a9) | 2026-11-19 | feature | media-tags, platform | feat(leaving-soon): request-style cards, sizes, and sturdier Reclaimerr request handling (#1089) | ported | `93e90c96` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p93-* |

@@ -411,18 +411,18 @@
       setText(".je-mt-cancel", JE.t("maintainerr_cancel"));
       const quick = dialog.querySelector(".je-mt-quick");
       const input = dialog.querySelector(".je-mt-input");
-      const shortDate = (ms) => new Date(ms).toLocaleDateString(void 0, { day: "numeric", month: "short", year: "numeric" });
+      const shortDate2 = (ms) => new Date(ms).toLocaleDateString(void 0, { day: "numeric", month: "short", year: "numeric" });
       const known = typeof state.DeleteAt === "number" && Number.isFinite(state.DeleteAt);
       const base = known ? state.DeleteAt : Date.now();
       const whenEl = dialog.querySelector(".je-mt-when");
       if (whenEl) {
-        if (known) whenEl.textContent = shortDate(base);
+        if (known) whenEl.textContent = shortDate2(base);
         else whenEl.remove();
       }
       let armed = false;
       const previewEl = dialog.querySelector(".je-mt-preview");
       const preview = (ms) => {
-        if (previewEl) previewEl.textContent = ms === null ? "" : JE.t("reclaimerr_new_date", { date: shortDate(ms) });
+        if (previewEl) previewEl.textContent = ms === null ? "" : JE.t("reclaimerr_new_date", { date: shortDate2(ms) });
       };
       const onKey = (e) => {
         if (e.key === "Escape") {
@@ -630,7 +630,7 @@
   }
 
   // client/src/features/media-tags/leaving-soon/leaving-soon-page.css
-  var leaving_soon_page_default = ".je-ls { width: 100%; box-sizing: border-box; padding: 20px 3vw 48px; }\n.je-ls-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }\n.je-ls-title { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 1.6em; font-weight: 500; }\n.je-ls-heading { display: inline-flex; align-items: baseline; gap: 10px; }\n.je-ls-count { opacity: .65; font-size: .55em; font-weight: 400; }\n.je-ls-spacer { flex: 1; }\n.je-ls-pills { display: flex; gap: 8px; }\n.je-ls-pill, .je-ls-btn { border: 1px solid rgba(128,128,128,.4); background: rgba(128,128,128,.16); color: inherit; border-radius: 999px; padding: 6px 14px; cursor: pointer; font: inherit; font-size: .9em; }\n.je-ls-btn { border-radius: 6px; padding: 5px 10px; font-size: .85em; }\n.je-ls-pill:hover, .je-ls-btn:hover, .je-ls-pill:focus-visible, .je-ls-btn:focus-visible { background: rgba(128,128,128,.34); outline: none; }\n.je-ls-refresh { background: none; border: none; cursor: pointer; color: rgba(255,255,255,.75); padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }\n.je-ls-refresh:hover, .je-ls-refresh:focus-visible { background: rgba(255,255,255,.08); color: rgba(255,255,255,.95); outline: none; }\n.je-ls-refresh .material-icons { font-size: 22px; }\n.je-ls-refresh.spin .material-icons { animation: je-ls-spin .6s ease; }\n@keyframes je-ls-spin { to { transform: rotate(360deg); } }\n.je-ls-icon-btn { width: 36px; height: 36px; box-sizing: border-box; border: 1px solid rgba(128,128,128,.4); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: inherit; background: rgba(128,128,128,.16); padding: 0; flex: none; transition: background .15s, border-color .15s, color .15s; }\n.je-ls-icon-btn:hover, .je-ls-icon-btn:focus-visible { background: rgba(128,128,128,.34); outline: none; }\n.je-ls-icon-btn[disabled] { opacity: .5; cursor: default; }\n.je-ls-icon-btn .material-icons { font-size: 20px; line-height: 1; }\n.je-ls-icon-btn.approve, .je-ls-icon-btn.keep { color: #3fbf6a; border-color: rgba(63,191,106,.55); }\n.je-ls-icon-btn.deny { color: #ef5350; border-color: rgba(239,83,80,.55); }\n.je-ls-icon-btn.date { color: var(--je-ls-accent, #00a4dc); border-color: rgba(0,164,220,.55); }\n.je-ls-icon-btn.approve:hover, .je-ls-icon-btn.approve:focus-visible, .je-ls-icon-btn.keep:hover, .je-ls-icon-btn.keep:focus-visible { background: #2e9d4f; border-color: #2e9d4f; color: #fff; }\n.je-ls-icon-btn.deny:hover, .je-ls-icon-btn.deny:focus-visible { background: #d03a3a; border-color: #d03a3a; color: #fff; }\n.je-ls-icon-btn.date:hover, .je-ls-icon-btn.date:focus-visible { background: var(--je-ls-accent, #00a4dc); border-color: transparent; color: #fff; }\n.je-ls-pill.active { background: rgba(128,128,128,.34); border-color: var(--je-ls-accent, #00a4dc); font-weight: 600; }\n.je-ls-btn.primary { background: var(--je-ls-accent, #00a4dc); border-color: transparent; color: #fff; }\n.je-ls-btn[disabled] { opacity: .5; cursor: default; }\n.je-ls-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px; }\n@media (max-width: 600px) {\n  .je-ls-top { gap: 10px; }\n  .je-ls-title { flex: 1 0 100%; }\n  .je-ls-pills { order: 1; }\n  .je-ls-spacer { order: 2; }\n  .je-ls-refresh { order: 3; }\n  .je-ls-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; }\n  .je-ls-actions { gap: 8px; }\n  .je-ls-name { font-size: .92em; }\n}\n.je-ls-card { display: flex; flex-direction: column; gap: 8px; }\n.je-ls-poster { position: relative; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden; background: rgba(255,255,255,.07); cursor: pointer; }\n.je-ls-poster img { position: relative; z-index: 1; width: 100%; height: 100%; object-fit: cover; display: block; }\n.je-ls-poster .je-ls-fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 3em; opacity: .35; }\n.je-ls-chip { position: absolute; z-index: 2; left: 8px; bottom: 8px; padding: 3px 9px; border-radius: 999px; font-size: .8em; font-weight: 600; background: rgba(0,0,0,.72); color: #fff; }\n.je-ls-chip.warn { background: #c77c0a; }\n.je-ls-chip.urgent { background: #c62828; }\n.je-ls-chip.ok { background: #2e7d32; }\n.je-ls-name { font-weight: 500; line-height: 1.25; cursor: pointer; }\n.je-ls-sub { opacity: .65; font-size: .85em; }\n.je-ls-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }\n.je-ls-section { margin-top: 34px; }\n.je-ls-section h3 { margin: 0 0 12px; font-size: 1.15em; font-weight: 500; display: flex; align-items: center; gap: 8px; }\n.je-ls-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.05); margin-bottom: 8px; flex-wrap: wrap; }\n.je-ls-row .grow { flex: 1; min-width: 180px; }\n.je-ls-reqactions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }\n.je-ls-reqactions:not(:has(.je-ls-warn)) { flex-direction: row; gap: 10px; }\n.je-ls-warn { font-size: .82em; line-height: 1.3; color: #ffb4a8; }\n.je-ls-confirm { display: flex; gap: 6px; flex-wrap: wrap; }\n.je-ls-btn.danger { background: #d03a3a; border-color: transparent; color: #fff; }\n.je-ls-poster.plain { cursor: default; }\n.je-ls-req-poster { position: relative; width: 48px; height: 72px; flex: none; border-radius: 6px; overflow: hidden; background: rgba(255,255,255,.08); display: flex; align-items: center; justify-content: center; }\n.je-ls-req-poster.linked { cursor: pointer; }\n.je-ls-req-poster .material-icons { opacity: .35; font-size: 24px; }\n.je-ls-req-poster img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }\n.je-ls-name.plain { cursor: default; }\n.je-ls-who { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: .88em; opacity: .85; flex-wrap: wrap; }\n.je-ls-avatar { position: relative; width: 22px; height: 22px; border-radius: 50%; background: var(--je-ls-accent, #00a4dc); color: #fff; font-size: .75em; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; flex: none; }\n.je-ls-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }\n.je-ls-note { margin-top: 3px; font-style: italic; }\n.je-ls-status { padding: 2px 9px; border-radius: 999px; font-size: .8em; background: rgba(255,255,255,.12); }\n.je-ls-status.approved { background: #2e7d32; } .je-ls-status.denied { background: #8d2b2b; } .je-ls-status.pending { background: #8a6d12; }\n.je-ls-empty { opacity: .7; padding: 40px 0; text-align: center; }\n";
+  var leaving_soon_page_default = ".je-ls { width: 100%; box-sizing: border-box; padding: 20px 3vw 48px; }\n.je-ls-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }\n.je-ls-title { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 1.6em; font-weight: 500; }\n.je-ls-heading { display: inline-flex; align-items: baseline; gap: 10px; }\n.je-ls-count { opacity: .65; font-size: .55em; font-weight: 400; }\n.je-ls-spacer { flex: 1; }\n.je-ls-pills { display: flex; gap: 8px; }\n.je-ls-pill, .je-ls-btn { border: 1px solid rgba(128,128,128,.4); background: rgba(128,128,128,.16); color: inherit; border-radius: 999px; padding: 6px 14px; cursor: pointer; font: inherit; font-size: .9em; }\n.je-ls-btn { border-radius: 6px; padding: 5px 10px; font-size: .85em; }\n.je-ls-pill:hover, .je-ls-btn:hover, .je-ls-pill:focus-visible, .je-ls-btn:focus-visible { background: rgba(128,128,128,.34); outline: none; }\n.je-ls-refresh { background: none; border: none; cursor: pointer; color: inherit; opacity: .75; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }\n.je-ls-refresh:hover, .je-ls-refresh:focus-visible { background: rgba(128,128,128,.2); opacity: 1; outline: none; }\n.je-ls-refresh .material-icons { font-size: 22px; }\n.je-ls-refresh.spin .material-icons { animation: je-ls-spin .6s ease; }\n@keyframes je-ls-spin { to { transform: rotate(360deg); } }\n.je-ls-icon-btn { width: 36px; height: 36px; box-sizing: border-box; border: 1px solid rgba(128,128,128,.4); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: inherit; background: rgba(128,128,128,.16); padding: 0; flex: none; transition: background .15s, border-color .15s, color .15s; }\n.je-ls-icon-btn:hover, .je-ls-icon-btn:focus-visible { background: rgba(128,128,128,.34); outline: none; }\n.je-ls-icon-btn[disabled] { opacity: .5; cursor: default; }\n.je-ls-icon-btn .material-icons { font-size: 20px; line-height: 1; }\n.je-ls-icon-btn.approve, .je-ls-icon-btn.keep { color: #3fbf6a; border-color: rgba(63,191,106,.55); }\n.je-ls-icon-btn.deny { color: #ef5350; border-color: rgba(239,83,80,.55); }\n.je-ls-icon-btn.date { color: var(--je-ls-accent, #00a4dc); border-color: rgba(0,164,220,.55); }\n.je-ls-icon-btn.approve:hover, .je-ls-icon-btn.approve:focus-visible, .je-ls-icon-btn.keep:hover, .je-ls-icon-btn.keep:focus-visible { background: #2e9d4f; border-color: #2e9d4f; color: #fff; }\n.je-ls-icon-btn.deny:hover, .je-ls-icon-btn.deny:focus-visible { background: #d03a3a; border-color: #d03a3a; color: #fff; }\n.je-ls-icon-btn.date:hover, .je-ls-icon-btn.date:focus-visible { background: var(--je-ls-accent, #00a4dc); border-color: transparent; color: #fff; }\n.je-ls-pill.active { background: rgba(128,128,128,.34); border-color: var(--je-ls-accent, #00a4dc); font-weight: 600; }\n.je-ls-btn[disabled] { opacity: .5; cursor: default; }\n.je-ls-btn.danger { background: #d03a3a; border-color: transparent; color: #fff; }\n/* Cards: the Requests page's layout (poster left, details right), one column on a phone. */\n.je-ls-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.1em; }\n.je-ls-card { display: flex; gap: 1em; padding: 1em; border-radius: .5em; background: rgba(128,128,128,.1); min-width: 0; }\n.je-ls-poster { position: relative; width: 80px; height: 120px; flex: none; border-radius: .5em; overflow: hidden; background: rgba(128,128,128,.18); cursor: pointer; }\n.je-ls-poster.plain { cursor: default; }\n.je-ls-poster img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; display: block; }\n.je-ls-poster .je-ls-fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 2.2em; opacity: .35; }\n.je-ls-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .3em; }\n.je-ls-head { display: flex; align-items: baseline; gap: .4em; min-width: 0; }\n.je-ls-name { font-weight: 600; line-height: 1.25; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }\n.je-ls-name.plain { cursor: default; }\n.je-ls-year { opacity: .65; font-size: .85em; flex: none; }\n.je-ls-sub { opacity: .7; font-size: .85em; overflow-wrap: anywhere; }\n.je-ls-note { font-style: italic; }\n.je-ls-badges { display: flex; gap: .4em; flex-wrap: wrap; align-items: center; }\n.je-ls-chip, .je-ls-scope { display: inline-block; padding: .18em .6em; border-radius: 999px; font-size: .68em; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; line-height: 1.4; color: #fff; background: rgba(90,90,90,.85); }\n.je-ls-scope { background: rgba(128,128,128,.28); color: inherit; text-transform: none; font-weight: 600; }\n.je-ls-chip.warn { background: #c77c0a; }\n.je-ls-chip.urgent { background: #c62828; }\n.je-ls-chip.ok { background: #2e7d32; }\n.je-ls-chip.soon { background: rgba(0,164,220,.85); }\n.je-ls-actions, .je-ls-reqactions { margin-top: auto; padding-top: .4em; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }\n.je-ls-reqactions:has(.je-ls-warn) { flex-direction: column; align-items: stretch; gap: 8px; }\n.je-ls-warn { font-size: .82em; line-height: 1.3; color: #ef7a6c; }\n.je-ls-confirm { display: flex; gap: 6px; flex-wrap: wrap; }\n.je-ls-note-input { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(128,128,128,.45); background: rgba(128,128,128,.12); color: inherit; font: inherit; font-size: .85em; }\n.je-ls-who { display: flex; align-items: center; gap: 6px; font-size: .88em; opacity: .9; flex-wrap: wrap; }\n.je-ls-avatar { position: relative; width: 22px; height: 22px; border-radius: 50%; background: var(--je-ls-accent, #00a4dc); color: #fff; font-size: .75em; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; flex: none; }\n.je-ls-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }\n.je-ls-err { font-size: .82em; color: #ef7a6c; overflow-wrap: anywhere; }\n.je-ls-section { margin-top: 34px; }\n.je-ls-section h3 { margin: 0 0 12px; font-size: 1.15em; font-weight: 500; display: flex; align-items: center; gap: 8px; }\n.je-ls-notice { padding: 10px 12px; border-radius: 8px; background: rgba(199,124,10,.18); font-size: .9em; margin-top: 24px; }\n.je-ls-empty { opacity: .7; padding: 40px 0; text-align: center; }\n@media (max-width: 600px) {\n  .je-ls-top { gap: 10px; }\n  .je-ls-title { flex: 1 0 100%; }\n  .je-ls-pills { order: 1; }\n  .je-ls-spacer { order: 2; }\n  .je-ls-refresh { order: 3; }\n  .je-ls-grid { grid-template-columns: minmax(0, 1fr); gap: .8em; }\n  .je-ls-card { padding: .8em; gap: .8em; }\n  .je-ls-poster { width: 72px; height: 108px; }\n}\n";
 
   // client/src/features/media-tags/leaving-soon/leaving-soon-page.ts
   var LOG = "🪼 Jellyfin Enhanced: Leaving Soon:";
@@ -647,8 +647,25 @@
       actions: data.actions === true,
       items,
       requests: rows(data.requests),
-      mine: rows(data.mine)
+      mine: rows(data.mine),
+      requestsUnavailable: data.requestsUnavailable === true
     };
+  }
+  var shortDate = (date) => date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  function formatSize(bytes) {
+    if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) return "";
+    const gb = bytes / 1073741824;
+    return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(bytes / 1048576)} MB`;
+  }
+  function tmdbPoster(path) {
+    if (!path) return null;
+    if (path.startsWith("https://image.tmdb.org/")) return path;
+    return path.startsWith("/") ? `https://image.tmdb.org/t/p/w185${path}` : null;
+  }
+  function requesterNote(note) {
+    const text = (note ?? "").trim();
+    if (/^(?:Approved|Denied) by .+ in Jellyfin$/.test(text)) return "";
+    return text.replace(/ \((?:Approved|Denied) by [^()]+ in Jellyfin\)$/, "");
   }
   function navigateToItem(itemId) {
     if (!itemId) return;
@@ -686,6 +703,18 @@
       };
       return day(deleteAt) - day(Date.now());
     }
+    function relativeDate(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "";
+      const diff = Date.now() - date.getTime();
+      if (diff < 0) return shortDate(date);
+      const minutes = Math.floor(diff / 6e4), hours = Math.floor(diff / 36e5), days = Math.floor(diff / DAY_MS);
+      if (minutes < 1) return t("requests_just_now");
+      if (minutes < 60) return t("requests_minutes_ago").replace("{minutes}", String(minutes));
+      if (hours < 24) return t("requests_hours_ago").replace("{hours}", String(hours));
+      if (days < 30) return t("requests_days_ago").replace("{days}", String(days));
+      return shortDate(date);
+    }
     function chip(deleteAt) {
       const d = daysLeft(deleteAt);
       if (d === null) return { text: t("leavingsoon_soon"), level: "soon" };
@@ -713,11 +742,11 @@
       }
       return typeof failure.status === "number" ? String(failure.status) : "";
     }
-    async function review(id, approve, button) {
+    async function review(id, approve, button, note) {
       button.disabled = true;
       try {
         const client = export0();
-        await client.ajax({ type: "POST", url: client.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? "approve" : "deny"}`), data: JSON.stringify({}), contentType: "application/json", dataType: "json" });
+        await client.ajax({ type: "POST", url: client.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? "approve" : "deny"}`), data: JSON.stringify(note ? { note } : {}), contentType: "application/json", dataType: "json" });
         JE.toast?.(esc(t(approve ? "leavingsoon_approved" : "leavingsoon_denied")));
         void refresh();
       } catch (err) {
@@ -747,9 +776,10 @@
       const el = document.createElement("div");
       el.className = "je-ls-card";
       el.dataset.type = String(item.type ?? "");
-      const sub = [item.detail, item.year, item.versionOnly ? t("leavingsoon_one_version") : null].filter(Boolean).join(" · ");
-      const poster = export0().getUrl(`Items/${encodeURIComponent(String(item.id))}/Images/Primary`, { maxHeight: 420, quality: 90 });
-      el.innerHTML = `<div class="je-ls-poster" role="link" tabindex="0"><span class="je-ls-fallback material-icons" aria-hidden="true">movie</span><img alt="" loading="lazy" src="${esc(poster)}"/><span class="je-ls-chip ${esc(c.level)}">${esc(c.text)}</span></div><div class="je-ls-name" role="link" tabindex="0">${esc(item.name)}</div>` + (sub ? `<div class="je-ls-sub">${esc(sub)}</div>` : "") + (data.actions ? '<div class="je-ls-actions"></div>' : "");
+      const poster = export0().getUrl(`Items/${encodeURIComponent(String(item.id))}/Images/Primary`, { maxHeight: 360, quality: 90 });
+      const date = typeof item.deleteAt === "number" && Number.isFinite(item.deleteAt) ? shortDate(new Date(item.deleteAt)) : "";
+      const when = [date ? t("leavingsoon_leaves_on", { date }) : "", formatSize(item.size)].filter(Boolean).join(" · ");
+      el.innerHTML = `<div class="je-ls-poster" role="link" tabindex="0"><span class="je-ls-fallback material-icons" aria-hidden="true">${item.type === "Movie" ? "movie" : "tv"}</span><img alt="" loading="lazy" src="${esc(poster)}"/></div><div class="je-ls-info"><div class="je-ls-head"><div class="je-ls-name" role="link" tabindex="0" title="${esc(item.name)}">${esc(item.name)}</div>` + (item.year ? `<span class="je-ls-year">(${esc(item.year)})</span>` : "") + "</div>" + (item.detail ? `<div class="je-ls-sub">${esc(item.detail)}</div>` : "") + `<div class="je-ls-badges"><span class="je-ls-chip ${esc(c.level)}">${esc(c.text)}</span>` + (item.versionOnly ? `<span class="je-ls-scope">${esc(t("leavingsoon_one_version"))}</span>` : "") + "</div>" + (when ? `<div class="je-ls-sub">${esc(when)}</div>` : "") + (data.actions ? '<div class="je-ls-actions"></div>' : "") + "</div>";
       const img = el.querySelector("img");
       img?.addEventListener("error", () => img.remove());
       linkTo(el, item.id);
@@ -760,26 +790,39 @@
         keep.addEventListener("click", () => {
           void (JE.removalMenu ?? JE.maintainerrMenu)?.act?.("unmark", { itemId: item.id }, "maintainerr_kept", reclaimerr ? null : { path: "mark", body: { itemId: item.id }, doneKey: "maintainerr_marked" });
         });
-        const when = iconButton("date", "event", t(reclaimerr ? "reclaimerr_change_date" : "maintainerr_postpone"));
-        when.addEventListener("click", () => (JE.removalMenu ?? JE.maintainerrMenu)?.postpone?.(item.id, { Marked: true, DeleteAt: item.deleteAt ?? null }, when));
-        actions.append(keep, when);
+        const when2 = iconButton("date", "event", t(reclaimerr ? "reclaimerr_change_date" : "maintainerr_postpone"));
+        when2.addEventListener("click", () => (JE.removalMenu ?? JE.maintainerrMenu)?.postpone?.(item.id, { Marked: true, DeleteAt: item.deleteAt ?? null }, when2));
+        actions.append(keep, when2);
       }
       return el;
     }
     function requestPoster(r) {
-      if (r.itemId) return export0().getUrl(`Items/${encodeURIComponent(r.itemId)}/Images/Primary`, { maxHeight: 220, quality: 90 });
-      return r.posterPath ? `https://image.tmdb.org/t/p/w185${r.posterPath}` : null;
+      if (r.itemId) return export0().getUrl(`Items/${encodeURIComponent(r.itemId)}/Images/Primary`, { maxHeight: 360, quality: 90 });
+      return tmdbPoster(r.posterPath);
+    }
+    function scopeLabel(r) {
+      if (r.scope === "season" && r.seasonNumber != null) return t("leavingsoon_scope_season", { season: r.seasonNumber });
+      if (r.scope === "episode" && r.episodeNumber != null && r.seasonNumber != null) return t("leavingsoon_scope_episode", { season: r.seasonNumber, episode: r.episodeNumber });
+      if (r.scope === "movie_version") return [t("leavingsoon_scope_version"), r.versionResolution, formatSize(r.versionSize)].filter(Boolean).join(" · ");
+      return "";
+    }
+    function requestChip(r) {
+      if (r.executionError) return { text: t("leavingsoon_status_failed"), level: "urgent" };
+      if (r.deferred) return { text: t("leavingsoon_status_deferred"), level: "warn" };
+      return { text: t(`leavingsoon_status_${r.status}`) || r.status, level: r.status === "denied" ? "urgent" : r.status === "approved" ? "ok" : "warn" };
     }
     function requestCard(r, admin) {
       const el = document.createElement("div");
       el.className = "je-ls-card je-ls-reqcard";
-      const when = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "";
+      const when = r.createdAt ? relativeDate(r.createdAt) : "";
       const poster = requestPoster(r);
       const person = r.jellyfinUser || r.requestedBy || "";
       const linked = r.itemId ? ' role="link" tabindex="0"' : "";
-      const statusText = t(`leavingsoon_status_${r.status}`);
+      const state = requestChip(r);
+      const scope = scopeLabel(r);
+      const answer = admin ? "" : requesterNote(r.adminNotes);
       const avatar = r.jellyfinUserId ? `<img alt="" src="${esc(export0().getUrl(`Users/${encodeURIComponent(r.jellyfinUserId)}/Images/Primary`, { maxHeight: 48, quality: 90 }))}"/>` : "";
-      el.innerHTML = `<div class="je-ls-poster${r.itemId ? "" : " plain"}"${linked}><span class="je-ls-fallback material-icons" aria-hidden="true">${r.mediaType === "movie" ? "movie" : "tv"}</span>` + (poster ? `<img alt="" loading="lazy" src="${esc(poster)}"/>` : "") + (admin ? "" : `<span class="je-ls-chip ${r.status === "denied" ? "urgent" : r.status === "approved" ? "ok" : "warn"}">${esc(statusText || r.status)}</span>`) + `</div><div class="je-ls-name${r.itemId ? "" : " plain"}"${linked}>${esc(r.title)}</div>` + (r.year ? `<div class="je-ls-sub">${esc(r.year)}</div>` : "") + `<div class="je-ls-who"${admin && r.requestedBy ? ` title="${esc(t("leavingsoon_reclaimerr_account", { name: r.requestedBy }))}"` : ""}>` + (person ? `<span class="je-ls-avatar" aria-hidden="true">${esc(person.charAt(0).toUpperCase())}${avatar}</span><span>${esc(t("leavingsoon_requested_by", { name: person }))}</span>` : "") + "</div>" + (when ? `<div class="je-ls-sub">${esc(when)}</div>` : "") + (r.note ? `<div class="je-ls-sub je-ls-note">${esc(r.note)}</div>` : "") + (admin ? '<div class="je-ls-reqactions"></div>' : "");
+      el.innerHTML = `<div class="je-ls-poster${r.itemId ? "" : " plain"}"${linked}><span class="je-ls-fallback material-icons" aria-hidden="true">${r.mediaType === "movie" ? "movie" : "tv"}</span>` + (poster ? `<img alt="" loading="lazy" src="${esc(poster)}"/>` : "") + `</div><div class="je-ls-info"><div class="je-ls-head"><div class="je-ls-name${r.itemId ? "" : " plain"}"${linked} title="${esc(r.title)}">${esc(r.title)}</div>` + (r.year ? `<span class="je-ls-year">(${esc(r.year)})</span>` : "") + `</div><div class="je-ls-badges"><span class="je-ls-chip ${esc(state.level)}">${esc(state.text)}</span>${scope ? `<span class="je-ls-scope">${esc(scope)}</span>` : ""}</div><div class="je-ls-who"${admin && r.requestedBy ? ` title="${esc(t("leavingsoon_reclaimerr_account", { name: r.requestedBy }))}"` : ""}>` + (person ? `<span class="je-ls-avatar" aria-hidden="true">${esc(person.charAt(0).toUpperCase())}${avatar}</span><span>${esc(t("leavingsoon_requested_by", { name: person }))}</span>` : "") + "</div>" + (when ? `<div class="je-ls-sub">${esc(when)}</div>` : "") + (r.note ? `<div class="je-ls-sub je-ls-note">${esc(r.note)}</div>` : "") + (answer ? `<div class="je-ls-sub je-ls-note">${esc(answer)}</div>` : "") + (r.executionError ? `<div class="je-ls-err">${esc(r.executionError)}</div>` : "") + (admin && r.status === "pending" ? '<div class="je-ls-reqactions"></div>' : "") + "</div>";
       for (const img of el.querySelectorAll("img")) img.addEventListener("error", () => img.remove());
       if (r.itemId) linkTo(el, r.itemId);
       const actions = el.querySelector(".je-ls-reqactions");
@@ -799,7 +842,13 @@
           box.textContent = "";
           const warn = document.createElement("div");
           warn.className = "je-ls-warn";
-          warn.textContent = t("leavingsoon_confirm_delete");
+          warn.textContent = scope ? t("leavingsoon_confirm_delete_scope", { scope }) : t("leavingsoon_confirm_delete");
+          const note = document.createElement("input");
+          note.type = "text";
+          note.className = "je-ls-note-input";
+          note.maxLength = 300;
+          note.placeholder = t("leavingsoon_note_placeholder");
+          note.setAttribute("aria-label", t("leavingsoon_note_placeholder"));
           const row = document.createElement("div");
           row.className = "je-ls-confirm";
           const yes = document.createElement("button");
@@ -811,11 +860,11 @@
           cancel.className = "je-ls-btn";
           cancel.textContent = t("maintainerr_cancel");
           yes.addEventListener("click", () => {
-            void review(r.id, true, yes);
+            void review(r.id, true, yes, note.value.trim());
           });
           cancel.addEventListener("click", showChoice);
           row.append(yes, cancel);
-          box.append(warn, row);
+          box.append(warn, note, row);
         };
         showChoice();
       }
@@ -898,6 +947,12 @@
         grid.className = "je-ls-grid";
         for (const item of shown) grid.appendChild(card(item, data));
         root.appendChild(grid);
+      }
+      if (data.requestsUnavailable) {
+        const notice = document.createElement("div");
+        notice.className = "je-ls-notice";
+        notice.textContent = t("leavingsoon_requests_unavailable");
+        root.appendChild(notice);
       }
       if (data.admin && data.requests.length) root.appendChild(section("inbox", t("leavingsoon_requests_title", { count: data.requests.length }), data.requests, true));
       if (!data.admin && data.mine.length) root.appendChild(section("outbox", t("leavingsoon_my_requests"), data.mine, false));

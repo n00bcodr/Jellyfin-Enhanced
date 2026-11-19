@@ -18,8 +18,9 @@ test('every shipped locale is reported and its translated Media Tags strings kee
 });
 
 // Every string the users' Media Tags code asks for is counted (the administrator's configuration page is plain English), so the coverage report cannot understate the gap.
-// Shared plugin strings (common buttons, other features' dialogs) are translated with those features.
-const SHARED = /^(common_|hidden_content_|remove_button_text$|track_off$|awards_label$|panel_settings_subtitles_position$|reviews_|jellyseerr_)/;
+// Shared plugin strings (common buttons, other features' dialogs) are translated with those features. The Leaving soon page
+// words request dates with the Requests page's own strings (upstream 40738412).
+const SHARED = /^(common_|hidden_content_|remove_button_text$|track_off$|awards_label$|panel_settings_subtitles_position$|reviews_|jellyseerr_|requests_(just_now|minutes_ago|hours_ago|days_ago)$)/;
 test('the coverage report counts every string the Media Tags code uses', () => {
   const js = fileURLToPath(new URL('../../../../Jellyfin.Plugin.JellyfinEnhanced/js/', import.meta.url));
   const english = JSON.parse(readFileSync(join(js, 'locales/en.json'), 'utf8'));

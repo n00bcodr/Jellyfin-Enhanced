@@ -3049,6 +3049,45 @@
       ],
       "with": "3ada0a4e37b6d1af846ca60bbc977226ceb9523d",
       "notes": "Upstream documents its new route two hours after the feature; here the row goes in the feature's own commit, since tests/frontend/features/features-api-routes-docs.test.mjs requires a row for every route. docs/advanced/api.md gets upstream's reclaimerr/create-users row as is, after reclaimerr/service-account as upstream places it, and this tree's route totals (227 to 228 where upstream's go 223 to 224)."
+    },
+    {
+      "sha": "40738412590981e300f2033bb661b4c7333825a9",
+      "date": "2026-11-19T13:22:01+00:00",
+      "subject": "feat(leaving-soon): request-style cards, sizes, and sturdier Reclaimerr request handling (#1089)",
+      "class": "feature",
+      "features": [
+        "media-tags",
+        "platform"
+      ],
+      "issues": [
+        "#1089"
+      ],
+      "release": null,
+      "size": {
+        "files": 8,
+        "insertions": 623,
+        "deletions": 103
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrActions.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/extras/leavingsoon-page.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json",
+        "tests/backend/Integrations/IntegrationReclaimerrVersionSizeTests.cs",
+        "tests/backend/PosterTags/LeavingSoonTests.cs",
+        "tests/backend/PosterTags/ReclaimerrRequestRowTests.cs",
+        "tests/frontend/features/features-leavingsoon-request-cards.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "93e90c96c8bed90dcb0df979e8d80a25d9480357"
+      ],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/extras/leavingsoon-page.js"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p93-*",
+      "notes": "Re-implemented in the media-tags feature: upstream's LeavingSoonController is the partial JeMediaTagsController.LeavingSoon.cs here (GetLeavingSoonList, DescribeRequestsAsync, DescribeLeaving), its Services/ReclaimerrActions.cs is Features/MediaTags/Services/ReclaimerrActions.cs (upstream's hunk applies there as is: the row's eight new fields, VersionSizeAsync with its 30-minute in-memory cache, Parse made internal, approved requests that failed or wait for playback kept in the administrator's list, a user's own requests from the service account's list only on rows it filed), LeavingSoonRequestDto is in Features/MediaTags/Models/ReclaimerrRequests.cs, and extras/leavingsoon-page.js is client/src/features/media-tags/leaving-soon/leaving-soon-page.ts with leaving-soon-page.css (upstream's new stylesheet byte for byte), shipped in js/tags/tag-item-menu.js; en.json's nine strings as is. Server, as upstream: each leaving item carries size (a movie's file, a series' episode files from the library, or for one version of a movie the size Reclaimerr gives under a 4-second budget), the list answer carries requestsUnavailable, title lookups run once per title and in parallel, and a review the service account files names the administrator in the note. Client, as upstream: the Requests page's card layout, the leave date ('Leaves on 24 Nov 2026') and size, request dates as the Requests page words them (its own requests_*_ago strings), the scope badge (season, episode, one version), the state chip on every request card (failed, held back), the error line, Approve and Deny only on pending requests, a confirm that names the scope and takes an optional note, and the notice when the requests could not be read. Differences from upstream, each with a test that fails on upstream's version: (1) the attribution is decided by the call actually sent (SessionAsync's serviceBody): upstream decides before sending, so a mapped administrator whom Reclaimerr refuses, and whose review the service account then files, went out anonymous; (2) a requester reads the administrator's note without only the '(Approved by NAME in Jellyfin)' suffix: upstream hides every note ending ' in Jellyfin' or ' in Jellyfin)', which includes every note that carries the suffix, so a note typed in the confirm never reached the requester when the service account filed it; (3) a request's poster takes a full address only on https://image.tmdb.org/ (the host the page already used for a path): upstream uses any http(s) address Reclaimerr names, a new host for the browser (REVIEW.md 1); (4) title lookups that run out of the list budget only cost their cards the Jellyfin link: upstream's lookups failed with the shared budget's cancellation, which dropped every request with them although its commit says otherwise. The 8-second budget is ReclaimerrActions.ListBudget (settable by tests, as its Timeout is). Tests: upstream's three files at this tree's folders (tests/backend/Features/MediaTags/PosterTags/ReclaimerrRequestRowTests.cs; tests/backend/Features/MediaTags/IntegrationReclaimerrVersionSizeTests.cs, which also disposes the tag caches it creates; tests/frontend/features/media-tags/features-leavingsoon-request-cards.test.mjs over tags/tag-item-menu.js) and its LeavingSoonTests name list. Added here: four route-level tests in IntegrationReclaimerrActionsTests (failed and held-back approved requests with their scope, and only the service account's rows for a user; the review note, refused administrator included; the sizes; the budget, with the loopback server now answering a delayed request on its own), all failing before the port; two client tests for differences 2 and 3, failing before; the one-version test reads the new badge and year; the translation-coverage test lists the Requests page's four 'ago' strings as shared. On the lab (Jellyfin 12.4, Maintainerr through the Sonarr mock, p93-leaving.setup.py) upstream's build of 40738412 and the port draw the same cards (three columns, a row each with an 80x120 poster, 'Leaves on 24 Nov 2026 · 26.7 GB' and 'Leaves on 01 Dec 2026 · 4.1 GB'); this tree before drew six columns of poster-over-title cards without size. Request cards could not be shown live (no Reclaimerr in the lab): tests only. Filed as a found bug (also upstream, and before this port): a Reclaimerr read that fails rather than times out still answers requests [] with requestsUnavailable false, so the page shows no requests and no notice (p93-reclaimerr-unreachable.port.txt). No route, verb, authorization or registration changes; no setting, stored shape or cached-output version changes (the version-size cache is in memory). Outbound: as upstream, the server reads Reclaimerr's scheduled deletions, a candidate, the movie search and the approved requests through the existing guarded client; nothing new reaches the browser."
     }
   ]
 }

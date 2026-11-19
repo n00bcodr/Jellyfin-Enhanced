@@ -59,7 +59,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Models
         public string[]? Pages { get; set; }
     }
 
-    /// <summary>A deletion request as the Leaving soon page draws it, with the Jellyfin title and person it is about.</summary>
+    /// <summary>
+    /// A deletion request as the Leaving soon page draws it, with the Jellyfin title and person it is about, what it would
+    /// delete (<c>scope</c>: movie, series, season, episode or movie_version) and how an approved one ended (upstream 40738412).
+    /// </summary>
     public sealed record LeavingSoonRequestDto(
         [property: JsonPropertyName("id")] int Id,
         [property: JsonPropertyName("title")] string Title,
@@ -72,5 +75,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Models
         [property: JsonPropertyName("jellyfinUser")] string? JellyfinUser,
         [property: JsonPropertyName("jellyfinUserId")] string? JellyfinUserId,
         [property: JsonPropertyName("itemId")] string? ItemId,
-        [property: JsonPropertyName("posterPath")] string? PosterPath);
+        [property: JsonPropertyName("posterPath")] string? PosterPath,
+        [property: JsonPropertyName("scope")] string Scope,
+        [property: JsonPropertyName("seasonNumber")] int? SeasonNumber,
+        [property: JsonPropertyName("episodeNumber")] int? EpisodeNumber,
+        [property: JsonPropertyName("versionResolution")] string? VersionResolution,
+        [property: JsonPropertyName("versionSize")] long? VersionSize,
+        [property: JsonPropertyName("adminNotes")] string? AdminNotes,
+        [property: JsonPropertyName("executionError")] string? ExecutionError,
+        [property: JsonPropertyName("deferred")] bool Deferred);
 }

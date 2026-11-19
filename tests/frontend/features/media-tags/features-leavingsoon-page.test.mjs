@@ -77,7 +77,9 @@ test('one version of a movie leaving says so, and item names are text, never mar
   await h.settle();
   assert.equal(h.$('.je-ls-name').textContent, '<img src=x onerror=alert(1)>');
   assert.equal(h.$$('.je-ls-card img').length, 1, 'only the poster is an image');
-  assert.equal(h.$('.je-ls-sub').textContent, '2026 · leavingsoon_one_version');
+  // Upstream 40738412: the year beside the title, the one-version note as a badge beside the days-left chip.
+  assert.equal(h.$('.je-ls-year').textContent, '(2026)');
+  assert.equal(h.$('.je-ls-scope').textContent, 'leavingsoon_one_version');
 });
 
 test('an empty list says nothing is leaving, and a page that is off registers nothing', async t => {

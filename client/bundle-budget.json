@@ -1,8 +1,8 @@
 {
   "description": "Budget for the served component bundle, GET /JellyfinEnhanced/bundle.js (Features/Platform/Services/ClientScriptBundle.cs), as an identity (uncompressed) body. rawBytes: its length. gzipBytes: its length after gzip at level 9 (zlib level 9; `gzip -9 -n`, .NET CompressionLevel.SmallestSize). Checked by tests/backend/Api/BundleBudgetTests.cs (gate T) and `scripts/restructure-gates.sh size`. It is a ratchet: lowering a limit needs no reason; a history entry that raises either limit must give one. `limits` is always the last history entry's.",
   "limits": {
-    "rawBytes": 2689394,
-    "gzipBytes": 727979
+    "rawBytes": 2692248,
+    "gzipBytes": 728848
   },
   "history": [
     {
@@ -108,6 +108,19 @@
         "gzipBytes": 727979
       },
       "reason": "Raised by exactly what the ports add, so the headroom left before them stays as it was. Measured with BundleBudgetTests (gate T's own measure, .NET SmallestSize) on each commit: 2,595,256 raw / 707,726 gzip-9 bytes on 55ad63b0; the same on 05cf85bc (5201d47b changes only the admin page, which is not in bundle.js); 2,665,225 / 727,746 on cf203615 (+69,969 / +20,020: upstream's #1084, the Seerr filters on the Recommendations page and in every discovery page's address, all or any, Without genres and language, saved filters and the Filters menu's Undo, in discovery-filter-utils.js (which bundles the discovery parts and the new address module), the Recommendations scripts, the navigation core and native tabs, with their stylesheets and strings)."
+    },
+    {
+      "date": "2026-11-19",
+      "change": "upstream sync: port of upstream 40738412 (#1089), branch sync/auto-20261119-2125",
+      "measured": {
+        "rawBytes": 2668906,
+        "gzipBytes": 728842
+      },
+      "limits": {
+        "rawBytes": 2692248,
+        "gzipBytes": 728848
+      },
+      "reason": "Raised by exactly what the port adds, so the headroom left before it stays as it was: the Leaving soon page's cards in the Requests page's layout (leave date and size, the request scope badge, the state chip, the error line, the approve confirm's note field, the could-not-be-read notice, request dates in the Requests page's words) and upstream's new stylesheet, in tags/tag-item-menu.js and its minified twin. Measured with BundleBudgetTests (gate T's own measure, .NET SmallestSize) in a scratch worktree with the limits set to 1: 2,666,052 raw / 727,973 gzip-9 bytes on a90507e5 before the port, 2,668,906 / 728,842 on fb7868c8 with it (+2,854 / +869)."
     }
   ]
 }

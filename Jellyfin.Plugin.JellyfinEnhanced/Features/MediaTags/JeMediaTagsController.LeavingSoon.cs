@@ -28,8 +28,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
         public const int LeavingSoonMaxItems = 500;
 
         /// <summary>
-        /// What is leaving, soonest first (undated last): <c>{provider, admin, canRequest, actions, items[], requests[], mine[]}</c>.
-        /// Items the user cannot see are left out.
+        /// What is leaving, soonest first (undated last): <c>{provider, admin, canRequest, actions, items[], requests[], mine[],
+        /// requestsUnavailable}</c>. Items the user cannot see are left out; each says what leaving frees (<c>size</c>).
         /// </summary>
         /// <param name="leaving">The Leaving soon facts.</param>
         /// <param name="reclaimerr">The Reclaimerr actions (deletion requests).</param>
@@ -51,7 +51,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
             {
                 var item = _libraryManager.GetItemById(id);
                 if (item == null || !item.IsVisible(user)) continue;
-                items.Add(DescribeLeaving(item, deleteAt, leaving.IsVersionOnly(id, config)));
+                var versionOnly = leaving.IsVersionOnly(id, config);
+                items.Add(DescribeLeaving(item, deleteAt, versionOnly, versionOnly ? await VersionSizeAsync(leaving, reclaimerr, item, config, token).ConfigureAwait(false) : SizeOf(item)));
                 if (items.Count >= LeavingSoonMaxItems) break;
             }
 
@@ -59,15 +60,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
             var admin = IsAdminUser();
             IReadOnlyList<LeavingSoonRequestDto> requests = Array.Empty<LeavingSoonRequestDto>();
             IReadOnlyList<LeavingSoonRequestDto> mine = Array.Empty<LeavingSoonRequestDto>();
+            var requestsUnavailable = false;
             if (usesReclaimerr && ReclaimerrActions.Enabled(config))
             {
-                // Both lists are read at once under one short budget: a slow Reclaimerr leaves them empty instead of holding the page.
+                // Both lists are read at once under one short budget: a slow Reclaimerr leaves them short instead of holding the
+                // page, and the page is told so it can say the requests could not be read (rather than showing none). Rows that
+                // were read stay when only their title lookups run out of it (upstream 40738412 lost them with the lookups).
                 using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
-                budget.CancelAfter(TimeSpan.FromSeconds(8));
+                budget.CancelAfter(reclaimerr.ListBudget);
                 async Task<IReadOnlyList<LeavingSoonRequestDto>> Load(bool pending)
                 {
-                    try { return await DescribeRequestsAsync(reclaimerr, await reclaimerr.RequestsAsync(config, user.Username, mine: !pending, budget.Token).ConfigureAwait(false), config, user, budget.Token).ConfigureAwait(false); }
-                    catch (OperationCanceledException) when (!token.IsCancellationRequested) { return Array.Empty<LeavingSoonRequestDto>(); }
+                    IReadOnlyList<ReclaimerrRequestRow> rows;
+                    try { rows = await reclaimerr.RequestsAsync(config, user.Username, mine: !pending, budget.Token).ConfigureAwait(false); }
+                    catch (OperationCanceledException) when (!token.IsCancellationRequested) { requestsUnavailable = true; return Array.Empty<LeavingSoonRequestDto>(); }
+                    return await DescribeRequestsAsync(reclaimerr, rows, config, user, budget.Token, token).ConfigureAwait(false);
                 }
 
                 var pendingTask = admin ? Load(true) : Task.FromResult<IReadOnlyList<LeavingSoonRequestDto>>(Array.Empty<LeavingSoonRequestDto>());
@@ -85,6 +91,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                 items,
                 requests,
                 mine,
+                requestsUnavailable,
             });
         }
 
@@ -119,15 +126,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
         /// <summary>
         /// Requests with the Jellyfin title (matched by TMDB id, only one the viewer can see) and the Jellyfin person: the
         /// request's reason starts "Requested by NAME from Jellyfin" whoever filed it, so the person shows even when
-        /// Reclaimerr knows them as <c>NAME_user</c> or the service account.
+        /// Reclaimerr knows them as <c>NAME_user</c> or the service account. The title lookups run under <paramref name="budget"/>;
+        /// one that fails or runs out of it only leaves that card without its Jellyfin link.
         /// </summary>
-        private async Task<IReadOnlyList<LeavingSoonRequestDto>> DescribeRequestsAsync(ReclaimerrActions reclaimerr, IReadOnlyList<ReclaimerrRequestRow> rows, PluginConfiguration config, JUser viewer, CancellationToken token)
+        private async Task<IReadOnlyList<LeavingSoonRequestDto>> DescribeRequestsAsync(ReclaimerrActions reclaimerr, IReadOnlyList<ReclaimerrRequestRow> rows, PluginConfiguration config, JUser viewer, CancellationToken budget, CancellationToken token)
         {
+            // One title lookup per distinct title, all at once (each is kept after the first read).
+            async Task<string?> Tmdb(string mediaType, int mediaId)
+            {
+                try { return await reclaimerr.TmdbIdAsync(config, mediaType, mediaId, budget).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (!token.IsCancellationRequested) { return null; }
+            }
+
+            var tmdbs = new Dictionary<(string, int), Task<string?>>();
+            foreach (var r in rows) tmdbs.TryAdd((r.MediaType, r.MediaId), Tmdb(r.MediaType, r.MediaId));
+            await Task.WhenAll(tmdbs.Values).ConfigureAwait(false);
             var list = new List<LeavingSoonRequestDto>(rows.Count);
             foreach (var r in rows)
             {
                 string? itemId = null;
-                var tmdb = await reclaimerr.TmdbIdAsync(config, r.MediaType, r.MediaId, token).ConfigureAwait(false);
+                var tmdb = tmdbs[(r.MediaType, r.MediaId)].Result;
                 if (tmdb != null)
                 {
                     var query = new InternalItemsQuery(viewer)
@@ -145,10 +163,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                 var (person, note) = ParseLeavingSoonReason(r.Reason);
                 // Filed straight in Reclaimerr (no "Requested by NAME from Jellyfin" text): a Jellyfin user of the same name is the person.
                 var jellyfinUser = person != null ? _userManager.GetUserByName(person) : (string.IsNullOrWhiteSpace(r.RequestedBy) ? null : _userManager.GetUserByName(r.RequestedBy));
-                list.Add(new LeavingSoonRequestDto(r.Id, r.Title, r.Year, r.MediaType, r.Status, r.CreatedAt, r.RequestedBy, note, jellyfinUser?.Username ?? person, jellyfinUser?.Id.ToString("N"), itemId, r.PosterPath));
+                list.Add(new LeavingSoonRequestDto(r.Id, r.Title, r.Year, r.MediaType, r.Status, r.CreatedAt, r.RequestedBy, note, jellyfinUser?.Username ?? person, jellyfinUser?.Id.ToString("N"), itemId, r.PosterPath,
+                    r.Scope, r.SeasonNumber, r.EpisodeNumber, r.VersionResolution, r.VersionSize, r.AdminNotes, r.ExecutionError, r.Deferred));
             }
 
             return list;
+        }
+
+        /// <summary>The size of the one version of a movie that is leaving, from Reclaimerr (it alone knows which copy); a slow answer is skipped.</summary>
+        private static async Task<long?> VersionSizeAsync(LeavingSoonService leaving, ReclaimerrActions reclaimerr, BaseItem item, PluginConfiguration config, CancellationToken token)
+        {
+            if (!LeavingSoonSources.UsesReclaimerr(config) || !ReclaimerrActions.Enabled(config) || leaving.CollectionOf(item.Id, config) is not { } owner) return null;
+            try
+            {
+                using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
+                budget.CancelAfter(TimeSpan.FromSeconds(4));
+                return await reclaimerr.VersionSizeAsync(item, owner, config, budget.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// What leaving frees, from the library's own file sizes: a movie's file, or all of a series' episode files. Null when no
+        /// size is known (Reclaimerr's candidate list carries none).
+        /// </summary>
+        private long? SizeOf(BaseItem item)
+        {
+            try
+            {
+                long total = 0;
+                if (item is Series series)
+                {
+                    var episodes = _libraryManager.GetItemList(new InternalItemsQuery
+                    {
+                        AncestorIds = new[] { series.Id },
+                        IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Episode },
+                        Recursive = true,
+                        IsVirtualItem = false,
+                    });
+                    foreach (var episode in episodes) total += (episode as Video)?.Size ?? 0;
+                }
+                else if (item is Video video) total = video.Size ?? 0;
+                return total > 0 ? total : null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>"Requested by NAME from Jellyfin: note" to (NAME, note); any other reason is all note.</summary>
@@ -166,7 +230,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
         }
 
         /// <summary>The page's view of one item.</summary>
-        internal static object DescribeLeaving(BaseItem item, long? deleteAt, bool versionOnly = false) => new
+        internal static object DescribeLeaving(BaseItem item, long? deleteAt, bool versionOnly = false, long? size = null) => new
         {
             id = item.Id.ToString("N"),
             name = item is Episode episode ? (episode.SeriesName ?? item.Name) : item is Season season ? (season.SeriesName ?? item.Name) : item.Name,
@@ -175,6 +239,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
             year = item.ProductionYear,
             deleteAt,
             versionOnly,
+            size,
         };
     }
 }
