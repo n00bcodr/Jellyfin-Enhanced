@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -6,6 +7,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Models;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Auth;
+using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Extensions;
 using Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags;
 using MediaBrowser.Controller.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -15,8 +17,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
 {
     // Reclaimerr's item-menu actions and its service account (upstream da0ea773's ReclaimerrController, here as a
     // partial of the feature's one controller). item answers the administrator or, for anyone who can see the item,
-    // whether they may request a removal; mark, unmark, postpone, the request reviews and the service account are
-    // administrator-only; request is any signed-in user who can see the item. Answers 404 while Reclaimerr is not the
+    // whether they may request a removal; mark, unmark, postpone, the request reviews, the service account and the
+    // accounts for Jellyfin users (create-users) are administrator-only; request is any signed-in user who can see the item. Answers 404 while Reclaimerr is not the
     // tool in use, 400 with {error} for a refusal and 502 with {error} when Reclaimerr failed. The Reclaimerr address,
     // token and service account stay on the server. Maintainerr keeps its own routes (JeMediaTagsController.Maintainerr.cs).
     public partial class JeMediaTagsController
@@ -159,6 +161,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                 plugin.UpdateConfiguration(c => { c.ReclaimerrUsername = username; c.ReclaimerrPassword = password; return c; }, fullSave: false);
                 ReclaimerrSession.Forget(plugin.Configuration);
                 return Ok(new { username, password });
+            }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(502, new { error = "Reclaimerr: " + MaintainerrHttp.Describe(ex) });
+            }
+        }
+
+        /// <summary>
+        /// Create a Reclaimerr account for every Jellyfin user that has none, with the permissions and pages picked, through the
+        /// service account, and map each new account to its Jellyfin user. Administrators only. Answers
+        /// <c>{created, existing, skipped, userMap}</c>; the page puts <c>userMap</c> in its field, since its Save writes the
+        /// field back.
+        /// </summary>
+        /// <param name="request">The permissions and pages the new accounts get.</param>
+        /// <param name="reclaimerr">The Reclaimerr actions.</param>
+        /// <param name="token">The request's cancellation.</param>
+        /// <returns>The Jellyfin users given an account, how many already had one, the ones skipped and the new user map.</returns>
+        [HttpPost("reclaimerr/create-users")]
+        [Authorize]
+        [Produces("application/json")]
+        public async Task<IActionResult> CreateReclaimerrUsers([FromBody] ReclaimerrCreateUsersRequest? request, [FromServices] ReclaimerrActions reclaimerr, CancellationToken token)
+        {
+            if (!IsAdminUser()) return Forbid();
+            var plugin = JellyfinEnhanced.Instance;
+            var config = plugin?.Configuration;
+            if (plugin == null || config == null || !ReclaimerrActions.Enabled(config)) return NotFound();
+            try
+            {
+                var names = _userManager.GetAllUsers().Select(u => u.Username).ToList();
+                var result = await reclaimerr.CreateAccountsAsync(config, names, request?.Permissions ?? Array.Empty<string>(), request?.Pages ?? Array.Empty<string>(), token).ConfigureAwait(false);
+                if (result.Created.Count > 0)
+                {
+                    // The plugin acts as a user only through a mapping or link (it never guesses by name), so record each new account.
+                    var lines = string.Concat(result.Created.Select(c => $"\n{c.Jellyfin} = {c.Reclaimerr}"));
+                    plugin.UpdateConfiguration(c => { c.ReclaimerrUserMap = ((c.ReclaimerrUserMap ?? string.Empty).TrimEnd() + lines).Trim(); return c; }, fullSave: false);
+                }
+
+                return Ok(new { created = result.Created.Select(c => c.Jellyfin).ToList(), existing = result.Existing, skipped = result.Skipped, userMap = plugin.Configuration.ReclaimerrUserMap });
+            }
+            catch (MaintainerrActions.ActionException ex)
+            {
+                return BadRequest(new { error = ex.Message });
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {

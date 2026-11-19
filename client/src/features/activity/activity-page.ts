@@ -362,7 +362,7 @@ import { currentLease, record } from '../shared/wire';
         line.innerHTML = `<span class="je-activity-user"></span> ${stateText} <a href="#" class="je-activity-item-name"></a>`;
         line.querySelector('.je-activity-user')!.textContent = session.UserName;
         const nameLink = line.querySelector('.je-activity-item-name')!;
-        nameLink.textContent = item.SeriesName || item.Name;
+        nameLink.textContent = getItemDisplayName(item);
         nameLink.addEventListener('click', (e) => { e.preventDefault(); navigateToItem(item.Id); });
         body.appendChild(line);
 

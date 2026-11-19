@@ -914,6 +914,73 @@ test('Create service account signs in once as the named Reclaimerr administrator
   assert.match(h.document.getElementById('reclaimerrCreateAccountLine').textContent, /^Created and saved: jellyfin-enhanced\.$/);
 });
 
+// Upstream 3ada0a4e: one button makes a Reclaimerr account for every Jellyfin user who has none.
+test('Create accounts for all Jellyfin users sends the ticked permissions and pages, from either copy of the card, and puts the new user map in the form', async t => {
+  let answer = { created: ['Sam', 'Jane Doe'], existing: 2, skipped: ['Someone with a very long name indeed: Reclaimerr allows at most 32 characters'], userMap: 'Mapped = m\nSam = Sam_user\nJane Doe = Jane_Doe' };
+  const h = await loadedPage(t, {
+    saved: { JellyseerrEnabled: true, JellyseerrUrls: 'http://seerr.test', JellyseerrApiKey: 'k', TMDB_API_KEY: 'stored', ReclaimerrEnabled: true, LeavingSoonMaintainerrEnabled: false, ReclaimerrUrl: 'http://reclaimerr:8000', ReclaimerrToken: 'rcl_x', ReclaimerrUsername: 'jellyfin-enhanced', ReclaimerrUserMap: 'Mapped = m' },
+    ajax: (request) => {
+      if (request.url.includes('/admin/leaving-soon')) return { Configured: true, Maintainerr: true, Provider: 'reclaimerr', HomeRow: 'off', Items: 0, Dated: 0 };
+      if (request.url.includes('/reclaimerr/create-users')) {
+        if (answer instanceof Error) throw answer;
+        return answer;
+      }
+      return undefined;
+    },
+  });
+  await settle(h.window, 20);
+  const $ = id => h.document.getElementById(id);
+  const ticks = (id) => [...h.document.querySelectorAll('#' + id + ' input')].filter(box => box.checked).map(box => box.value);
+  const sent = () => h.calls.ajax.filter(r => r.url.includes('/reclaimerr/create-users'));
+  const box = (id, value) => [...h.document.querySelectorAll('#' + id + ' input')].find(input => input.value === value);
+  const set = (id, value, on) => { const input = box(id, value); input.checked = on; input.dispatchEvent(new h.window.Event('change', { bubbles: true })); };
+  assert.equal($('reclaimerrCreateUsersBtn').closest('details').querySelector('summary').textContent, 'Create Reclaimerr accounts for Jellyfin users');
+  assert.deepEqual([...h.document.querySelectorAll('#reclaimerrNewPerms input')].map(box => box.value), ['request', 'auto_approve', 'manage_requests', 'manage_protection', 'manage_reclaim']);
+  assert.deepEqual(ticks('reclaimerrNewPerms'), ['request']);
+  assert.deepEqual(ticks('reclaimerrNewPages'), ['requests', 'candidates', 'settings']);
+
+  // No page ticked: nothing is asked or sent.
+  for (const page of ['requests', 'candidates', 'settings']) set('reclaimerrNewPages', page, false);
+  let asked = 0;
+  h.window.confirm = () => { asked++; return false; };
+  $('reclaimerrCreateUsersBtn').click();
+  await settle(h.window, 10);
+  assert.equal($('reclaimerrCreateUsersLine').textContent, 'Pick at least one page.');
+  assert.equal(asked, 0);
+  // A page ticked but the confirmation declined: still nothing sent.
+  set('reclaimerrNewPages', 'requests', true);
+  $('reclaimerrCreateUsersBtn').click();
+  await settle(h.window, 10);
+  assert.equal(asked, 1);
+  assert.equal(sent().length, 0);
+
+  h.window.confirm = () => true;
+  $('reclaimerrCreateUsersBtn').click();
+  await settle(h.window, 20);
+  assert.equal(sent().length, 1);
+  assert.equal(sent()[0].type, 'POST');
+  assert.deepEqual(JSON.parse(sent()[0].data), { permissions: ['request'], pages: ['requests'] });
+  assert.equal($('ReclaimerrUserMap').value, 'Mapped = m\nSam = Sam_user\nJane Doe = Jane_Doe', 'Save writes the field back, so it holds the new lines');
+  assert.equal($('reclaimerrCreateUsersLine').textContent, 'Created 2, already had an account: 2, not created: Someone with a very long name indeed: Reclaimerr allows at most 32 characters.');
+  assert.equal($('reclaimerrCreateUsersBtn').disabled, false);
+
+  // The Services tab's copy of the card shows the same ticks, and what is ticked there is what is sent.
+  h.document.querySelector('.jellyfin-tab-button[data-tab="services"]').click();
+  await settle(h.window, 10);
+  assert.deepEqual(ticks('reclaimerrNewPerms--mirror'), ['request']);
+  assert.deepEqual(ticks('reclaimerrNewPages--mirror'), ['requests']);
+  set('reclaimerrNewPerms--mirror', 'auto_approve', true);
+  set('reclaimerrNewPages--mirror', 'history', true);
+  assert.deepEqual(ticks('reclaimerrNewPerms'), ['request', 'auto_approve']);
+  assert.deepEqual(ticks('reclaimerrNewPages'), ['requests', 'history']);
+  answer = Object.assign(new Error('Bad Request'), { status: 400, responseText: '{"error":"Create the service account first."}' });
+  $('reclaimerrCreateUsersBtn--mirror').click();
+  await settle(h.window, 20);
+  assert.deepEqual(JSON.parse(sent().at(-1).data), { permissions: ['request', 'auto_approve'], pages: ['requests', 'history'] });
+  assert.equal($('reclaimerrCreateUsersLine').textContent, 'Could not create the accounts: Create the service account first.');
+  assert.equal($('ReclaimerrUserMap').value, 'Mapped = m\nSam = Sam_user\nJane Doe = Jane_Doe', 'a refusal leaves the map as it was');
+});
+
 // The Custom Tabs link stays inside the web client, so it keeps a reverse proxy's base path.
 test('the Custom Tabs configuration link is relative to the current web client', async t => {
   const h = boot(t, {});

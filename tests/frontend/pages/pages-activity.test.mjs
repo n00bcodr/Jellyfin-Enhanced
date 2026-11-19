@@ -63,3 +63,15 @@ test('activity unauthorized active streams removes section and never polls',asyn
   const h=setup(t,{config:{ActiveStreamsEnabled:true,ActivityFeedShowActiveStreams:true,ActivityFeedShowWatched:false,ActivityFeedShowReviewed:false},api:async()=>{throw {status:403};}});
   await h.P.renderForCustomTab(h.host);assert.equal(h.document.querySelector('.je-activity-section'),null);assert.equal(h.timers.size,0);
 });
+// Upstream 4effcf59: a live session's item is Jellyfin's own (ParentIndexNumber / IndexNumber), not a logged entry.
+test('activity active streams name an episode with its season and episode, and a movie by its name', async t => {
+  const stream = (name, item) => ({ UserId: 'u', UserName: name, PlayState: { PositionTicks: 10 }, NowPlayingItem: { RunTimeTicks: 100, ...item } });
+  const h = setup(t, { config: { ActiveStreamsEnabled: true, ActivityFeedShowActiveStreams: true, ActivityFeedShowWatched: false, ActivityFeedShowReviewed: false }, api: async () => [
+    stream('Viewer', { Id: 'ep', Type: 'Episode', Name: 'Chapter One', SeriesName: 'Final Space', SeriesId: 'show', ParentIndexNumber: 1, IndexNumber: 2 }),
+    stream('Other', { Id: 'special', Type: 'Episode', Name: 'The Special', SeriesName: 'Final Space', SeriesId: 'show' }),
+    stream('Third', { Id: 'movie', Type: 'Movie', Name: 'Crash' }),
+  ] });
+  await h.P.renderForCustomTab(h.host);
+  assert.deepEqual([...h.document.querySelectorAll('.je-activity-item-name')].map(n => n.textContent), ['Final Space - S1:E2 - Chapter One', 'Final Space', 'Crash']);
+  h.P.stopPolling();
+});

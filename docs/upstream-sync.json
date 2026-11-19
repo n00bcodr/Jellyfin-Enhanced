@@ -2876,6 +2876,179 @@
       ],
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p87-*",
       "notes": "Re-implemented in client/src/features/media-tags/types/quality/quality-data.ts (qualityCss, which qualitytags.ts's buildCss calls; upstream's change is in js/tags/qualitytags.js's buildCss): the chip box from JE.core.tagRenderer.chipBaseCss is written once before the colour rules instead of once per quality colour. No other difference from upstream. The box declares no background or colour and every colour rule is more specific, so the chips look the same: on a lab every quality chip's computed look on the home page is identical on this tree before the port, after it and on upstream 8bff0750, and the stylesheet is 373,840 characters before and 25,583 after (upstream: 25,583). Upstream adds no test; tests/frontend/features/media-tags/features-quality-display.test.mjs gains 'the quality stylesheet writes the chip box once and one colour rule per quality', which injects the stylesheet as the tag pipeline does on registration and failed before the port (92 chip boxes). The other place that writes quality colours, tag-styles.ts (Tag Styles), writes no chip box per rule. Nothing stored or cached changes."
+    },
+    {
+      "sha": "801e1f1b802d94b5bd9e7944e13d2bf6822dd352",
+      "date": "2026-11-18T18:30:57+00:00",
+      "subject": "docs: Open in Jellyfin page, docs restructure, and move the build to Zensical (#1086)",
+      "class": "docs",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [
+        "#1086"
+      ],
+      "release": null,
+      "size": {
+        "files": 46,
+        "insertions": 3416,
+        "deletions": 3873
+      },
+      "paths": [
+        ".github/docs/requirements.in",
+        ".github/docs/requirements.txt",
+        ".github/workflows/docs.yml",
+        "docs/about.md",
+        "docs/open-in-jellyfin.md",
+        "docs/advanced/community-analytics-dashboard.md",
+        "docs/advanced/community-analytics-settings.md",
+        "docs/advanced/community-analytics.md",
+        "docs/advanced/css-customization.md",
+        "docs/advanced/project-structure.md",
+        "docs/arr/arr-features.md",
+        "docs/arr/arr-settings.md",
+        "docs/arr/troubleshooting-support.md",
+        "docs/elsewhere/elsewhere-features.md",
+        "docs/elsewhere/elsewhere-settings.md",
+        "docs/enhanced/ (8 files)",
+        "docs/faq-support/faq.md",
+        "docs/getting-started/compatibility.md",
+        "docs/getting-started/index.md",
+        "docs/getting-started/pages-and-tabs.md",
+        "docs/getting-started/settings-overview.md",
+        "docs/installation/troubleshooting.md",
+        "docs/javascripts/extra.js",
+        "docs/other-projects/other-projects.md",
+        "docs/other/other-features.md",
+        "docs/other/other-settings.md",
+        "docs/seerr/permission-audit.md",
+        "docs/seerr/seerr-features.md",
+        "docs/seerr/seerr-settings.md",
+        "docs/spoiler-guard/spoiler-guard-features.md",
+        "docs/spoiler-guard/spoiler-guard-settings.md",
+        "docs/stylesheets/extra.css",
+        "mkdocs.yml",
+        "overrides/partials/copyright.html",
+        "overrides/partials/header.html",
+        "overrides/partials/je-icons.html",
+        "overrides/partials/nav-item.html",
+        "tests/frontend/features/features-media-tags-docs-links.test.mjs",
+        "tests/frontend/features/features-rating-sources.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "5e9ce7ced2f29aa7c3b5f112d1fadd28087ace5a"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p88-*",
+      "notes": "Applied with git show 801e1f1b | git apply --3way. The workflow (.github/workflows/docs.yml), .github/docs/requirements.in and requirements.txt, docs/javascripts/extra.js, docs/stylesheets/extra.css, the overrides/ templates and the new pages (open-in-jellyfin.md, community-analytics-dashboard.md, community-analytics-settings.md, tags-groups.md, tags-layouts.md, tags-quality.md, tags-server.md, tags-status.md) are byte-identical to upstream's at 801e1f1b, apart from the lines below; mkdocs.yml is upstream's with this tree's own exclude of upstream-sync*. Nine pages conflicted because this tree's docs already said more than upstream's (community-analytics, arr-features, arr-settings, arr troubleshooting-support, enhanced-features, enhanced-settings, tags, other-features, seerr-features): each takes upstream's restructured text, and this tree's own wording goes to wherever upstream moved the sentence: the jf12-only build target note (community-analytics.md) and the dashboard's version check (now in community-analytics-dashboard.md); the Filter by Library Access wording (arr-settings.md, troubleshooting-support.md; arr-features.md's copy of the table is gone upstream); the Seerr watchlist settings under their names here (Requested media goes on the requester's watchlist, Seerr → Jellyfin: add Seerr watchlist items to Jellyfin) on the three arr pages; Show Playback Info opening Jellyfin's own panel (enhanced-settings.md's merged shortcut table, enhanced-features.md); the Activity paragraph about alternate versions without its 10.11 sentence; Size and opacity per tag (the Layout bullet in enhanced-settings.md, the tab table in tags.md, and a row of the Tag size and spacing table in tags-layouts.md, because upstream folded the personal Media Tags table this tree's row lived in into bullets); the Splash Screen Image URL default (other-settings.md, where the only table now is); and, in tags-status.md, the New Episode rule, Maintainerr's paged member reads and refresh conditions, its API key field, season marking and the TagCacheService path under Features/MediaTags. Upstream's two test edits are applied by hand at tests/frontend/features/media-tags/ (one folder deeper here): features-media-tags-docs-links.test.mjs accepts a heading on tags.md or a redirect in extra.js whose target heading exists, and the schema test in features-rating-sources.test.mjs looks across all tags*.md pages; both failed on the split docs with the old tests and pass with the new ones. Built locally with Zensical 0.1.2 from the hash-pinned requirements: before the port 4 warnings (three links to the missing #leaving-soon-maintainerr anchor, which upstream fixes, and docs/rewrite/README.md's link to REVIEW.md outside docs/), after it only that last one, which is this tree's and pre-existing. Nothing the plugin ships changes."
+    },
+    {
+      "sha": "3ada0a4e37b6d1af846ca60bbc977226ceb9523d",
+      "date": "2026-11-18T20:12:54+00:00",
+      "subject": "feat(reclaimerr): create Reclaimerr accounts for Jellyfin users and show a person's own removal requests",
+      "class": "feature",
+      "features": [
+        "media-tags",
+        "admin"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 4,
+        "insertions": 174,
+        "deletions": 7
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrActions.cs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "ab0fb0e646016469a29917c92c2b05d6ea955dca"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p89-*",
+      "notes": "Re-implemented in the media-tags feature: upstream's ReclaimerrController and LeavingSoonController are the partials JeMediaTagsController.Reclaimerr.cs and JeMediaTagsController.LeavingSoon.cs here, and its Services/ReclaimerrActions.cs is Features/MediaTags/Services/ReclaimerrActions.cs (upstream's hunk applies there as is). Server, as upstream: POST reclaimerr/create-users (CreateReclaimerrUsers: [Authorize], administrators only through IsAdminUser, else Forbid; 404 while Reclaimerr is not the tool in use; 400 with {error} for a refusal, no service account or no grantable page; 502 with Reclaimerr's reason), with ReclaimerrActions.CreateAccountsAsync and its GrantablePermissions and GrantablePages (never manage_users); each new account is added to ReclaimerrUserMap (a partial save) and the answer carries the map as userMap; the body type is ReclaimerrCreateUsersRequest in Features/MediaTags/Models/ReclaimerrRequests.cs (client contracts regenerated). RequestsAsync's own list (mine) is the user's Reclaimerr list, read as them, together with the requests the service account filed in their name, each request once; a refused own read is logged and hides nothing. The Leaving soon page names the Jellyfin user of the same name as a request's Reclaimerr requester when its reason does not name one. Client: the group Create Reclaimerr accounts for Jellyfin users in the Reclaimerr card (client/src/admin/config/sections/arr.ts) and its button in page/service-status.ts (wireCreateUsers beside wireCreateAccount, on the view's lifecycle; an answer that arrives after the view is gone draws nothing), with upstream's labels, starting ticks, confirmation and result line. Difference from upstream: the configuration page also shows the card as a linked copy on the Services tab; upstream's copy shows every box unticked and ignores ticks made there, its button sending the *arr tab's ticks (seen on the lab with upstream's build; filed as a found bug). Here a tick in either copy is made in the other, so both copies show and send the same choice. The boxes carry no ids, as upstream's do not: the page's mirroring and docs/advanced/config-flag-groups.json treat an input with an id as a setting. Part of this commit: upstream's docs commit 34c70f16 (its api.md row as is; this tree's route totals 227 to 228) and its bot's inventory regeneration ba49f5f2 (tests/docs/production-inventory.json, generated here by je12 regen). Tests: upstream adds none. tests/backend/Features/MediaTags/IntegrationReclaimerrActionsTests.cs gains three, through the routes against the loopback Reclaimerr: My requests merging the two lists, with a refused own list (on the tree before the port it shows nothing), a request filed in Reclaimerr itself shown as the Jellyfin user of the same name (before: no person), and create-users (who may, the refusals that send nothing, which users get an account, the names made from theirs, the permissions and pages sent, the credentials, the map; it cannot compile before the port). tests/frontend/admin/config/admin-config-rewrite.test.mjs gains one for the page (the starting ticks, no page ticked, a declined confirmation, the request, the map in the form, the result line, both copies of the card, a refusal), which fails before the port. tests/fixtures/admin-config-baseline.json gains the group's eight element ids (four, and their Services copies), as docs/rewrite/admin-config.md prescribes for an intended page change; no setting, so the What's New index is unchanged. Contract: one route, POST JellyfinEnhanced/reclaimerr/create-users (CreateReclaimerrUsers, IsAdminUser 1), added by the branch's contract commit. On the lab (Jellyfin 12.4; Reclaimerr switched on with no service account) upstream's build of 34c70f16 and the port answer an administrator 400 'Create the service account first.' and a viewer 403 (the tree before the port: 404), and show the same group, labels, starting ticks and button; the Services copy differs as above. No setting, cached-output version or stored shape changes. Outbound: as upstream, the server now writes to the administrator's Reclaimerr (POST /api/account/users) after reading its users and identity links, through the existing guarded client; nothing new reaches the browser.",
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs"
+      ]
+    },
+    {
+      "sha": "ba49f5f2402e2c30f326f72f1f7730d33d7497ce",
+      "date": "2026-11-18T20:14:22+00:00",
+      "subject": "chore(tests): regenerate production inventory",
+      "class": "test",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 11,
+        "deletions": 1
+      },
+      "paths": [
+        "tests/docs/production-inventory.json"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "ab0fb0e646016469a29917c92c2b05d6ea955dca"
+      ],
+      "with": "3ada0a4e37b6d1af846ca60bbc977226ceb9523d",
+      "notes": "Upstream's bot regenerating its production inventory for 3ada0a4e (routes 223 to 224). This tree's tests/docs/production-inventory.json is generated (je12 regen) in that entry's commit, with the same POST JellyfinEnhanced/reclaimerr/create-users route at its file here (Features/MediaTags/JeMediaTagsController.Reclaimerr.cs, action CreateReclaimerrUsers) and this tree's count (227 to 228)."
+    },
+    {
+      "sha": "4effcf597e6f533b0d3e5170e306bdcc863e1c7b",
+      "date": "2026-11-18T20:29:04+00:00",
+      "subject": "fix(activity): show season and episode for episodes in Active Streams",
+      "class": "fix",
+      "features": [
+        "activity"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 2,
+        "deletions": 1
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/extras/activity-page.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "b607a06b04de07c8c3706a16ffc35c21e1a349e6"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p91-*",
+      "notes": "Re-implemented in client/src/features/activity: the Active Streams row names its item with getItemDisplayName (activity-page.ts renderSessionRow), as the history rows do, so an episode reads 'Series - S1:E2 - Episode'. Upstream maps the live item's ParentIndexNumber and IndexNumber at the render site; here the wire reader does it (model.ts readSessionItem, used by readSessions): a session's item is Jellyfin's own, a logged entry's carries SeasonNumber and EpisodeNumber. No other difference. The server already sends both numbers (Shared/Sessions/ActiveSessionsService.cs), on the direct route and in the bootstrap; under Spoiler Guard the episode's name is the one the server already hides it as, as upstream. The other session list, Chrome's Active Streams panel (features/chrome/active-streams.ts), already shows season and episode. Upstream adds no test; tests/frontend/pages/pages-activity.test.mjs gains one (an episode with both numbers, a special without them, a movie), which fails before the port. On the lab (Jellyfin 12.4) the web client's session reported as playing Final Space S1E1 shows on the Activity tab as 'real-admin is watching Final Space' before the port and 'real-admin is watching Final Space - S1:E1 - Chapter One' on upstream's build of 34c70f16 and on the port."
+    },
+    {
+      "sha": "34c70f16a54f554e953d6d0e6561347bba405522",
+      "date": "2026-11-18T21:44:20+00:00",
+      "subject": "docs(api): document reclaimerr/create-users and bump the route total to 224",
+      "class": "docs",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 3,
+        "deletions": 2
+      },
+      "paths": [
+        "docs/advanced/api.md"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "ab0fb0e646016469a29917c92c2b05d6ea955dca"
+      ],
+      "with": "3ada0a4e37b6d1af846ca60bbc977226ceb9523d",
+      "notes": "Upstream documents its new route two hours after the feature; here the row goes in the feature's own commit, since tests/frontend/features/features-api-routes-docs.test.mjs requires a row for every route. docs/advanced/api.md gets upstream's reclaimerr/create-users row as is, after reclaimerr/service-account as upstream places it, and this tree's route totals (227 to 228 where upstream's go 223 to 224)."
     }
   ]
 }

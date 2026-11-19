@@ -2085,6 +2085,8 @@
     queries: [{ path: "/JellyfinEnhanced/leaving-soon/items", queryOptions: { Limit: 20 } }]
   }, null, 2);
   var KEFIN_COPY_LABEL = "Copy KefinTweaks section";
+  var RECLAIMERR_NEW_PERMISSIONS = [["request", "Request removals"], ["auto_approve", "Auto-approve"], ["manage_requests", "Manage requests"], ["manage_protection", "Manage protection"], ["manage_reclaim", "Manage reclaim"]];
+  var RECLAIMERR_NEW_PAGES = ["requests", "candidates", "settings", "dashboard", "movies", "series", "protected", "duplicates", "calendar", "storage", "history"];
   function wireKefinCopy(root) {
     const button = root.getElementById("leavingSoonCopyKefinBtn");
     if (!button || button.dataset.wired) return;
@@ -2340,7 +2342,12 @@
             fromConfig: (v) => String(v || ""),
             desc: "Optional. With <strong>Act as the Jellyfin user</strong> on and Reclaimerr's trusted-proxy sign-in working, the service account signs in by name alone, so this can stay empty (and Reclaimerr's local login can be switched off). It is used only when that does not work."
           },
-          { type: "custom", showIf: "ReclaimerrEnabled", html: `<div class="inputContainer jea-row"><button type="button" id="reclaimerrCreateAccountBtn" class="jea-btn">Create service account</button><div id="reclaimerrCreateAccountLine" class="jea-hint">Asks for a Reclaimerr administrator's name once (and a password only if their trusted sign-in is not available; not stored), creates a <code>jellyfin-enhanced</code> admin account with a random password and saves it here. Save the Reclaimerr URL first.</div></div>` }
+          { type: "custom", showIf: "ReclaimerrEnabled", html: `<div class="inputContainer jea-row"><button type="button" id="reclaimerrCreateAccountBtn" class="jea-btn">Create service account</button><div id="reclaimerrCreateAccountLine" class="jea-hint">Asks for a Reclaimerr administrator's name once (and a password only if their trusted sign-in is not available; not stored), creates a <code>jellyfin-enhanced</code> admin account with a random password and saves it here. Save the Reclaimerr URL first.</div></div>` },
+          // Upstream 3ada0a4e. The boxes have no ids (they are not settings); page/service-status.ts keeps this card's two copies' ticks the same.
+          { type: "group", title: "Create Reclaimerr accounts for Jellyfin users", open: true, showIf: "ReclaimerrEnabled", items: [
+            { type: "note", html: "Creates a Reclaimerr account for every Jellyfin user who has none, so each person's requests carry their own name and they can see them under <strong>My requests</strong>. They sign in through the trusted-proxy sign-in, so there is no password to know. Needs the service account above. Existing accounts are left as they are. Names shorter than 5 characters get <code>_user</code> added (Reclaimerr's minimum), and other characters become <code>_</code>." },
+            { type: "custom", html: '<div class="inputContainer"><div><strong>What the new accounts may do</strong></div><div id="reclaimerrNewPerms" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">' + RECLAIMERR_NEW_PERMISSIONS.map(([value, label]) => '<label><input type="checkbox" value="' + value + '"> ' + label + "</label>").join("") + '</div><div><strong>Reclaimerr pages they can open</strong></div><div id="reclaimerrNewPages" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">' + RECLAIMERR_NEW_PAGES.map((value) => '<label><input type="checkbox" value="' + value + '"> ' + value.charAt(0).toUpperCase() + value.slice(1) + "</label>").join("") + '</div><div class="jea-row"><button type="button" id="reclaimerrCreateUsersBtn" class="jea-btn">Create accounts for all Jellyfin users</button></div><div id="reclaimerrCreateUsersLine" class="jea-hint"></div></div>' }
+          ] }
         ]
       },
       // Shared by whichever removal tool is on: the live state, the item menu, the home row and the refresh interval.

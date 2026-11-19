@@ -193,6 +193,7 @@
     "POST JellyfinEnhanced/maintainerr/postpone": {"IsAdminUser":1},
     "POST JellyfinEnhanced/maintainerr/unmark": {"IsAdminUser":1},
     "POST JellyfinEnhanced/next-up/hide/{itemId}": {"User":1,"UserHelper.GetCurrentUserId":1},
+    "POST JellyfinEnhanced/reclaimerr/create-users": {"IsAdminUser":1},
     "POST JellyfinEnhanced/reclaimerr/mark": {"IsAdminUser":1,"User":1,"UserHelper.GetCurrentUserId":1},
     "POST JellyfinEnhanced/reclaimerr/postpone": {"IsAdminUser":1,"User":1,"UserHelper.GetCurrentUserId":1},
     "POST JellyfinEnhanced/reclaimerr/request": {"User":1,"UserHelper.GetCurrentUserId":1},

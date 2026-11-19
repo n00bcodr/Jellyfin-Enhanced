@@ -37,7 +37,7 @@ Consult the standalone repository for its maintenance status, setup and limits.
 **How to use:**
 
 1. Follow Jellyfish's [installation instructions](https://github.com/n00bcodr/Jellyfish/#installation) for the base theme and any optional components.
-2. Open JE's administrator configuration and select **Extras**.
+2. Open JE's administrator configuration and select [**Extras**](../open-in-jellyfin.md?tab=extras).
 3. Turn on **Theme Selector (Jellyfish)** and save. Users can then choose a color from the web interface.
 
 Administrator setting:

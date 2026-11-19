@@ -65,10 +65,14 @@
   function readFeed(value) {
     return array(object(value).items, readEntry);
   }
+  function readSessionItem(value) {
+    const v = object(value);
+    return { ...readItem(v), SeasonNumber: optionalNumber(v.ParentIndexNumber), EpisodeNumber: optionalNumber(v.IndexNumber) };
+  }
   function readSessions(value) {
     return array(value, object).filter((v) => v.NowPlayingItem != null).map((v) => {
       const ps = v.PlayState == null ? {} : object(v.PlayState);
-      return { UserId: string(v.UserId), UserName: string(v.UserName), UserHasPrimaryImage: optionalBoolean(v.UserHasPrimaryImage), NowPlayingItem: readItem(v.NowPlayingItem), PlayState: { IsPaused: optionalBoolean(ps.IsPaused), PositionTicks: optionalNumber(ps.PositionTicks) } };
+      return { UserId: string(v.UserId), UserName: string(v.UserName), UserHasPrimaryImage: optionalBoolean(v.UserHasPrimaryImage), NowPlayingItem: readSessionItem(v.NowPlayingItem), PlayState: { IsPaused: optionalBoolean(ps.IsPaused), PositionTicks: optionalNumber(ps.PositionTicks) } };
     });
   }
 
@@ -408,7 +412,7 @@
       line.innerHTML = `<span class="je-activity-user"></span> ${stateText} <a href="#" class="je-activity-item-name"></a>`;
       line.querySelector(".je-activity-user").textContent = session.UserName;
       const nameLink = line.querySelector(".je-activity-item-name");
-      nameLink.textContent = item.SeriesName || item.Name;
+      nameLink.textContent = getItemDisplayName(item);
       nameLink.addEventListener("click", (e) => {
         e.preventDefault();
         navigateToItem(item.Id);

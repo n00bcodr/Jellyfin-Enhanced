@@ -13,6 +13,7 @@
   "BroadcastMaintenanceMessage": {"GetCurrentUserId":1,"IsAdminUser":1},
   "BroadcastMessage": {"GetCurrentUserId":1,"IsAdminUser":1},
   "CreateReclaimerrServiceAccount": {"IsAdminUser":1},
+  "CreateReclaimerrUsers": {"IsAdminUser":1},
   "DeleteBrandingImage": {"IsAdminUser":1},
   "DeleteDiscoveryFilterProfile": {"AuthorizeUserConfigAccess":1},
   "DeleteMediaTagsPreset": {"AuthorizeUserConfigAccess":1},

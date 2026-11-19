@@ -7,7 +7,7 @@ Connect Sonarr and Radarr for item links, metadata tags, upcoming releases, and 
 !!! note "Who can use these features"
     Service links are available to Jellyfin administrators. Signed-in viewers can use tag links and enabled **Calendar** and **Requests** pages. What they see depends on library access, request ownership, section settings, and Seerr permissions.
 
-Configure connections under **Jellyfin Enhanced** → **\*arr**. Configure the pages under **Pages**. See [*arr settings](arr-settings.md) for every control and its default, or [troubleshooting](troubleshooting-support.md) if results are missing.
+Configure connections under **Jellyfin Enhanced** → [**\*arr**](../open-in-jellyfin.md?tab=arr). Configure the pages under **Pages**. See [*arr settings](arr-settings.md) for every control and its default, or [troubleshooting](troubleshooting-support.md) if results are missing.
 
 ## ARR Links
 
@@ -15,7 +15,7 @@ Open a movie or series in Sonarr, Radarr, or Bazarr from its Jellyfin detail pag
 
 ### Setup
 
-1. Open **Jellyfin Enhanced** → **\*arr**.
+1. Open **Jellyfin Enhanced** → [**\*arr**](../open-in-jellyfin.md?tab=arr).
 2. Use **+ Add Sonarr instance** or **+ Add Radarr instance** and enter **URL** and **API Key**. The URL must be reachable from the Jellyfin server.
 3. Optionally enter **Bazarr URL**.
 4. Turn on **Enable \*arr Links on Detail Pages** and choose the link presentation below.
@@ -36,16 +36,10 @@ With **Show links as text** and **Show status badge for single-instance** on, a 
 
 ### Link settings
 
-These are admin (server) settings:
-
-| Setting | Default | What it does |
-|---|---|---|
-| **Enable \*arr Links on Detail Pages** | Off | Adds administrator-only service links. |
-| **Show links as text** | Off | Uses text labels instead of icons. |
-| **Show status badge for single-instance** | Off | Adds status styling to one matching instance; visible badges also require text mode. |
+These are admin (server) settings; every option and default is in [*arr settings → Link Behaviour](arr-settings.md#link-behaviour).
 
 !!! note "Metadata icons override text links"
-    **Enable Metadata Icons (Druidblack)** under **Extras** forces service links into icon mode. It overrides **Show links as text**.
+    **Enable Metadata Icons (Druidblack)** under [**Extras**](../open-in-jellyfin.md?tab=extras&card=metadata-icons-sidebar-links) forces service links into icon mode. It overrides **Show links as text**.
 
 ??? info "Title matching and request-card links"
     Sonarr also requires a TVDB provider ID; Radarr uses the movie's TMDB ID. Bazarr opens `/series/` or `/movies/`.
@@ -58,7 +52,7 @@ These are admin (server) settings:
 
 Add separate servers (instances) for TV, anime, HD, or 4K libraries. Give them distinct names so you can tell them apart. Each has its own connection and browser URL mappings.
 
-1. Add an instance under **Sonarr** or **Radarr**.
+1. Add an instance under [**Sonarr**](../open-in-jellyfin.md?tab=arr&card=sonarr) or [**Radarr**](../open-in-jellyfin.md?tab=arr&card=radarr).
 2. Give it a distinct name.
 3. Click **Save Settings**.
 
@@ -119,8 +113,8 @@ Copy Sonarr and Radarr tags into Jellyfin metadata, then display them as clickab
 
 ### Setup
 
-1. Configure at least one complete, enabled Sonarr or Radarr instance under **\*arr**.
-2. In **Tags Sync**, turn on **Enable Tags Sync**, choose a nonempty **Tag Prefix**, and review cleanup and filters.
+1. Configure at least one complete, enabled Sonarr or Radarr instance under [**\*arr**](../open-in-jellyfin.md?tab=arr).
+2. In [**Tags Sync**](../open-in-jellyfin.md?tab=arr&card=tags-sync), turn on **Enable Tags Sync**, choose a nonempty **Tag Prefix**, and review cleanup and filters.
 3. Click **Save Settings**.
 4. Open Jellyfin's **Scheduled Tasks** and run **Sync Tags from \*arr to Jellyfin**, in the **Jellyfin Enhanced** category.
 5. Add a task trigger if you want recurring synchronization, then reload item pages to see the updated tags.
@@ -134,12 +128,7 @@ These are admin (server) settings:
 
 ![*arr UI Links and Tags Sync settings with the Tag Filters expander open](../images/admin/arr-tags.webp)
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Enable Tags Sync** | Off | Allows the scheduled task to update metadata. |
-| **Tag Prefix** | `JE Arr Tag: ` | Prepends this text to each source tag, including the trailing space. |
-| **Clear old tags before sync** | On | Removes metadata tags starting with the current prefix before adding replacements. |
-| **Show synced tags as links** | On | Shows existing matching metadata tags as detail-page links for viewers. |
+Every option and default is in [*arr settings → Tag synchronization](arr-settings.md#tag-synchronization).
 
 ??? info "How tags are matched"
     Radarr matches movies by TMDB ID; Sonarr tag sync matches series by IMDb ID. Sync updates movies and series in your library, excluding virtual placeholders, combines tags from enabled instances, and avoids duplicates regardless of letter case. Bazarr and Shoko do not supply tags.
@@ -154,15 +143,11 @@ These are admin (server) settings:
 
 Choose which tags to sync or show as links. Link filters change what you see without changing stored metadata.
 
-1. Open **Tag Filters** under **Tags Sync**.
+1. Open **Tag Filters** under [**Tags Sync**](../open-in-jellyfin.md?tab=arr&card=tags-sync).
 2. Enter source tag names without the prefix. Matching is exact and ignores letter case.
 3. Use commas or semicolons for **Sync to Jellyfin Filter**, and one name per line for the two link filters.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Sync to Jellyfin Filter** | Empty | Limits metadata writes to listed tags; empty syncs all source tags. Use commas or semicolons. |
-| **Show as Links Filter** | Empty | Limits clickable links to listed tags; empty allows all tags with the prefix. Use one name per line. |
-| **Hide Specific Links Filter** | Empty | Hides listed tag links and takes priority over the show filter. Use one name per line. |
+Every option and default is in [*arr settings → Tag synchronization](arr-settings.md#tag-synchronization).
 
 For **Sync to Jellyfin Filter**, use:
 
@@ -237,7 +222,7 @@ See upcoming episodes and cinema, digital, and physical movie releases in one Ca
 ### Setup
 
 1. Configure an enabled Sonarr or Radarr instance, or enter **Shoko URL** and **Shoko API Key**, under **\*arr**.
-2. Open **Pages** → **Calendar Page** and turn on **Enable Calendar Page**.
+2. Open [**Pages** → **Calendar Page**](../open-in-jellyfin.md?tab=pages&card=calendar-page) and turn on **Enable Calendar Page**.
 3. Choose a navigation mode, then click **Save Settings** and reload the web client.
 
 !!! note "Calendar data needs no companion plugin"
@@ -284,11 +269,7 @@ Event times use your browser's local timezone. Click a series event to open the 
 
 Your controls have personal defaults, saved through Calendar itself:
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Day** / **Week** / **Month** / **Agenda** | **Agenda** | Chooses the view and saves it in your personal settings; Agenda covers 30 days. |
-| **List** / **Backdrop** / **Cards** | **List** | Chooses presentation and saves it in your personal settings; disabled in Agenda. |
-| **Unmonitored** | Off | Includes otherwise excluded unmonitored events; saved per user in this browser's local storage. |
+Every option and default is in [*arr settings → Personal settings](arr-settings.md#personal-settings).
 
 ??? info "Combine Calendar filters"
 
@@ -305,24 +286,14 @@ Your controls have personal defaults, saved through Calendar itself:
 
 ### Calendar Settings
 
-These are admin (server) settings; users cannot override them as personal defaults:
-
-| Setting | Default | What it does |
-|---|---|---|
-| **First Day of Week** | **Monday** | Chooses any of the seven weekdays for the grid. |
-| **Time Format** | **5pm/5:30pm** | Selects 12-hour or **17:00/17:30** 24-hour formatting. |
-| **Highlight Favorites/Watchlist** | Off | Adds watchlist indicators and a **Watchlist** filter. |
-| **Highlight Watched Series** | Off | Adds watched indicators and a **Watched** filter for the matched played/started episode or movie. |
-| **Filter by Library Access** | On | Filters releases by your library access. A title not yet in Jellyfin is shown to an account limited to some libraries only when its Sonarr/Radarr root folder is known to be one the account can open. |
-| **Show Requested Only (Default)** | Off | Initially selects **Requests**; you can change filters. |
-| **Force Only Requested Items** | Off | Always limits the displayed Calendar to your requested titles and hides the **Requests** chip. |
+These are admin (server) settings; users cannot override them as personal defaults. Every option and default is in [*arr settings → Calendar Page Settings](arr-settings.md#calendar-page-settings).
 
 To show watchlisted episodes on a phone, expand the filter panel, select **Episode** and **Watchlist**, then choose **AND**. The **Watchlist** chip requires **Highlight Favorites/Watchlist**.
 
 ![Phone calendar with Episode and Watchlist filters combined using AND and a watchlist-marked release](../images/arr/calendar-filters-phone.webp)
 
 ??? info "Highlighting, library access, and requested-only limits"
-    Watchlist highlighting uses Jellyfin's like (Likes) flag, not the favorite (heart) flag. Under **Seerr**, **Requested media goes on the requester's watchlist** and **Seerr → Jellyfin: add Seerr watchlist items to Jellyfin** set this flag for matching library items; see [Seerr settings](../seerr/seerr-settings.md). Watching another episode of a series does not mark an upcoming episode watched.
+    Watchlist highlighting uses Jellyfin's like (Likes) flag, not the favorite (heart) flag. Under [**Seerr**](../open-in-jellyfin.md?tab=seerr&card=watchlist), **Requested media goes on the requester's watchlist** and **Seerr → Jellyfin: add Seerr watchlist items to Jellyfin** set this flag for matching library items; see [Seerr settings](../seerr/seerr-settings.md). Watching another episode of a series does not mark an upcoming episode watched.
 
     Library filtering infers unmatched-title access from matched Calendar events sharing an upstream root folder. Unknown roots remain visible; unmatched Shoko events have no root folder for this inference. Turning the option off broadens Calendar results without granting playback access.
 
@@ -332,18 +303,11 @@ To show watchlisted episodes on a phone, expand the filter panel, select **Episo
 
 Shoko adds pink **Anime** events from its server collection. Use it to include anime in Calendar.
 
-1. Configure the one supported Shoko connection under **\*arr** → **Shoko**.
-2. Enable Calendar under **Pages**.
+1. Configure the one supported Shoko connection under [**\*arr** → **Shoko**](../open-in-jellyfin.md?tab=arr&card=shoko).
+2. Enable Calendar under [**Pages**](../open-in-jellyfin.md?tab=pages&card=calendar-page).
 3. Under **Episode Types to Show on Calendar**, enable the types you want.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Episodes** | On | Includes regular episodes. |
-| **Specials** | Off | Includes specials. |
-| **Credits (OP/ED)** | Off | Includes opening/ending credits. |
-| **Trailers** | Off | Includes trailers. |
-| **Parodies** | Off | Includes parodies. |
-| **Other** | Off | Includes other episode types. |
+Every option and default is in [*arr settings → Shoko](arr-settings.md#shoko).
 
 ??? info "Anime event limits, matching, and air dates"
     With all six off, no anime events appear. Missing and restricted Shoko content is excluded; selecting episode types does not include restricted content.
@@ -359,14 +323,14 @@ Downloads are part of the shared **Requests** page, alongside Seerr **Requests**
 ### Setup
 
 1. Configure complete, enabled Sonarr/Radarr instances under **\*arr**.
-2. Open **Pages** → **Requests Page** and turn on **Enable Requests Page**.
+2. Open [**Pages** → **Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page) and turn on **Enable Requests Page**.
 3. Keep **Show Downloads in Requests Page** on and review ownership and History controls below.
 4. Choose standalone, native Home tab, Plugin Pages, or Custom Tabs placement, then click **Save Settings** and reload.
 
 ??? info "Placement and connection requirements"
     With placement modes off, open **Requests** from JE navigation or `/web/index.html#/downloads`, including any Jellyfin base path. **Add Requests as a native Home tab** needs no companion plugin. **Use Plugin Pages for Requests** and **Use Custom Tabs for Requests** require their respective plugins. Native and Custom Tabs modes are mutually exclusive for Requests; Plugin Pages live registration/restart rules are the same as Calendar. See [JE pages and tabs](../getting-started/pages-and-tabs.md).
 
-    **Enable \*arr Links on Detail Pages** is not required for queue/history data. Seerr is optional for administrator queue monitoring, but default viewer ownership filtering needs enabled/configured Seerr and a linked account. Configure the Seerr connection under **Seerr**; it does not create a second Requests page.
+    **Enable \*arr Links on Detail Pages** is not required for queue/history data. Seerr is optional for administrator queue monitoring, but default viewer ownership filtering needs enabled/configured Seerr and a linked account. Configure the Seerr connection under [**Seerr**](../open-in-jellyfin.md?tab=seerr&card=seerr-connection-setup); it does not create a second Requests page.
 
 ### Features
 
@@ -384,18 +348,7 @@ Statuses include **Downloading**, **Queued**, **Paused**, **Importing**, **Compl
 
 ### Downloads settings
 
-Admin (server) section and refresh settings:
-
-| Setting | Default | What it does |
-|---|---|---|
-| **Enable Requests Page** | Off | Enables the shared page. |
-| **Show Downloads in Requests Page** | On | Shows the queue; turning it off also hides History in the page. |
-| **Filter Downloads by User Requests** | On | Restricts non-admin queue/history results to titles they requested through Seerr. |
-| **Show Seerr Issues Section** | Off | Adds Seerr issues when Seerr is enabled. |
-| **Show Download History Section** | On | Shows recently imported/failed downloads. |
-| **Restrict Download History to Admins** | Off | Enforces administrator-only History access on the server. |
-| **Enable Auto-Refresh** | On | Refreshes enabled sections. See [Refresh behavior](#refresh-behavior). |
-| **Poll Interval (seconds)** | 30 | Sets the refresh interval; the form accepts 30–300 seconds. |
+Admin (server) section and refresh settings; every option and default is in [*arr settings → Requests Page Settings](arr-settings.md#requests-page-settings).
 
 ??? info "Card details, status priority, and queue limits"
     Hover the source icon on an ordinary card to see the instance name. Grouped **Season** cards show only **Sonarr**. Cards do not show quality.

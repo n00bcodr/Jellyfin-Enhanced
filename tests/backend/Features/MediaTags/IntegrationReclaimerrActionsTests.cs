@@ -253,6 +253,163 @@ public sealed class IntegrationReclaimerrActionsTests : IDisposable
         }
     }
 
+    private JeMediaTagsController ControllerAs(User user, bool isAdmin, IUserManager users, TagCacheService cache)
+    {
+        var controller = (JeMediaTagsController)ApiAssetTests.Controller(typeof(JeMediaTagsController), _f.Core, users, _library.Object, cache);
+        controller.HttpContext.User = global::JE.Tests.Features.SpoilerGuard.PrivacyPolicyTests.Principal(user.Id, admin: isAdmin);
+        return controller;
+    }
+
+    private static int[] Ids(IActionResult answer, string list)
+    {
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(answer).Value));
+        return doc.RootElement.GetProperty(list).EnumerateArray().Select(r => r.GetProperty("id").GetInt32()).ToArray();
+    }
+
+    private const string FiledForSamAndPat = "[{\"id\":5,\"media_id\":31,\"media_type\":\"movie\",\"media_title\":\"Crash\",\"status\":\"pending\",\"requested_by_username\":\"svc\",\"reason\":\"Requested by Sam from Jellyfin: not my taste\"},"
+        + "{\"id\":6,\"media_id\":32,\"media_type\":\"movie\",\"media_title\":\"Heat\",\"status\":\"pending\",\"requested_by_username\":\"svc\",\"reason\":\"Requested by Pat from Jellyfin\"}]";
+
+    // Upstream 3ada0a4e: My requests is the user's own Reclaimerr list together with what the service account filed in their name.
+    [Fact]
+    public async Task My_requests_merge_the_own_list_with_the_ones_filed_in_their_name_and_a_refused_own_list_hides_nothing()
+    {
+        using var server = new Server();
+        var own = (Status: 403, Body: "{\"detail\":\"Requests page not allowed\"}");
+        server.Answer = s => s switch
+        {
+            { Path: "/api/delete-requests/my" } => own,
+            { Path: "/api/delete-requests" } => (200, FiledForSamAndPat),
+            _ => (404, "{\"detail\":\"Not Found\"}"),
+        };
+        var (actions, leaving, cache) = Services(server);
+        _f.Plugin.Configuration.ReclaimerrUserMap = "Sam = samuel";
+        _f.Plugin.Configuration.LeavingSoonPageEnabled = true;
+        using (cache)
+        {
+            var sam = new User("Sam", "default", "default") { Id = Guid.NewGuid() };
+            var users = new Mock<IUserManager>();
+            users.Setup(u => u.GetUserById(sam.Id)).Returns(sam);
+            users.Setup(u => u.GetUserByName("Sam")).Returns(sam);
+            var asSam = ControllerAs(sam, false, users.Object, cache);
+
+            // Their own list is refused (their Reclaimerr account has no Requests page): the ones filed in their name still show.
+            Assert.Equal(new[] { 5 }, Ids(await asSam.GetLeavingSoonList(leaving, actions, CancellationToken.None), "mine"));
+            var asked = Assert.Single(server.All, s => s.Path == "/api/delete-requests/my");
+            Assert.Equal((null, "samuel"), (asked.Bearer, asked.User));
+
+            // Both lists answer: their own first, then the others filed for them, each request once.
+            own = (200, "[{\"id\":7,\"media_id\":33,\"media_type\":\"series\",\"media_title\":\"Lost\",\"status\":\"pending\",\"requested_by_username\":\"samuel\",\"reason\":\"gone\"}]");
+            Assert.Equal(new[] { 7, 5 }, Ids(await asSam.GetLeavingSoonList(leaving, actions, CancellationToken.None), "mine"));
+            own = (200, "[{\"id\":5,\"media_id\":31,\"media_type\":\"movie\",\"media_title\":\"Crash\",\"status\":\"pending\",\"requested_by_username\":\"samuel\",\"reason\":\"Requested by Sam from Jellyfin: not my taste\"}]");
+            Assert.Equal(new[] { 5 }, Ids(await asSam.GetLeavingSoonList(leaving, actions, CancellationToken.None), "mine"));
+        }
+    }
+
+    // Upstream 3ada0a4e: a request filed straight in Reclaimerr names the Jellyfin user whose name its requester has.
+    [Fact]
+    public async Task A_request_filed_in_Reclaimerr_itself_is_shown_as_the_Jellyfin_user_of_the_same_name()
+    {
+        using var server = new Server();
+        server.Answer = s => s switch
+        {
+            { Path: "/api/delete-requests?status_filter=pending" } => (200, "[{\"id\":8,\"media_id\":34,\"media_type\":\"movie\",\"media_title\":\"Up\",\"status\":\"pending\",\"requested_by_username\":\"Pat\",\"reason\":\"please remove\"},"
+                + "{\"id\":9,\"media_id\":35,\"media_type\":\"movie\",\"media_title\":\"Cars\",\"status\":\"pending\",\"requested_by_username\":\"svc\",\"reason\":\"Requested by Sam from Jellyfin\"},"
+                + "{\"id\":10,\"media_id\":36,\"media_type\":\"movie\",\"media_title\":\"Coco\",\"status\":\"pending\",\"requested_by_username\":\"nobody_here\",\"reason\":null}]"),
+            _ => (404, "{\"detail\":\"Not Found\"}"),
+        };
+        var (actions, leaving, cache) = Services(server);
+        _f.Plugin.Configuration.LeavingSoonPageEnabled = true;
+        using (cache)
+        {
+            var admin = new User("admin", "default", "default") { Id = Guid.NewGuid() };
+            var pat = new User("Pat", "default", "default") { Id = Guid.NewGuid() };
+            var sam = new User("Sam", "default", "default") { Id = Guid.NewGuid() };
+            var users = new Mock<IUserManager>();
+            users.Setup(u => u.GetUserById(admin.Id)).Returns(admin);
+            users.Setup(u => u.GetUserByName("Pat")).Returns(pat);
+            users.Setup(u => u.GetUserByName("Sam")).Returns(sam);
+            var answer = Assert.IsType<OkObjectResult>(await ControllerAs(admin, true, users.Object, cache).GetLeavingSoonList(leaving, actions, CancellationToken.None));
+            using var doc = JsonDocument.Parse(JsonSerializer.Serialize(answer.Value));
+            var people = doc.RootElement.GetProperty("requests").EnumerateArray()
+                .Select(r => (r.GetProperty("id").GetInt32(), r.GetProperty("jellyfinUser").GetString(), r.GetProperty("jellyfinUserId").GetString())).ToArray();
+            Assert.Equal(new (int, string?, string?)[] { (8, "Pat", pat.Id.ToString("N")), (9, "Sam", sam.Id.ToString("N")), (10, null, null) }, people);
+        }
+    }
+
+    // Upstream 3ada0a4e: one button gives every Jellyfin user without one a Reclaimerr account, mapped to them.
+    [Fact]
+    public async Task Create_users_gives_each_Jellyfin_user_without_an_account_one_with_the_picked_permissions_and_maps_it()
+    {
+        using var server = new Server();
+        server.Answer = s => s switch
+        {
+            { Method: "GET", Path: "/api/account/users" } => (200, "{\"items\":[{\"id\":1,\"username\":\"svc\"},{\"id\":2,\"username\":\"pat\"},{\"id\":3,\"username\":\"lee_user\"},{\"id\":4,\"username\":\"Jane_Doe\"}]}"),
+            { Method: "GET", Path: "/api/account/users/media-identities" } => (200, "[{\"user_id\":3,\"username\":\"Lee\",\"source_service\":\"jellyfin\"}]"),
+            { Method: "POST", Path: "/api/account/users" } when s.Body.Contains("\"Kim_Lee\"", StringComparison.Ordinal) => (400, "{\"detail\":\"Username taken\"}"),
+            { Method: "POST", Path: "/api/account/users" } => (201, "{\"id\":10}"),
+            _ => (404, "{\"detail\":\"Not Found\"}"),
+        };
+        var (actions, _, cache) = Services(server);
+        var c = _f.Plugin.Configuration;
+        c.ReclaimerrUserMap = "Mapped = m";
+        using (cache)
+        {
+            var admin = new User("svcadmin", "default", "default") { Id = Guid.NewGuid() };
+            var viewer = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+            var names = new[] { "Sam", "Pat", "Lee", "Mapped", "Jane Doe", "Ana.Maria", "Kim Lee", "Someone with a very long name indeed", "sam" };
+            var users = new Mock<IUserManager>();
+            users.Setup(u => u.GetUserById(admin.Id)).Returns(admin);
+            users.Setup(u => u.GetUserById(viewer.Id)).Returns(viewer);
+            users.Setup(u => u.GetUsers()).Returns(names.Select(n => new User(n, "default", "default") { Id = Guid.NewGuid() }).ToList());
+            var asAdmin = ControllerAs(admin, true, users.Object, cache);
+            var picked = new ReclaimerrCreateUsersRequest { Permissions = new[] { "request", "manage_users", "request" }, Pages = new[] { "requests", "nope" } };
+
+            // Who may not, and what is refused before anything is sent.
+            Assert.IsType<ForbidResult>(await ControllerAs(viewer, false, users.Object, cache).CreateReclaimerrUsers(picked, actions, CancellationToken.None));
+            var noPage = Assert.IsType<BadRequestObjectResult>(await asAdmin.CreateReclaimerrUsers(new ReclaimerrCreateUsersRequest { Permissions = new[] { "request" }, Pages = new[] { "nope" } }, actions, CancellationToken.None));
+            Assert.Contains("Pick at least one page.", JsonSerializer.Serialize(noPage.Value));
+            c.ReclaimerrUsername = string.Empty;
+            var noAccount = Assert.IsType<BadRequestObjectResult>(await asAdmin.CreateReclaimerrUsers(picked, actions, CancellationToken.None));
+            Assert.Contains("Create the service account first.", JsonSerializer.Serialize(noAccount.Value));
+            c.ReclaimerrUsername = "svc";
+            c.ReclaimerrEnabled = false;
+            Assert.IsType<NotFoundResult>(await asAdmin.CreateReclaimerrUsers(picked, actions, CancellationToken.None));
+            c.ReclaimerrEnabled = true;
+            Assert.Empty(server.All);
+
+            var answer = Assert.IsType<OkObjectResult>(await asAdmin.CreateReclaimerrUsers(picked, actions, CancellationToken.None));
+            using var doc = JsonDocument.Parse(JsonSerializer.Serialize(answer.Value));
+            var root = doc.RootElement;
+            Assert.Equal(new[] { "Sam", "Ana.Maria" }, root.GetProperty("created").EnumerateArray().Select(e => e.GetString()));
+            Assert.Equal(3, root.GetProperty("existing").GetInt32());
+            var skipped = root.GetProperty("skipped").EnumerateArray().Select(e => e.GetString()!).ToArray();
+            Assert.Equal(3, skipped.Length);
+            Assert.Equal("Jane Doe: an account named Jane_Doe already exists (map it by hand)", skipped[0]);
+            Assert.StartsWith("Kim Lee: ", skipped[1], StringComparison.Ordinal);
+            Assert.Equal("Someone with a very long name indeed: Reclaimerr allows at most 32 characters", skipped[2]);
+            Assert.Equal("Mapped = m\nSam = Sam_user\nAna.Maria = Ana_Maria", c.ReclaimerrUserMap);
+            Assert.Equal(c.ReclaimerrUserMap, root.GetProperty("userMap").GetString());
+
+            // Each new account: a User with only the grantable permissions and pages picked, made through the service account.
+            var made = server.Posts.Where(p => p.Path == "/api/account/users").ToList();
+            Assert.Equal(3, made.Count);
+            var bodies = made.Select(p => JsonDocument.Parse(p.Body).RootElement).ToList();
+            Assert.Equal(new[] { "Sam_user", "Ana_Maria", "Kim_Lee" }, bodies.Select(b => b.GetProperty("username").GetString()));
+            Assert.All(made, p => Assert.Equal((null, "svc"), (p.Bearer, p.User)));
+            Assert.All(bodies, b =>
+            {
+                Assert.Equal("user", b.GetProperty("role").GetString());
+                Assert.Equal(new[] { "request" }, b.GetProperty("permissions").EnumerateArray().Select(e => e.GetString()));
+                Assert.Equal(new[] { "requests" }, b.GetProperty("allowed_pages").EnumerateArray().Select(e => e.GetString()));
+                Assert.False(b.GetProperty("use_default_page_access").GetBoolean());
+                Assert.False(b.GetProperty("require_password_change").GetBoolean());
+                Assert.True(b.GetProperty("password").GetString()!.Length >= 24);
+            });
+            Assert.Equal("Sam", bodies[0].GetProperty("display_name").GetString());
+            Assert.NotEqual(bodies[0].GetProperty("password").GetString(), bodies[1].GetProperty("password").GetString());
+        }
+    }
+
     [Fact]
     public async Task Only_administrators_act_and_review_while_anyone_who_can_see_an_item_learns_only_whether_they_may_request()
     {

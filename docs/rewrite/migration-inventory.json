@@ -1733,7 +1733,7 @@
       "source": "client/src/admin/config/page-entry.ts",
       "template": "client/html/admin-config/configPage.html",
       "manifest": "client/html-entries/admin-config.json",
-      "sha256": "d4726178908e075d34ef99fecfd3274f08695a8573fabfa3a49ca061d7eaecce"
+      "sha256": "e1c5cb51308aeaf28cd89100463943da210a007aabbf9843459a5c2efe3bc503"
     },
     {
       "path": "Configuration/mediaTagsPage.html",

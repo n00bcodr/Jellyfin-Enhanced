@@ -143,7 +143,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                 }
 
                 var (person, note) = ParseLeavingSoonReason(r.Reason);
-                var jellyfinUser = person != null ? _userManager.GetUserByName(person) : null;
+                // Filed straight in Reclaimerr (no "Requested by NAME from Jellyfin" text): a Jellyfin user of the same name is the person.
+                var jellyfinUser = person != null ? _userManager.GetUserByName(person) : (string.IsNullOrWhiteSpace(r.RequestedBy) ? null : _userManager.GetUserByName(r.RequestedBy));
                 list.Add(new LeavingSoonRequestDto(r.Id, r.Title, r.Year, r.MediaType, r.Status, r.CreatedAt, r.RequestedBy, note, jellyfinUser?.Username ?? person, jellyfinUser?.Id.ToString("N"), itemId, r.PosterPath));
             }
 

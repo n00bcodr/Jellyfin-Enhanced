@@ -3,6 +3,7 @@ import { asObject, num, shown, type JsonObject } from '../domain/config';
 import type { ServiceCard, ServiceUsage } from './types';
 import { requestFailure, requestFailureWithBody } from '../domain/http';
 import { asControl, asHtml, asInput } from './dom';
+import { MIRROR } from '../engine/schema';
 
 /** Dependencies this module calls; members are resolved lazily, after every module exists. */
 export type ServiceStatusDeps = Pick<PageModules, 'context' | 'connections' | 'tabs'>;
@@ -444,6 +445,64 @@ export function createServiceStatus(m: ServiceStatusDeps) {
         }, { signal: m.context.lifecycle.signal });
     }
 
+    /**
+     * Create accounts for all Jellyfin users (upstream 3ada0a4e): through the service account, a Reclaimerr account for every
+     * Jellyfin user who has none, with the ticked permissions and pages, mapped to its Jellyfin user. The server saves the
+     * map; the page's field takes it too, because the page's Save writes it back.
+     */
+    function wireCreateUsers(): void {
+        var button = asControl(document.getElementById('reclaimerrCreateUsersBtn'));
+        if (!button) return;
+        var target = button;
+        var boxesIn = function(id: string): HTMLInputElement[] {
+            return Array.from(document.querySelectorAll('#' + id + ' input')).map(asInput).filter(function(box): box is HTMLInputElement { return box !== null; });
+        };
+        // Set in script rather than markup so nothing else on the page can change the starting ticks.
+        var start: Record<string, readonly string[]> = { reclaimerrNewPerms: ['request'], reclaimerrNewPages: ['requests', 'candidates', 'settings'] };
+        Object.keys(start).forEach(function(id) {
+            var on = start[id] ?? [];
+            // The Services tab's copy of this card has its own boxes (no ids, so the page's mirroring passes them by): a tick
+            // in either copy is made in the other, and the button, whichever copy it is clicked in, sends what both show.
+            var copies = [id, id + MIRROR];
+            copies.forEach(function(own, index) {
+                boxesIn(own).forEach(function(box) { box.checked = on.includes(box.value); });
+                var other = copies[1 - index] ?? '';
+                document.getElementById(own)?.addEventListener('change', function(e) {
+                    var changed = asInput(e.target instanceof Element ? e.target : null);
+                    if (!changed) return;
+                    var value = changed.value, checked = changed.checked;
+                    boxesIn(other).forEach(function(twin) { if (twin.value === value) twin.checked = checked; });
+                }, { signal: m.context.lifecycle.signal });
+            });
+        });
+        var ticked = function(id: string): string[] {
+            return boxesIn(id).filter(function(box) { return box.checked; }).map(function(box) { return box.value; });
+        };
+        target.addEventListener('click', function() {
+            var line = asHtml(document.getElementById('reclaimerrCreateUsersLine'));
+            var pages = ticked('reclaimerrNewPages');
+            if (!pages.length) { if (line) line.textContent = 'Pick at least one page.'; return; }
+            if (!window.confirm('Create a Reclaimerr account for every Jellyfin user who has none?')) return;
+            target.disabled = true;
+            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/create-users'), data: JSON.stringify({ permissions: ticked('reclaimerrNewPerms'), pages: pages }), contentType: 'application/json', dataType: 'json' }).then(function(answer) {
+                if (m.context.lifecycle.disposed) return;
+                var result = asObject(answer);
+                var map = asControl(document.getElementById('ReclaimerrUserMap'));
+                if (map && typeof result.userMap === 'string') map.value = result.userMap;
+                var created = Array.isArray(result.created) ? result.created.length : 0;
+                var existing = typeof result.existing === 'number' ? result.existing : 0;
+                var skipped = Array.isArray(result.skipped) ? result.skipped.filter(function(s): s is string { return typeof s === 'string'; }) : [];
+                if (line) line.textContent = 'Created ' + created + ', already had an account: ' + existing + (skipped.length ? ', not created: ' + skipped.join('; ') : '') + '.';
+            }, function(err: unknown) {
+                return requestFailureWithBody(err).then(function(failure) {
+                    if (m.context.lifecycle.disposed || !line) return;
+                    var reason = typeof failure.body?.error === 'string' ? failure.body.error : '';
+                    line.textContent = 'Could not create the accounts: ' + (reason || failure.status || failure.message || 'request failed');
+                });
+            }).then(function() { target.disabled = false; });
+        }, { signal: m.context.lifecycle.signal });
+    }
+
     /** Runs this module's start-up work, in the page's original order. */
     function wire(): void {
         // Maintainerr and Reclaimerr are one choice: switching either on switches the other off (upstream da0ea773).
@@ -454,6 +513,7 @@ export function createServiceStatus(m: ServiceStatusDeps) {
             if (other && other.checked) { other.checked = false; other.dispatchEvent(new Event('change', { bubbles: true })); }
         }, { signal: m.context.lifecycle.signal });
         wireCreateAccount();
+        wireCreateUsers();
         // The Maintainerr card: Refresh now, and a fresh read whenever the Services tab (its linked copy) is opened,
         // since the server's answer changes while the page is open (schedule, other administrators).
         var refreshButton = asControl(document.getElementById('maintainerrRefreshBtn'));

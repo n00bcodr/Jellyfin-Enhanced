@@ -1,6 +1,6 @@
 # Spoiler Guard
 
-Spoiler Guard helps you avoid accidental spoilers while browsing shows and movies. You choose which series, movies, or movie collections to protect. Your admin chooses how their images and metadata are shown.
+Spoiler Guard helps you avoid accidental spoilers while browsing shows and movies. You choose which series, movies, or movie collections to protect. Server admins decide how images and metadata are shown.
 
 ## Turning Spoiler Guard on
 
@@ -8,7 +8,9 @@ Protect the titles you want to browse without spoilers. Your choices apply to yo
 
 !!! note "Admin requirement"
 
-    Your admin must turn on **Enable Spoiler Guard** to make protection and the JE controls available.
+    A server admin must turn on **Enable Spoiler Guard** first.
+
+    Admins: [Display > Spoiler Guard](../open-in-jellyfin.md?tab=display&card=spoiler-guard){ .je-open }
 
 ### Per series (TV shows)
 
@@ -49,7 +51,7 @@ Protect a movie to hide applicable metadata while it is unplayed. The movie titl
 ![Protected movie with its poster retained and metadata hidden](movie-default.webp)
 *The poster stays visible with **Keep movie posters visible** enabled, while quality and rating overlays follow their separate policies.*
 
-Your admin can turn off **Keep movie posters visible** to protect movie posters and thumbnails too. Hiding descriptions also removes trailers from eligible protected items. Movies and series keep their external links, so the Seerr and \*arr links beside them keep working; protected seasons and episodes lose theirs.
+Server admins can turn off **Keep movie posters visible** to protect movie posters and thumbnails too. Hiding descriptions also removes trailers from eligible protected items. Movies and series keep their external links, so the Seerr and \*arr links beside them keep working; protected seasons and episodes lose theirs.
 
 ??? note "Image exceptions"
 
@@ -92,7 +94,7 @@ You can register protection before a title arrives, even if another user request
 
 !!! note "Requirements"
 
-    Turn on **Enable Spoiler Guard** in the admin **Display** tab under **Spoiler Guard**. You also need a working Seerr connection, access to the modal, and a title with a positive TMDB ID.
+    Turn on **Enable Spoiler Guard** in the admin [**Display** tab under **Spoiler Guard**](../open-in-jellyfin.md?tab=display&card=spoiler-guard). You also need a working Seerr connection, access to the modal, and a title with a positive TMDB ID.
 
 These are admin Seerr settings:
 
@@ -108,15 +110,7 @@ Manual pre-arming works independently of automatic enablement and its type/libra
 
 ??? note "Seerr setup details"
 
-    In the admin **Seerr** tab, configure the connection under **Seerr Connection Setup**, search results under **Search & Requests**, and **Open results in "More Info" modal** under **Discovery & UI Extras**. See [Seerr settings](../seerr/seerr-settings.md).
-
-    | Setting | Internal property |
-    |---|---|
-    | **Enable Seerr integration** | `JellyseerrEnabled` |
-    | **Seerr URL(s) (One per line)** | `JellyseerrUrls` |
-    | **Seerr API Key** | `JellyseerrApiKey` |
-    | **Show Seerr Results in Search** | `JellyseerrShowSearchResults` |
-    | **Open results in "More Info" modal** | `JellyseerrUseMoreInfoModal` |
+    In the admin [**Seerr**](../open-in-jellyfin.md?tab=seerr) tab, configure the connection under [**Seerr Connection Setup**](../open-in-jellyfin.md?tab=seerr&card=seerr-connection-setup), search results under [**Search & Requests**](../open-in-jellyfin.md?tab=seerr&card=search-requests), and **Open results in "More Info" modal** under [**Discovery & UI Extras**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras). See [Seerr settings](../seerr/seerr-settings.md).
 
 ??? info "How pending protection works"
 
@@ -134,7 +128,7 @@ Manual pre-arming works independently of automatic enablement and its type/libra
 
 ## What Spoiler Guard protects
 
-Spoiler Guard hides images and information that could reveal what happens next. The table below applies to eligible items when your admin has enabled the relevant policy and you have not opted out.
+Spoiler Guard hides images and information that could reveal what happens next. The table below applies to eligible items when the server admin has enabled the policy and you have not opted out.
 
 **How to use:** Protect a title, then use the [metadata settings](spoiler-guard-settings.md#hide-metadata-on-unwatched-episodes) to choose which fields to hide.
 
@@ -198,7 +192,7 @@ Saved progress can reveal movie chapters and preview sheets you have already rea
 
 **How to use:** Resume from your saved playback position. Episode chapters stay protected until the episode is played, subject to your separate chapter-name preference.
 
-The trickplay rules below apply while your admin's [**Hide trickplay seek previews**](spoiler-guard-settings.md#image-replacement-mode) is on and you have not unchecked [**Seek previews**](spoiler-guard-settings.md#per-user-overrides). Otherwise seek previews are shown in full.
+The trickplay rules below apply while the server's [**Hide trickplay seek previews**](spoiler-guard-settings.md#image-replacement-mode) is on and you have not unchecked [**Seek previews**](spoiler-guard-settings.md#per-user-overrides). Otherwise seek previews are shown in full.
 
 ??? info "How saved-progress boundaries work"
 
@@ -212,7 +206,7 @@ The trickplay rules below apply while your admin's [**Hide trickplay seek previe
 
 ## Image replacement mode
 
-Protected images can use parent artwork or blur, depending on your admin's choice.
+Protected images can use parent artwork or blur, depending on the server admin's setting.
 
 **How to use:** As an admin, select **Image replacement mode** and **Blur intensity**. The complete [image settings table](spoiler-guard-settings.md#image-replacement-mode) lists defaults and exceptions.
 
@@ -238,7 +232,7 @@ Protected images can use parent artwork or blur, depending on your admin's choic
 
 Toggling protection on a detail page refreshes matching item images. Descriptions, titles, and ratings already on the page normally update when you next navigate.
 
-**How to use:** Navigate or reload to see updated text. Your admin can enable **Strict refresh mode (full page reload after toggle)** to reload the page automatically.
+**How to use:** Navigate or reload to see updated text. Server admins can turn on **Strict refresh mode** to reload the page automatically.
 
 <figure class="je-video">
   <video autoplay loop muted playsinline controls preload="metadata" aria-label="Artwork changes immediately while metadata refreshes after navigation">
@@ -280,11 +274,7 @@ Automatic modes can add protection for you when you start a show, request a titl
 
 **How to use:** As an admin, turn on **Enable Spoiler Guard**, choose the automatic modes you want, and save.
 
-| Setting | Default | What it does |
-|---|---|---|
-| **Auto-enable Spoiler Guard on first play of a new show** | Off | Adds a series when you start S1E1 and currently have no played episode in that series. Never protects movies. |
-| **Auto-enable Spoiler Guard on Seerr request** | Off | Records protection after qualifying successful requests through JE's Seerr proxy. |
-| **Auto-enable Spoiler Guard when new titles are added to the library** | Off | Queues new shows and movies for per-user protection. |
+Every option and default is in [Spoiler Guard settings → Auto-enable options](spoiler-guard-settings.md#auto-enable-options).
 
 ??? note "Scope and existing titles"
 
@@ -334,11 +324,11 @@ The [per-user settings table](spoiler-guard-settings.md#per-user-overrides) cove
 
 ## Advanced per-category reveals (optional, admin-controlled)
 
-Your admin can reveal selected information for your next unwatched episode and the rest of its season. With advanced mode enabled and otherwise default settings, only the next episode's real title is revealed.
+Server admins can reveal selected information for your next unwatched episode and the rest of its season. With advanced mode enabled and otherwise default settings, only the next episode's real title is revealed.
 
 ![Next unplayed episode titled Squash with its image blurred and description protected, while later episodes retain generic titles](advanced.webp)
 
-**How to use:** Ask your admin to enable advanced mode and choose what to reveal in the [advanced settings table](spoiler-guard-settings.md#advanced-per-category-reveals). To opt out, uncheck **Advanced per-category reveals** in your own settings.
+**How to use:** Ask a server admin to enable advanced mode and choose what to reveal in the [advanced settings table](spoiler-guard-settings.md#advanced-per-category-reveals). To opt out, uncheck **Advanced per-category reveals** in your own settings.
 
 ??? info "How the next episode is selected"
 
@@ -402,7 +392,7 @@ If protection does not look right, start with the checks that match what you see
 
 ### The toggle is missing
 
-1. Have your admin enable **Enable Spoiler Guard** under **Display** → **Spoiler Guard**.
+1. Ask a server admin to enable **Enable Spoiler Guard** under [**Display** → **Spoiler Guard**](../open-in-jellyfin.md?tab=display&card=spoiler-guard).
 2. Open a series, movie, or collection detail page in the injected JE web interface.
 3. Confirm that Spoiler Guard state loaded successfully. [Store problems](spoiler-guard-settings.md#health-spoiler-state-corruption-recovery) can affect the controls.
 
@@ -433,3 +423,15 @@ Check server logs and [recorded health events](spoiler-guard-settings.md#health-
 ??? info "What happens when state loading fails"
 
     A failed initial state load disables personal preference controls to avoid overwriting unknown state. Reviews can be suppressed broadly on eligible page types when state loading fails.
+
+## Internal property names
+
+??? info "Configuration property for each setting"
+
+    | Setting | Property |
+    |---|---|
+    | **Enable Seerr integration** | `JellyseerrEnabled` |
+    | **Seerr URL(s) (One per line)** | `JellyseerrUrls` |
+    | **Seerr API Key** | `JellyseerrApiKey` |
+    | **Show Seerr Results in Search** | `JellyseerrShowSearchResults` |
+    | **Open results in "More Info" modal** | `JellyseerrUseMoreInfoModal` |

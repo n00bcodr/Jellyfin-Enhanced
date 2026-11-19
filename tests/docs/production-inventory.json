@@ -3206,6 +3206,16 @@
       ]
     },
     {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/create-users",
+      "method": "CreateReclaimerrUsers",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/JeMediaTagsController.Reclaimerr.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
       "verb": "GET",
       "path": "/JellyfinEnhanced/tag-cache/{userId}",
       "method": "GetTagCache",
@@ -11339,7 +11349,7 @@
   "counts": {
     "build_targets": 1,
     "files": 568,
-    "routes": 227,
+    "routes": 228,
     "configuration_properties": 793,
     "storage_references": 98,
     "scheduled_tasks": 17,

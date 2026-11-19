@@ -137,6 +137,7 @@ GET /JellyfinEnhanced/person/{personId}
 GET /JellyfinEnhanced/private-config
 GET /JellyfinEnhanced/proxy/avatar
 GET /JellyfinEnhanced/public-config
+POST /JellyfinEnhanced/reclaimerr/create-users
 GET /JellyfinEnhanced/reclaimerr/item/{itemId}
 POST /JellyfinEnhanced/reclaimerr/mark
 POST /JellyfinEnhanced/reclaimerr/postpone

@@ -47,6 +47,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Models
         public string? AdminPassword { get; set; }
     }
 
+    /// <summary>Body of the create-users route: what every new Reclaimerr account gets.</summary>
+    public class ReclaimerrCreateUsersRequest
+    {
+        /// <summary>Gets or sets the permissions every new account gets (only the grantable ones are used).</summary>
+        [JsonPropertyName("permissions")]
+        public string[]? Permissions { get; set; }
+
+        /// <summary>Gets or sets the Reclaimerr pages every new account can open (at least one grantable page).</summary>
+        [JsonPropertyName("pages")]
+        public string[]? Pages { get; set; }
+    }
+
     /// <summary>A deletion request as the Leaving soon page draws it, with the Jellyfin title and person it is about.</summary>
     public sealed record LeavingSoonRequestDto(
         [property: JsonPropertyName("id")] int Id,
