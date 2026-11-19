@@ -33,6 +33,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Models
         /// <summary>Gets or sets the administrator's note.</summary>
         [JsonPropertyName("note")]
         public string? Note { get; set; }
+
+        /// <summary>
+        /// Gets or sets, for approve only, when the request is deleted (upstream 1de354c0): <c>default</c> (Reclaimerr's grace
+        /// period, none unless set; the same as none given), <c>now</c>, or <c>date</c> (needs <see cref="Date"/>).
+        /// </summary>
+        [JsonPropertyName("when")]
+        public string? When { get; set; }
+
+        /// <summary>Gets or sets, for approve with <c>when</c> <c>date</c>, the moment it is deleted (ISO 8601, in the future).</summary>
+        [JsonPropertyName("date")]
+        public DateTimeOffset? Date { get; set; }
     }
 
     /// <summary>Body of the service-account route: a Reclaimerr administrator, used for this one call and never stored.</summary>
@@ -61,7 +72,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Models
 
     /// <summary>
     /// A deletion request as the Leaving soon page draws it, with the Jellyfin title and person it is about, what it would
-    /// delete (<c>scope</c>: movie, series, season, episode or movie_version) and how an approved one ended (upstream 40738412).
+    /// delete (<c>scope</c>: movie, series, season, episode or movie_version), how an approved one ended (upstream 40738412),
+    /// and when an approved one is deleted (<c>scheduledAt</c>, <c>scheduleState</c>; upstream 1de354c0).
     /// </summary>
     public sealed record LeavingSoonRequestDto(
         [property: JsonPropertyName("id")] int Id,
@@ -83,5 +95,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Models
         [property: JsonPropertyName("versionSize")] long? VersionSize,
         [property: JsonPropertyName("adminNotes")] string? AdminNotes,
         [property: JsonPropertyName("executionError")] string? ExecutionError,
-        [property: JsonPropertyName("deferred")] bool Deferred);
+        [property: JsonPropertyName("deferred")] bool Deferred,
+        [property: JsonPropertyName("scheduledAt")] string? ScheduledAt,
+        [property: JsonPropertyName("scheduleState")] string? ScheduleState);
 }

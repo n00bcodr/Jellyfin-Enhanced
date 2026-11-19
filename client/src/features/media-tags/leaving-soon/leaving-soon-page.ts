@@ -5,8 +5,9 @@ import CSS from './leaving-soon-page.css';
 // The Leaving soon page (upstream da0ea773, extras/leavingsoon-page.js): everything the removal tool (Maintainerr or
 // Reclaimerr, whichever is on) will remove, with the days left, for every user (only items they can see: the server's
 // leaving-soon/list leaves the others out). Administrators can also keep an item or change its date from here (the
-// item menu's actions, JE.removalMenu), and with Reclaimerr see the pending deletion requests to approve or deny;
-// anyone else sees their own requests and their state. Cards use the Requests page's layout (upstream 40738412: poster
+// item menu's actions, JE.removalMenu), and with Reclaimerr see the pending deletion requests to approve (with a
+// Reclaimerr that can schedule: after its grace period, now, or on a chosen day; upstream 1de354c0) or deny; anyone else
+// sees their own requests and their state. Cards use the Requests page's layout (upstream 40738412: poster
 // left, details right, the leave date and what leaving frees; a request says what it would delete and how an approved
 // one ended). JE.leavingSoonPage = { injectStyles, renderForCustomTab,
 // stopPolling, chip, daysLeft } so any host container (the native Home tab, a Custom Tabs panel, the Plugin Pages
@@ -53,6 +54,10 @@ export interface LeavingRequest {
     executionError?: string | null;
     /** Approved, and held back because it is being watched. */
     deferred?: boolean;
+    /** When an approved request is deleted (Reclaimerr's UTC time, sometimes without the zone). */
+    scheduledAt?: string | null;
+    /** The state of that schedule; failed and blocked show as a failed deletion. */
+    scheduleState?: string | null;
 }
 
 /** The answer of leaving-soon/list. */
@@ -66,6 +71,10 @@ export interface LeavingList {
     mine: LeavingRequest[];
     /** The requests could not be read in time: say so instead of showing none. */
     requestsUnavailable: boolean;
+    /** An approval can be given a day (administrators, with a Reclaimerr that can schedule). */
+    canSchedule: boolean;
+    /** The delay Reclaimerr gives an approval that names no day, in days; null when unknown. */
+    graceDays: number | null;
 }
 
 export interface LeavingChip { text: string; level: string }
@@ -99,11 +108,55 @@ function listOf(value: unknown): LeavingList {
         requests: rows(data.requests),
         mine: rows(data.mine),
         requestsUnavailable: data.requestsUnavailable === true,
+        canSchedule: data.canSchedule === true,
+        graceDays: typeof data.graceDays === 'number' && Number.isInteger(data.graceDays) ? data.graceDays : null,
     };
 }
 
 /** A day as the Requests page writes older dates: "23 Nov 2026". */
 const shortDate = (date: Date): string => date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+/** Reclaimerr writes its times in UTC, sometimes without the zone: read those as UTC. */
+const utcDate = (value: string): Date => new Date(/(?:[zZ]|[+-]\d\d:?\d\d)$/.test(value) ? value : `${value}Z`);
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+/** A Date as the local "YYYY-MM-DDTHH:mm" a datetime-local input takes. */
+const localInput = (d: Date): string => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+
+/** A CSS colour's channels (r, g, b and alpha when given), or null. */
+const parseColour = (value: string | null | undefined): number[] | null => {
+    const m = String(value || '').match(/[\d.]+/g);
+    return m && m.length >= 3 ? m.map(Number) : null;
+};
+const brightness = (c: readonly number[]): number => 0.299 * (c[0] ?? 0) + 0.587 * (c[1] ?? 0) + 0.114 * (c[2] ?? 0);
+
+/** The first fully opaque background the control sits on (its ancestors, then the page's own backdrop), or null. */
+function opaqueSurface(el: HTMLElement): number[] | null {
+    const candidates: Element[] = [];
+    for (let n = el.parentElement; n; n = n.parentElement) candidates.push(n);
+    for (const sel of ['.backgroundContainer', '.skinBody']) { const n = document.querySelector(sel); if (n) candidates.push(n); }
+    for (const n of candidates) {
+        const c = parseColour(getComputedStyle(n).backgroundColor);
+        if (c && (c.length === 3 || (c[3] ?? 0) >= 0.95)) return c;
+    }
+    return null;
+}
+
+/**
+ * A native menu draws its own popup, which ignores a translucent background: the theme's light text on a default light popup
+ * made the options vanish. Take what the theme gives the page (its text colour, and the opaque surface the control sits on) so
+ * the popup matches it on any theme; only when those are missing or too close to read does a plain dark or light pair stand
+ * in. The date picker's native popup is given the same light or dark scheme (upstream 1de354c0).
+ */
+function paintPopups(select: HTMLSelectElement, dateInput: HTMLInputElement | null): void {
+    const text = parseColour(getComputedStyle(select).color);
+    const light = !!text && brightness(text) > 140;
+    const surface = opaqueSurface(select);
+    const readable = !!text && !!surface && Math.abs(brightness(text) - brightness(surface)) > 90;
+    const bg = readable && surface ? `rgb(${surface[0]}, ${surface[1]}, ${surface[2]})` : (light ? '#2b2b2b' : '#ffffff');
+    const fg = readable && text ? `rgb(${text[0]}, ${text[1]}, ${text[2]})` : (light ? '#f2f2f2' : '#1a1a1a');
+    for (const el of [select, dateInput]) if (el) el.style.colorScheme = light ? 'dark' : 'light';
+    for (const option of select.options) { option.style.backgroundColor = bg; option.style.color = fg; }
+}
 
 /** Bytes as the cards show them: "4.1 GB", else "350 MB"; empty when unknown. */
 function formatSize(bytes: number | null | undefined): string {
@@ -211,12 +264,15 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
         return typeof failure.status === 'number' ? String(failure.status) : '';
     }
 
-    /** Approve or deny a request; the optional note goes to Reclaimerr (and the requester). */
-    async function review(id: number, approve: boolean, button: HTMLButtonElement, note?: string): Promise<void> {
+    /**
+     * Approve or deny a request; the optional note goes to Reclaimerr (and the requester), and `timing` ({when, date}) says when
+     * an approval is deleted (only sent to a Reclaimerr that can schedule).
+     */
+    async function review(id: number, approve: boolean, button: HTMLButtonElement, note?: string, timing?: Readonly<Record<string, string>> | null): Promise<void> {
         button.disabled = true;
         try {
             const client = apiClient();
-            await client.ajax({ type: 'POST', url: client.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? 'approve' : 'deny'}`), data: JSON.stringify(note ? { note } : {}), contentType: 'application/json', dataType: 'json' });
+            await client.ajax({ type: 'POST', url: client.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? 'approve' : 'deny'}`), data: JSON.stringify({ ...(note ? { note } : {}), ...(timing ?? {}) }), contentType: 'application/json', dataType: 'json' });
             JE.toast?.(esc(t(approve ? 'leavingsoon_approved' : 'leavingsoon_denied')));
             void refresh();
         } catch (err: unknown) {
@@ -293,7 +349,7 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
 
     /** The state chip of a request. */
     function requestChip(r: LeavingRequest): LeavingChip {
-        if (r.executionError) return { text: t('leavingsoon_status_failed'), level: 'urgent' };
+        if (r.executionError || r.scheduleState === 'failed' || r.scheduleState === 'blocked') return { text: t('leavingsoon_status_failed'), level: 'urgent' };
         if (r.deferred) return { text: t('leavingsoon_status_deferred'), level: 'warn' };
         return { text: t(`leavingsoon_status_${r.status}`) || r.status, level: r.status === 'denied' ? 'urgent' : r.status === 'approved' ? 'ok' : 'warn' };
     }
@@ -301,10 +357,11 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
     /**
      * A deletion request as a card in the Requests page's layout: poster (opens the item), title, state, what it would delete
      * (a season, an episode or one version, when not the whole title), who asked (their Jellyfin name and avatar), their note,
-     * why a deletion failed, and for administrators the Approve and Deny buttons on a pending one. Approving deletes from the
-     * library at once (Reclaimerr acts on approval), so it asks first, names the scope and takes an optional note.
+     * why a deletion failed, the day an approved one is deleted, and for administrators the Approve and Deny buttons on a
+     * pending one. Approving deletes from the library (at once, or with a Reclaimerr that can schedule after its grace period
+     * or on a chosen day), so it asks first, names the scope, offers when, and takes an optional note.
      */
-    function requestCard(r: LeavingRequest, admin: boolean): HTMLElement {
+    function requestCard(r: LeavingRequest, admin: boolean, canSchedule = false, graceDays: number | null = null): HTMLElement {
         const el = document.createElement('div');
         el.className = 'je-ls-card je-ls-reqcard';
         const when = r.createdAt ? relativeDate(r.createdAt) : '';
@@ -314,6 +371,7 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
         const state = requestChip(r);
         const scope = scopeLabel(r);
         const answer = admin ? '' : requesterNote(r.adminNotes);
+        const leaves = r.scheduledAt && r.status === 'approved' ? utcDate(r.scheduledAt) : null;
         const avatar = r.jellyfinUserId ? `<img alt="" src="${esc(apiClient().getUrl(`Users/${encodeURIComponent(r.jellyfinUserId)}/Images/Primary`, { maxHeight: 48, quality: 90 }))}"/>` : '';
         el.innerHTML = `<div class="je-ls-poster${r.itemId ? '' : ' plain'}"${linked}><span class="je-ls-fallback material-icons" aria-hidden="true">${r.mediaType === 'movie' ? 'movie' : 'tv'}</span>`
             + (poster ? `<img alt="" loading="lazy" src="${esc(poster)}"/>` : '') + '</div>'
@@ -324,6 +382,7 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
             + (person ? `<span class="je-ls-avatar" aria-hidden="true">${esc(person.charAt(0).toUpperCase())}${avatar}</span><span>${esc(t('leavingsoon_requested_by', { name: person }))}</span>` : '')
             + '</div>'
             + (when ? `<div class="je-ls-sub">${esc(when)}</div>` : '')
+            + (leaves && !Number.isNaN(leaves.getTime()) ? `<div class="je-ls-sub">${esc(t('leavingsoon_leaves_on', { date: shortDate(leaves) }))}</div>` : '')
             + (r.note ? `<div class="je-ls-sub je-ls-note">${esc(r.note)}</div>` : '')
             + (answer ? `<div class="je-ls-sub je-ls-note">${esc(answer)}</div>` : '')
             + (r.executionError ? `<div class="je-ls-err">${esc(r.executionError)}</div>` : '')
@@ -341,13 +400,15 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
                 no.addEventListener('click', () => { void review(r.id, false, no); });
                 box.append(ok, no);
             };
-            // Approving removes it from the library now: one more click, with the words (naming the scope when it is less
-            // than the title) and an optional note for the requester.
+            // Approving removes it from the library (now, after Reclaimerr's grace period, or on a day when this Reclaimerr can
+            // schedule): one more click, with the words (naming the scope when it is less than the title), the choice of when,
+            // and an optional note for the requester.
+            const deleteText = scope ? t('leavingsoon_confirm_delete_scope', { scope }) : t('leavingsoon_confirm_delete');
             const showConfirm = (): void => {
                 box.textContent = '';
                 const warn = document.createElement('div');
                 warn.className = 'je-ls-warn';
-                warn.textContent = scope ? t('leavingsoon_confirm_delete_scope', { scope }) : t('leavingsoon_confirm_delete');
+                warn.textContent = deleteText;
                 const note = document.createElement('input');
                 note.type = 'text';
                 note.className = 'je-ls-note-input';
@@ -359,28 +420,73 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
                 const yes = document.createElement('button');
                 yes.type = 'button';
                 yes.className = 'je-ls-btn danger';
-                yes.textContent = t('leavingsoon_delete_now');
+                yes.textContent = t(canSchedule ? 'leavingsoon_approve' : 'leavingsoon_delete_now');
                 const cancel = document.createElement('button');
                 cancel.type = 'button';
                 cancel.className = 'je-ls-btn';
                 cancel.textContent = t('maintainerr_cancel');
-                yes.addEventListener('click', () => { void review(r.id, true, yes, note.value.trim()); });
+                const parts: HTMLElement[] = [warn];
+                let choice: { when: HTMLSelectElement; day: HTMLInputElement } | null = null;
+                if (canSchedule) {
+                    const when = document.createElement('select');
+                    when.className = 'je-ls-note-input';
+                    when.setAttribute('aria-label', t('reclaimerr_schedule_title'));
+                    const options = [
+                        ['default', graceDays !== null && graceDays > 0 ? t('leavingsoon_when_default_days', { days: graceDays }) : t('leavingsoon_when_default')],
+                        ['now', t('leavingsoon_delete_now')],
+                        ['date', t('leavingsoon_when_date')],
+                    ] as const;
+                    for (const [value, label] of options) {
+                        const option = document.createElement('option');
+                        option.value = value;
+                        option.textContent = label;
+                        when.appendChild(option);
+                    }
+                    const day = document.createElement('input');
+                    day.type = 'datetime-local';
+                    day.className = 'je-ls-note-input';
+                    day.hidden = true;
+                    day.min = localInput(new Date(Date.now() + 60000));
+                    day.value = localInput(new Date(Date.now() + 7 * DAY_MS));
+                    day.setAttribute('aria-label', t('leavingsoon_when_date'));
+                    const sync = (): void => {
+                        day.hidden = when.value !== 'date';
+                        const picked = new Date(day.value);
+                        const valid = when.value !== 'date' || (day.value !== '' && !Number.isNaN(picked.getTime()) && picked.getTime() > Date.now());
+                        yes.disabled = !valid;
+                        warn.textContent = when.value === 'now' ? deleteText
+                            : when.value === 'date' ? (valid ? t('leavingsoon_confirm_on', { date: shortDate(picked) }) : '')
+                            : graceDays === 0 ? deleteText
+                            : graceDays !== null && graceDays > 0 ? t('leavingsoon_confirm_on', { date: shortDate(new Date(Date.now() + graceDays * DAY_MS)) })
+                            : t('leavingsoon_confirm_grace');
+                    };
+                    when.addEventListener('change', sync);
+                    day.addEventListener('input', sync);
+                    parts.push(when, day);
+                    choice = { when, day };
+                    sync();
+                }
+                yes.addEventListener('click', () => {
+                    const timing = !choice ? null : choice.when.value === 'date' ? { when: 'date', date: new Date(choice.day.value).toISOString() } : { when: choice.when.value };
+                    void review(r.id, true, yes, note.value.trim(), timing);
+                });
                 cancel.addEventListener('click', showChoice);
                 row.append(yes, cancel);
-                box.append(warn, note, row);
+                box.append(...parts, note, row);
+                if (choice) paintPopups(choice.when, choice.day);
             };
             showChoice();
         }
         return el;
     }
 
-    function section(icon: string, title: string, rows: readonly LeavingRequest[], admin: boolean): HTMLElement {
+    function section(icon: string, title: string, rows: readonly LeavingRequest[], admin: boolean, data?: LeavingList): HTMLElement {
         const sec = document.createElement('div');
         sec.className = 'je-ls-section';
         sec.innerHTML = `<h3><span class="material-icons" aria-hidden="true">${esc(icon)}</span>${esc(title)}</h3>`;
         const grid = document.createElement('div');
         grid.className = 'je-ls-grid';
-        for (const r of rows) grid.appendChild(requestCard(r, admin));
+        for (const r of rows) grid.appendChild(requestCard(r, admin, data?.canSchedule === true, data?.graceDays ?? null));
         sec.appendChild(grid);
         return sec;
     }
@@ -457,7 +563,7 @@ export function createLeavingSoonPage(JE: TagRuntimeBridge): LeavingSoonPage | n
             notice.textContent = t('leavingsoon_requests_unavailable');
             root.appendChild(notice);
         }
-        if (data.admin && data.requests.length) root.appendChild(section('inbox', t('leavingsoon_requests_title', { count: data.requests.length }), data.requests, true));
+        if (data.admin && data.requests.length) root.appendChild(section('inbox', t('leavingsoon_requests_title', { count: data.requests.length }), data.requests, true, data));
         if (!data.admin && data.mine.length) root.appendChild(section('outbox', t('leavingsoon_my_requests'), data.mine, false));
         host.appendChild(root);
         drawnHost = host;

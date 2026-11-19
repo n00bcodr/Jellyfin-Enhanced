@@ -602,7 +602,7 @@ See what is about to be removed from the library, and when, without leaving Jell
 
 - Filter **Movies** or **Shows**; click a poster or title to open it.
 - With Reclaimerr, a regular user also sees **their own removal requests** and whether each is waiting, approved or denied. Requests are made from an item's ⋮ menu (**Request removal**).
-- Administrators get **Keep** and **Change removal date** on each card, and with Reclaimerr the waiting requests as cards with **Approve** and **Deny**. Approving deletes the title at once (it asks you to confirm first).
+- Administrators get **Keep** and **Change removal date** on each card, and with Reclaimerr the waiting requests as cards with **Approve** and **Deny**. Approving deletes the title at once by default (it asks you to confirm first); with a Reclaimerr that can schedule approvals you can also keep its grace period or pick the day it is deleted.
 
 Open it through the configured Home tab, Plugin Pages entry or Custom Tabs entry. Placement and options are in [Enhanced settings](enhanced-settings.md#leaving-soon).
 

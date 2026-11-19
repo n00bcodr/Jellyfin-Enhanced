@@ -36,7 +36,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         [property: System.Text.Json.Serialization.JsonPropertyName("versionSize")] long? VersionSize = null,
         [property: System.Text.Json.Serialization.JsonPropertyName("adminNotes")] string? AdminNotes = null,
         [property: System.Text.Json.Serialization.JsonPropertyName("executionError")] string? ExecutionError = null,
-        [property: System.Text.Json.Serialization.JsonPropertyName("deferred")] bool Deferred = false);
+        [property: System.Text.Json.Serialization.JsonPropertyName("deferred")] bool Deferred = false,
+        [property: System.Text.Json.Serialization.JsonPropertyName("scheduledAt")] string? ScheduledAt = null,
+        [property: System.Text.Json.Serialization.JsonPropertyName("scheduleState")] string? ScheduleState = null);
 
     /// <summary>
     /// The Reclaimerr counterpart of <see cref="MaintainerrActions"/>, same answers for the item menu:
@@ -389,11 +391,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                 }
                 else doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/delete-requests?status_filter=pending", actingUser, token).ConfigureAwait(false);
                 var all = Parse(doc, null);
-                // Approved requests whose deletion failed or is held back by playback would otherwise vanish from the page: keep them in view.
+                // Approved requests whose deletion failed, is held back by playback, or whose schedule failed or is blocked would
+                // otherwise vanish from the page: keep them in view.
                 try
                 {
                     doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/delete-requests?status_filter=approved", actingUser, token).ConfigureAwait(false);
-                    all.AddRange(Parse(doc, r => !string.IsNullOrEmpty(r.ExecutionError) || r.Deferred));
+                    all.AddRange(Parse(doc, r => !string.IsNullOrEmpty(r.ExecutionError) || r.Deferred || r.ScheduleState is "failed" or "blocked"));
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -428,7 +431,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                     var row = new ReclaimerrRequestRow(n, Str(r, "media_title") ?? "?", Num(r, "media_year"), Str(r, "media_type") ?? "movie", Str(r, "requested_by_username"), Str(r, "reason"), Str(r, "status") ?? "pending", Str(r, "created_at"), Str(r, "reviewed_by_username"),
                         Num(r, "media_id") ?? 0, Str(r, "poster_url"),
                         Str(r, "target_scope") ?? (Str(r, "media_type") == "series" ? "series" : "movie"), Num(r, "season_number"), Num(r, "episode_number"), Str(r, "version_resolution"), size,
-                        Str(r, "admin_notes"), Str(r, "execution_error"), deferred && string.IsNullOrEmpty(Str(r, "executed_at")));
+                        Str(r, "admin_notes"), Str(r, "execution_error"), deferred && string.IsNullOrEmpty(Str(r, "executed_at")), Str(r, "scheduled_at"), Str(r, "schedule_state"));
                     if (keep == null || keep(row)) rows.Add(row);
                 }
             }
@@ -436,8 +439,84 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             return rows;
         }
 
-        /// <summary>Approve or deny a pending deletion request as the administrator who clicked (the service account is the fallback).</summary>
-        public async Task ReviewRequestAsync(int requestId, bool approve, string? note, string? actingUser, PluginConfiguration config, CancellationToken token)
+        /// <summary>When an approved request is deleted: with Reclaimerr's own grace period (its setting; none by default), right away, or on a day.</summary>
+        public enum ApprovalTiming { GracePeriod, Now, OnDate }
+
+        private (DateTimeOffset At, string Url, bool Supported)? _scheduling;
+        private static readonly TimeSpan SchedulingTtl = TimeSpan.FromMinutes(10);
+
+        /// <summary>
+        /// Whether this Reclaimerr can schedule an approved deletion request (an approve call that takes <c>scheduled_at</c>). An older one
+        /// ignores the field and would delete at once whatever day was picked, so this is asked first: Reclaimerr's public
+        /// <c>/openapi.json</c> names the approve body (<c>ApproveDeleteRequest</c>) only when it can. Kept for ten minutes for the
+        /// Reclaimerr address asked (upstream 1de354c0 keeps one answer whatever the address); false when it cannot be read.
+        /// </summary>
+        public async Task<bool> SchedulingSupportedAsync(PluginConfiguration config, CancellationToken token)
+        {
+            if (!Enabled(config)) return false;
+            var url = config.ReclaimerrUrl.Trim().TrimEnd('/');
+            lock (_versionSizes)
+            {
+                if (_scheduling is { } known && known.Url == url && Now() - known.At < SchedulingTtl) return known.Supported;
+            }
+
+            var supported = false;
+            try
+            {
+                using var doc = await TokenAsync(config, HttpMethod.Get, "/openapi.json", null, token).ConfigureAwait(false);
+                supported = doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("components", out var components) && components.ValueKind == JsonValueKind.Object
+                    && components.TryGetProperty("schemas", out var schemas) && schemas.ValueKind == JsonValueKind.Object
+                    && schemas.TryGetProperty("ApproveDeleteRequest", out _);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Warning($"[Reclaimerr] Could not tell whether Reclaimerr can schedule approved requests ({MaintainerrHttp.Describe(ex)}).");
+                return false;
+            }
+
+            lock (_versionSizes) _scheduling = (Now(), url, supported);
+            return supported;
+        }
+
+        private (DateTimeOffset At, string Url, int? Days)? _grace;
+
+        /// <summary>
+        /// The grace period (days) Reclaimerr applies to an approval that names no day (Settings, General: Approved Deletion Requests; 0 when
+        /// none). Read with the service account and kept for a minute for the Reclaimerr address asked; null when it cannot be read.
+        /// </summary>
+        public async Task<int?> GracePeriodDaysAsync(PluginConfiguration config, CancellationToken token)
+        {
+            var url = config.ReclaimerrUrl.Trim().TrimEnd('/');
+            lock (_versionSizes)
+            {
+                if (_grace is { } known && known.Url == url && Now() - known.At < TimeSpan.FromMinutes(1)) return known.Days;
+            }
+
+            int? days = null;
+            try
+            {
+                using var doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/settings/general", null, token).ConfigureAwait(false);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("delete_request_grace_period_days", out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) && n >= 0) days = n;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Warning($"[Reclaimerr] Could not read the deletion request grace period ({MaintainerrHttp.Describe(ex)}).");
+                return null;
+            }
+
+            lock (_versionSizes) _grace = (Now(), url, days);
+            return days;
+        }
+
+        /// <summary>
+        /// Approve or deny a pending deletion request as the administrator who clicked (the service account is the fallback). Approving
+        /// deletes at once unless <paramref name="timing"/> says otherwise (upstream 1de354c0): <see cref="ApprovalTiming.OnDate"/> on
+        /// <paramref name="at"/>, or <see cref="ApprovalTiming.GracePeriod"/> after the delay set in Reclaimerr (none by default, so the
+        /// same as now; the old call, without <c>scheduled_at</c>). A day or an explicit now is refused when this Reclaimerr cannot
+        /// schedule (it would delete at once instead), and nothing is sent.
+        /// </summary>
+        public async Task ReviewRequestAsync(int requestId, bool approve, string? note, string? actingUser, PluginConfiguration config, CancellationToken token, ApprovalTiming timing = ApprovalTiming.GracePeriod, DateTimeOffset? at = null)
         {
             if (requestId <= 0) throw new MaintainerrActions.ActionException("Unknown request.");
             var text = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
@@ -451,8 +530,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                 byService = text == null ? by : $"{text} ({by})";
             }
 
-            await SessionAsync(config, HttpMethod.Post, $"/api/delete-requests/{requestId}/{(approve ? "approve" : "deny")}", new { admin_notes = text }, actingUser, token, adminAction: true, serviceBody: new { admin_notes = byService }).ConfigureAwait(false);
-            _logger.Info($"[Reclaimerr] {actingUser ?? "an administrator"} {(approve ? "approved" : "denied")} deletion request {requestId}.");
+            // Omitting scheduled_at means the grace period; null means now; a day schedules it.
+            var scheduled = approve && timing != ApprovalTiming.GracePeriod;
+            string? day = null;
+            if (scheduled)
+            {
+                if (!await SchedulingSupportedAsync(config, token).ConfigureAwait(false))
+                    throw new MaintainerrActions.ActionException("This Reclaimerr cannot schedule an approval yet (update it), so nothing was approved.");
+                if (timing == ApprovalTiming.OnDate) day = Iso(CheckedDate(at ?? throw new MaintainerrActions.ActionException("Pick the day to delete it.")));
+            }
+
+            object Body(string? notes) => scheduled ? new { admin_notes = notes, scheduled_at = day } : new { admin_notes = notes };
+            await SessionAsync(config, HttpMethod.Post, $"/api/delete-requests/{requestId}/{(approve ? "approve" : "deny")}", Body(text), actingUser, token, adminAction: true, serviceBody: Body(byService)).ConfigureAwait(false);
+            _logger.Info($"[Reclaimerr] {actingUser ?? "an administrator"} {(approve ? "approved" : "denied")} deletion request {requestId}{(day != null ? $" for {at:yyyy-MM-dd}" : string.Empty)}.");
+            // An approval on a day (or after a grace period) puts the title on the Leaving soon list and its tags: read that now, like Mark, Keep and Postpone do.
+            if (approve) await RefreshAfterAsync(config, token).ConfigureAwait(false);
         }
 
         /// <summary>Permissions an administrator may hand to the accounts created for Jellyfin users (never <c>manage_users</c>).</summary>
@@ -610,6 +702,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             return ReclaimerrSession.HasAccount(config) ? null : jellyfinName;
         }
 
+        /// <summary>
+        /// The Jellyfin name of a Reclaimerr account (the other way round from <see cref="ResolveUserAsync"/>, upstream 1de354c0): the
+        /// configured mapping, else the Jellyfin login Reclaimerr linked that account to (it knows a person who signed in with Jellyfin
+        /// as, say, <c>ATM_user</c>). Null when neither says.
+        /// </summary>
+        public async Task<string?> JellyfinNameOfAsync(PluginConfiguration config, string reclaimerrUser, CancellationToken token)
+        {
+            if (string.IsNullOrWhiteSpace(reclaimerrUser)) return null;
+            if (ReclaimerrSession.MappedJellyfinUser(config, reclaimerrUser) is { } mapped) return mapped;
+            if (!ReclaimerrSession.HasAccount(config)) return null;
+            var cached = _identities;
+            if (cached is not { } c || DateTimeOffset.UtcNow - c.At > IdentityTtl)
+            {
+                try { _identities = (DateTimeOffset.UtcNow, await ReadIdentitiesAsync(config, token).ConfigureAwait(false)); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { _logger.Warning($"[Reclaimerr] Could not read the linked Jellyfin users ({MaintainerrHttp.Describe(ex)})."); }
+            }
+
+            if (_identities is { } fresh)
+            {
+                foreach (var pair in fresh.ByJellyfinName)
+                    if (string.Equals(pair.Value, reclaimerrUser, StringComparison.OrdinalIgnoreCase)) return pair.Key;
+            }
+
+            return null;
+        }
+
         /// <summary>Jellyfin username (lower case) to the Reclaimerr username its linked account has.</summary>
         private async Task<Dictionary<string, string>> ReadIdentitiesAsync(PluginConfiguration config, CancellationToken token)
         {
@@ -684,11 +802,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
 
         private async Task<MaintainerrItemState> AfterAsync(BaseItem item, PluginConfiguration config, CancellationToken token)
         {
-            // The facts are read again now (the answer needs them); stamping the tag cache happens in the background.
+            await RefreshAfterAsync(config, token).ConfigureAwait(false);
+            return State(item, config);
+        }
+
+        /// <summary>The Leaving soon facts are read again now (the answer needs them); stamping the tag cache happens in the background.</summary>
+        private async Task RefreshAfterAsync(PluginConfiguration config, CancellationToken token)
+        {
             try { await _leaving.RefreshAsync(config, force: true, token).ConfigureAwait(false); }
             catch (Exception ex) when (ex is not OperationCanceledException) { _logger.Warning($"[Reclaimerr] The refresh after an action failed: {ex.Message}"); }
             _cache.QueueLeavingPublish();
-            return State(item, config);
         }
     }
 }

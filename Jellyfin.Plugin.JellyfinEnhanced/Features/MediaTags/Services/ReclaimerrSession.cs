@@ -52,6 +52,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             return null;
         }
 
+        /// <summary>
+        /// The Jellyfin name the mapping lists for a Reclaimerr username (<c>ATM = ATM_user</c>: ATM for ATM_user), or null when it
+        /// does not list it (upstream 1de354c0).
+        /// </summary>
+        internal static string? MappedJellyfinUser(PluginConfiguration config, string reclaimerrUser)
+        {
+            foreach (var line in (config.ReclaimerrUserMap ?? string.Empty).Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var cut = line.IndexOf('=');
+                if (cut <= 0) continue;
+                if (string.Equals(line[(cut + 1)..].Trim(), reclaimerrUser, StringComparison.OrdinalIgnoreCase) && line[..cut].Trim() is { Length: > 0 } jellyfin) return jellyfin;
+            }
+
+            return null;
+        }
+
         /// <summary>Whether acting as the Jellyfin user is on.</summary>
         internal static bool ActsAsUser(PluginConfiguration? config) => config != null && config.ReclaimerrActAsUser && !string.IsNullOrWhiteSpace(config.ReclaimerrUserHeader);
 

@@ -374,7 +374,7 @@ public sealed class LeavingSoonTests : IDisposable
         var row = new ReclaimerrRequestRow(7, "12th Fail", 2023, "movie", "sam_user", "why", "pending", "2026-11-16T10:00:00Z", null);
         using var doc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(row));
         var names = doc.RootElement.EnumerateObject().Select(p => p.Name).ToArray();
-        Assert.Equal(new[] { "id", "title", "year", "mediaType", "requestedBy", "reason", "status", "createdAt", "reviewedBy", "mediaId", "posterPath", "scope", "seasonNumber", "episodeNumber", "versionResolution", "versionSize", "adminNotes", "executionError", "deferred" }, names);
+        Assert.Equal(new[] { "id", "title", "year", "mediaType", "requestedBy", "reason", "status", "createdAt", "reviewedBy", "mediaId", "posterPath", "scope", "seasonNumber", "episodeNumber", "versionResolution", "versionSize", "adminNotes", "executionError", "deferred", "scheduledAt", "scheduleState" }, names);
     }
 
     [Fact]

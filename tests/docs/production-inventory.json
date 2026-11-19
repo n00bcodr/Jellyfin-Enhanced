@@ -10906,6 +10906,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/MatroskaLanguageCache.cs"
     },
     {
+      "literal": "/openapi.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/ReclaimerrActions.cs"
+    },
+    {
       "literal": "settings.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/TagCache/TagCacheLogos.cs"
     },
@@ -11351,7 +11355,7 @@
     "files": 568,
     "routes": 228,
     "configuration_properties": 793,
-    "storage_references": 98,
+    "storage_references": 99,
     "scheduled_tasks": 17,
     "locales": 33
   }

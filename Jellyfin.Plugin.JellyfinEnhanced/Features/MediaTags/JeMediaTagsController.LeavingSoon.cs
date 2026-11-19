@@ -29,7 +29,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
 
         /// <summary>
         /// What is leaving, soonest first (undated last): <c>{provider, admin, canRequest, actions, items[], requests[], mine[],
-        /// requestsUnavailable}</c>. Items the user cannot see are left out; each says what leaving frees (<c>size</c>).
+        /// requestsUnavailable, canSchedule, graceDays}</c>. Items the user cannot see are left out; each says what leaving frees
+        /// (<c>size</c>). <c>canSchedule</c> says whether an approval can be given a day (administrators, with a Reclaimerr that can
+        /// schedule), <c>graceDays</c> the delay Reclaimerr gives one that names no day (null when unknown).
         /// </summary>
         /// <param name="leaving">The Leaving soon facts.</param>
         /// <param name="reclaimerr">The Reclaimerr actions (deletion requests).</param>
@@ -61,6 +63,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
             IReadOnlyList<LeavingSoonRequestDto> requests = Array.Empty<LeavingSoonRequestDto>();
             IReadOnlyList<LeavingSoonRequestDto> mine = Array.Empty<LeavingSoonRequestDto>();
             var requestsUnavailable = false;
+            var canSchedule = false;
+            int? graceDays = null;
             if (usesReclaimerr && ReclaimerrActions.Enabled(config))
             {
                 // Both lists are read at once under one short budget: a slow Reclaimerr leaves them short instead of holding the
@@ -78,6 +82,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
 
                 var pendingTask = admin ? Load(true) : Task.FromResult<IReadOnlyList<LeavingSoonRequestDto>>(Array.Empty<LeavingSoonRequestDto>());
                 var mineTask = Load(false);
+                // Whether an approval can be given a day, and the delay one gets when none is named, so the page can say what
+                // "Reclaimerr's grace period" means (upstream 1de354c0). Only asked for administrators, who are the ones who
+                // approve, and while the two lists are read (upstream asks first, which spends the lists' budget). Unknown is
+                // "cannot": the page then offers the approval it always had.
+                if (admin)
+                {
+                    try
+                    {
+                        canSchedule = await reclaimerr.SchedulingSupportedAsync(config, budget.Token).ConfigureAwait(false);
+                        if (canSchedule) graceDays = await reclaimerr.GracePeriodDaysAsync(config, budget.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                    {
+                        canSchedule = false;
+                        graceDays = null;
+                    }
+                }
+
                 requests = await pendingTask.ConfigureAwait(false);
                 mine = await mineTask.ConfigureAwait(false);
             }
@@ -92,6 +114,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                 requests,
                 mine,
                 requestsUnavailable,
+                canSchedule,
+                graceDays,
             });
         }
 
@@ -161,13 +185,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                 }
 
                 var (person, note) = ParseLeavingSoonReason(r.Reason);
-                // Filed straight in Reclaimerr (no "Requested by NAME from Jellyfin" text): a Jellyfin user of the same name is the person.
-                var jellyfinUser = person != null ? _userManager.GetUserByName(person) : (string.IsNullOrWhiteSpace(r.RequestedBy) ? null : _userManager.GetUserByName(r.RequestedBy));
+                // Filed straight in Reclaimerr (no "Requested by NAME from Jellyfin" text): a Jellyfin user of the same name is the
+                // person, else the one the mapping or Reclaimerr's link names for that account (upstream 1de354c0: Reclaimerr may
+                // know them as, say, ATM_user).
+                var jellyfinUser = person != null ? _userManager.GetUserByName(person) : null;
+                if (person == null && !string.IsNullOrWhiteSpace(r.RequestedBy))
+                {
+                    jellyfinUser = _userManager.GetUserByName(r.RequestedBy);
+                    if (jellyfinUser == null && await JellyfinNameOfAsync(reclaimerr, config, r.RequestedBy, budget, token).ConfigureAwait(false) is { } named) jellyfinUser = _userManager.GetUserByName(named);
+                }
+
                 list.Add(new LeavingSoonRequestDto(r.Id, r.Title, r.Year, r.MediaType, r.Status, r.CreatedAt, r.RequestedBy, note, jellyfinUser?.Username ?? person, jellyfinUser?.Id.ToString("N"), itemId, r.PosterPath,
-                    r.Scope, r.SeasonNumber, r.EpisodeNumber, r.VersionResolution, r.VersionSize, r.AdminNotes, r.ExecutionError, r.Deferred));
+                    r.Scope, r.SeasonNumber, r.EpisodeNumber, r.VersionResolution, r.VersionSize, r.AdminNotes, r.ExecutionError, r.Deferred, r.ScheduledAt, r.ScheduleState));
             }
 
             return list;
+        }
+
+        /// <summary>The Jellyfin name of a Reclaimerr account, read under <paramref name="budget"/>; null when it runs out of it.</summary>
+        private static async Task<string?> JellyfinNameOfAsync(ReclaimerrActions reclaimerr, PluginConfiguration config, string reclaimerrUser, CancellationToken budget, CancellationToken token)
+        {
+            try { return await reclaimerr.JellyfinNameOfAsync(config, reclaimerrUser, budget).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested) { return null; }
         }
 
         /// <summary>The size of the one version of a movie that is leaving, from Reclaimerr (it alone knows which copy); a slow answer is skipped.</summary>

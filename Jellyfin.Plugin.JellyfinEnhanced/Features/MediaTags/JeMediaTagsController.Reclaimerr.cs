@@ -225,7 +225,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
             if (config == null || !config.LeavingSoonPageEnabled || !ReclaimerrActions.Enabled(config)) return NotFound();
             try
             {
-                await reclaimerr.ReviewRequestAsync(requestId, approve, body?.Note, CallerName(), config, token).ConfigureAwait(false);
+                // When an approval is deleted (upstream 1de354c0): Reclaimerr's grace period unless the body asks for now or a day.
+                var timing = body?.When?.ToLowerInvariant() switch
+                {
+                    "now" => ReclaimerrActions.ApprovalTiming.Now,
+                    "date" => ReclaimerrActions.ApprovalTiming.OnDate,
+                    _ => ReclaimerrActions.ApprovalTiming.GracePeriod,
+                };
+                await reclaimerr.ReviewRequestAsync(requestId, approve, body?.Note, CallerName(), config, token, timing, body?.Date).ConfigureAwait(false);
                 return Ok(new { id = requestId, approved = approve });
             }
             catch (MaintainerrActions.ActionException ex)

@@ -3195,6 +3195,49 @@
       ],
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p95-*",
       "notes": "Re-implemented in the media-tags feature: upstream's askOnPage is in client/src/features/media-tags/admin/admin-tags.ts and goes to page.ts as its askConfirm dependency, so every confirmation the tab asks through confirmAction (ctx.confirm: Apply defaults to all users, Rebuild cache, Reset all colours, the import, preset removal, Clear all browser caches) uses JEAdmin.confirm. JEAdmin is read through a new pageDialogs() accessor in the tab's host surface (admin/host.ts), typed with its confirm only. As upstream: the question goes to JEAdmin.confirm as text, the way the page's other confirmations pass theirs (that dialog escapes it except the few formatting tags it allows, and turns line breaks into <br>), an answer that throws or rejects counts as No, Jellyfin's dialog is used only when JEAdmin.confirm is missing, and the prompt after leaving the page with unsaved edits (leaveWithPending) still asks with Jellyfin's dialog. Upstream's test applies as is in tests/frontend/features/media-tags/admin/features-admin-config-media-tags-tab.test.mjs."
+    },
+    {
+      "sha": "1de354c008150774204b3abd034d05c4b714ea50",
+      "date": "2026-11-19T17:08:31+00:00",
+      "subject": "feat(reclaimerr): approve a deletion request for later, with Reclaimerr's grace period, now, or a chosen day",
+      "class": "feature",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 14,
+        "insertions": 634,
+        "deletions": 30
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrActions.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrSession.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/extras/leavingsoon-page.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json",
+        "docs/advanced/api.md",
+        "docs/enhanced/enhanced-features.md",
+        "docs/enhanced/enhanced-settings.md",
+        "docs/enhanced/tags-status.md",
+        "tests/backend/Integrations/IntegrationReclaimerrApprovalTimingTests.cs",
+        "tests/backend/PosterTags/LeavingSoonTests.cs",
+        "tests/docs/production-inventory.json",
+        "tests/frontend/features/features-leavingsoon-approval-timing.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "6d5dfdc5e1ec7bdf54412929b98658fb5a246383"
+      ],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/extras/leavingsoon-page.js"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p96-*",
+      "notes": "Re-implemented in the media-tags feature. Server: upstream's hunks in Features/MediaTags/Services/ReclaimerrActions.cs (ApprovalTiming, SchedulingSupportedAsync over Reclaimerr's /openapi.json, GracePeriodDaysAsync, ReviewRequestAsync with timing and the refresh after an approval, JellyfinNameOfAsync, scheduled_at and schedule_state read into the request rows, approved requests whose schedule failed or is blocked kept in view) and ReclaimerrSession.cs (MappedJellyfinUser); the routes are partials of the feature's one controller: canSchedule and graceDays in JeMediaTagsController.LeavingSoon.cs (GetLeavingSoonList) and when/date in JeMediaTagsController.Reclaimerr.cs (ReviewReclaimerrRequest); ReclaimerrReviewRequest gains when and date and LeavingSoonRequestDto scheduledAt and scheduleState in Features/MediaTags/Models/ReclaimerrRequests.cs. Client: client/src/features/media-tags/leaving-soon/leaving-soon-page.ts (shipped in tags/tag-item-menu.js): the list's canSchedule and graceDays, the approve step's choice of when with the date picker and its warnings, the native popups painted from the theme (paintPopups), the day an approved request is deleted, and a failed or blocked schedule shown as a failed deletion. Docs and the five new en.json strings apply as is. Differences from upstream: (1) the scheduling answer (10 minutes) and the grace period (1 minute) are kept per Reclaimerr address; upstream keeps one answer whatever the address, so within ten minutes of pointing the plugin at an older Reclaimerr a picked day is sent to one that ignores it and deletes at once (filed as a found bug). (2) The list asks whether Reclaimerr can schedule while it reads the two request lists, under the same budget; upstream asks first, which spends the lists' budget. (3) The review keeps this tree's service-account note (the administrator named when the service account sends the review), and the day goes in both bodies. (4) The person lookup for a request filed in Reclaimerr runs under the list's budget like the title lookups: one that runs out of it leaves that card without its person instead of dropping the list (upstream's catch does not apply when its budget is the token it tests, the same fault as the title lookups, already filed). Tests: upstream's IntegrationReclaimerrApprovalTimingTests in tests/backend/Features/MediaTags/ (this tree's namespaces), plus one for the per-address answer and three through the list and approve routes; upstream's row-name change in tests/backend/Features/MediaTags/PosterTags/LeavingSoonTests.cs; upstream's frontend test in tests/frontend/features/media-tags/ loading tags/tag-item-menu.js. tests/docs/production-inventory.json regenerated (the /openapi.json literal). No route, verb, authorization or registration changes."
     }
   ]
 }
