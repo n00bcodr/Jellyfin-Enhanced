@@ -3088,6 +3088,85 @@
       ],
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p93-*",
       "notes": "Re-implemented in the media-tags feature: upstream's LeavingSoonController is the partial JeMediaTagsController.LeavingSoon.cs here (GetLeavingSoonList, DescribeRequestsAsync, DescribeLeaving), its Services/ReclaimerrActions.cs is Features/MediaTags/Services/ReclaimerrActions.cs (upstream's hunk applies there as is: the row's eight new fields, VersionSizeAsync with its 30-minute in-memory cache, Parse made internal, approved requests that failed or wait for playback kept in the administrator's list, a user's own requests from the service account's list only on rows it filed), LeavingSoonRequestDto is in Features/MediaTags/Models/ReclaimerrRequests.cs, and extras/leavingsoon-page.js is client/src/features/media-tags/leaving-soon/leaving-soon-page.ts with leaving-soon-page.css (upstream's new stylesheet byte for byte), shipped in js/tags/tag-item-menu.js; en.json's nine strings as is. Server, as upstream: each leaving item carries size (a movie's file, a series' episode files from the library, or for one version of a movie the size Reclaimerr gives under a 4-second budget), the list answer carries requestsUnavailable, title lookups run once per title and in parallel, and a review the service account files names the administrator in the note. Client, as upstream: the Requests page's card layout, the leave date ('Leaves on 24 Nov 2026') and size, request dates as the Requests page words them (its own requests_*_ago strings), the scope badge (season, episode, one version), the state chip on every request card (failed, held back), the error line, Approve and Deny only on pending requests, a confirm that names the scope and takes an optional note, and the notice when the requests could not be read. Differences from upstream, each with a test that fails on upstream's version: (1) the attribution is decided by the call actually sent (SessionAsync's serviceBody): upstream decides before sending, so a mapped administrator whom Reclaimerr refuses, and whose review the service account then files, went out anonymous; (2) a requester reads the administrator's note without only the '(Approved by NAME in Jellyfin)' suffix: upstream hides every note ending ' in Jellyfin' or ' in Jellyfin)', which includes every note that carries the suffix, so a note typed in the confirm never reached the requester when the service account filed it; (3) a request's poster takes a full address only on https://image.tmdb.org/ (the host the page already used for a path): upstream uses any http(s) address Reclaimerr names, a new host for the browser (REVIEW.md 1); (4) title lookups that run out of the list budget only cost their cards the Jellyfin link: upstream's lookups failed with the shared budget's cancellation, which dropped every request with them although its commit says otherwise. The 8-second budget is ReclaimerrActions.ListBudget (settable by tests, as its Timeout is). Tests: upstream's three files at this tree's folders (tests/backend/Features/MediaTags/PosterTags/ReclaimerrRequestRowTests.cs; tests/backend/Features/MediaTags/IntegrationReclaimerrVersionSizeTests.cs, which also disposes the tag caches it creates; tests/frontend/features/media-tags/features-leavingsoon-request-cards.test.mjs over tags/tag-item-menu.js) and its LeavingSoonTests name list. Added here: four route-level tests in IntegrationReclaimerrActionsTests (failed and held-back approved requests with their scope, and only the service account's rows for a user; the review note, refused administrator included; the sizes; the budget, with the loopback server now answering a delayed request on its own), all failing before the port; two client tests for differences 2 and 3, failing before; the one-version test reads the new badge and year; the translation-coverage test lists the Requests page's four 'ago' strings as shared. On the lab (Jellyfin 12.4, Maintainerr through the Sonarr mock, p93-leaving.setup.py) upstream's build of 40738412 and the port draw the same cards (three columns, a row each with an 80x120 poster, 'Leaves on 24 Nov 2026 · 26.7 GB' and 'Leaves on 01 Dec 2026 · 4.1 GB'); this tree before drew six columns of poster-over-title cards without size. Request cards could not be shown live (no Reclaimerr in the lab): tests only. Filed as a found bug (also upstream, and before this port): a Reclaimerr read that fails rather than times out still answers requests [] with requestsUnavailable false, so the page shows no requests and no notice (p93-reclaimerr-unreachable.port.txt). No route, verb, authorization or registration changes; no setting, stored shape or cached-output version changes (the version-size cache is in memory). Outbound: as upstream, the server reads Reclaimerr's scheduled deletions, a candidate, the movie search and the approved requests through the existing guarded client; nothing new reaches the browser."
+    },
+    {
+      "sha": "abcaa16d21dc3a02b2f524b8b7565360c8d6878e",
+      "date": "2026-11-19T14:02:40+00:00",
+      "subject": "perf: lighter Home screen with lazy feature bundles and cheaper tags (#1088)",
+      "class": "performance",
+      "features": [
+        "platform",
+        "media-tags",
+        "chrome",
+        "shared",
+        "player",
+        "bookmarks"
+      ],
+      "issues": [
+        "#1088"
+      ],
+      "release": null,
+      "size": {
+        "files": 58,
+        "insertions": 12595,
+        "deletions": 336
+      },
+      "paths": [
+        "CONTRIBUTING.md",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientScriptBundle.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/component-groups.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/dom-observer.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-layout.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-renderer-base.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/events.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/header-actions.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/helpers.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/pausescreen.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-tag-preview.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/others/splashscreen.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/ (8 files)",
+        "docs/advanced/admin-media-tags.md",
+        "docs/advanced/api.md",
+        "docs/advanced/css-customization.md",
+        "docs/advanced/project-structure.md",
+        "docs/enhanced/tags-server.md",
+        "docs/installation/troubleshooting.md",
+        "scripts/bundle-budgets.json",
+        "scripts/bundle-budgets.mjs",
+        "tests/backend/Api/ApiAssetTests.cs",
+        "tests/backend/Api/ApiBundleGroupTests.cs",
+        "tests/browser/tag-edge-scale.spec.cjs",
+        "tests/browser/tag-fit-monotonic.spec.cjs",
+        "tests/browser/tag-hidden-refit.spec.cjs",
+        "tests/browser/tag-whole-pixels.spec.cjs",
+        "tests/docs/production-inventory.json",
+        "tests/frontend/bootstrap/bootstrap-bundle-budget.test.mjs",
+        "tests/frontend/bootstrap/bootstrap-groups.test.mjs",
+        "tests/frontend/bootstrap/bootstrap-header.test.mjs",
+        "tests/frontend/bootstrap/bootstrap-loader-groups.test.mjs",
+        "tests/frontend/core/ (7 files)",
+        "tests/frontend/features/features-pause.test.mjs",
+        "tests/frontend/features/features-quality-display.test.mjs",
+        "tests/frontend/features/features-splash-screen.test.mjs",
+        "tests/frontend/features/features-status-tag-backdrop.test.mjs",
+        "tests/frontend/features/features-status-tags-leaving.test.mjs",
+        "tests/frontend/features/features-status-tags-vocabulary.test.mjs",
+        "tests/frontend/helpers/bundle-budget.mjs",
+        "tests/frontend/helpers/eval-reads.mjs",
+        "tests/frontend/helpers/loader-harness.mjs"
+      ],
+      "status": "deferred",
+      "rewriteCommits": [],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/component-groups.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json"
+      ],
+      "reason": "Upstream's headline change, component modules loaded in groups and on demand (plugin.js's group loader, js/component-groups.json, Services/ClientScriptBundle.cs serving any set of groups, the bootstrap's ComponentGroups), needs two things this tree freezes and an unattended sync may not change. (1) Two existing contract lines: the optional `g` query parameter on GET bundle.js and GET bundle.js.map turns their route-auth.snapshot.json lines from \"parameters\":[] into \"parameters\":[\"g:Query\"] (recorded with upstream's two signatures applied: step-logs/upstream-sync-evidence/p94-contract-tests.txt). (2) The pinned js/component-scripts.json and client/entries output keys, which gate FE G compares with restructure-base: upstream adds tags/status-tag-backdrop.js (the painted status-tag backdrop, fetched as its own group when the first status tag is drawn) as a module of its own, and its group split is written over upstream's module list, not this tree's. The commit squashes about 45 changes; the rest (resting flow layout and whole-pixel nudges for tag hosts, cheaper status direct-play and schedule observers, tag pipeline, tag cache and DOM observer work, header, splash and pause-screen listeners) needs neither, but several of its parts assume the loader (the painter's request, the window.JE alias, player functions optional until the player group has loaded, the item editor fetching the settings group, the bundle budgets and loader tests), so the commit is left whole rather than split by guesswork. Nothing of it is ported yet.",
+      "needs": "A maintainer's decision on how lazy loading takes shape in this tree: accept the two changed bundle.js and bundle.js.map lines and a component-scripts.json/client-entries addition for the painter (a later run then ports the whole commit, those lines in its last commit for review), or name another shape (an added route for group bundles, or group bundles built as outputs of their own), or split the entry: port now what needs neither (the list is in step-logs/upstream-sync-2026-11-19-2210.md) and keep the loader and the painter deferred."
     }
   ]
 }
