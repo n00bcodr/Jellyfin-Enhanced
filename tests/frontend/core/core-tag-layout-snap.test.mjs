@@ -374,6 +374,35 @@ test('an image that loads in a tag, or a font that arrives, gives containers oth
   assert.deepEqual(h.snap('rating'), [px(nudge(151.6)), px(nudge(250.35))]);
 });
 
+for (const vendor of ['Google Inc.', '']) test(`a font that arrives has the cards that are fitted fitted again${vendor ? '' : ' (in Firefox too, where nothing is nudged)'}`, async t => {
+  // An icon is a word until its font has come, several times as wide: a card fitted before that hid a chip there is
+  // room for, behind a "+1". Nothing else would fit the card again.
+  let fontsLoaded = null;
+  const timers = handTimers();
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1 }, vendor, globals: timers.globals });
+  h.document.fonts = { addEventListener: (type, fn) => { if (type === 'loadingdone') fontsLoaded = fn; } };
+  h.show();
+  await h.apply({ tagLayout: 'caption', tagEdgeSpacing: 'default' });
+  h.render();
+  h.add('status');
+  h.settle();
+  timers.due(120);
+  h.settle();
+  assert.equal(typeof fontsLoaded, 'function', 'fonts are heard of once a card is fitted');
+  const nudged = () => [...h.host.querySelectorAll('.je-tag-slot > [data-je-group]')].filter(el => el.style.getPropertyValue('--je-snap-x') || el.style.getPropertyValue('--je-snap-y')).length;
+  assert.equal(nudged() > 0, vendor === 'Google Inc.');
+  // The fitting pass starts by reading each card's height.
+  const fits = [];
+  Object.defineProperty(h.window.HTMLElement.prototype, 'clientHeight', { configurable: true, get() { if (this === h.host) fits.push(nudged()); return this === h.host ? h.state.host[1] : 0; } });
+  fontsLoaded();
+  h.settle();
+  timers.due(120);
+  h.settle();
+  assert.ok(fits.length > 0, 'the card was fitted again');
+  assert.deepEqual(fits.filter(Boolean), [], 'with no nudge on, as any fit');
+  assert.equal(nudged() > 0, vendor === 'Google Inc.', 'and it is back on its pixels after it');
+});
+
 test('a scroll reads no layout, and neither a scroll nor the pointer nor focus has a card measured again', t => {
   const h = setup(t);
   h.show();

@@ -2783,17 +2783,39 @@
                 if (pendingSnap.size) scheduleSnapPass();
             });
             scaleObserver.observe(document.documentElement, { box: 'device-pixel-content-box' });
-            // A font that arrives late gives chips other widths, and with them every right-aligned container another corner.
-            document.fonts?.addEventListener?.('loadingdone', () => {
-                for (const el of document.querySelectorAll('.je-tag-host')) {
-                    const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
-                    if (ctrl && ctrl.layout) snapAgain(ctrl);
-                }
-            });
+            watchFonts();
         } catch {
             scaleObserver = null;
             snapSupport = false;
         }
+    }
+
+    /** Whether fonts arriving are heard (watchFonts). */
+    let fontsWatched = false;
+
+    /**
+     * A font that arrives after tags were drawn gives chips other widths:
+     * an icon is a word until its font has come, several times as wide. A
+     * card fitted before that hid chips there is room for (a "+1" where the
+     * chip fits), and nothing else would fit it again; and every
+     * right-aligned container has another corner. So when fonts have
+     * finished loading, the cards that are fitted are fitted again, and the
+     * others measured again for their whole pixels.
+     */
+    function watchFonts() {
+        if (fontsWatched) return;
+        fontsWatched = true;
+        try {
+            document.fonts?.addEventListener?.('loadingdone', () => {
+                for (const el of document.querySelectorAll('.je-tag-host')) {
+                    const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
+                    if (!ctrl || !ctrl.layout) continue;
+                    // (A card that is fitted is measured after its fit; scheduleFit takes its nudges off for it.)
+                    scheduleFit(ctrl);
+                    if (!pendingFit.has(ctrl) && snapSupported()) snapAgain(ctrl);
+                }
+            });
+        } catch { /* no font loading to hear of */ }
     }
 
     /**
@@ -3698,6 +3720,7 @@
      */
     function scheduleFit(ctrl) {
         if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || centreSlots(ctrl).length || cornerLanguageGroups(ctrl).length || indicatorGapsToMeasure(ctrl) || needsShape(ctrl) || needsRadius(ctrl))) return;
+        watchFonts();
         pendingFit.add(ctrl);
         // The pass measures the layout as it is without the whole-pixel nudges, which are worked out again after it.
         unsnap(ctrl);
