@@ -580,8 +580,8 @@ test('with the real manifest and groups file, boot loads exactly the needed grou
   assert.equal(new Set(modulesRun(boot.log)).size, modulesRun(boot.log).length, 'no module ran twice');
 });
 
-test('window.JE names the plugin once boot is complete whenever Bookmarks is enabled, with no group loaded for it', async t => {
-  // The Bookmarks library view used to set this alias on every page, once JE was ready; scripts outside JE use it.
+test('window.JE names the plugin once the component scripts have run whenever Bookmarks is enabled, with no group loaded for it', async t => {
+  // The Bookmarks library view used to set this alias on every page, as soon as the component scripts had run; scripts outside JE use it.
   const manifest = manifestModules();
   const groups = rawGroups();
   const boot = bootLoader(t, { manifest, groups, real: TAB_MODULES, publicConfig: { BookmarksEnabled: true, BookmarksUseNativeTab: true } });
@@ -602,9 +602,15 @@ test('window.JE names the plugin once boot is complete whenever Bookmarks is ena
   taken.window.JE = { theirs: true };
   await taken.booted();
   assert.equal(taken.window.JE.theirs, true);
-  // And without one, the same small world gets the alias.
-  const small = basic(t, { publicConfig: { HiddenContentEnabled: true, BookmarksEnabled: true } });
-  await small.booted();
+  // And without one, the same small world gets the alias: after the last component script, before any feature
+  // starts (so it is there while features initialize, and stays there if one of them stops the boot).
+  const seen = [];
+  const small = basic(t, { publicConfig: { HiddenContentEnabled: true, BookmarksEnabled: true }, modules: { ...BASIC_MODULES,
+    'fake/hidden-content-1.js': (JE) => { seen.push(['script', typeof small.window.JE]); JE.initializeHiddenContent = () => { seen.push(['init', small.window.JE === JE]); throw new Error('a feature that fails'); }; } },
+    expectedConsoleErrors: [/a feature that fails/] });
+  await small.booted().catch(() => {});
+  await flush(small.window);
+  assert.deepEqual(seen, [['script', 'undefined'], ['init', true]]);
   assert.equal(small.window.JE, small.window.JellyfinEnhanced);
 });
 

@@ -2054,8 +2054,7 @@
             mismatchRetryCount++;
             if (mismatchRetryCount >= MAX_MISMATCH_RETRIES) {
                 console.warn('🪼 Jellyfin Enhanced: Server ID mismatch detected - stopping to allow re-authentication');
-                // (Not through window.JE: that alias exists only once boot has finished, and only with Bookmarks enabled.)
-                JE.hideSplashScreen?.();
+                window.JE?.hideSplashScreen?.();
                 return;
             }
             setTimeout(initialize, INIT_POLL_INTERVAL_MS);
@@ -2166,6 +2165,12 @@
             await ensureGroups(neededGroups(), { pace: 'boot', initialize: false });
             console.log('🪼 Jellyfin Enhanced: Component scripts loaded.');
 
+            // window.JE has named the plugin on every page whenever Bookmarks was enabled: the Bookmarks
+            // library view set it as soon as the component scripts had run, and scripts outside JE came to
+            // use it. That view loads on demand now, so the alias is set here, at the same point of the
+            // boot, with nothing loaded for it.
+            if (JE.pluginConfig?.BookmarksEnabled && !window.JE) window.JE = JE;
+
             // Wire user-switch detection → global reset → re-bootstrap.
             // Must happen after the component scripts so JE.session exists.
             registerSessionIntegration();
@@ -2239,11 +2244,6 @@
             // properties that appear mid-boot; for a feature that loads on demand,
             // await JE.loader.ensure([group]) or JE.loader.settled().
             JE.initialized = true;
-
-            // window.JE has named the plugin on every page whenever Bookmarks was enabled: the Bookmarks
-            // library view set it once JE was ready, and scripts outside JE came to use it. That view now
-            // loads on demand, so the alias is set here, with nothing loaded for it.
-            if (JE.pluginConfig?.BookmarksEnabled && !window.JE) window.JE = JE;
 
             // Final Stage: Hide splash screen
             if (typeof JE.hideSplashScreen === 'function') {
