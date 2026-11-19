@@ -1,4 +1,5 @@
 import type { BookmarkDocumentResponse, BootstrapResponse, RevisionedSettingsResponse } from '../contracts/generated';
+import type { ComponentGroupLoader, LoaderCore, LoaderHelpers } from './component-groups-host';
 
 export type JsonRecord = Record<string, unknown>;
 export type TranslationParams = Record<string, unknown>;
@@ -31,6 +32,8 @@ export interface LoaderSession {
 
 /** Settings the loader reads; every other field belongs to the settings feature. */
 export interface LoaderSettings {
+    /** The component-group rules read further switches by name (statusTagsDirectPlay, isAdmin). */
+    [setting: string]: unknown;
     displayLanguage?: string;
     qualityTagsEnabled?: boolean; genreTagsEnabled?: boolean; ratingTagsEnabled?: boolean;
     ageRatingTagsEnabled?: boolean; statusTagsEnabled?: boolean; awardsTagsEnabled?: boolean;
@@ -80,7 +83,7 @@ type FeatureInitializer = 'initializePluginRevisions' | 'initializeEnhancedScrip
  * only names the slots it reads or calls.
  */
 export interface LoaderNamespace extends Partial<Record<FeatureInitializer, Hook>> {
-    core: object;
+    core: LoaderCore;
     pluginConfig: JsonRecord;
     userConfig: UserConfigView;
     translations: Translations;
@@ -110,16 +113,16 @@ export interface LoaderNamespace extends Partial<Record<FeatureInitializer, Hook
     spoilerBlur?: { init?(): void };
     activeStreams?: { initialize?(): void };
     jellyseerrIssueReporter?: { initialize?(): void };
+    loader?: ComponentGroupLoader;
+    helpers?: LoaderHelpers;
+    nativeTabs?: { register?(id: string, title: string, render: (panel: HTMLElement) => void, icon?: string): void };
 }
 
-/** Bundle globals are written by Features/Platform/Services/ClientScriptBundle.cs. */
+/** (The bundle globals are host/component-groups-host.ts's.) */
 interface LoaderWindow extends Window {
     JellyfinEnhanced?: LoaderNamespace;
     ApiClient?: LoaderClient;
     __JE_BOOTSTRAP_CONTRACT__?: Partial<BootstrapValidator>;
-    __JE_BUNDLE_MODULES?: unknown;
-    __JE_BUNDLE_TOTAL?: unknown;
-    __JE_BUNDLE_PROGRESS?: number;
 }
 const loaderWindow = (): LoaderWindow => window;
 
@@ -144,22 +147,6 @@ export function readBootstrapValidator(): BootstrapValidator | null {
     if (typeof parseBootstrap !== 'function' || typeof parseSettingsDocument !== 'function'
         || typeof parseBookmarkDocument !== 'function') return null;
     return { parseBootstrap, parseSettingsDocument, parseBookmarkDocument };
-}
-
-export function resetBundleGlobals(): void {
-    const host = loaderWindow();
-    host.__JE_BUNDLE_PROGRESS = -1;
-    host.__JE_BUNDLE_MODULES = undefined;
-}
-/** Take the bundle's module list exactly once; the functions are single-use. */
-export function takeBundle(): { modules: unknown; total: unknown } {
-    const host = loaderWindow();
-    const bundle = { modules: host.__JE_BUNDLE_MODULES, total: host.__JE_BUNDLE_TOTAL };
-    delete host.__JE_BUNDLE_MODULES;
-    return bundle;
-}
-export function reportBundleProgress(count: number): void {
-    loaderWindow().__JE_BUNDLE_PROGRESS = count;
 }
 
 // ---- Standalone Plugin Pages ------------------------------------------------

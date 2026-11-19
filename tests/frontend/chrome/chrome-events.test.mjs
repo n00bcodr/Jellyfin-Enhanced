@@ -50,6 +50,38 @@ test('events: global and player shortcuts, typing guard, digits and the panel ke
   assert.deepEqual(h.calls.find(([name]) => name === 'jump'), ['jump', 70]);
 });
 
+// The bookmarks module loads with the player (the loader's "bookmarks" group) and may still be arriving just after
+// playback starts.
+test('events: the bookmark key pressed while the bookmarks group is still arriving opens the dialog once it has loaded', async t => {
+  const h = events(t, { config: { BookmarksEnabled: true } });
+  h.JE.state.activeShortcuts.BookmarkCurrentTime = 'B';
+  const asked = [];
+  let arrive;
+  h.JE.loader = { ensure: ids => { asked.push([...ids]); return new Promise(resolve => { arrive = resolve; }); } };
+  h.JE.initializeEnhancedScript();
+  assert.equal(h.key('b').defaultPrevented, true);
+  assert.deepEqual(asked, [['bookmarks']]);
+  assert.deepEqual(h.calls.filter(([name]) => name === 'bookmark'), [], 'nothing to open yet');
+  h.JE.bookmarks = { showModal: mode => h.calls.push(['bookmark', mode]) };
+  arrive();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(h.calls.filter(([name]) => name === 'bookmark'), [['bookmark', 'add']]);
+  // Loaded already: the dialog opens at once and nothing is asked for.
+  h.key('b');
+  assert.equal(asked.length, 1);
+  assert.equal(h.calls.filter(([name]) => name === 'bookmark').length, 2);
+});
+
+test('events: with Bookmarks off the bookmark key asks the loader for nothing', t => {
+  const h = events(t, { config: { BookmarksEnabled: false } });
+  h.JE.state.activeShortcuts.BookmarkCurrentTime = 'B';
+  const asked = [];
+  h.JE.loader = { ensure: ids => { asked.push([...ids]); return Promise.resolve(); } };
+  h.JE.initializeEnhancedScript();
+  h.key('b');
+  assert.deepEqual(asked, []);
+});
+
 test('events: Remove context is captured from the card menu only while the feature is enabled', t => {
   const h = events(t, { settings: { removeContinueWatchingEnabled: false } });
   h.JE.initializeEnhancedScript();

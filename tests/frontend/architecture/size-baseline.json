@@ -16,7 +16,7 @@
   "client/src/features/media-tags/types/language/media-language.ts": 903,
   "client/src/features/media-tags/types/people/peopletags.ts": 1123,
   "client/src/features/media-tags/types/quality/quality-rules.ts": 970,
-  "client/src/features/media-tags/types/status/statustags.ts": 1454,
+  "client/src/features/media-tags/types/status/statustags.ts": 1451,
   "client/src/features/seerr/discovery/controller.ts": 806,
   "client/src/features/settings-panel/ui-panel-settings.ts": 1007
 }

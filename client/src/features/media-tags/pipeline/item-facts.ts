@@ -74,6 +74,20 @@ export function createItemFacts(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
 
 
     /**
+     * Until when peekItemFacts answers for an item, as far as that is known ahead: Infinity
+     * while the server cache holds its entry (a replaced cache tells its renderers), the
+     * expiry of a fetched projection, 0 for none.
+     * @param id - Normalized item id.
+     * @returns Ms since the epoch, Infinity or 0.
+     */
+    function itemFactsExpiry(id: string): number {
+        if (s.serverCache?.get(id)) return Infinity;
+        const saved = s.itemFacts.get(id);
+        return saved && saved.expires > Date.now() ? saved.expires : 0;
+    }
+
+
+    /**
      * Warm parent facts through the confirmed server cache or the same filtered
      * /tag-data projection used for cards. Native parent DTOs lack these aggregates.
      * @param ids - Normalized parent ids.
@@ -110,5 +124,5 @@ export function createItemFacts(s: PipelineState, JE: TagRuntimeBridge, deps: Pi
         return id ? peekItemFacts(id) : null;
     }
 
-    return { advanceBatchGeneration, forgetItemFacts, rememberItemFacts, peekItemFacts, lookupItemFacts, peekSeasonFacts };
+    return { advanceBatchGeneration, forgetItemFacts, rememberItemFacts, peekItemFacts, itemFactsExpiry, lookupItemFacts, peekSeasonFacts };
 }

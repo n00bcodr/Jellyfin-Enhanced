@@ -27,21 +27,22 @@
   var export7 = /* @__PURE__ */ sharedExport(shared2, "lookupDetailsItem");
   var export11 = /* @__PURE__ */ sharedExport(shared2, "visibleDetailPage");
 
-  // client/generated-shared/stub/client/src/features/details-providers/links.ts
-  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/links");
-  var export22 = /* @__PURE__ */ sharedExport(shared3, "pathSegment");
+  // client/src/features/details-providers/links.ts
+  function pathSegment(id) {
+    return encodeURIComponent(id);
+  }
 
   // client/generated-shared/stub/client/src/features/details-providers/wire.ts
-  var shared4 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
-  var export02 = /* @__PURE__ */ sharedExport(shared4, "bool");
-  var export13 = /* @__PURE__ */ sharedExport(shared4, "decodeDetailsItem");
-  var export42 = /* @__PURE__ */ sharedExport(shared4, "errorShape");
-  var export52 = /* @__PURE__ */ sharedExport(shared4, "field");
-  var export72 = /* @__PURE__ */ sharedExport(shared4, "isRecord");
-  var export8 = /* @__PURE__ */ sharedExport(shared4, "list");
-  var export9 = /* @__PURE__ */ sharedExport(shared4, "num");
-  var export112 = /* @__PURE__ */ sharedExport(shared4, "str");
-  var export132 = /* @__PURE__ */ sharedExport(shared4, "text");
+  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
+  var export02 = /* @__PURE__ */ sharedExport(shared3, "bool");
+  var export13 = /* @__PURE__ */ sharedExport(shared3, "decodeDetailsItem");
+  var export42 = /* @__PURE__ */ sharedExport(shared3, "errorShape");
+  var export52 = /* @__PURE__ */ sharedExport(shared3, "field");
+  var export72 = /* @__PURE__ */ sharedExport(shared3, "isRecord");
+  var export8 = /* @__PURE__ */ sharedExport(shared3, "list");
+  var export9 = /* @__PURE__ */ sharedExport(shared3, "num");
+  var export112 = /* @__PURE__ */ sharedExport(shared3, "str");
+  var export132 = /* @__PURE__ */ sharedExport(shared3, "text");
 
   // client/src/features/details-providers/review-domain.ts
   function htmlToMarkdown(value) {
@@ -295,7 +296,7 @@ ${content}` : content,
     }
     function fetchReviews(tmdbId, mediaType) {
       const apiMediaType = mediaType === "Series" ? "tv" : "movie";
-      const id = export22(tmdbId);
+      const id = pathSegment(tmdbId);
       const path = `/${apiMediaType}/${id}/reviews?language=en-US&page=1`;
       const url = `${export0().getUrl(`/JellyfinEnhanced/tmdb/${apiMediaType}/${id}/reviews`)}?language=en-US&page=1`;
       return JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` }).then(decodeTmdbReviews).catch((error) => {
@@ -321,7 +322,7 @@ ${content}` : content,
       ]);
       return tmdb || anilist ? [...tmdb || [], ...anilist || []] : null;
     }
-    const keyPath = (tmdbKey) => tmdbKey.split(":").map(export22).join(":");
+    const keyPath = (tmdbKey) => tmdbKey.split(":").map(pathSegment).join(":");
     function fetchUserReviews(tmdbKey, mediaType) {
       return JE.core.api.plugin(`/reviews/${mediaType}/${keyPath(tmdbKey)}`).then(decodeUserReviews).catch((err) => {
         console.error(`${logPrefix} Failed to fetch user reviews.`, err);
@@ -342,7 +343,7 @@ ${content}` : content,
     async function adminDeleteUserReview(targetUserId, tmdbKey, mediaType) {
       const userIdN = (targetUserId || "").replace(/-/g, "");
       try {
-        await JE.core.api.plugin(`/reviews/admin/${export22(userIdN)}/${mediaType}/${keyPath(tmdbKey)}`, { method: "DELETE", skipRetry: true });
+        await JE.core.api.plugin(`/reviews/admin/${pathSegment(userIdN)}/${mediaType}/${keyPath(tmdbKey)}`, { method: "DELETE", skipRetry: true });
       } catch (e) {
         if (export42(e).status === 404) throw new Error("No matching review to delete (it may have already been removed).");
         throw e;
@@ -561,7 +562,7 @@ ${message}` : message);
       const content = review.content || "";
       const date = reviewDate(review.updatedAt) || reviewDate(review.createdAt);
       const ratingDisplay = review.rating ? `<span class="tmdb-review-rating je-user-review-rating">${renderUserStarRating(review.rating)}</span>` : "";
-      const avatarSrc = export0().getUrl(`/Users/${export22(review.userId)}/Images/Primary`) + "?width=48&quality=90";
+      const avatarSrc = export0().getUrl(`/Users/${pathSegment(review.userId)}/Images/Primary`) + "?width=48&quality=90";
       const isOwn = sameUser(review.userId, viewer.id);
       const showModerationDelete = !isOwn && viewer.isAdmin;
       const editTitle = tWithFallback("reviews_edit", "Edit");

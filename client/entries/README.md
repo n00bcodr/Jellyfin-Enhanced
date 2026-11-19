@@ -54,8 +54,12 @@ always match the folder of its sources:
 | `spoiler-guard.json` | `features/spoiler-guard/` |
 | `tag-rules.json`, `tag-runtime.json` | `features/media-tags/` (`pipeline/`, `layout/`, `editor/`, `types/<type>/`) |
 
-Moving a source edits only the right-hand side of its mapping. Never rename an
-output key or edit `js/component-scripts.json`.
+Moving a source edits only the right-hand side of its mapping. Never rename or
+remove an output key, and never edit `js/component-scripts.json` except to add a
+module listed in `scripts/component-outputs-approved.json`: an addition comes only
+from an upstream commit that adds a module, with the maintainer's approval, at
+upstream's place (gate FE G, `scripts/check-component-outputs.mjs`; AGENTS.md,
+"Shipped outputs").
 
 Run `npm run client:build`, then commit source, manifests, generated `.js` and
 `.js.map` files, and `client/generated-manifest.json` together. The build never

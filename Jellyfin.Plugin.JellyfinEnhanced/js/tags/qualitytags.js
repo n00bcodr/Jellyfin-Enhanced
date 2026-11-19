@@ -15,13 +15,13 @@
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
   var export0 = /* @__PURE__ */ sharedExport(shared, "apiClient");
   var export1 = /* @__PURE__ */ sharedExport(shared, "hasApiClient");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
   var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
   var export2 = /* @__PURE__ */ sharedExport(shared2, "finite");
-  var export42 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
-  var export5 = /* @__PURE__ */ sharedExport(shared2, "memberRecord");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export52 = /* @__PURE__ */ sharedExport(shared2, "memberRecord");
   var export6 = /* @__PURE__ */ sharedExport(shared2, "memberText");
   var export7 = /* @__PURE__ */ sharedExport(shared2, "members");
   var export9 = /* @__PURE__ */ sharedExport(shared2, "own");
@@ -537,19 +537,19 @@
             Source: version.Source,
             Edition: version.Edition
           } : {},
-          DistinctQualities: itemData?.DistinctQualities ? export7(itemData.DistinctQualities).map(export5).filter((q) => q.SourceId === versionId) : void 0
+          DistinctQualities: itemData?.DistinctQualities ? export7(itemData.DistinctQualities).map(export52).filter((q) => q.SourceId === versionId) : void 0
         };
       }
       const qualities = /* @__PURE__ */ new Set();
       let videoStreams = [];
       let audioStreams = [];
       if (mediaStreams) {
-        const streams = mediaStreams.map(export5);
+        const streams = mediaStreams.map(export52);
         videoStreams = streams.filter((s) => s.Type === "Video");
         audioStreams = streams.filter((s) => s.Type === "Audio");
       }
       if (mediaSources?.[0]?.MediaStreams) {
-        const sourceStreams = export7(mediaSources[0].MediaStreams).map(export5);
+        const sourceStreams = export7(mediaSources[0].MediaStreams).map(export52);
         videoStreams = videoStreams.concat(sourceStreams.filter((s) => s.Type === "Video"));
         audioStreams = audioStreams.concat(sourceStreams.filter((s) => s.Type === "Audio"));
       }
@@ -710,7 +710,7 @@
       }
       if (mediaSources) {
         for (const member of mediaSources) {
-          const source = export5(member);
+          const source = export52(member);
           const path = withoutReleaseGroup(String(source.Path || "")).toLowerCase();
           const has3D = /(?:^|[^a-z0-9])3d(?![a-z0-9])/.test(path);
           const has3DFormat = /(?:^|[^a-z0-9])(?:hsbs|fsbs|htab|ftab|mvc)(?![a-z0-9])/.test(path);
@@ -766,7 +766,7 @@
           if (!allValues(category)) continue;
           for (const label of qualities) if (categorize(label) === category) qualities.delete(label);
           const facts = category === "audio" && legacyAudio ? distinctQualities([], audioStreams) : distinct;
-          let values = facts.map(export5).filter((value) => value.Category === (category === "audio" ? "audioInfo" : category));
+          let values = facts.map(export52).filter((value) => value.Category === (category === "audio" ? "audioInfo" : category));
           if (category === "audio" && host.preferredAudioLanguage()) {
             const languages = new Set(audioStreams.map((stream) => stream.Language || null));
             values = values.filter((value) => languages.has(value.Language || null));
@@ -822,7 +822,7 @@
     function aggregateQualities(entry, representative) {
       const policy = aggregationPolicy();
       const summary = entry.QualitySummary;
-      if (entry.Type !== "Series" && entry.Type !== "Season" || !export42(summary) || policy === "representative") return representative;
+      if (entry.Type !== "Series" && entry.Type !== "Season" || !export4(summary) || policy === "representative") return representative;
       const categoryKeys = { resolution: "resolution", source: "source", dynamicRange: "dynamicRange", videoCodec: "videoCodec", audioInfo: "audio" };
       const qualities = (policy === "latest" ? export7(summary.LatestExtras) : representative.filter((label) => !Object.values(categoryKeys).includes(categorize(label) ?? ""))).map(export6).filter((label) => !label.startsWith("versions:"));
       const preferred = host.preferredAudioLanguage();
@@ -832,7 +832,7 @@
       const audio = preferred && typeof match === "function" ? (audioVariants.find(([language]) => match(language, preferred, { requireRegion: true })) || regionalFallbacks.find(([language]) => match(language, preferred)) || audioVariants.find(([language]) => !language.includes("-") && match(language, preferred)))?.[1] : null;
       let mixed = false;
       for (const [key, category] of Object.entries(export10(summary.Categories))) {
-        const facts = export5(key === "audioInfo" ? audio || (legacyFullAudio() ? summary.LegacyAudio : category) || {} : category);
+        const facts = export52(key === "audioInfo" ? audio || (legacyFullAudio() ? summary.LegacyAudio : category) || {} : category);
         const categoryKey = export9(categoryKeys, key) ?? "";
         const cat = CATEGORY_BY_KEY.get(categoryKey);
         if (allValues(categoryKey)) {
@@ -1094,7 +1094,7 @@
       return label;
     }
     function qualitiesFromCache(cached, itemId) {
-      if (!export42(cached) || !matchesCache(cached, itemId)) return null;
+      if (!export4(cached) || !matchesCache(cached, itemId)) return null;
       if (cached.aggregationPolicy === aggregationPolicy() && cached.aggregationCategories === aggregationCategoriesKey() || cached.type && cached.type !== "Series" && cached.type !== "Season") return export12(cached.qualities);
       if (!cached.qualitySummary) return null;
       return aggregateQualities({ Type: cached.type, QualitySummary: cached.qualitySummary }, export12(cached.representativeQualities));
@@ -1319,7 +1319,7 @@
   }
 
   // client/src/features/media-tags/types/quality/qualitytags-entry.ts
-  createQualityTags(export4());
+  createQualityTags(export5());
 })();
 })();
 //# sourceMappingURL=qualitytags.js.map

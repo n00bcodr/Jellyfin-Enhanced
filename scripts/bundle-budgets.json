@@ -1,0 +1,158 @@
+{
+  "description": "Budget for what a cold Home load downloads and runs under the component-group loader (client/src/bootstrap/loader/, built into js/plugin.js; js/component-groups.json); upstream abcaa16d's file, measured on this tree. Checked by tests/frontend/bootstrap/bootstrap-bundle-budget.test.mjs, which boots the real loader with the real manifest and groups file for each scenario and reads the groups it asks for before JE.initialized. Sizes are of the minified twins (min/js/) that GET /JellyfinEnhanced/bundle.js?g= serves. Per scenario: the exact list of groups, the module count, raw bytes (sum of the module files) and gzip bytes (level 9 of the module files concatenated in run order). Scenarios: allFeaturesOn (every user-facing feature on as on the performance-review lab, every poster tag type on, JE native Home tabs for the pages, administrator), defaults (PluginConfiguration.cs stock defaults, a user with no saved settings), tagsOnly (defaults plus the nine poster tag types). Also: core's raw bytes, allFeaturesOn's share of the whole manifest's raw bytes, and a ceiling for any one group other than core, tags, seerr and settings. HOW TO UPDATE: run `node scripts/bundle-budgets.mjs` to print today's numbers. When the group list of a scenario changes on purpose, copy it into measured.scenarios. To change a limit, add a history entry (date, change, measured, limits, reason) and copy its limits into `limits`: `limits` is always the last entry's. It is a ratchet: lowering a limit needs no reason; an entry that raises any limit must say why in `reason`. Headroom is about 3% over the measured value. (The whole bundle served without g has its own budget, client/bundle-budget.json.)",
+  "limits": {
+    "scenarios": {
+      "allFeaturesOn": {
+        "maxModules": 74,
+        "maxRawBytes": 1011000,
+        "maxGzipBytes": 292000
+      },
+      "defaults": {
+        "maxModules": 33,
+        "maxRawBytes": 402000,
+        "maxGzipBytes": 111000
+      },
+      "tagsOnly": {
+        "maxModules": 54,
+        "maxRawBytes": 884000,
+        "maxGzipBytes": 251000
+      }
+    },
+    "coreMaxRawBytes": 295000,
+    "allFeaturesOnMaxShareOfManifestRaw": 0.45,
+    "groupMaxRawBytes": 110000
+  },
+  "measured": {
+    "manifest": {
+      "modules": 183,
+      "rawBytes": 2735914,
+      "gzipBytes": 755386
+    },
+    "scenarios": {
+      "allFeaturesOn": {
+        "groups": [
+          "core",
+          "tags",
+          "tag-direct-play",
+          "tag-poster-colours",
+          "spoiler-guard",
+          "hidden-content",
+          "seerr-api",
+          "theme-selector",
+          "active-streams"
+        ],
+        "modules": 71,
+        "rawBytes": 980676,
+        "gzipBytes": 282663
+      },
+      "defaults": {
+        "groups": [
+          "core",
+          "bookmarks",
+          "bookmarks-library"
+        ],
+        "modules": 32,
+        "rawBytes": 389929,
+        "gzipBytes": 107318
+      },
+      "tagsOnly": {
+        "groups": [
+          "core",
+          "tags",
+          "bookmarks",
+          "bookmarks-library"
+        ],
+        "modules": 52,
+        "rawBytes": 857303,
+        "gzipBytes": 243501
+      }
+    },
+    "coreRawBytes": 286119,
+    "largestOtherGroup": {
+      "id": "player",
+      "rawBytes": 106759
+    },
+    "allFeaturesOnShareOfManifestRaw": 0.3584
+  },
+  "history": [
+    {
+      "date": "2026-11-20",
+      "change": "port of upstream abcaa16d (lazy feature bundles): component modules load in groups, on demand",
+      "measured": {
+        "manifest": {
+          "modules": 183,
+          "rawBytes": 2735914,
+          "gzipBytes": 755386
+        },
+        "scenarios": {
+          "allFeaturesOn": {
+            "groups": [
+              "core",
+              "tags",
+              "tag-direct-play",
+              "tag-poster-colours",
+              "spoiler-guard",
+              "hidden-content",
+              "seerr-api",
+              "theme-selector",
+              "active-streams"
+            ],
+            "modules": 71,
+            "rawBytes": 980676,
+            "gzipBytes": 282663
+          },
+          "defaults": {
+            "groups": [
+              "core",
+              "bookmarks",
+              "bookmarks-library"
+            ],
+            "modules": 32,
+            "rawBytes": 389929,
+            "gzipBytes": 107318
+          },
+          "tagsOnly": {
+            "groups": [
+              "core",
+              "tags",
+              "bookmarks",
+              "bookmarks-library"
+            ],
+            "modules": 52,
+            "rawBytes": 857303,
+            "gzipBytes": 243501
+          }
+        },
+        "coreRawBytes": 286119,
+        "largestOtherGroup": {
+          "id": "player",
+          "rawBytes": 106759
+        },
+        "allFeaturesOnShareOfManifestRaw": 0.3584
+      },
+      "limits": {
+        "scenarios": {
+          "allFeaturesOn": {
+            "maxModules": 74,
+            "maxRawBytes": 1011000,
+            "maxGzipBytes": 292000
+          },
+          "defaults": {
+            "maxModules": 33,
+            "maxRawBytes": 402000,
+            "maxGzipBytes": 111000
+          },
+          "tagsOnly": {
+            "maxModules": 54,
+            "maxRawBytes": 884000,
+            "maxGzipBytes": 251000
+          }
+        },
+        "coreMaxRawBytes": 295000,
+        "allFeaturesOnMaxShareOfManifestRaw": 0.45,
+        "groupMaxRawBytes": 110000
+      },
+      "reason": "First budget for this tree, by upstream's rule: today's measured values plus about 3% headroom (bytes rounded up to the next thousand, modules up to the next whole module); allFeaturesOn must stay at or below 45% of the manifest's raw bytes. The scenarios load the same groups and module counts as upstream's budget; the bytes differ because this tree serves minified twins and folds some of upstream's modules into others. Before the split every page downloaded and ran the whole manifest, 2,735,914 raw bytes / 183 modules (minified)."
+    }
+  ]
+}

@@ -1,13 +1,15 @@
 import { apiClient, hasApiClient, type TagRuntimeBridge } from '../../host';
 import { isRecord, own, record, records, stringList, type JsonRecord } from '../../pipeline/dto';
 import type { DirectPlayResult } from '../../pipeline/contract';
+import { createCardWatch } from './card-watch';
+import { askPlaybackInfo, REASONS } from './playback-request';
 import { baseOptions, browserFlags, flag, profileWindow, webProfile, withHostSettings, type DeviceProfile, type ProfileOptions } from './device-profile';
 
 /** One remembered answer: result (null when the lookup failed), its time, and the media it was asked about. */
 interface Answer { r: DirectPlayResult | null; t: number; m?: string }
 interface LookupKey { id: string; source?: string }
 interface LookupJob extends LookupKey { cards: Set<HTMLElement>; media: string; source: string; prior?: Answer | undefined }
-interface TrackedCard extends LookupKey { onResult: () => void; media: string; source: string }
+interface TrackedCard extends LookupKey { onResult: (itemIds: Set<string>) => void; media: string; source: string }
 interface BuiltProfile { profile: DeviceProfile; hash: string; reads: string[]; settings: string }
 interface BaseProfile { profile: DeviceProfile; hash: string }
 interface RatedProfile { profile: DeviceProfile; bitrate: number; hash: string }
@@ -87,31 +89,6 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
     /** jellyfin-web's profile ceiling (getMaxBitrate). */
     const DEFAULT_BITRATE = 120000000;
 
-    /** TranscodeReasons → tooltip phrase key (and the media fact it names). */
-    const REASONS: Readonly<Record<string, readonly [string, ('container' | 'video' | 'audio')?]>> = {
-        ContainerNotSupported: ['status_tag_dp_reason_container', 'container'],
-        VideoCodecNotSupported: ['status_tag_dp_reason_video_codec', 'video'],
-        VideoCodecTagNotSupported: ['status_tag_dp_reason_video_codec', 'video'],
-        AudioCodecNotSupported: ['status_tag_dp_reason_audio_codec', 'audio'],
-        ContainerBitrateExceedsLimit: ['status_tag_dp_reason_bitrate'],
-        VideoBitrateNotSupported: ['status_tag_dp_reason_bitrate'],
-        AudioBitrateNotSupported: ['status_tag_dp_reason_bitrate'],
-        SubtitleCodecNotSupported: ['status_tag_dp_reason_subtitles'],
-        VideoRangeTypeNotSupported: ['status_tag_dp_reason_range'],
-        VideoProfileNotSupported: ['status_tag_dp_reason_video_format'],
-        VideoLevelNotSupported: ['status_tag_dp_reason_video_format'],
-        VideoResolutionNotSupported: ['status_tag_dp_reason_video_format'],
-        VideoBitDepthNotSupported: ['status_tag_dp_reason_video_format'],
-        VideoFramerateNotSupported: ['status_tag_dp_reason_video_format'],
-        RefFramesNotSupported: ['status_tag_dp_reason_video_format'],
-        AnamorphicVideoNotSupported: ['status_tag_dp_reason_video_format'],
-        InterlacedVideoNotSupported: ['status_tag_dp_reason_video_format'],
-        AudioChannelsNotSupported: ['status_tag_dp_reason_audio_format'],
-        AudioProfileNotSupported: ['status_tag_dp_reason_audio_format'],
-        AudioSampleRateNotSupported: ['status_tag_dp_reason_audio_format'],
-        AudioBitDepthNotSupported: ['status_tag_dp_reason_audio_format'],
-        SecondaryAudioNotSupported: ['status_tag_dp_reason_audio_format'],
-    };
 
     // `${hash}|${id}` → answer (null: failed).
     const memory = new Map<string, Answer>();
@@ -138,8 +115,17 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
     const visible: Set<HTMLElement> = new Set();
     /** answers waiting to be persisted (memory key → saved time), by scope */
     const unsaved: Map<string, number> = new Map();
-    /** live passes to run after a slice applied answers */
-    const pendingNotify = new Set<() => void>();
+    /** live passes to run after a slice applied answers, each with the items answered */
+    const pendingNotify = new Map<(itemIds: Set<string>) => void, Set<string>>();
+    /** Which tracked cards are under the observer, and the released ones (card-watch.ts). */
+    const cards = createCardWatch<TrackedCard>({
+        entry: card => tracked.get(card), visible, watcher: () => watcher(), observer: () => observer,
+        answeredAt: entry => settledAnswer(entry)?.t ?? null, ttlMs: TTL_MS, untrack: card => untrack(card),
+    });
+    /** The hash current() last answered with: a change lapses every released card's answer. */
+    let ratedHash = '';
+    /** Whether memory may hold a failed lookup (none since the last user: nothing to retry, see nextRetryAt). */
+    let failedSeen = false;
     let observer: IntersectionObserver | null = null;
     let sliceScheduled = false;
     let generation = 0;
@@ -359,6 +345,8 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
         rated = null;
         primed = null;
         primedKey = '';
+        // Their answers went with the hash (and stay gone should the next build hash the same).
+        cards.rewatchSettled();
     }
 
     /**
@@ -372,6 +360,10 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
         if (rated?.base === base && rated.bitrate === bitrate) return rated.value;
         const value = { profile: base.profile, bitrate, hash: hashOf({ profile: base.hash, bitrate }) };
         rated = { base, bitrate, value };
+        // Another profile or bitrate: the released cards have no answer under it.
+        const changed = ratedHash !== '' && ratedHash !== value.hash;
+        ratedHash = value.hash;
+        if (changed) cards.rewatchSettled();
         return value;
     }
 
@@ -442,28 +434,43 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
                 const stored = await store.getDirectPlay(s, hash);
                 if (gen !== generation || primedKey !== key) return;
                 const now = Date.now();
-                let loaded = 0;
+                /** The items the store answered (a version's key is `${id}@${source}`). */
+                const loaded: string[] = [];
                 for (const [id, value] of stored) {
                     const memoryKey = `${hash}|${id}`;
                     if (!memory.has(memoryKey) && value && now - value.t < TTL_MS) {
-                        memory.set(memoryKey, { r: storedResult(value.r), t: value.t, ...(typeof value.m === 'string' ? { m: value.m } : {}) });
-                        loaded++;
+                        const answer: Answer = { r: storedResult(value.r), t: value.t, ...(typeof value.m === 'string' ? { m: value.m } : {}) };
+                        memory.set(memoryKey, answer);
+                        if (answer.r === null) failedSeen = true;
+                        loaded.push(String(id).split('@')[0] ?? '');
                     }
                 }
-                // Cards drawn before the stored answers arrived: one pass, and no request for those.
-                if (!loaded) return;
-                for (const card of visible) {
+                // Cards drawn before the stored answers arrived (watched, and on screen: without WeakRef none is watched).
+                if (!loaded.length) return;
+                for (const card of new Set([...cards.watchedCards(), ...visible])) {
                     const entry = tracked.get(card);
                     if (!entry) continue;
                     const memoryKey = `${hash}|${itemKey(entry)}`;
                     const known = memory.get(memoryKey);
-                    if (known && !inFlight.has(memoryKey) && sameMedia(known, entry.media)) { queue.delete(memoryKey); pendingNotify.add(entry.onResult); }
+                    if (!known || inFlight.has(memoryKey) || !sameMedia(known, entry.media)) continue;
+                    // The pass covers every restored item: cards off screen are drawn from memory too.
+                    if (visible.has(card)) { queue.delete(memoryKey); notifySoon(entry, loaded); }
+                    // Answered, on screen or not: nothing left to watch it for.
+                    cards.settle(card);
                 }
                 scheduleSlice();
             } catch { /* the store marks itself unavailable */ }
         })();
         primed = loading;
         return loading;
+    }
+
+    /** Have the next slice tell a card's renderer its item (and `more`) was answered: one call per slice, every item since the last. */
+    function notifySoon(entry: TrackedCard, more?: readonly string[]): void {
+        let ids = pendingNotify.get(entry.onResult);
+        if (!ids) pendingNotify.set(entry.onResult, ids = new Set());
+        ids.add(entry.id);
+        if (more) for (const id of more) ids.add(id);
     }
 
     /** Write the answers of the last few seconds (debounced) under the scope they were asked in. */
@@ -501,9 +508,12 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
     function remember(key: string, value: Answer): void {
         memory.delete(key);
         memory.set(key, value);
+        if (value.r === null) failedSeen = true;
         if (memory.size > MEMORY_CAP) {
             const [oldest] = memory.keys();
             if (oldest !== undefined) memory.delete(oldest);
+            // It may have been a released card's answer.
+            if (cards.anySettled()) cards.armSettled(Date.now());
         }
     }
 
@@ -535,6 +545,14 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
         return Date.now() - value.t >= (value.r === null ? RETRY_MS : TTL_MS);
     }
 
+    /** A card's fresh answer under the profile in use, none on the network: nothing to ask while it lasts (a failure is retried). */
+    function settledAnswer(entry: TrackedCard): Answer | null {
+        const key = `${current().hash}|${itemKey(entry)}`;
+        if (inFlight.has(key)) return null;
+        const value = memory.get(key);
+        return value && value.r !== null && sameMedia(value, entry.media || '') && Date.now() - value.t < TTL_MS ? value : null;
+    }
+
     /** @returns The shared on-screen watcher. */
     function watcher(): IntersectionObserver|null {
         if (observer || typeof IntersectionObserver === 'undefined') return observer;
@@ -544,9 +562,14 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
                 if (!(target instanceof HTMLElement)) continue;
                 const card = target;
                 if (!tracked.has(card) || !card.isConnected) { untrack(card); continue; }
-                if (isIntersecting) { visible.add(card); enqueue(card); } else visible.delete(card);
+                // A report queued before the card was released.
+                if (cards.isSettled(card)) continue;
+                const whereOnly = cards.takeRewatched(card);
+                if (isIntersecting) { visible.add(card); if (!whereOnly) enqueue(card); }
+                else { visible.delete(card); cards.settle(card); }
             }
-            scheduleSlice();
+            // A slice only when there is something to ask or tell (most reports are of cards already waiting).
+            if (queue.size || pendingNotify.size) scheduleSlice();
             // A failed lookup scrolled back before it is due waits for the timer.
             armRetry();
         }, { rootMargin: '200px 0px' });
@@ -565,7 +588,7 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
         // A request for these media already on the network answers this card too.
         const running = inFlight.get(key);
         if (running && running.media === media) { running.cards.add(card); return; }
-        if (!inFlight.has(key) && !due(key, media)) { counters.fromMemory++; return; }
+        if (!inFlight.has(key) && !due(key, media)) { counters.fromMemory++; cards.settle(card); return; }
         const job: LookupJob = queue.get(key) || { id: entry.id, source: entry.source || '', cards: new Set(), media };
         job.media = media;
         job.cards.add(card);
@@ -574,25 +597,35 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
 
     /**
      * Watch a card that may get a warning; its item is asked about once it is
-     * on screen. `onResult` runs (batched per slice) when an answer lands.
+     * on screen. `onResult` runs (batched per slice) when an answer lands, with the ids of the
+     * items answered (as given here), so its pass can leave every other card alone.
      * @param [media] - The item's media fingerprint: an answer for other media is asked again.
      * @param [source] - The version the card stands for (the user's pick, see qualitytags.js); '' for
      *   the default one Jellyfin plays.
      */
-    function track(card: HTMLElement, itemId: string, onResult: () => void, media: string = '', source: string = ''): void {
+    function track(card: HTMLElement, itemId: string, onResult: (itemIds: Set<string>) => void, media: string = '', source: string = ''): void {
         hookSession();
         const previous = tracked.get(card);
-        tracked.set(card, { id: itemId, onResult, media, source });
+        const entry: TrackedCard = { id: itemId, onResult, media, source };
+        tracked.set(card, entry);
+        listen(true);
         prime();
+        // A released card drawn again: watched once more unless what it shows now is answered too.
+        if (cards.isSettled(card)) {
+            if (!settledAnswer(entry)) cards.rewatch(card, false);
+            return;
+        }
         // Drawn again (an expired answer, another profile, changed media): ask again if it is due.
         if (previous && previous.id === itemId && (previous.source || '') === source) {
+            // Watched again a moment ago and not reported yet: that report asks, as this draw would have.
+            if (cards.takeRewatched(card)) return;
             if (visible.has(card)) { enqueue(card); scheduleSlice(); }
             return;
         }
         if (previous) visible.delete(card);
-        const io = watcher();
-        if (io) io.observe(card);
-        else { visible.add(card); enqueue(card); scheduleSlice(); }
+        if (!watcher()) { visible.add(card); enqueue(card); scheduleSlice(); return; }
+        // Already answered (a page drawn again within the day): never watched at all.
+        if (!cards.settle(card)) cards.watch(card);
     }
 
     /** @param card Stop watching a card (recycled, removed, or showing another badge). */
@@ -600,6 +633,7 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
         if (!tracked.has(card)) return;
         tracked.delete(card);
         visible.delete(card);
+        cards.forget(card);
         observer?.unobserve(card);
         for (const [key, job] of queue) {
             job.cards.delete(card);
@@ -644,8 +678,8 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
         }
         const notify = [...pendingNotify];
         pendingNotify.clear();
-        for (const fn of notify) {
-            try { fn(); } catch (e) { console.warn(`${logPrefix} A badge pass failed.`, e); }
+        for (const [fn, ids] of notify) {
+            try { fn(ids); } catch (e) { console.warn(`${logPrefix} A badge pass failed.`, e); }
         }
         let launched = 0;
         for (const [key, job] of queue) {
@@ -663,55 +697,6 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
         counters.slices++;
         counters.maxSliceMs = Math.max(counters.maxSliceMs, performance.now() - started);
         if (pendingNotify.size || (queue.size && network.size < MAX_IN_FLIGHT)) scheduleSlice();
-    }
-
-    /**
-     * The headers of a JSON POST as ApiClient sends it: its own Authorization
-     * (setRequestHeaders: client, device, device id, version and token, so
-     * the server sees the request from this browser's session and device),
-     * or the same composed from its accessors where it has no such method.
-     * */
-    function requestHeaders(): Record<string, string> {
-        const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': 'application/json' };
-        const client = apiClient();
-        if (typeof client.setRequestHeaders === 'function') {
-            // ApiClient's own writer decides: when it sets no Authorization (not signed in),
-            // the request goes without one, as ApiClient.ajax would send it.
-            client.setRequestHeaders(headers);
-            return headers;
-        }
-        const fields = [['Client', apiClient().appName?.()], ['Device', apiClient().deviceName?.()], ['DeviceId', apiClient().deviceId?.()], ['Version', apiClient().appVersion?.()], ['Token', apiClient().accessToken?.()]]
-            .filter(([, value]) => value).map(([name, value]) => `${name}="${value}"`);
-        if (fields.length) headers.Authorization = `MediaBrowser ${fields.join(', ')}`;
-        return headers;
-    }
-
-    /**
-     * POST one PlaybackInfo request with a deadline. apiClient().ajax takes no
-     * abort signal and sets no timeout on a POST, so this is fetch with
-     * ApiClient's own headers (requestHeaders) and an AbortController. Past
-     * DEADLINE_MS the request (or the read of its answer) is aborted and this
-     * rejects at once, so the slot frees even if the request never settles;
-     * an answer arriving after that is ignored.
-     * @param body - JSON.
-     * @returns The PlaybackInfoResponse; rejects on failure (`timedOut` set when the deadline passed).
-     */
-    function askPlaybackInfo(url: string, body: string): Promise<unknown> {
-        const controller = new AbortController();
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const deadline = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => {
-                controller.abort();
-                reject(Object.assign(new Error('PlaybackInfo timed out'), { timedOut: true }));
-            }, DEADLINE_MS);
-        });
-        const work = (async (): Promise<unknown> => {
-            const response = await fetch(url, { method: 'POST', headers: requestHeaders(), body, signal: controller.signal });
-            if (!response.ok) throw new Error(`PlaybackInfo answered ${response.status}`);
-            return response.json();
-        })();
-        work.catch(() => { /* settled after the deadline: ignored */ });
-        return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
     }
 
     /**
@@ -733,7 +718,7 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
         counters.launched++;
         let value: Answer;
         try {
-            const info = await askPlaybackInfo(
+            const info = await askPlaybackInfo(DEADLINE_MS,
                 apiClient().getUrl(`Items/${encodeURIComponent(job.id)}/PlaybackInfo`, { UserId: userId, StartTimeTicks: 0, IsPlayback: false, AutoOpenLiveStream: false, MaxStreamingBitrate: bitrate, ...(job.source ? { MediaSourceId: job.source } : {}) }),
                 JSON.stringify({ UserId: userId, DeviceProfile: profile, MaxStreamingBitrate: bitrate, EnableDirectPlay: true, EnableDirectStream: true, EnableTranscoding: true, AllowVideoStreamCopy: true, AllowAudioStreamCopy: true, IsPlayback: false, AutoOpenLiveStream: false, ...(job.source ? { MediaSourceId: job.source } : {}) }),
             );
@@ -761,7 +746,7 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
         armRetry();
         for (const card of job.cards) {
             const entry = tracked.get(card);
-            if (entry && itemKey(entry) === itemKey(job)) pendingNotify.add(entry.onResult);
+            if (entry && itemKey(entry) === itemKey(job)) { notifySoon(entry); cards.settle(card); }
         }
         scheduleSlice();
     }
@@ -772,6 +757,7 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
      * on the network are left out; successful answers never count.
      * */
     function nextRetryAt(): number {
+        if (!failedSeen) return 0;
         const { hash } = current();
         let earliest = 0;
         for (const card of visible) {
@@ -816,6 +802,8 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
         generation++;
         for (const card of [...visible]) untrack(card);
         visible.clear();
+        cards.reset();
+        listen(false);
         tracked = new WeakMap();
         queue.clear();
         inFlight.clear();
@@ -834,11 +822,23 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
         JE.session?.onUserChange?.('direct-play', () => {
             reset();
             memory.clear();
+            failedSeen = false;
             unsaved.clear();
             // The next user's profile: built again once their id is in place
             // (the hook may run before it is; the build records the user).
             rebuild();
         });
+        JE.core?.navigation?.onNavigate?.(lookAgain);
+    }
+    // Released cards have no observer: look at the profile and bitrate again when the page changes, the tab comes
+    // back or the network does, while cards are tracked (current() rewatches them when the hash changed).
+    const lookAgain = () => { if (cards.busy() || visible.size) current(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') lookAgain(); };
+    let listening = false;
+    function listen(on: boolean): void {
+        if (listening === on) return; listening = on;
+        if (on) { document.addEventListener('visibilitychange', onVisible); window.addEventListener('online', lookAgain); }
+        else { document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('online', lookAgain); }
     }
 
     const api = {
@@ -869,8 +869,8 @@ export function createDirectPlay(JE: TagRuntimeBridge) {
             if (!profile) built = null;
             primed = null;
         },
-        /** @returns Slice and request counters. */
-        stats: (): JsonRecord => ({ ...counters, queued: queue.size, inFlight: network.size, memory: memory.size }),
+        /** @returns Slice and request counters, and how many cards are watched and released. */
+        stats: (): JsonRecord => ({ ...counters, queued: queue.size, inFlight: network.size, memory: memory.size, ...cards.counts() }),
     };
     JE.tagDirectPlay = api;
     return api;

@@ -1,6 +1,7 @@
 // canopy K1b, checked on the committed outputs and in fixture builds:
-// - each module of client/shared-modules.json is inlined by exactly one component script, its provider, which
-//   publishes it; every other component script that uses it carries a stub and loads after the provider;
+// - each module of client/shared-modules.json is inlined by its provider, which publishes it; every other component
+//   script that uses it carries a stub and loads after the provider, unless its component group does not load the
+//   provider's (js/component-groups.json, upstream abcaa16d): such a script inlines its own copy;
 // - shared modules hold no state: no top-level state in their runtime import closure (the build's own check), and no
 //   client source mutates one of their top-level object, array or collection bindings;
 // - the build rejects a stateful module and a consumer listed before its provider.
@@ -23,13 +24,20 @@ const modules = Object.entries(manifest.modules).map(([source, provider]) => ({ 
 const componentScripts = JSON.parse(readFileSync(join(plugin, 'js/component-scripts.json'), 'utf8'))
   .map(item => item.trim()).filter(item => item && !item.startsWith('//'));
 const read = path => readFileSync(join(plugin, path), 'utf8');
+/** Whether every page that runs `path` has run `provider` (the provider is in core, or in path's group or one it is after). */
+const groupsFile = JSON.parse(readFileSync(join(plugin, 'js/component-groups.json'), 'utf8')).groups;
+const groupOf = new Map(groupsFile.flatMap(group => group.modules.map(module => [module, group.id])));
+const afterOf = new Map(groupsFile.map(group => [group.id, (group.after || []).filter(id => id !== 'core')]));
+const closure = id => { const seen = new Set([id]); const walk = g => (afterOf.get(g) || []).forEach(up => { if (!seen.has(up)) { seen.add(up); walk(up); } }); walk(id); return seen; };
+const loads = (path, provider) => !groupOf.has(provider) || closure(groupOf.get(path) || 'core').has(groupOf.get(provider));
 
-test('each shared module is inlined once, by its provider, and every script reading the published copy loads after it', () => {
+test('each shared module is inlined by its provider and by scripts whose group does not load it, and every script reading the published copy loads after it', () => {
   assert.ok(modules.length >= 20, `expected the shared modules, found ${modules.length}`);
   for (const { source, provider } of modules) {
     // esbuild labels each module of a readable output with its path; stubs carry the generated-module label instead.
     const carriers = componentScripts.filter(path => read(`js/${path}`).includes(`\n  // ${source}\n`));
-    assert.deepEqual(carriers, [provider], `${source}: inlined by`);
+    assert.ok(carriers.includes(provider), `${source}: not inlined by its provider ${provider}`);
+    for (const path of carriers) if (path !== provider) assert.ok(!loads(path, provider), `${source}: inlined by ${path}, whose group loads ${provider}`);
     const id = JSON.stringify(sharedModuleId(source));
     for (const tree of ['js', `${minDirectory}/js`]) {
       assert.ok(read(`${tree}/${provider}`).includes(`${id}:`), `${tree}/${provider} publishes ${source}`);
@@ -38,6 +46,7 @@ test('each shared module is inlined once, by its provider, and every script read
     assert.ok(consumers.length >= 1, `${source}: no consumer`);
     for (const path of consumers) {
       assert.ok(componentScripts.indexOf(path) > componentScripts.indexOf(provider), `${path} loads before ${provider}`);
+      assert.ok(loads(path, provider), `${path} reads ${source} from ${provider}, which its group does not load`);
       assert.ok(read(`${minDirectory}/js/${path}`).includes(id), `${minDirectory}/js/${path} reads ${id}`);
     }
   }

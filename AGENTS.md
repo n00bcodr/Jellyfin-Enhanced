@@ -15,7 +15,7 @@ Guidance for AI coding agents working in this repository. Human contributors: se
 
 ## Invariants
 
-- **Shipped outputs.** Never rename a `client/entries` output key, and never edit `Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json` (it pins the bundle's load order). The gates compare both with `restructure-base`. Moving a source edits only the right-hand side of its manifest mapping.
+- **Shipped outputs.** Never rename or remove a `client/entries` output key, and never edit `Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json` (it pins the bundle's load order) except to add an approved module. The gates compare both with `restructure-base` plus the additions listed in `scripts/component-outputs-approved.json`, and fail on any removal, rename or reordering of an existing entry and on any addition not on that list. An addition comes only from an upstream commit that adds a module, and only with the maintainer's approval: its entry names that commit, the entry it follows (upstream's place) and its manifest, and says why the module is not folded into an existing output. The list holds one so far, upstream `abcaa16d`'s `tags/status-tag-backdrop.js`; other modules upstream adds stay folded into existing outputs. Moving a source edits only the right-hand side of its manifest mapping.
 - **Generated files.** Never hand-edit `js/**` outputs and maps, `client/generated-manifest.json`, `docs/rewrite/migration-inventory.json`, `client/src/contracts/*.ts` or `tests/docs/production-inventory.json`. Regenerate them:
   - `npm run client:build && npm run inventory:rewrite`;
   - `npm run contracts:generate`;

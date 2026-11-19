@@ -9,6 +9,7 @@ Status: typed replacement, published as generated outputs. It is not a claim of 
 | `client/src/bootstrap/loader/entry.ts` | `js/plugin.js` (`client/entries/bootstrap-pages.json`) |
 | `client/src/pages/<page>-page.ts` and `client/html/bootstrap-pages/<Page>.html` | `PluginPages/<Page>.html` (`client/html-entries/bootstrap-pages.json`) |
 | `client/src/host/bootstrap-pages-host.ts` | The only module that reads these window globals |
+| `client/src/host/component-groups-host.ts` | The loader's component-group globals (`window.__JE_BUNDLES`, the whole bundle's module list, the module counter, the `window.JE` alias) and the `JE.loader` type. Only the loader imports it: the standalone pages' inline source maps carry every line of a file they bundle |
 
 ## Loader
 
@@ -19,7 +20,9 @@ Behaviour that must not regress:
 - Identity is host-derived: user, server, URL, token and an epoch advanced by `je:user-changed`. A response that resolves under a different identity is dropped. Shared promises and prefetched answers are scoped to it.
 - Authority comes from `getCurrentUser()`, never from a response. A missing or non-boolean policy rejects the whole bootstrap, which then uses the per-endpoint fallback.
 - The validator global is untrusted until all three parsers exist.
-- The bundle is fetched in idle time at low priority. Modules run in manifest order in short idle slices. A module that throws is logged, rethrown asynchronously, and does not stop the run.
+- The boot bundle is fetched in idle time at low priority. Modules run in manifest order in short idle slices. A module that throws is logged, rethrown asynchronously, and does not stop the run.
+- Component modules load in groups, on demand (upstream abcaa16d; `docs/advanced/project-structure.md`, "Component groups"). `group-loader.ts` holds what is loaded and runs the batches in the order they were asked for; `group-rules.ts` says when a group is needed (`FEATURE_GROUPS`, `FEATURE_PAGES`); `features.ts` is stage 6 as a table (`FEATURE_INITIALIZERS`); `group-triggers.ts` asks again on navigation, tab, video and user switch, installs the stand-in exports and publishes `JE.loader`. The boot groups' features start before anything the resolved settings or a changed address add is fetched: Hidden Content and Spoiler Guard never wait on a second download.
+- Without a usable groups file every module is `core` and the whole manifest loads as one bundle, as before. A component-script manifest that cannot be read is fatal only when files must be loaded one by one (dev mode, or the whole bundle failed too).
 - A session change during component loading resets user-scoped globals, then reloads for the live session. With nobody signed in, nothing is reloaded.
 
 ## Standalone pages
@@ -46,7 +49,7 @@ The Calendar click listener is the one deliberate exception to `view.signal`. Th
 ## Validation
 
 ```sh
-node --test tests/frontend/bootstrap/bootstrap-loader-rewrite.test.mjs tests/frontend/pages/pages-plugin-pages.test.mjs tests/frontend/pages/pages-plugin-pages-features.test.mjs
+node --test tests/frontend/bootstrap/bootstrap-loader-rewrite.test.mjs tests/frontend/bootstrap/bootstrap-loader-groups.test.mjs tests/frontend/bootstrap/bootstrap-groups.test.mjs tests/frontend/pages/pages-plugin-pages.test.mjs tests/frontend/pages/pages-plugin-pages-features.test.mjs
 npx playwright test --config tests/browser/playwright.config.cjs plugin-pages-rewrite --project=chromium
 ```
 

@@ -14,6 +14,7 @@
   // client/generated-shared/stub/client/src/features/details-providers/host.ts
   var shared = /* @__PURE__ */ sharedModule("features/details-providers/host");
   var export1 = /* @__PURE__ */ sharedExport(shared, "bridge");
+  var export4 = /* @__PURE__ */ sharedExport(shared, "dashboard");
   var export9 = /* @__PURE__ */ sharedExport(shared, "serverId");
 
   // client/generated-shared/stub/client/src/features/details-providers/page.ts
@@ -23,10 +24,15 @@
   var export10 = /* @__PURE__ */ sharedExport(shared2, "sessionLease");
   var export11 = /* @__PURE__ */ sharedExport(shared2, "visibleDetailPage");
 
-  // client/generated-shared/stub/client/src/features/details-providers/links.ts
-  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/links");
-  var export12 = /* @__PURE__ */ sharedExport(shared3, "navigateRoute");
-  var export4 = /* @__PURE__ */ sharedExport(shared3, "tagListRoute");
+  // client/src/features/details-providers/links.ts
+  function tagListRoute(tag, serverId) {
+    return `list.html?type=tag&tag=${encodeURIComponent(tag)}&serverId=${serverId}`;
+  }
+  function navigateRoute(route) {
+    const host = export4();
+    if (host && typeof host.navigate === "function") host.navigate(route);
+    else window.location.hash = `!/${route}`;
+  }
 
   // client/src/features/details-providers/arr-domain.ts
   function slugifyTagName(name) {
@@ -98,7 +104,7 @@
           externalLinksContainer.appendChild(document.createTextNode(" "));
           const tagName = tag.slice(tagPrefix.length).trim();
           const slug = slugifyTagName(tagName);
-          const route = export4(tag, server);
+          const route = tagListRoute(tag, server);
           const link = document.createElement("a");
           link.setAttribute("is", "emby-linkbutton");
           link.className = "button-link emby-button arr-tag-link";
@@ -106,7 +112,7 @@
           link.title = `View all items with tag: ${tag}`;
           link.addEventListener("click", (event) => {
             event.preventDefault();
-            export12(route);
+            navigateRoute(route);
           });
           link.dataset.itemId = itemId;
           link.dataset.id = slug;

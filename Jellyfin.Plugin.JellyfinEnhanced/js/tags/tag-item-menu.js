@@ -15,11 +15,11 @@
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
   var export0 = /* @__PURE__ */ sharedExport(shared, "apiClient");
   var export2 = /* @__PURE__ */ sharedExport(shared, "mediaTagsContext");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
   var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
-  var export42 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
   var export13 = /* @__PURE__ */ sharedExport(shared2, "text");
 
   // client/src/features/media-tags/editor/tag-item-menu.ts
@@ -113,7 +113,7 @@
       let item = null;
       if (!type && ctx.item) {
         const read = await ctx.item;
-        item = export42(read) ? read : null;
+        item = export4(read) ? read : null;
         type = export13(item?.Type);
         if (context !== ctx || !scroller.isConnected) return;
       }
@@ -197,7 +197,7 @@
       return Number.isFinite(d.getTime()) ? d.toISOString() : null;
     }
     function isAdmin() {
-      adminCheck ?? (adminCheck = Promise.resolve().then(() => export0().getCurrentUser()).then((user) => export42(user) && export42(user.Policy) && user.Policy.IsAdministrator === true).catch(() => {
+      adminCheck ?? (adminCheck = Promise.resolve().then(() => export0().getCurrentUser()).then((user) => export4(user) && export4(user.Policy) && user.Policy.IsAdministrator === true).catch(() => {
         adminCheck = null;
         return false;
       }));
@@ -291,11 +291,11 @@
           ...body ? { data: JSON.stringify(body), contentType: "application/json" } : {}
         });
       } catch (err) {
-        const failure = export42(err) ? err : {};
+        const failure = export4(err) ? err : {};
         let reason = null;
         try {
           const answer = typeof failure.json === "function" ? await failure.json() : null;
-          reason = export42(answer) ? export13(answer.error) : null;
+          reason = export4(answer) ? export13(answer.error) : null;
         } catch {
         }
         const status = typeof failure.status === "number" ? failure.status : void 0;
@@ -304,7 +304,7 @@
       }
     }
     function stateOf(value) {
-      return export42(value) ? value : null;
+      return export4(value) ? value : null;
     }
     function daysLeft(deleteAt) {
       if (typeof deleteAt !== "number" || !Number.isFinite(deleteAt)) return null;
@@ -538,7 +538,7 @@
       let type = ctx.type;
       if (!type && ctx.item) {
         const read = await ctx.item;
-        type = export42(read) ? export13(read.Type) : null;
+        type = export4(read) ? export13(read.Type) : null;
         if (context !== ctx || !scroller.isConnected) return;
       }
       if (!type || !TYPES.has(type)) return;
@@ -637,9 +637,9 @@
   var POLL_MS = 5 * 60 * 1e3;
   var DAY_MS = 864e5;
   function listOf(value) {
-    const data = export42(value) ? value : {};
-    const items = Array.isArray(data.items) ? data.items.filter(export42) : [];
-    const rows = (v) => Array.isArray(v) ? v.filter(export42) : [];
+    const data = export4(value) ? value : {};
+    const items = Array.isArray(data.items) ? data.items.filter(export4) : [];
+    const rows = (v) => Array.isArray(v) ? v.filter(export4) : [];
     return {
       provider: data.provider === "reclaimerr" ? "reclaimerr" : "maintainerr",
       admin: data.admin === true,
@@ -770,10 +770,10 @@
       return listOf(await client.ajax({ type: "GET", url: client.getUrl("JellyfinEnhanced/leaving-soon/list"), dataType: "json" }));
     }
     async function reasonOf(err) {
-      const failure = export42(err) ? err : {};
+      const failure = export4(err) ? err : {};
       try {
         const body = typeof failure.json === "function" ? await failure.json() : null;
-        if (export42(body) && typeof body.error === "string" && body.error) return body.error;
+        if (export4(body) && typeof body.error === "string" && body.error) return body.error;
       } catch {
       }
       return typeof failure.status === "number" ? String(failure.status) : "";
@@ -1159,10 +1159,10 @@
   }
 
   // client/src/features/media-tags/editor/tag-item-menu-entry.ts
-  var maintainerr = createMaintainerrMenu(export4());
-  createItemMenu(export4(), maintainerr.capture);
-  createLeavingSoonPage(export4());
-  mountLeavingSoonTab(export4());
+  var maintainerr = createMaintainerrMenu(export5());
+  createItemMenu(export5(), maintainerr.capture);
+  createLeavingSoonPage(export5());
+  mountLeavingSoonTab(export5());
 })();
 })();
 //# sourceMappingURL=tag-item-menu.js.map

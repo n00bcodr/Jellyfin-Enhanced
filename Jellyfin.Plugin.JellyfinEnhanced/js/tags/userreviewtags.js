@@ -13,11 +13,11 @@
 
   // client/generated-shared/stub/client/src/features/media-tags/host.ts
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
   var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
-  var export42 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
   var export10 = /* @__PURE__ */ sharedExport(shared2, "record");
 
   // client/src/features/media-tags/types/ratings/userreviewtags.ts
@@ -73,7 +73,7 @@
           settle(cacheKey, entry, avg, true);
         }
       } catch (e) {
-        const aborted = export42(e) && e.name === "AbortError";
+        const aborted = export4(e) && e.name === "AbortError";
         if (!aborted) {
           console.warn(`${logPrefix} rating batch failed; retrying these ratings after ${FAILURE_BACKOFF_MS / 1e3}s.`, e);
           if (isCurrent()) {
@@ -399,7 +399,7 @@
   }
 
   // client/src/features/media-tags/types/ratings/userreviewtags-entry.ts
-  createUserReviewTags(export4());
+  createUserReviewTags(export5());
 })();
 })();
 //# sourceMappingURL=userreviewtags.js.map

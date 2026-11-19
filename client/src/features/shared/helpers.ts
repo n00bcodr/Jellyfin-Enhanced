@@ -1,6 +1,7 @@
 import { safeExternalUrl } from './url-domain';
 import { decodeItem } from './item-domain';
 import type { HelpersBridge, SharedCore, SharedClient } from './host';
+import { createLegacyHeaderCheck } from './header-lookup';
 export function createHelpers(JE: HelpersBridge, api: () => SharedClient) {
 
 
@@ -334,6 +335,9 @@ export function createHelpers(JE: HelpersBridge, api: () => SharedClient) {
         );
     }
 
+    /** Whether the legacy header is rendered, read with as few layouts as can be (header-lookup.ts). */
+    const legacyHeaderShown = createLegacyHeaderCheck(() => JE.core?.navigation);
+
     /**
      * Finds (or creates) the container plugin buttons should be injected into.
      *
@@ -351,7 +355,7 @@ export function createHelpers(JE: HelpersBridge, api: () => SharedClient) {
      */
     function getHeaderRightContainer() {
         const legacy = document.querySelector<HTMLElement>('.headerRight:not([data-je-header-fallback])');
-        if (legacy && legacy.offsetParent !== null) {
+        if (legacy && legacyHeaderShown(legacy)) {
             attachDrawerAutoClose(legacy);
             return legacy;
         }

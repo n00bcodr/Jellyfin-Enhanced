@@ -46,6 +46,12 @@ export interface BootstrapArrInstance {
   "UrlMappings": string;
 }
 
+export interface BootstrapComponentGroup {
+  "after"?: Array<string> | null;
+  "id": string;
+  "modules": Array<string>;
+}
+
 export interface BootstrapCustomTagRule {
   "Icon": string | null;
   "Id": string;
@@ -405,6 +411,7 @@ export interface BootstrapPublicConfig {
 }
 
 export interface BootstrapResponse {
+  "ComponentGroups": Array<BootstrapComponentGroup> | null;
   "ComponentScripts": Array<string> | null;
   "HasCustomTabs": boolean;
   "HasPluginPages": boolean;

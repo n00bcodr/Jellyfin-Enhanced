@@ -20,19 +20,35 @@
     if (typeof parseBootstrap !== "function" || typeof parseSettingsDocument !== "function" || typeof parseBookmarkDocument !== "function") return null;
     return { parseBootstrap, parseSettingsDocument, parseBookmarkDocument };
   }
+
+  // client/src/host/component-groups-host.ts
+  var bundleWindow = () => window;
   function resetBundleGlobals() {
-    const host = loaderWindow();
-    host.__JE_BUNDLE_PROGRESS = -1;
-    host.__JE_BUNDLE_MODULES = void 0;
+    bundleWindow().__JE_BUNDLE_MODULES = void 0;
   }
   function takeBundle() {
-    const host = loaderWindow();
+    const host = bundleWindow();
     const bundle = { modules: host.__JE_BUNDLE_MODULES, total: host.__JE_BUNDLE_TOTAL };
     delete host.__JE_BUNDLE_MODULES;
     return bundle;
   }
-  function reportBundleProgress(count) {
-    loaderWindow().__JE_BUNDLE_PROGRESS = count;
+  function takeGroupBundles(ids) {
+    const defined = bundleWindow().__JE_BUNDLES ?? {};
+    const taken = /* @__PURE__ */ Object.create(null);
+    for (const id of ids) {
+      const bundle = defined[id];
+      taken[id] = typeof bundle === "object" && bundle !== null && "modules" in bundle && "total" in bundle ? { modules: bundle.modules, total: bundle.total } : void 0;
+      delete defined[id];
+    }
+    return taken;
+  }
+  function countBundleModule() {
+    const host = bundleWindow();
+    host.__JE_BUNDLE_PROGRESS = Math.max(0, host.__JE_BUNDLE_PROGRESS || 0) + 1;
+  }
+  function aliasNamespace(namespace) {
+    const host = bundleWindow();
+    if (!host.JE) host.JE = namespace;
   }
 
   // client/src/bootstrap/loader/keys.ts
@@ -101,17 +117,17 @@
   var scriptLoaded = (src, configure) => new Promise((resolve) => {
     appendScript(src, configure, () => resolve(true), () => resolve(false));
   });
-  async function loadScripts(scripts, basePath) {
-    await Promise.allSettled(scripts.map((name) => new Promise((resolve) => {
+  function loadScripts(scripts, basePath) {
+    return Promise.all(scripts.map((name) => new Promise((resolve) => {
       appendScript(
         client().getUrl(`${basePath}/${name}?v=${getScriptVersion()}`),
         (script) => {
           script.async = false;
         },
-        resolve,
+        () => resolve(true),
         (error) => {
           console.error(`🪼 Jellyfin Enhanced: Failed to load script '${name}'`, error);
-          resolve();
+          resolve(false);
         }
       );
     })));
@@ -184,109 +200,6 @@
     return { loadBootstrapContract, fetchBootstrap, getBootstrap, clearPrefetched };
   }
   var sessionUnchanged = (api, identity, key) => api === client() && key === identity.key(api);
-
-  // client/src/bootstrap/loader/component-loader.ts
-  var COMPONENT_SCRIPTS_BASE_PATH = "/JellyfinEnhanced/js";
-  var BUNDLE_RUN_BUDGET_MS = 10;
-  var BUNDLE_IDLE_TIMEOUT_MS = 100;
-  function filterComponentManifest(manifest) {
-    if (!Array.isArray(manifest)) return null;
-    const scripts = manifest.filter((entry) => typeof entry === "string").map((entry) => entry.trim()).filter((entry) => entry && !entry.startsWith("//"));
-    return scripts.length ? scripts : null;
-  }
-  var MANIFEST_ATTEMPTS = 2;
-  var MANIFEST_RETRY_DELAY_MS = 1e3;
-  async function getComponentScriptList(fromBootstrap) {
-    const fromPayload = filterComponentManifest(fromBootstrap);
-    if (fromPayload) return fromPayload;
-    let lastError;
-    for (let attempt = 1; attempt <= MANIFEST_ATTEMPTS; attempt++) {
-      if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, MANIFEST_RETRY_DELAY_MS));
-      try {
-        const api = client();
-        const manifest = await api.ajax({
-          type: "GET",
-          url: api.getUrl(`${COMPONENT_SCRIPTS_BASE_PATH}/component-scripts.json?v=${getScriptVersion()}`),
-          dataType: "json"
-        });
-        const scripts = filterComponentManifest(manifest);
-        if (scripts) return scripts;
-        lastError = new Error("Manifest is empty or malformed");
-      } catch (error) {
-        lastError = error;
-      }
-      if (attempt < MANIFEST_ATTEMPTS) console.warn("🪼 Jellyfin Enhanced: Could not load the component-script manifest; retrying.", lastError);
-    }
-    const status = typeof lastError === "object" && lastError !== null && "status" in lastError ? lastError.status : void 0;
-    const reason = lastError instanceof Error ? lastError.message : typeof status === "number" ? `HTTP ${status}` : String(lastError);
-    throw new Error(`Could not load the component-script manifest: ${reason}`);
-  }
-  function yieldToEventLoop() {
-    return new Promise((resolve) => {
-      if (typeof MessageChannel === "function") {
-        const channel = new MessageChannel();
-        channel.port1.onmessage = () => resolve();
-        channel.port2.postMessage(null);
-      } else {
-        setTimeout(resolve, 0);
-      }
-    });
-  }
-  function waitForIdle(timeoutMs) {
-    if (typeof requestIdleCallback === "function") {
-      return new Promise((resolve) => {
-        requestIdleCallback(resolve, { timeout: timeoutMs });
-      });
-    }
-    return yieldToEventLoop().then(() => null);
-  }
-  async function runBundleModules(modules, fromBootstrap) {
-    const names = filterComponentManifest(fromBootstrap) || [];
-    let deadline = await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
-    let sliceStart = performance.now();
-    for (const [index, module] of modules.entries()) {
-      try {
-        module();
-      } catch (error) {
-        console.error(`🪼 Jellyfin Enhanced: Module '${names[index] || `#${index + 1}`}' threw while loading; continuing with the next module.`, error);
-        setTimeout(() => {
-          throw error;
-        }, 0);
-      }
-      reportBundleProgress(index + 1);
-      if (index + 1 >= modules.length) break;
-      const budgetSpent = performance.now() - sliceStart >= BUNDLE_RUN_BUDGET_MS;
-      const idleOver = !!deadline && !deadline.didTimeout && deadline.timeRemaining() < 1;
-      if (budgetSpent || idleOver) {
-        deadline = await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
-        sliceStart = performance.now();
-      }
-    }
-  }
-  var isModuleList = (value) => Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === "function");
-  async function loadComponentBundle(fromBootstrap) {
-    const url = client().getUrl(`/JellyfinEnhanced/bundle.js?v=${getScriptVersion()}`);
-    resetBundleGlobals();
-    await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
-    const requestOk = await scriptLoaded(url, (script) => {
-      script.setAttribute("fetchpriority", "low");
-    });
-    const { modules, total } = takeBundle();
-    if (requestOk && isModuleList(modules) && modules.length === total) {
-      await runBundleModules(modules, fromBootstrap);
-      return;
-    }
-    const scripts = await getComponentScriptList(fromBootstrap);
-    console.warn(requestOk ? "🪼 Jellyfin Enhanced: Component bundle did not define its modules (syntax error?) — loading the component scripts individually." : "🪼 Jellyfin Enhanced: Component bundle request failed — loading the component scripts individually.");
-    await loadScripts(scripts, COMPONENT_SCRIPTS_BASE_PATH);
-  }
-  async function loadComponentScripts(fromBootstrap) {
-    if (isDevMode()) {
-      await loadScripts(await getComponentScriptList(fromBootstrap), COMPONENT_SCRIPTS_BASE_PATH);
-      return;
-    }
-    await loadComponentBundle(fromBootstrap);
-  }
 
   // client/src/bootstrap/loader/translate.ts
   var PLURAL_PARAMS = ["count", "days", "n", "items", "hours", "minutes", "seconds"];
@@ -639,49 +552,698 @@
     reinitialize(JE.initializeLanguageTags, settings?.languageTagsEnabled, () => JE.initializeLanguageTags?.());
     reinitialize(JE.initializeLogoTags, settings?.logoTagsEnabled, () => JE.initializeLogoTags?.());
   }
-  function initializeFeatures(JE) {
-    const config = () => JE.pluginConfig;
-    const settings = () => JE.currentSettings;
-    if (typeof JE.initializePluginRevisions === "function") JE.initializePluginRevisions();
-    if (typeof JE.initializeEnhancedScript === "function") JE.initializeEnhancedScript();
-    if (typeof JE.initializeElsewhereScript === "function" && config().ElsewhereEnabled) JE.initializeElsewhereScript();
-    if (typeof JE.initializeJellyseerrScript === "function" && config().JellyseerrEnabled && config().JellyseerrShowSearchResults !== false) JE.initializeJellyseerrScript();
-    if (typeof JE.jellyseerrIssueReporter?.initialize === "function" && config().JellyseerrEnabled && config().JellyseerrShowReportButton) JE.jellyseerrIssueReporter.initialize();
-    if (typeof JE.initializePauseScreen === "function") JE.initializePauseScreen();
-    if (typeof JE.initializeBookmarks === "function") JE.initializeBookmarks();
-    if (typeof JE.initializeQualityTags === "function" && settings()?.qualityTagsEnabled) JE.initializeQualityTags();
-    if (typeof JE.initializeGenreTags === "function" && settings()?.genreTagsEnabled) JE.initializeGenreTags();
-    if (typeof JE.initializeRatingTags === "function" && settings()?.ratingTagsEnabled) JE.initializeRatingTags();
-    if (typeof JE.initializeAgeRatingTags === "function" && settings()?.ageRatingTagsEnabled) JE.initializeAgeRatingTags();
-    if (typeof JE.initializeStatusTags === "function" && settings()?.statusTagsEnabled) JE.initializeStatusTags();
-    if (typeof JE.initializeAwardsTags === "function" && settings()?.awardsTagsEnabled && config().AwardsTagsEnabled !== false) JE.initializeAwardsTags();
-    if (typeof JE.initializeCustomTags === "function" && settings()?.customTagsEnabled) JE.initializeCustomTags();
-    if (typeof JE.initializeTagStyles === "function" && config().TagStyleWebActive) JE.initializeTagStyles();
-    if (typeof JE.initializeUserReviewTags === "function" && config().ShowUserReviews && config().ShowUserRatingOnPosters && settings()?.ratingTagsEnabled) JE.initializeUserReviewTags();
-    if (typeof JE.initializeArrLinksScript === "function" && config().ArrLinksEnabled) JE.initializeArrLinksScript();
-    if (typeof JE.initializeArrTagLinksScript === "function" && config().ArrTagsShowAsLinks) JE.initializeArrTagLinksScript();
-    if (typeof JE.initializeSeerrDetailLinkScript === "function" && config().JellyseerrEnabled && config().JellyseerrShowDetailPageLink) JE.initializeSeerrDetailLinkScript();
-    if (typeof JE.initializeLetterboxdLinksScript === "function" && config().LetterboxdEnabled) JE.initializeLetterboxdLinksScript();
-    if (typeof JE.initializeReviewsScript === "function" && (config().ShowReviews || config().ShowUserReviews || config().ShowAnilistReviews)) JE.initializeReviewsScript();
-    if (typeof JE.initializeAwardsScript === "function" && config().ShowAwards) JE.initializeAwardsScript();
-    if (typeof JE.initializeDoesTheDogDieScript === "function" && config().DoesTheDogDieEnabled) JE.initializeDoesTheDogDieScript();
-    if (typeof JE.initializeMdblistRatingsScript === "function" && config().MdblistRatingsEnabled && config().MdblistRatingsShowOnItemDetails) JE.initializeMdblistRatingsScript();
-    if (typeof JE.initializeLanguageTags === "function" && settings()?.languageTagsEnabled) JE.initializeLanguageTags();
-    if (typeof JE.initializeLogoTags === "function" && settings()?.logoTagsEnabled) JE.initializeLogoTags();
-    if (typeof JE.initializePeopleTags === "function" && settings()?.peopleTagsEnabled) JE.initializePeopleTags();
-    if (typeof JE.tagPipeline?.initialize === "function") JE.tagPipeline.initialize();
-    if (typeof JE.initializeOsdRating === "function") JE.initializeOsdRating();
-    if (typeof JE.initializePlaybackRatingBadge === "function" && config().ShowPlaybackRatingBadge) JE.initializePlaybackRatingBadge();
-    if (typeof JE.initializeHiddenContent === "function" && config().HiddenContentEnabled) JE.initializeHiddenContent();
-    if (config().SpoilerBlurEnabled && typeof JE.spoilerBlur?.init === "function") JE.spoilerBlur.init();
-    if (config().ColoredRatingsEnabled && typeof JE.initializeColoredRatings === "function") JE.initializeColoredRatings();
-    if (config().ThemeSelectorEnabled && typeof JE.initializeThemeSelector === "function") JE.initializeThemeSelector();
-    if (config().ColoredActivityIconsEnabled && typeof JE.initializeActivityIcons === "function") JE.initializeActivityIcons();
-    if (config().PluginIconsEnabled && typeof JE.initializePluginIcons === "function") JE.initializePluginIcons();
-    if (config().ActiveStreamsEnabled && typeof JE.activeStreams?.initialize === "function") JE.activeStreams.initialize();
-    if (config().DownloadsPageEnabled && typeof JE.initializeDownloadsPage === "function") JE.initializeDownloadsPage();
-    if (config().CalendarPageEnabled && typeof JE.initializeCalendarPage === "function") JE.initializeCalendarPage();
-    if (config().HiddenContentEnabled && typeof JE.initializeHiddenContentPage === "function") JE.initializeHiddenContentPage();
+  var FEATURE_INITIALIZERS = [
+    ["dashboard", "initializePluginRevisions"],
+    ["core", "initializeEnhancedScript"],
+    ["elsewhere", "initializeElsewhereScript", (c) => c.ElsewhereEnabled],
+    ["seerr", "initializeJellyseerrScript", (c) => c.JellyseerrEnabled && c.JellyseerrShowSearchResults !== false],
+    ["seerr", "jellyseerrIssueReporter.initialize", (c) => c.JellyseerrEnabled && c.JellyseerrShowReportButton],
+    ["player", "initializePauseScreen"],
+    ["bookmarks", "initializeBookmarks"],
+    ["tags", "initializeQualityTags", (_c, s) => s.qualityTagsEnabled],
+    ["tags", "initializeGenreTags", (_c, s) => s.genreTagsEnabled],
+    ["tags", "initializeRatingTags", (_c, s) => s.ratingTagsEnabled],
+    ["tags", "initializeAgeRatingTags", (_c, s) => s.ageRatingTagsEnabled],
+    ["tags", "initializeStatusTags", (_c, s) => s.statusTagsEnabled],
+    ["tags", "initializeAwardsTags", (c, s) => s.awardsTagsEnabled && c.AwardsTagsEnabled !== false],
+    ["tags", "initializeCustomTags", (_c, s) => s.customTagsEnabled],
+    ["tags", "initializeTagStyles", (c) => c.TagStyleWebActive],
+    ["tags", "initializeUserReviewTags", (c, s) => c.ShowUserReviews && c.ShowUserRatingOnPosters && s.ratingTagsEnabled],
+    ["arr-links", "initializeArrLinksScript", (c) => c.ArrLinksEnabled],
+    ["arr-tag-links", "initializeArrTagLinksScript", (c) => c.ArrTagsShowAsLinks],
+    ["seerr", "initializeSeerrDetailLinkScript", (c) => c.JellyseerrEnabled && c.JellyseerrShowDetailPageLink],
+    ["letterboxd", "initializeLetterboxdLinksScript", (c) => c.LetterboxdEnabled],
+    ["reviews", "initializeReviewsScript", (c) => c.ShowReviews || c.ShowUserReviews || c.ShowAnilistReviews],
+    ["awards", "initializeAwardsScript", (c) => c.ShowAwards],
+    ["content-warnings", "initializeDoesTheDogDieScript", (c) => c.DoesTheDogDieEnabled],
+    ["mdblist", "initializeMdblistRatingsScript", (c) => c.MdblistRatingsEnabled && c.MdblistRatingsShowOnItemDetails],
+    ["tags", "initializeLanguageTags", (_c, s) => s.languageTagsEnabled],
+    ["tags", "initializeLogoTags", (_c, s) => s.logoTagsEnabled],
+    ["tag-people", "initializePeopleTags", (_c, s) => s.peopleTagsEnabled],
+    // The unified tag pipeline initializes after all tag renderers have registered.
+    ["tags", "tagPipeline.initialize"],
+    ["player", "initializeOsdRating"],
+    ["player-badge", "initializePlaybackRatingBadge", (c) => c.ShowPlaybackRatingBadge],
+    // Disabled server-wide, JE.hiddenContent stays undefined, safely disabling all downstream consumers.
+    ["hidden-content", "initializeHiddenContent", (c) => c.HiddenContentEnabled],
+    // Spoiler Guard loads its per-user enabled-series list once at startup.
+    ["spoiler-guard", "spoilerBlur.init", (c) => c.SpoilerBlurEnabled],
+    ["core", "initializeColoredRatings", (c) => c.ColoredRatingsEnabled],
+    ["theme-selector", "initializeThemeSelector", (c) => c.ThemeSelectorEnabled],
+    ["dashboard", "initializeActivityIcons", (c) => c.ColoredActivityIconsEnabled],
+    ["dashboard", "initializePluginIcons", (c) => c.PluginIconsEnabled],
+    ["active-streams", "activeStreams.initialize", (c) => c.ActiveStreamsEnabled],
+    ["requests-page", "initializeDownloadsPage", (c) => c.DownloadsPageEnabled],
+    ["calendar-page", "initializeCalendarPage", (c) => c.CalendarPageEnabled],
+    ["hidden-content-page", "initializeHiddenContentPage", (c) => c.HiddenContentEnabled],
+    // Seerr search used to make this check as it started, on every page: it caches the user's Seerr
+    // status for the session and shows the one-time "not linked / unreachable" notice. Search now loads
+    // on its own pages, so the check is made here, at the same moment as before.
+    ["seerr-api", "jellyseerrAPI.checkUserStatus", (c) => c.JellyseerrEnabled && c.JellyseerrShowSearchResults !== false]
+  ];
+  var lazyGroupOf = (value) => typeof value === "function" && "jeLazyGroup" in value && typeof value.jeLazyGroup === "string" ? value.jeLazyGroup : void 0;
+  function readExport(JE, path) {
+    const parts = path.split(".");
+    const name = parts.pop() ?? "";
+    let owner = JE;
+    for (const part of parts) owner = isRecord(owner) || typeof owner === "function" ? Reflect.get(owner, part) : void 0;
+    return { owner, value: isRecord(owner) || typeof owner === "function" ? Reflect.get(owner, name) : void 0 };
+  }
+  function groupHasEnabledFeature(JE, id) {
+    const config = JE.pluginConfig || {};
+    const settings = JE.currentSettings || {};
+    return FEATURE_INITIALIZERS.some(([group, , condition]) => group === id && (!condition || !!condition(config, settings)));
+  }
+  function initializeGroupFeatures(JE, ids, known) {
+    const config = JE.pluginConfig || {};
+    const settings = JE.currentSettings || {};
+    for (const [group, path, condition] of FEATURE_INITIALIZERS) {
+      if (!ids.includes(known(group) ? group : "core")) continue;
+      if (condition && !condition(config, settings)) continue;
+      const { owner, value } = readExport(JE, path);
+      if (typeof value === "function" && !lazyGroupOf(value)) Reflect.apply(value, owner, []);
+    }
+  }
+
+  // client/src/bootstrap/loader/component-loader.ts
+  var COMPONENT_SCRIPTS_BASE_PATH = "/JellyfinEnhanced/js";
+  var BUNDLE_RUN_BUDGET_MS = 10;
+  var BUNDLE_IDLE_TIMEOUT_MS = 100;
+  function filterComponentManifest(manifest) {
+    if (!Array.isArray(manifest)) return null;
+    const scripts = manifest.filter((entry) => typeof entry === "string").map((entry) => entry.trim()).filter((entry) => entry && !entry.startsWith("//"));
+    return scripts.length ? scripts : null;
+  }
+  var MANIFEST_ATTEMPTS = 2;
+  var MANIFEST_RETRY_DELAY_MS = 1e3;
+  async function getComponentScriptList(fromBootstrap) {
+    const fromPayload = filterComponentManifest(fromBootstrap);
+    if (fromPayload) return fromPayload;
+    let lastError;
+    for (let attempt = 1; attempt <= MANIFEST_ATTEMPTS; attempt++) {
+      if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, MANIFEST_RETRY_DELAY_MS));
+      try {
+        const api = client();
+        const manifest = await api.ajax({
+          type: "GET",
+          url: api.getUrl(`${COMPONENT_SCRIPTS_BASE_PATH}/component-scripts.json?v=${getScriptVersion()}`),
+          dataType: "json"
+        });
+        const scripts = filterComponentManifest(manifest);
+        if (scripts) return scripts;
+        lastError = new Error("Manifest is empty or malformed");
+      } catch (error) {
+        lastError = error;
+      }
+      if (attempt < MANIFEST_ATTEMPTS) console.warn("🪼 Jellyfin Enhanced: Could not load the component-script manifest; retrying.", lastError);
+    }
+    const status = typeof lastError === "object" && lastError !== null && "status" in lastError ? lastError.status : void 0;
+    const reason = lastError instanceof Error ? lastError.message : typeof status === "number" ? `HTTP ${status}` : String(lastError);
+    throw new Error(`Could not load the component-script manifest: ${reason}`);
+  }
+  function yieldToEventLoop() {
+    return new Promise((resolve) => {
+      if (typeof MessageChannel === "function") {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => resolve();
+        channel.port2.postMessage(null);
+      } else {
+        setTimeout(resolve, 0);
+      }
+    });
+  }
+  function waitForIdle(timeoutMs) {
+    if (typeof requestIdleCallback === "function") {
+      return new Promise((resolve) => {
+        requestIdleCallback(resolve, { timeout: timeoutMs });
+      });
+    }
+    return yieldToEventLoop().then(() => null);
+  }
+  async function runBundleModules(steps, idle) {
+    const nextSlice = () => idle ? waitForIdle(BUNDLE_IDLE_TIMEOUT_MS) : yieldToEventLoop().then(() => null);
+    let deadline = await nextSlice();
+    let sliceStart = performance.now();
+    for (const [index, step] of steps.entries()) {
+      try {
+        step.run();
+      } catch (error) {
+        console.error(`🪼 Jellyfin Enhanced: Module '${step.name || `#${index + 1}`}' threw while loading; continuing with the next module.`, error);
+        setTimeout(() => {
+          throw error;
+        }, 0);
+      }
+      if (!step.loaderStep) countBundleModule();
+      if (index + 1 >= steps.length) break;
+      const budgetSpent = performance.now() - sliceStart >= BUNDLE_RUN_BUDGET_MS;
+      const idleOver = !!deadline && !deadline.didTimeout && deadline.timeRemaining() < 1;
+      if (budgetSpent || idleOver) {
+        deadline = await nextSlice();
+        sliceStart = performance.now();
+      }
+    }
+  }
+
+  // client/src/bootstrap/loader/group-loader.ts
+  var CORE_GROUP = "core";
+  var GROUP_ID_PATTERN = /^[a-z][a-z0-9-]{0,39}$/;
+  var GROUP_RETRY_DELAY_MS = 5e3;
+  var GROUP_RETRY_MAX_DELAY_MS = 6e4;
+  function resolveComponentGroups(scripts, rawGroups) {
+    if (!Array.isArray(rawGroups)) return null;
+    const position = new Map(scripts.map((path, index) => [path, index]));
+    const owner = /* @__PURE__ */ new Set();
+    const order = [CORE_GROUP];
+    const byId = /* @__PURE__ */ Object.create(null);
+    byId[CORE_GROUP] = { id: CORE_GROUP, after: [], scripts: [] };
+    for (const entry of rawGroups) {
+      const id = isRecord(entry) && typeof entry.id === "string" ? entry.id : "";
+      if (!isRecord(entry) || !GROUP_ID_PATTERN.test(id) || byId[id]) return null;
+      const after = [];
+      if (entry.after !== void 0) {
+        if (!Array.isArray(entry.after)) return null;
+        for (const name of entry.after) {
+          if (typeof name !== "string" || name === id || !byId[name]) return null;
+          if (name !== CORE_GROUP && !after.includes(name)) after.push(name);
+        }
+      }
+      if (!Array.isArray(entry.modules) || entry.modules.length === 0) return null;
+      const own = [];
+      for (const module of entry.modules) {
+        const path = typeof module === "string" ? module.trim() : "";
+        if (!position.has(path) || owner.has(path)) return null;
+        owner.add(path);
+        own.push(path);
+      }
+      own.sort((a, b) => (position.get(a) ?? 0) - (position.get(b) ?? 0));
+      byId[id] = { id, after, scripts: own };
+      order.push(id);
+    }
+    byId[CORE_GROUP] = { id: CORE_GROUP, after: [], scripts: scripts.filter((path) => !owner.has(path)) };
+    return { order, byId, whole: false };
+  }
+  var isModuleList = (value) => Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === "function");
+  function createGroupLoader(hooks) {
+    let groups = null;
+    let manifestError = null;
+    const states = /* @__PURE__ */ Object.create(null);
+    let queue = Promise.resolve();
+    const retryAfter = /* @__PURE__ */ Object.create(null);
+    const retryCount = /* @__PURE__ */ Object.create(null);
+    async function setGroups(bootstrap) {
+      let scripts = [];
+      try {
+        scripts = await getComponentScriptList(bootstrap ? bootstrap.ComponentScripts : null);
+      } catch (error) {
+        if (isDevMode()) throw error;
+        manifestError = error;
+      }
+      let rawGroups = bootstrap ? bootstrap.ComponentGroups : null;
+      if (!Array.isArray(rawGroups) && !bootstrap && scripts.length) {
+        try {
+          const api = client();
+          const file = await api.ajax({
+            type: "GET",
+            url: api.getUrl(`${COMPONENT_SCRIPTS_BASE_PATH}/component-groups.json?v=${getScriptVersion()}`),
+            dataType: "json"
+          });
+          rawGroups = isRecord(file) ? file.groups : null;
+        } catch (error) {
+          console.warn("🪼 Jellyfin Enhanced: Could not load the component-group file — loading every component script.", error);
+        }
+      }
+      const resolved = scripts.length ? resolveComponentGroups(scripts, rawGroups) : null;
+      if (!resolved && Array.isArray(rawGroups)) {
+        console.warn("🪼 Jellyfin Enhanced: The component-group file is not usable — loading every component script.");
+      }
+      const whole = /* @__PURE__ */ Object.create(null);
+      whole[CORE_GROUP] = { id: CORE_GROUP, after: [], scripts };
+      groups = resolved ?? { order: [CORE_GROUP], byId: whole, whole: true };
+    }
+    function withRequired(ids) {
+      const current = groups;
+      if (!current) return [];
+      const wanted = /* @__PURE__ */ new Set([CORE_GROUP]);
+      const add = (id) => {
+        const group = current.byId[id];
+        if (!group || wanted.has(id)) return;
+        wanted.add(id);
+        group.after.forEach(add);
+        hooks.companions(id).forEach(add);
+      };
+      ids.forEach(add);
+      return current.order.filter((id) => wanted.has(id));
+    }
+    async function requestBundle(current, ids, idle) {
+      if (isDevMode()) return null;
+      if (idle) await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
+      const version = getScriptVersion();
+      const url = client().getUrl(current.whole ? `/JellyfinEnhanced/bundle.js?v=${version}` : `/JellyfinEnhanced/bundle.js?g=${ids.join(",")}&v=${version}`);
+      if (current.whole) resetBundleGlobals();
+      const requestOk = await scriptLoaded(url, (script) => {
+        if (idle) script.setAttribute("fetchpriority", "low");
+      });
+      const bundles = current.whole ? { [CORE_GROUP]: takeBundle() } : takeGroupBundles(ids);
+      return requestOk ? bundles : null;
+    }
+    const isComplete = (current, group, bundle) => !!bundle && isModuleList(bundle.modules) && bundle.modules.length === bundle.total && (current.whole || bundle.total === group.scripts.length);
+    function filesOf(current, group) {
+      if (current.whole && !group.scripts.length) {
+        throw manifestError ?? new Error("Could not load the component-script manifest: it is empty");
+      }
+      return group.scripts;
+    }
+    async function runBatch(current, ids, pending, idle) {
+      const bundles = await pending;
+      const defined = (id) => {
+        const group = current.byId[id];
+        const bundle = bundles?.[id];
+        return group && isComplete(current, group, bundle) ? bundle.modules : null;
+      };
+      if (!isDevMode() && !ids.every((id) => defined(id))) {
+        console.warn(bundles ? "🪼 Jellyfin Enhanced: Component bundle did not define its modules (syntax error?) — loading the component scripts individually." : "🪼 Jellyfin Enhanced: Component bundle request failed — loading the component scripts individually.");
+      }
+      let files = [];
+      let fileGroups = [];
+      const flushFiles = async () => {
+        if (!fileGroups.length) return;
+        const loading = fileGroups;
+        const names = files;
+        files = [];
+        fileGroups = [];
+        const results = await loadScripts(names, COMPONENT_SCRIPTS_BASE_PATH);
+        const anyLoaded = results.some(Boolean);
+        for (const id of loading) {
+          if (anyLoaded || id === CORE_GROUP) {
+            states[id] = "ready";
+          } else {
+            delete states[id];
+            const failures = retryCount[id] = (retryCount[id] ?? 0) + 1;
+            retryAfter[id] = Date.now() + Math.min(GROUP_RETRY_MAX_DELAY_MS, GROUP_RETRY_DELAY_MS * 2 ** (failures - 1));
+          }
+        }
+      };
+      let steps = [];
+      let bundleGroups = [];
+      const flushBundles = async () => {
+        if (!bundleGroups.length) return;
+        const running = bundleGroups;
+        const list = steps;
+        steps = [];
+        bundleGroups = [];
+        await runBundleModules(list, idle);
+        for (const id of running) states[id] = "ready";
+      };
+      for (const id of ids) {
+        const group = current.byId[id];
+        if (!group) continue;
+        const needsTabs = id === CORE_GROUP && !current.whole;
+        const modules = defined(id);
+        if (modules) {
+          await flushFiles();
+          modules.forEach((run, index) => steps.push({ run, name: group.scripts[index] ?? "" }));
+          bundleGroups.push(id);
+          if (needsTabs) steps.push({ run: hooks.afterCore, name: "plugin.js (Home tab registration)", loaderStep: true });
+        } else {
+          await flushBundles();
+          files = files.concat(filesOf(current, group));
+          fileGroups.push(id);
+          if (needsTabs) {
+            await flushFiles();
+            if (states[CORE_GROUP] === "ready") hooks.afterCore();
+          }
+        }
+      }
+      await flushBundles();
+      await flushFiles();
+    }
+    function ensure(ids, options = {}) {
+      const current = groups;
+      if (!current) return Promise.resolve();
+      const missing = withRequired(ids).filter((id) => !states[id]);
+      if (!missing.length) return queue;
+      for (const id of missing) states[id] = "loading";
+      const pending = requestBundle(current, missing, options.pace === "boot").catch(() => null);
+      const batch = queue.then(() => runBatch(current, missing, pending, options.pace === "boot" || options.pace === "background")).then(() => {
+        if (options.boot) return;
+        const loaded = missing.filter((id) => states[id] === "ready");
+        for (const id of loaded) {
+          delete retryAfter[id];
+          delete retryCount[id];
+        }
+        if (loaded.length < missing.length) hooks.failed();
+        if (loaded.length) hooks.loaded(loaded);
+      });
+      queue = batch.catch((error) => {
+        if (!options.boot) console.error("🪼 Jellyfin Enhanced: Failed to load component groups", missing, error);
+        for (const id of missing) if (states[id] === "loading") states[id] = "ready";
+      });
+      return options.boot ? batch : queue;
+    }
+    return {
+      setGroups,
+      ensure,
+      groups: () => groups,
+      state: (id) => states[id],
+      states: () => ({ ...states }),
+      ready: () => Object.keys(states).filter((id) => states[id] === "ready"),
+      /** When a group whose last load failed entirely may be asked for again on a page change (0: at once). */
+      retryAt: (id) => retryAfter[id] ?? 0,
+      settled: () => queue
+    };
+  }
+
+  // client/src/bootstrap/loader/group-rules.ts
+  function currentRoute() {
+    const hash = String(window.location.hash || "").replace(/^#!?\/?/, "");
+    const at = hash.search(/[?#]/);
+    const path = (at < 0 ? hash : hash.slice(0, at)).toLowerCase().replace(/\.html$/, "").replace(/\/+$/, "");
+    return { path, query: at < 0 ? "" : hash.slice(at + 1) };
+  }
+  function safeDecode(text) {
+    try {
+      return decodeURIComponent(text);
+    } catch {
+      return text;
+    }
+  }
+  var FEATURE_PAGES = [
+    { group: "hidden-content-page", flag: "HiddenContentEnabled", delivery: "HiddenContent", tab: ["hidden-content", "hidden_content_manage_title", "Hidden Content", "remove_red_eye"], marker: "jellyfinenhanced hidden-content", routes: ["hidden-content"], pluginPage: "hiddencontentpage" },
+    { group: "catchup", flag: "CatchUpEnabled", delivery: "CatchUp", tab: ["catchup", "catchup_title", "Catch Up", "style"], marker: "jellyfinenhanced catchup", pluginPage: "catchuppage" },
+    { group: "recommendations", flag: "RecommendationsPageEnabled", delivery: "Recommendations", tab: ["recommendations", "recommendations_title", void 0, "auto_awesome"], marker: "jellyfinenhanced recommendations", routes: ["recommendations"], pluginPage: "recommendationspage" },
+    { group: "requests-page", flag: "DownloadsPageEnabled", delivery: "Downloads", tab: ["requests", "requests_requests", "Requests", "download"], marker: "jellyfinenhanced requests", routes: ["downloads"], pluginPage: "downloadspage" },
+    { group: "calendar-page", flag: "CalendarPageEnabled", delivery: "Calendar", tab: ["calendar", "calendar_title", "Calendar", "calendar_month"], marker: "jellyfinenhanced calendar", routes: ["calendar"], pluginPage: "calendarpage" },
+    { group: "activity-page", flag: "ActivityFeedEnabled", delivery: "ActivityFeed", tab: ["activity", "activity_title", "Activity", "history"], marker: "jellyfinenhanced activity", pluginPage: "activitypage" },
+    // The Leaving Soon page ships in the item menu's output in this tree (js/tags/tag-item-menu.js), which is in the
+    // tags group: upstream's leavingsoon-page group has no module here.
+    { group: "tags", flag: "LeavingSoonPageEnabled", delivery: "LeavingSoonPage", tab: ["leavingsoon", "leavingsoon_title", "Leaving Soon", "auto_delete"], marker: "jellyfinenhanced leavingsoon", pluginPage: "leavingsoonpage" },
+    // Last: the Bookmarks library registers its tab from a timer once its data is ready, after the others.
+    { group: "bookmarks-library", flag: "BookmarksEnabled", delivery: "Bookmarks", tab: ["bookmarks", null, "Bookmarks", "location_on"], marker: "sections bookmarks", routes: ["bookmarks"], pluginPage: "bookmarkspage" }
+  ];
+  var markerSelector = (page) => `.${page.marker.split(" ").join(".")}`;
+  var POSTER_TAG_SETTINGS = [
+    "qualityTagsEnabled",
+    "genreTagsEnabled",
+    "ratingTagsEnabled",
+    "ageRatingTagsEnabled",
+    "statusTagsEnabled",
+    "awardsTagsEnabled",
+    "customTagsEnabled",
+    "languageTagsEnabled",
+    "logoTagsEnabled"
+  ];
+  var isHomeRoute = (route) => route.path === "" || route.path === "home";
+  var isDetailsRoute = (route) => route.path === "details";
+  var isVideoRoute = (route) => route.path === "video";
+  var isDashboardRoute = (route) => /^(dashboard|configurationpage|settings)(\/|$)/.test(route.path);
+  var isOwnConfigPage = (route) => route.path === "configurationpage" && /jellyfin[\s+_.-]*enhanced/i.test(safeDecode(route.query));
+  var isSeerrRoute = (route) => isDetailsRoute(route) || route.path === "list" || route.path === "search";
+  function createGroupRules(JE) {
+    const config = () => JE.pluginConfig || {};
+    let videoSeen = false;
+    function userSetting(key) {
+      const current = JE.currentSettings;
+      if (current && Object.prototype.hasOwnProperty.call(current, key)) return current[key] === true;
+      const saved = JE.userConfig?.settings ? JE.userConfig.settings[key] : void 0;
+      if (typeof saved === "boolean") return saved;
+      const settings = config();
+      const fallback = settings[key] !== null && settings[key] !== void 0 ? settings[key] : settings[key.charAt(0).toUpperCase() + key.slice(1)];
+      return fallback === true;
+    }
+    const posterTagsOn = () => POSTER_TAG_SETTINGS.some(userSetting);
+    const playerWanted = (route) => videoSeen || isVideoRoute(route);
+    const isTabbedPage = (page) => !!(config()[`${page.delivery}UseNativeTab`] || config()[`${page.delivery}UseCustomTabs`]);
+    function pageNeeded(page, route) {
+      if (!config()[page.flag]) return false;
+      if (page.routes && !isTabbedPage(page)) return true;
+      if (page.routes?.includes(route.path)) return true;
+      if (route.path.startsWith("userpluginsettings")) {
+        const address = safeDecode(route.query).toLowerCase();
+        return address.includes("jellyfinenhanced/") ? address.includes(`jellyfinenhanced/${page.pluginPage}`) : true;
+      }
+      if (isHomeRoute(route)) {
+        const query = safeDecode(route.query);
+        if (new RegExp(`(^|[?&#])jeTab=${page.tab[0]}(&|#|$)`).test(query)) return true;
+        if (page.group === "recommendations" && /(^|[?&#])jeCategory=/.test(query)) return true;
+      }
+      const isActive = JE.helpers?.isActiveTabContainer;
+      return typeof isActive === "function" && Array.from(document.querySelectorAll(markerSelector(page))).some((element) => isActive(element));
+    }
+    const pageRule = (group) => (route) => FEATURE_PAGES.some((page) => page.group === group && pageNeeded(page, route));
+    const onDetails = (group) => (route) => isDetailsRoute(route) && groupHasEnabledFeature(JE, group);
+    const removalOffered = () => config().MaintainerrActionsAvailable === true || config().RemovalRequestsAvailable === true;
+    const FEATURE_GROUPS = {
+      // Poster tags are on every card surface, so they load at boot, but only when the user has a tag type
+      // on. The settings panel is "after" every tag group, so switching a type on there finds its code
+      // loaded. This tree's js/tags/tag-item-menu.js (in this group) also carries upstream's removal-menu
+      // module (Maintainerr / removal-request rows, whose item-menu hook has to see the first menu that opens,
+      // so with removal rows it loads at boot) and its leavingsoon-page modules (the Leaving Soon page and
+      // tab): the group loads wherever upstream loads any of the three.
+      "tags": { needed: (route) => posterTagsOn() || removalOffered() || pageRule("tags")(route) },
+      "tag-direct-play": { needed: () => posterTagsOn() && userSetting("statusTagsEnabled") && userSetting("statusTagsDirectPlay") },
+      "tag-poster-colours": { needed: () => posterTagsOn() && !!config().TagStyleWebActive },
+      // Asked for by tags/statustags.js when the first status tag is drawn (JE.loader.ensure), never at boot.
+      "tag-status-backdrop": { needed: () => false },
+      "tag-people": { needed: (route) => isDetailsRoute(route) && userSetting("peopleTagsEnabled") },
+      // Both act before content paints, so they are never deferred.
+      "spoiler-guard": { needed: () => !!config().SpoilerBlurEnabled },
+      "hidden-content": { needed: () => !!config().HiddenContentEnabled },
+      "details": { needed: isDetailsRoute },
+      "player": {
+        needed: playerWanted,
+        // The player shortcuts (enhanced/events.js): one pressed while the group is still arriving is
+        // carried out when it has.
+        exports: [
+          "cycleAspect",
+          "togglePlaybackInfo",
+          "cycleSubtitleTrack",
+          "cycleAudioTrack",
+          "resetPlaybackSpeed",
+          "adjustPlaybackSpeed",
+          "skipIntroOutro",
+          "frameStep",
+          "adjustSubtitleOffset",
+          "jumpToLastPosition",
+          "jumpToPercentage",
+          "toggleSubtitleSync"
+        ]
+      },
+      // Listens for the first "playing" event, which can come before the video page.
+      "player-badge": { needed: () => !!config().ShowPlaybackRatingBadge },
+      "bookmarks": { needed: (route) => !!config().BookmarksEnabled && playerWanted(route) },
+      "bookmarks-library": { needed: pageRule("bookmarks-library") },
+      "hidden-content-page": { needed: pageRule("hidden-content-page") },
+      "catchup": { needed: pageRule("catchup") },
+      "settings": {
+        // The admin page's Media Tags tab draws with the panel's preview and editors.
+        needed: isOwnConfigPage,
+        // The panel's "Manage hidden content" asks the page, synchronously, whether it can show itself.
+        with: () => config().HiddenContentEnabled ? ["hidden-content-page"] : [],
+        exports: ["showEnhancedPanel"]
+      },
+      "elsewhere": { needed: onDetails("elsewhere") },
+      "reviews": { needed: onDetails("reviews") },
+      "awards": { needed: onDetails("awards") },
+      "mdblist": { needed: onDetails("mdblist") },
+      "content-warnings": { needed: onDetails("content-warnings") },
+      "letterboxd": { needed: onDetails("letterboxd") },
+      "arr-tag-links": { needed: onDetails("arr-tag-links") },
+      // Administrators only (its start-up checks), and it reports a broken Sonarr/Radarr setup as it
+      // starts, so it keeps starting at boot.
+      "arr-links": { needed: () => !!config().ArrLinksEnabled && userSetting("isAdmin") },
+      "seerr-api": { needed: () => !!config().JellyseerrEnabled },
+      "seerr": {
+        needed: (route) => !!config().JellyseerrEnabled && isSeerrRoute(route),
+        // Opened from outside its own pages: Home Screen Sections' discover cards and Hidden Content
+        // lists (More Info), the Requests page (issues).
+        exports: ["jellyseerrMoreInfo.open", "jellyseerrIssueReporter.showReportModal"]
+      },
+      "recommendations": { needed: pageRule("recommendations") },
+      "requests-page": { needed: pageRule("requests-page") },
+      "calendar-page": { needed: pageRule("calendar-page") },
+      "activity-page": { needed: pageRule("activity-page") },
+      // No flag: plugin revision lists always start, and the configuration page's "Test custom links"
+      // uses the plugin-icons module either way.
+      "dashboard": { needed: isDashboardRoute },
+      "theme-selector": { needed: () => !!config().ThemeSelectorEnabled },
+      "active-streams": { needed: () => !!config().ActiveStreamsEnabled }
+    };
+    return {
+      FEATURE_GROUPS,
+      isTabbedPage,
+      /** The groups a group's rule asks to load along with it. */
+      companions(id) {
+        try {
+          return FEATURE_GROUPS[id]?.with?.() ?? [];
+        } catch {
+          return [];
+        }
+      },
+      /** Which of the given groups (in order) the current page, config and user need right now. */
+      needed(order) {
+        const route = currentRoute();
+        return order.filter((id) => {
+          if (id === "core") return true;
+          const rule = FEATURE_GROUPS[id];
+          if (!rule) return true;
+          try {
+            return !!rule.needed?.(route);
+          } catch (error) {
+            console.error(`🪼 Jellyfin Enhanced: Could not decide whether component group '${id}' is needed; loading it.`, error);
+            return true;
+          }
+        });
+      },
+      /** A <video> has started loading or playing. */
+      sawVideo() {
+        videoSeen = true;
+      }
+    };
+  }
+
+  // client/src/bootstrap/loader/group-triggers.ts
+  var VIDEO_EVENTS = ["loadstart", "play", "playing"];
+  function createComponentGroups(JE) {
+    const rules = createGroupRules(JE);
+    const startedWith = /* @__PURE__ */ new WeakMap();
+    let retryTimer = 0;
+    const loader = createGroupLoader({
+      companions: (id) => rules.companions(id),
+      afterCore: registerPageTabs,
+      loaded(ids) {
+        startFeatures(ids);
+        nudgeObservers();
+      },
+      failed: scheduleRetry
+    });
+    const isGroup = (id) => !!loader.groups()?.byId[id];
+    const neededGroups = () => rules.needed(loader.groups()?.order ?? []);
+    function startFeatures(ids) {
+      const settings = JE.currentSettings;
+      if (settings) {
+        const started = startedWith.get(settings) ?? /* @__PURE__ */ new Set();
+        for (const id of ids) started.add(id);
+        startedWith.set(settings, started);
+      }
+      initializeGroupFeatures(JE, ids, isGroup);
+    }
+    function registerPageTabs() {
+      const config = JE.pluginConfig || {};
+      if (typeof JE.nativeTabs?.register !== "function") return;
+      for (const page of FEATURE_PAGES) {
+        if (!config[page.flag] || !config[`${page.delivery}UseNativeTab`]) continue;
+        const [id, titleKey, fallbackTitle, icon] = page.tab;
+        const title = titleKey ? JE.t(titleKey) || fallbackTitle : fallbackTitle;
+        JE.nativeTabs.register(id, title ?? "", (panel) => {
+          const marker = document.createElement("div");
+          marker.className = page.marker;
+          panel.appendChild(marker);
+        }, icon);
+      }
+    }
+    function nudgeObservers() {
+      if (!document.body) return;
+      const marker = document.createElement("span");
+      marker.hidden = true;
+      document.body.appendChild(marker);
+      marker.remove();
+    }
+    function loadNeeded() {
+      const now = Date.now();
+      const due = neededGroups().filter((id) => loader.state(id) || loader.retryAt(id) <= now);
+      const loading = loader.ensure(due, { pace: "background" });
+      scheduleRetry();
+      return loading;
+    }
+    function scheduleRetry() {
+      if (retryTimer) return;
+      const now = Date.now();
+      const waiting = neededGroups().filter((id) => !loader.state(id) && loader.retryAt(id) > now).map((id) => loader.retryAt(id));
+      if (!waiting.length) return;
+      retryTimer = window.setTimeout(() => {
+        retryTimer = 0;
+        void loadNeeded();
+      }, Math.max(0, Math.min(...waiting) - Date.now()) + 50);
+    }
+    function installLazyExports() {
+      for (const [id, rule] of Object.entries(rules.FEATURE_GROUPS)) {
+        if (!rule.exports || !isGroup(id) || loader.state(id)) continue;
+        for (const path of rule.exports) {
+          const parts = path.split(".");
+          const name = parts.pop() ?? "";
+          let owner = JE;
+          for (const part of parts) {
+            let next = Reflect.get(owner, part);
+            if (next === void 0 || next === null) Reflect.set(owner, part, next = {});
+            if (!isRecord(next) && typeof next !== "function") break;
+            owner = next;
+          }
+          if (Reflect.get(owner, name) !== void 0) continue;
+          const standIn = Object.assign(function(...args) {
+            return loader.ensure([id]).then(() => {
+              const real = readExport(JE, path);
+              if (typeof real.value === "function" && real.value !== standIn) return Reflect.apply(real.value, real.owner, args);
+              console.error(`🪼 Jellyfin Enhanced: '${path}' is not available (component group '${id}' did not load).`);
+              return void 0;
+            });
+          }, { jeLazyGroup: id });
+          Reflect.set(owner, name, standIn);
+        }
+      }
+    }
+    function watchTriggers() {
+      const onNavigate = JE.core.navigation?.onNavigate;
+      if (typeof onNavigate === "function") onNavigate(() => {
+        void loadNeeded();
+      });
+      else window.addEventListener("hashchange", () => {
+        void loadNeeded();
+      });
+      const config = JE.pluginConfig || {};
+      const tabbed = FEATURE_PAGES.filter((page) => isGroup(page.group) && config[page.flag] && rules.isTabbedPage(page));
+      if (tabbed.length && typeof JE.helpers?.observeTabContainers === "function") {
+        const watcher = JE.helpers.observeTabContainers("je-component-groups", tabbed.map(markerSelector).join(", "), () => {
+          if (tabbed.every((page) => loader.state(page.group))) watcher?.teardown();
+          else void loadNeeded();
+        });
+      }
+      if (isGroup("player") && !loader.state("player")) {
+        const onVideo = (event) => {
+          if (!(event.target instanceof Node) || event.target.nodeName !== "VIDEO") return;
+          rules.sawVideo();
+          for (const type of VIDEO_EVENTS) document.removeEventListener(type, onVideo, true);
+          void loadNeeded();
+        };
+        for (const type of VIDEO_EVENTS) document.addEventListener(type, onVideo, true);
+      }
+      return loadNeeded();
+    }
+    const api = {
+      ensure: (ids, options) => loader.ensure(typeof ids === "string" ? [ids] : ids, options?.pace ? { pace: options.pace } : {}),
+      state: () => loader.states(),
+      needed: () => neededGroups(),
+      settled: () => loader.settled(),
+      catalog: () => ({
+        groups: Object.entries(rules.FEATURE_GROUPS).map(([id, rule]) => ({ id, exports: [...rule.exports ?? []] })),
+        initializers: FEATURE_INITIALIZERS.map(([group, path]) => ({ group, path })),
+        pages: FEATURE_PAGES.map((page) => ({ group: page.group, flag: page.flag, delivery: page.delivery, tab: [...page.tab], marker: page.marker }))
+      })
+    };
+    JE.loader = api;
+    return {
+      setGroups: loader.setGroups,
+      /** Stage 3: the groups this page needs, as one request made and run in idle time. Rejects when nothing can be loaded. */
+      loadBootGroups: () => loader.ensure(neededGroups(), { pace: "boot", boot: true }),
+      /** Stage 6 for every group loaded so far; groups loaded later run their own entries right after their modules. */
+      startLoadedFeatures: () => {
+        startFeatures(loader.ready());
+      },
+      installLazyExports,
+      watchTriggers,
+      loadNeeded,
+      /** Whether a group's stage 6 last ran with exactly these settings (it has only just started for this user). */
+      startedWith: (id, settings) => !!settings && isGroup(id) && id !== CORE_GROUP && !!startedWith.get(settings)?.has(id)
+    };
   }
 
   // client/src/bootstrap/loader/session-integration.ts
@@ -690,7 +1252,7 @@
     console.warn("🪼 Jellyfin Enhanced: Translations module not loaded, falling back to empty translations");
     return {};
   }
-  async function rebootstrapUser(JE, config, userId, epoch, detail) {
+  async function rebootstrapUser(JE, config, groups, userId, epoch, detail) {
     const session = JE.session;
     if (!session?.isCurrent(epoch)) return;
     try {
@@ -698,7 +1260,9 @@
       JE.currentSettings = JE.loadSettings();
       JE.initializeShortcuts();
       seedDisplayLanguage(JE, userId);
-      reinitializeUserTags(JE);
+      await groups.loadNeeded();
+      if (!session.isCurrent(epoch)) return;
+      if (!groups.startedWith("tags", JE.currentSettings)) reinitializeUserTags(JE);
       try {
         const translations = await loadTranslations(JE);
         if (!session.isCurrent(epoch)) return;
@@ -711,7 +1275,7 @@
       console.error("🪼 Jellyfin Enhanced: Failed to reload user data after user switch:", error);
     }
   }
-  function registerSessionIntegration(JE, config) {
+  function registerSessionIntegration(JE, config, groups) {
     if (!JE.session) {
       console.error("🪼 Jellyfin Enhanced: session.js missing — user-switch handling disabled.");
       return;
@@ -723,7 +1287,7 @@
       const { userId, epoch } = detail;
       if (typeof userId !== "string" || !userId || typeof epoch !== "number") return;
       setTimeout(() => {
-        void rebootstrapUser(JE, config, userId, epoch, detail);
+        void rebootstrapUser(JE, config, groups, userId, epoch, detail);
       }, 0);
     });
   }
@@ -823,7 +1387,7 @@
   function createBootDependencies(JE) {
     const identity = createIdentityScope(document);
     const contracts = createBootstrapClient(JE, identity);
-    return { JE, identity, contracts, config: createConfigLoader(JE, contracts, identity) };
+    return { JE, identity, contracts, config: createConfigLoader(JE, contracts, identity), groups: createComponentGroups(JE) };
   }
   async function recoverSessionChangedDuringBoot(dependencies2) {
     const { JE, config } = dependencies2;
@@ -836,7 +1400,7 @@
     return liveUserId;
   }
   function createInitializer(dependencies2) {
-    const { JE, identity, contracts, config } = dependencies2;
+    const { JE, identity, contracts, config, groups } = dependencies2;
     let mismatchRetryCount = 0;
     let configRetryCount = 0;
     const retry = () => {
@@ -920,9 +1484,11 @@
         }
         JE.userConfig = loadedUserConfig;
         if (typeof JE.initializeSplashScreen === "function") JE.initializeSplashScreen();
-        await loadComponentScripts(bootstrap ? bootstrap.ComponentScripts : null);
-        console.log("🪼 Jellyfin Enhanced: All component scripts loaded.");
-        registerSessionIntegration(JE, config);
+        await groups.setGroups(bootstrap);
+        await groups.loadBootGroups();
+        console.log("🪼 Jellyfin Enhanced: Component scripts loaded.");
+        if (JE.pluginConfig?.BookmarksEnabled) aliasNamespace(JE);
+        registerSessionIntegration(JE, config, groups);
         if (!unchanged()) userId = await recoverSessionChangedDuringBoot(dependencies2);
         if (typeof JE.loadSettings !== "function" || typeof JE.initializeShortcuts !== "function") {
           console.error("🪼 Jellyfin Enhanced: FATAL - config.js functions not defined after script loading.");
@@ -932,6 +1498,7 @@
         JE.currentSettings = JE.loadSettings();
         JE.initializeShortcuts();
         if (userId) seedDisplayLanguage(JE, userId);
+        groups.installLazyExports();
         if (typeof JE.themer?.init === "function") {
           JE.themer.init();
           console.log("🪼 Jellyfin Enhanced: Theme system initialized.");
@@ -939,7 +1506,8 @@
         window.addEventListener("beforeunload", () => {
           JE._cacheManager.forceSave();
         });
-        initializeFeatures(JE);
+        groups.startLoadedFeatures();
+        await groups.watchTriggers();
         console.log("🪼 Jellyfin Enhanced: All components initialized successfully.");
         JE.initialized = true;
         JE.hideSplashScreen?.();
@@ -1048,6 +1616,18 @@
 
   // client/src/bootstrap/loader/early.ts
   var HOST_POLL_MS = 50;
+  function registerWholePixelProperties() {
+    try {
+      if (navigator.vendor !== "Google Inc." || typeof CSS === "undefined" || typeof CSS.registerProperty !== "function") return;
+      for (const name of ["--je-snap-x", "--je-snap-y", "--je-band-left"]) {
+        try {
+          CSS.registerProperty({ name, syntax: "*", inherits: false });
+        } catch {
+        }
+      }
+    } catch {
+    }
+  }
   function loadSplashScreenEarly(JE) {
     const api = optionalClient();
     if (!api) {
@@ -1095,6 +1675,7 @@
 
   // client/src/bootstrap/loader/entry.ts
   var dependencies = createBootDependencies(createNamespace());
+  registerWholePixelProperties();
   loadSplashScreenEarly(dependencies.JE);
   loadLoginImageEarly(dependencies.contracts, dependencies.identity);
   void createInitializer(dependencies)();

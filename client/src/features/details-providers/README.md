@@ -10,14 +10,14 @@ Sources are relative to this folder; outputs are relative to `Jellyfin.Plugin.Je
 
 | source | output | load position |
 |---|---|---|
-| `arr-links.ts` | `js/arr/arr-links.js` | 157 |
-| `arr-tag-links.ts` | `js/arr/arr-tag-links.js` | 158 |
+| `arr-links.ts` | `js/arr/arr-links.js` | 158 |
+| `arr-tag-links.ts` | `js/arr/arr-tag-links.js` | 159 |
 | `awards.ts` | `js/awards/awards.js` | 94 |
-| `colored-ratings.ts` | `js/extras/colored-ratings.js` | 175 |
+| `colored-ratings.ts` | `js/extras/colored-ratings.js` | 176 |
 | `details-page.ts` | `js/enhanced/itemdetails/features-details-page.js` | 35 |
 | `doesthedogdie.ts` | `js/others/doesthedogdie.js` | 96 |
 | `elsewhere.ts` | `js/elsewhere/elsewhere.js` | 92 |
-| `letterboxd-links.ts` | `js/others/letterboxd-links.js` | 182 |
+| `letterboxd-links.ts` | `js/others/letterboxd-links.js` | 183 |
 | `mdblist-ratings.ts` | `js/others/mdblist-ratings.js` | 95 |
 | `media-info.ts` | `js/enhanced/itemdetails/features-details-media-info.js` | 33 |
 | `random-button.ts` | `js/enhanced/features-random-button.js` | 32 |

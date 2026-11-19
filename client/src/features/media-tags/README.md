@@ -30,13 +30,13 @@ Sources are relative to this folder; outputs are relative to `Jellyfin.Plugin.Je
 | `admin/sections/server.ts` | `js/enhanced/admintags/sections/server.js` | – |
 | `admin/sections/status.ts` | `js/enhanced/admintags/sections/status.js` | – |
 | `admin/tag-styles-editor.ts` | `js/enhanced/admintags/tag-styles-editor.js` | – |
-| `editor/tag-item-editor-entry.ts` | `js/tags/tag-item-editor.js` | 155 |
-| `editor/tag-item-menu-entry.ts` | `js/tags/tag-item-menu.js` | 156 |
-| `layout/poster-colours-entry.ts` | `js/tags/tag-poster-colours.js` | 150 |
+| `editor/tag-item-editor-entry.ts` | `js/tags/tag-item-editor.js` | 156 |
+| `editor/tag-item-menu-entry.ts` | `js/tags/tag-item-menu.js` | 157 |
+| `layout/poster-colours-entry.ts` | `js/tags/tag-poster-colours.js` | 151 |
 | `layout/tag-layout-entry.ts` | `js/core/tag-layout.js` | 9 |
 | `layout/tag-layout-styles-entry.ts` | `js/tags/tag-layout-styles.js` | 18 |
 | `layout/tag-look-entry.ts` | `js/core/tag-look.js` | 10 |
-| `layout/tag-styles-entry.ts` | `js/tags/tag-styles.js` | 153 |
+| `layout/tag-styles-entry.ts` | `js/tags/tag-styles.js` | 154 |
 | `pipeline/tag-cache-store-entry.ts` | `js/tags/tag-cache-store.js` | 16 |
 | `pipeline/tag-pipeline-entry.ts` | `js/tags/tag-pipeline.js` | 17 |
 | `pipeline/tag-renderer-base-entry.ts` | `js/core/tag-renderer-base.js` | 8 |
@@ -47,19 +47,20 @@ Sources are relative to this folder; outputs are relative to `Jellyfin.Plugin.Je
 | `settings/ui-panel-tag-preview.ts` | `js/enhanced/settingspanel/ui-panel-tag-preview.js` | 76 |
 | `types/age-rating/ageratingtags-entry.ts` | `js/tags/ageratingtags.js` | 145 |
 | `types/awards/awardstags-entry.ts` | `js/tags/awardstags.js` | 146 |
-| `types/custom/customtags-entry.ts` | `js/tags/customtags.js` | 152 |
+| `types/custom/customtags-entry.ts` | `js/tags/customtags.js` | 153 |
 | `types/direct-play/tag-direct-play-entry.ts` | `js/tags/tag-direct-play.js` | 147 |
 | `types/genre/genretags-entry.ts` | `js/tags/genretags.js` | 140 |
 | `types/language/languagetags-entry.ts` | `js/tags/languagetags.js` | 141 |
 | `types/language/media-language-entry.ts` | `js/core/media-language.js` | 6 |
-| `types/logo/logotags-entry.ts` | `js/tags/logotags.js` | 151 |
+| `types/logo/logotags-entry.ts` | `js/tags/logotags.js` | 152 |
 | `types/people/peopletags-entry.ts` | `js/tags/peopletags.js` | 142 |
 | `types/quality/qualitytags-entry.ts` | `js/tags/qualitytags.js` | 143 |
 | `types/ratings/rating-sources-entry.ts` | `js/tags/rating-sources.js` | 11 |
 | `types/ratings/ratingtags-entry.ts` | `js/tags/ratingtags.js` | 144 |
-| `types/ratings/userreviewtags-entry.ts` | `js/tags/userreviewtags.js` | 154 |
+| `types/ratings/userreviewtags-entry.ts` | `js/tags/userreviewtags.js` | 155 |
 | `types/status/status-vocabulary-entry.ts` | `js/tags/status-vocabulary.js` | 148 |
 | `types/status/statustags-entry.ts` | `js/tags/statustags.js` | 149 |
+| `types/status/backdrop/status-tag-backdrop-entry.ts` | `js/tags/status-tag-backdrop.js` | 150 |
 
 ## Public API and global slots
 

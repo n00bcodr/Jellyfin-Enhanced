@@ -15,15 +15,15 @@
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
   var export0 = /* @__PURE__ */ sharedExport(shared, "apiClient");
   var export1 = /* @__PURE__ */ sharedExport(shared, "hasApiClient");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
   var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
   var export12 = /* @__PURE__ */ sharedExport(shared2, "errorStatus");
   var export2 = /* @__PURE__ */ sharedExport(shared2, "finite");
   var export3 = /* @__PURE__ */ sharedExport(shared2, "idText");
-  var export42 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
-  var export5 = /* @__PURE__ */ sharedExport(shared2, "memberRecord");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export52 = /* @__PURE__ */ sharedExport(shared2, "memberRecord");
   var export7 = /* @__PURE__ */ sharedExport(shared2, "members");
   var export8 = /* @__PURE__ */ sharedExport(shared2, "normalizeItemId");
   var export10 = /* @__PURE__ */ sharedExport(shared2, "record");
@@ -32,14 +32,14 @@
 
   // client/src/features/media-tags/pipeline/state.ts
   function entryPairs(items) {
-    return Object.entries(export10(items)).filter((pair) => export42(pair[1]));
+    return Object.entries(export10(items)).filter((pair) => export4(pair[1]));
   }
   var servedAtOf = (resp) => typeof resp.servedAt === "number" ? resp.servedAt : 0;
   var textOrEmpty = (value) => typeof value === "string" ? value : "";
   var cursorOf = (resp) => export2(resp.timestamp) ?? 0;
   function firstItem(response) {
     const first = Array.isArray(response.Items) ? response.Items[0] : null;
-    return export42(first) ? first : null;
+    return export4(first) ? first : null;
   }
   var MEDIA_TYPES = /* @__PURE__ */ new Set(["Movie", "Episode", "Series", "Season", "BoxSet", "Video"]);
   var isMediaType = (type) => typeof type === "string" && MEDIA_TYPES.has(type);
@@ -273,7 +273,7 @@
           dataType: "json"
         });
         if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
-        if (!export42(resp) || !resp.items || !s.serverCache || generation !== s.cacheGeneration) return;
+        if (!export4(resp) || !resp.items || !s.serverCache || generation !== s.cacheGeneration) return;
         deps.applyReviewRatings(resp, requestedAt);
         const revision = textOrEmpty(resp.filterRevision);
         const rolledBack = typeof resp.timestamp === "number" && resp.timestamp < base.timestamp;
@@ -461,6 +461,11 @@
       forgetItemFacts(id);
       return null;
     }
+    function itemFactsExpiry(id) {
+      if (s.serverCache?.get(id)) return Infinity;
+      const saved = s.itemFacts.get(id);
+      return saved && saved.expires > Date.now() ? saved.expires : 0;
+    }
     async function lookupItemFacts(ids) {
       const generation = s.cacheGeneration;
       const epoch = JE.session ? JE.session.getEpoch() : 0;
@@ -479,7 +484,7 @@
             dataType: "json"
           }));
           if (generation !== s.cacheGeneration || JE.session && !JE.session.isCurrent(epoch)) return;
-          for (const entry of export7(response.Items)) rememberItemFacts(export5(entry));
+          for (const entry of export7(response.Items)) rememberItemFacts(export52(entry));
         } catch {
         }
       }
@@ -488,7 +493,7 @@
       const id = s.seasonFactIds.get(`${seriesId}:${season}`);
       return id ? peekItemFacts(id) : null;
     }
-    return { advanceBatchGeneration, forgetItemFacts, rememberItemFacts, peekItemFacts, lookupItemFacts, peekSeasonFacts };
+    return { advanceBatchGeneration, forgetItemFacts, rememberItemFacts, peekItemFacts, itemFactsExpiry, lookupItemFacts, peekSeasonFacts };
   }
 
   // client/src/features/media-tags/pipeline/look-facts.ts
@@ -514,9 +519,9 @@
         }
         const stored = JSON.parse(localStorage.getItem(LOOK_FACTS_KEY) || "{}");
         const clearedAt = Number(JE.pluginConfig?.ClearLocalStorageTimestamp || 0);
-        if (export42(stored)) {
+        if (export4(stored)) {
           for (const [id, facts] of Object.entries(stored)) {
-            if (export42(facts) && Number(facts.at) > clearedAt) s.lookFacts.set(id, facts);
+            if (export4(facts) && Number(facts.at) > clearedAt) s.lookFacts.set(id, facts);
           }
           if (s.lookFacts.size !== Object.keys(stored).length) saveLookFacts();
         }
@@ -654,8 +659,8 @@
         }));
         const answered = export7(response.Items);
         if (!isCurrent()) return;
-        if (needsLatestEpisode) answered.forEach((item) => deps.rememberItemFacts(export5(item)));
-        const items = answered.map(export5);
+        if (needsLatestEpisode) answered.forEach((item) => deps.rememberItemFacts(export52(item)));
+        const items = answered.map(export52);
         const stripRevision = typeof response.StripRevision === "string" ? response.StripRevision : null;
         s.tagStripRevision = stripRevision;
         const parentSeriesNeeded = /* @__PURE__ */ new Set();
@@ -736,7 +741,7 @@
         const pendingFirstEps = [];
         let renderedSinceYield = 0;
         for (const item of items) {
-          const firstEpisode = export42(item.FirstEpisode) ? item.FirstEpisode : null;
+          const firstEpisode = export4(item.FirstEpisode) ? item.FirstEpisode : null;
           if (anyNeedsFirstEp && firstEpisode?.NeedsStreamFetch) {
             pendingFirstEps.push(
               deps.getFirstEpisode(userId, String(item.Id), export3(firstEpisode.Id)).then((ep) => renderItem(item, ep)).catch(() => renderItem(item, null)).then(() => {
@@ -767,7 +772,7 @@
           try {
             const item = JE.helpers?.getItemCached ? await JE.helpers.getItemCached(itemId, { userId }) : await deps.apiClient().getItem(userId, itemId);
             if (!isCurrent()) return;
-            if (!export42(item) || !isMediaType(item.Type)) continue;
+            if (!export4(item) || !isMediaType(item.Type)) continue;
             deps.rememberLookFacts(itemId, item, "item");
             const firstEpisode = item.Type === "Series" || item.Type === "Season" ? await deps.getFirstEpisode(userId, String(item.Id)) : null;
             if (!isCurrent()) break;
@@ -875,7 +880,28 @@
   var CHUNK_MIN_CARDS = 4;
   var CHUNK_MAX_CARDS = 40;
   var CARD_IMAGE_SELECTOR = ".cardImageContainer, div.listItemImage";
+  var ARTWORK_WATCH = { attributes: true, attributeFilter: ["style"], attributeOldValue: true };
   function createScan(s, JE, deps) {
+    let identityObserver = null;
+    let artworkWatched = /* @__PURE__ */ new WeakSet();
+    const awaitingIdentity = /* @__PURE__ */ new WeakSet();
+    function watchArtwork(el) {
+      if (!identityObserver || artworkWatched.has(el)) return;
+      artworkWatched.add(el);
+      identityObserver.observe(el, ARTWORK_WATCH);
+    }
+    function markProcessed(el) {
+      s.processedCards.add(el);
+      watchArtwork(el);
+    }
+    function adoptIdentityObserver(observer) {
+      identityObserver = observer;
+      artworkWatched = /* @__PURE__ */ new WeakSet();
+      for (const el of document.querySelectorAll(CARD_IMAGE_SELECTOR)) {
+        const owner = el.closest(".cardScalable") || el;
+        if (s.processedCards.has(el) || awaitingIdentity.has(el) || Array.from(owner.children).some((c) => c.classList.contains("je-tag-host"))) watchArtwork(el);
+      }
+    }
     const scheduleIdle = typeof requestIdleCallback === "function" ? (fn) => requestIdleCallback(fn, { timeout: 500 }) : (fn) => setTimeout(fn, 16);
     function idleYield() {
       return new Promise((resolve) => scheduleIdle(resolve));
@@ -914,13 +940,15 @@
           }
         }
         hosts.push(renderTarget);
-        return;
+        return true;
       }
       let allCacheHits = true;
+      let anyCacheHit = false;
       for (const [, renderer] of s.renderers) {
         if (!renderer.isEnabled()) continue;
         if (renderer.renderFromCache) {
-          if (!renderer.renderFromCache(renderTarget, itemId)) allCacheHits = false;
+          if (renderer.renderFromCache(renderTarget, itemId)) anyCacheHit = true;
+          else allCacheHits = false;
         } else {
           allCacheHits = false;
         }
@@ -929,6 +957,7 @@
       if (!allCacheHits || awaiting) {
         s.requestQueue.push({ el, renderTarget, itemId, itemType, cardId, awaiting, reuse: card.reuse });
       }
+      return anyCacheHit;
     }
     function runScan() {
       if (s.isInvalidating) return;
@@ -953,16 +982,18 @@
       function renderChunk(chunk, entries) {
         const started = performance.now();
         const hosts = [];
+        let drawn = 0;
         for (const card of chunk) {
           if (!card.el.isConnected) {
             s.processedCards.delete(card.el);
             continue;
           }
           if (!stillShows(card)) continue;
-          renderCard(card, entries.get(card.itemId), hosts);
+          if (renderCard(card, entries.get(card.itemId), hosts)) drawn++;
         }
         JE.core.tagRenderer.applyCornerStacking(hosts);
-        recordRenderCost(performance.now() - started, chunk.length);
+        if (drawn) recordRenderCost(performance.now() - started, drawn);
+        else if (!s.loadInFlight) recordRenderCost(performance.now() - started, chunk.length);
         continueScan();
       }
       function processChunk() {
@@ -979,17 +1010,21 @@
           const listItem = el.closest(".listItem");
           if (listItem && listItem.classList.contains("je-hidden")) continue;
           if (deps.shouldSkipElement(el)) {
-            s.processedCards.add(el);
+            markProcessed(el);
             continue;
           }
           const itemId = getItemId(el);
-          if (!itemId) continue;
-          const itemType = getItemType(el);
-          if (itemType && !isMediaType(itemType)) {
-            s.processedCards.add(el);
+          if (!itemId) {
+            awaitingIdentity.add(el);
+            watchArtwork(el);
             continue;
           }
-          s.processedCards.add(el);
+          const itemType = getItemType(el);
+          if (itemType && !isMediaType(itemType)) {
+            markProcessed(el);
+            continue;
+          }
+          markProcessed(el);
           chunk.push({ el, itemId, itemType, reuse: s.cardReuse.get(el) || 0 });
           ids.push(itemId);
         }
@@ -1048,9 +1083,14 @@
     function releaseReusedCards(mutations) {
       let released = false;
       for (const record of mutations) {
-        if (!isIdentityChange(record)) continue;
         const target = record.target;
         if (!(target instanceof HTMLElement)) continue;
+        if (record.attributeName === "style" && awaitingIdentity.has(target) && getItemId(target)) {
+          awaitingIdentity.delete(target);
+          released = true;
+          continue;
+        }
+        if (!isIdentityChange(record)) continue;
         const images = target.matches(CARD_IMAGE_SELECTOR) ? [target] : Array.from(target.querySelectorAll(CARD_IMAGE_SELECTOR));
         for (const el of images) {
           const owner = el.closest(".cardScalable") || el;
@@ -1073,7 +1113,7 @@
         if (!itemId || changed && !changed.has(itemId) || unchanged?.(itemId)) continue;
         s.cardReuse.set(el, (s.cardReuse.get(el) || 0) + 1);
         JE.core.tagLayout?.clearCard(el.closest(".cardScalable") || el);
-        if (hidden.has(itemId)) s.processedCards.add(el);
+        if (hidden.has(itemId)) markProcessed(el);
         else {
           s.processedCards.delete(el);
           released = true;
@@ -1092,7 +1132,7 @@
       const parent = el.closest("[data-type]");
       return parent?.getAttribute("data-type") || null;
     }
-    return { idleYield, scheduleScan, runScan, resolveRenderTarget, stillShows, releaseReusedCards, refreshVisibleCards };
+    return { idleYield, scheduleScan, runScan, resolveRenderTarget, stillShows, releaseReusedCards, refreshVisibleCards, adoptIdentityObserver };
   }
 
   // client/src/features/media-tags/pipeline/series-lookup.ts
@@ -1158,7 +1198,7 @@
       const promise = (async () => {
         try {
           const item = JE.helpers?.getItemCached ? await JE.helpers.getItemCached(seriesId, { userId }) : await deps.apiClient().getItem(userId, seriesId);
-          return export42(item) ? item : null;
+          return export4(item) ? item : null;
         } catch {
           return null;
         }
@@ -1172,6 +1212,7 @@
   // client/src/features/media-tags/pipeline/server-cache.ts
   var SERVER_CACHE_WAIT_DELAYS = [2e3, 3e3, 5e3, 5e3, 1e4, 1e4, 15e3, 15e3, 3e4, 3e4, 3e4, 3e4, 6e4, 6e4];
   var PERSIST_SLICE = 250;
+  var PERSIST_BUDGET_MS = 4;
   var PERSIST_START_DELAY_MS = 1500;
   var FULL_LOAD_PAGE = 2e3;
   var FULL_LOAD_RESTARTS = 2;
@@ -1187,13 +1228,13 @@
       s.reviewRatingsRequestedAt = requestedAt;
       const previous = s.reviewRatings;
       const raw = resp.reviewRatings;
-      if (!export42(raw)) {
+      if (!export4(raw)) {
         s.reviewRatings = null;
       } else {
         const map = /* @__PURE__ */ new Map();
         for (const key in raw) {
           const value = raw[key];
-          if (export42(value) && typeof value.average === "number" && Number.isFinite(value.average)) {
+          if (export4(value) && typeof value.average === "number" && Number.isFinite(value.average)) {
             map.set(key, value.average);
           }
         }
@@ -1272,10 +1313,13 @@
         if (generation !== s.persistGeneration) return;
         const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
         if (!await store.beginFullWrite(scope, token, { servedAt })) return;
-        for (let i = 0; i < entries.length; i += PERSIST_SLICE) {
+        for (let i = 0; i < entries.length; ) {
           await deps.idleYield();
           if (generation !== s.persistGeneration) return;
-          if (!await store.putManyIfOwner(scope, token, entries.slice(i, i + PERSIST_SLICE))) return;
+          const slice = entries.slice(i, i + PERSIST_SLICE);
+          const wrote = await store.putManyIfOwner(scope, token, slice, PERSIST_BUDGET_MS);
+          if (!wrote) return;
+          i += wrote === true ? slice.length : wrote;
         }
         if (generation !== s.persistGeneration) return;
         if (await store.commitFullWrite(scope, token, meta)) {
@@ -1424,7 +1468,7 @@
     async function fetchFullPages(userId, fresh, requestEpoch, scope) {
       const get = async (params) => {
         const resp = await deps.apiClient().ajax({ type: "GET", url: deps.apiClient().getUrl(`/JellyfinEnhanced/tag-cache/${userId}`, params), dataType: "json" });
-        return JE.session && !JE.session.isCurrent(requestEpoch) || !export42(resp) ? null : resp;
+        return JE.session && !JE.session.isCurrent(requestEpoch) || !export4(resp) ? null : resp;
       };
       const base = fresh ? { fresh } : {};
       for (let attempt = 0; attempt <= FULL_LOAD_RESTARTS; attempt++) {
@@ -1621,12 +1665,13 @@
       }, { priority: 0 });
       const createObserver = JE.core?.dom?.createObserver || JE.helpers?.createObserver;
       if (typeof createObserver === "function") {
-        createObserver("tag-pipeline-card-identity", deps.releaseReusedCards, document.body, {
+        const observer = createObserver("tag-pipeline-card-identity", deps.releaseReusedCards, document.body, {
           subtree: true,
           attributes: true,
-          attributeFilter: ["data-id", "data-itemid", "style"],
+          attributeFilter: ["data-id", "data-itemid"],
           attributeOldValue: true
         });
+        if (observer instanceof MutationObserver) deps.adoptIdentityObserver(observer);
       }
       if (JE.helpers.onNavigate) {
         s.lastNavigationRoute = deps.navigationRoute();
@@ -1662,7 +1707,6 @@
                 .je-tag-host .age-rating-overlay-container,
                 .je-tag-host .status-overlay-container,
                 .je-tag-host .logo-overlay-container {
-                    contain: layout style;
                     pointer-events: none;
                     z-index: auto !important;
                 }
@@ -1722,6 +1766,7 @@
       lookupServerEntries: deps.lookupServerEntries,
       rememberItemFacts: deps.rememberItemFacts,
       peekItemFacts: deps.peekItemFacts,
+      itemFactsExpiry: deps.itemFactsExpiry,
       lookupItemFacts: deps.lookupItemFacts,
       peekSeasonFacts: deps.peekSeasonFacts,
       /**
@@ -1895,7 +1940,7 @@
   }
 
   // client/src/features/media-tags/pipeline/tag-pipeline-entry.ts
-  createTagPipeline(export4());
+  createTagPipeline(export5());
 })();
 })();
 //# sourceMappingURL=tag-pipeline.js.map

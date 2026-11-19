@@ -260,7 +260,7 @@
     return host.JellyfinEnhanced;
   }
   function browserDomHost() {
-    const noise = ".osdPositionText, .osdDurationText, .startTimeText, .endTimeText, .endsAtText, .videoSubtitlesInner, .videoSecondarySubtitlesInner";
+    const noise = ".osdPositionText, .osdDurationText, .startTimeText, .endTimeText, .endsAtText, .videoSubtitlesInner, .videoSecondarySubtitlesInner, .je-tag-host";
     return {
       document,
       createObserver: (callback) => new MutationObserver(callback),

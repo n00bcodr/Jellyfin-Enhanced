@@ -9,6 +9,23 @@ import { getScriptVersion } from './script-tag';
 
 const HOST_POLL_MS = 50;
 
+/**
+ * The tag layout moves group containers onto whole pixels through custom properties that are registered as not
+ * inherited (features/media-tags/layout/whole-pixels.ts). Registering a property has the browser work out the
+ * style of every element again, so it is done as the loader starts, while the page is still empty, and costs
+ * nothing; done when the first card was drawn it was a whole page restyled in that frame. Chromium's family only,
+ * as there: the others get no nudges. (The names are the layout's SNAP_PROPERTIES, which registers any that
+ * this did not.)
+ */
+export function registerWholePixelProperties(): void {
+    try {
+        if (navigator.vendor !== 'Google Inc.' || typeof CSS === 'undefined' || typeof CSS.registerProperty !== 'function') return;
+        for (const name of ['--je-snap-x', '--je-snap-y', '--je-band-left']) {
+            try { CSS.registerProperty({ name, syntax: '*', inherits: false }); } catch { /* registered already */ }
+        }
+    } catch { /* no CSS object model to register with */ }
+}
+
 /** Load the splash screen as soon as the host client exists. */
 export function loadSplashScreenEarly(JE: LoaderNamespace): void {
     const api = optionalClient();

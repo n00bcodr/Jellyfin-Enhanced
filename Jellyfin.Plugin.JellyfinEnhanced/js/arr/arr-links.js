@@ -23,18 +23,44 @@
   var export72 = /* @__PURE__ */ sharedExport(shared2, "lookupDetailsItem");
   var export11 = /* @__PURE__ */ sharedExport(shared2, "visibleDetailPage");
 
-  // client/generated-shared/stub/client/src/features/details-providers/links.ts
-  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/links");
-  var export02 = /* @__PURE__ */ sharedExport(shared3, "externalLink");
+  // client/src/features/shared/url-domain.ts
+  function safeExternalUrl(value, base) {
+    try {
+      const url = new URL(value, base);
+      return ["http:", "https:", "mailto:", "tel:", "ftp:", "blob:"].includes(url.protocol) ? value : "#";
+    } catch {
+      return "#";
+    }
+  }
+
+  // client/src/features/details-providers/links.ts
+  function safeHref(url) {
+    return safeExternalUrl(url, window.location.href);
+  }
+  function externalLink(helpers, url, options = {}) {
+    const shared4 = helpers?.createExternalLink;
+    if (shared4) return shared4(url, options);
+    const anchor = document.createElement("a");
+    anchor.setAttribute("is", "emby-linkbutton");
+    anchor.href = safeHref(url);
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    if (options.title) anchor.title = options.title;
+    if (options.className) anchor.className = options.className;
+    if (options.text) anchor.textContent = options.text;
+    if (options.resetStyle) anchor.style.cssText = "padding:0;background:none;border-radius:0;min-width:0;";
+    if (typeof options.setup === "function") options.setup(anchor);
+    return anchor;
+  }
 
   // client/generated-shared/stub/client/src/features/details-providers/wire.ts
-  var shared4 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
-  var export5 = /* @__PURE__ */ sharedExport(shared4, "field");
-  var export6 = /* @__PURE__ */ sharedExport(shared4, "int");
-  var export73 = /* @__PURE__ */ sharedExport(shared4, "isRecord");
-  var export8 = /* @__PURE__ */ sharedExport(shared4, "list");
-  var export9 = /* @__PURE__ */ sharedExport(shared4, "num");
-  var export112 = /* @__PURE__ */ sharedExport(shared4, "str");
+  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
+  var export5 = /* @__PURE__ */ sharedExport(shared3, "field");
+  var export6 = /* @__PURE__ */ sharedExport(shared3, "int");
+  var export73 = /* @__PURE__ */ sharedExport(shared3, "isRecord");
+  var export8 = /* @__PURE__ */ sharedExport(shared3, "list");
+  var export9 = /* @__PURE__ */ sharedExport(shared3, "num");
+  var export112 = /* @__PURE__ */ sharedExport(shared3, "str");
 
   // client/src/features/details-providers/arr-domain.ts
   function parseUrlMappings(mappingsString) {
@@ -227,7 +253,7 @@
         return img;
       }, createLinkButton2 = function(label, url, iconClass, status = null, badge = "", tooltip = "") {
         const statusClass = status ? ` arr-link--${status}` : "";
-        const button = export02(JE.helpers, url, { title: tooltip || label, className: `button-link emby-button arr-link${statusClass}` });
+        const button = externalLink(JE.helpers, url, { title: tooltip || label, className: `button-link emby-button arr-link${statusClass}` });
         if (asText()) {
           button.textContent = label;
           if (badge) {
@@ -276,7 +302,7 @@
         const menu = document.createElement("div");
         menu.className = "arr-dropdown-menu";
         for (const item of items) {
-          const link = export02(JE.helpers, item.url, { title: item.tip || item.name, className: "arr-dropdown-item" });
+          const link = externalLink(JE.helpers, item.url, { title: item.tip || item.name, className: "arr-dropdown-item" });
           const dot = document.createElement("span");
           dot.className = `arr-dropdown-dot arr-dropdown-dot--${item.status || "missing"}`;
           link.appendChild(dot);
@@ -328,8 +354,8 @@
       const toastedGlobalFailure = { sonarr: false, radarr: false };
       const toastedInstanceErrors = /* @__PURE__ */ new Set();
       const esc = (value) => {
-        const shared5 = JE.helpers.escHtml;
-        if (shared5) return shared5(value);
+        const shared4 = JE.helpers.escHtml;
+        if (shared4) return shared4(value);
         return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
       };
       async function getSonarrSlugs(tvdbId) {

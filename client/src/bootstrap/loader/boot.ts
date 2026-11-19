@@ -1,8 +1,8 @@
 import { client, optionalClient, type LoaderNamespace, type Translations, type UserConfigView } from '../../host/bootstrap-pages-host';
+import { aliasNamespace } from '../../host/component-groups-host';
 import { createBootstrapClient, type BootstrapClient } from './bootstrap-client';
-import { loadComponentScripts } from './component-loader';
 import { createConfigLoader, type ConfigLoader } from './config-loader';
-import { initializeFeatures } from './features';
+import { createComponentGroups, type ComponentGroupsRuntime } from './group-triggers';
 import { createIdentityScope, currentUserId, type IdentityScope } from './identity';
 import { isRecord } from './keys';
 import { appendScript } from './script-loader';
@@ -119,12 +119,12 @@ async function applyTranslationCacheClear(JE: LoaderNamespace): Promise<void> {
 }
 
 export interface BootDependencies {
-    JE: LoaderNamespace; identity: IdentityScope; contracts: BootstrapClient; config: ConfigLoader;
+    JE: LoaderNamespace; identity: IdentityScope; contracts: BootstrapClient; config: ConfigLoader; groups: ComponentGroupsRuntime;
 }
 export function createBootDependencies(JE: LoaderNamespace): BootDependencies {
     const identity = createIdentityScope(document);
     const contracts = createBootstrapClient(JE, identity);
-    return { JE, identity, contracts, config: createConfigLoader(JE, contracts, identity) };
+    return { JE, identity, contracts, config: createConfigLoader(JE, contracts, identity), groups: createComponentGroups(JE) };
 }
 
 /**
@@ -147,7 +147,7 @@ async function recoverSessionChangedDuringBoot(dependencies: BootDependencies): 
 
 /** Main initialization, retried until the host has a signed-in client. */
 export function createInitializer(dependencies: BootDependencies): () => Promise<void> {
-    const { JE, identity, contracts, config } = dependencies;
+    const { JE, identity, contracts, config, groups } = dependencies;
     let mismatchRetryCount = 0;
     let configRetryCount = 0;
     const retry = () => { setTimeout(() => { void initialize(); }, INIT_POLL_INTERVAL_MS); };
@@ -227,13 +227,22 @@ export function createInitializer(dependencies: BootDependencies): () => Promise
 
             if (typeof JE.initializeSplashScreen === 'function') JE.initializeSplashScreen();
 
-            // Stage 3: every component script. The list lives in js/component-scripts.json.
-            // Modules read JE.pluginConfig/JE.userConfig at eval time, so this stays after config.
-            await loadComponentScripts(bootstrap ? bootstrap.ComponentScripts : null);
-            console.log('🪼 Jellyfin Enhanced: All component scripts loaded.');
+            // Stage 3: the component groups this page needs. The module list lives in js/component-scripts.json
+            // and its split into groups in js/component-groups.json; production loads the groups as one
+            // server-side bundle, dev mode as individual files. Modules read JE.pluginConfig/JE.userConfig at
+            // eval time, so this stays after config.
+            await groups.setGroups(bootstrap);
+            await groups.loadBootGroups();
+            console.log('🪼 Jellyfin Enhanced: Component scripts loaded.');
+
+            // window.JE has named the plugin on every page whenever Bookmarks was enabled: the Bookmarks library
+            // view set it as soon as the component scripts had run, and scripts outside JE came to use it. That
+            // view loads on demand now, so the alias is set here, at the same point of the boot, with nothing
+            // loaded for it.
+            if (JE.pluginConfig?.BookmarksEnabled) aliasNamespace(JE);
 
             // User-switch detection needs JE.session, so it must follow the component scripts.
-            registerSessionIntegration(JE, config);
+            registerSessionIntegration(JE, config, groups);
             if (!unchanged()) userId = await recoverSessionChangedDuringBoot(dependencies);
 
             // Stage 4: settings and shortcuts, now that config.js has loaded.
@@ -246,6 +255,8 @@ export function createInitializer(dependencies: BootDependencies): () => Promise
             JE.initializeShortcuts();
             if (userId) seedDisplayLanguage(JE, userId);
 
+            groups.installLazyExports();
+
             // Stage 5: the theme system comes first.
             if (typeof JE.themer?.init === 'function') {
                 JE.themer.init();
@@ -253,11 +264,18 @@ export function createInitializer(dependencies: BootDependencies): () => Promise
             }
             window.addEventListener('beforeunload', () => { JE._cacheManager.forceSave(); });
 
-            initializeFeatures(JE);
+            // Stage 6: the feature modules of every group loaded so far, in FEATURE_INITIALIZERS order.
+            groups.startLoadedFeatures();
+            // Only now ask the rules again. The first plan was made before enhanced/config.js had resolved the
+            // personal settings, and the address or the user may have changed since (a sign-in redirect lands
+            // on its page after boot began). Whatever that adds loads as its own batch, AFTER the features
+            // above have started: Hidden Content and Spoiler Guard must never wait on another download.
+            await groups.watchTriggers();
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');
 
-            // Every component script has executed and every enabled initializer has run.
-            // Automation waits on this instead of racing individual JE.* properties.
+            // Every component script this page needs has executed and every enabled initializer of theirs has
+            // run. Automation waits on this instead of racing individual JE.* properties; for a feature that
+            // loads on demand, await JE.loader.ensure([group]) or JE.loader.settled().
             JE.initialized = true;
             JE.hideSplashScreen?.();
         } catch (error) {

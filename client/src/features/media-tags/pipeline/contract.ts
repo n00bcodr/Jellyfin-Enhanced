@@ -100,6 +100,8 @@ export interface PipelineApi {
     lookupServerEntries(ids: readonly string[]): Map<string, JsonRecord> | Promise<Map<string, JsonRecord>>;
     rememberItemFacts(entry: JsonRecord, id?: unknown, fetchedAt?: number): void;
     peekItemFacts(id: string): JsonRecord | null;
+    /** Until when peekItemFacts answers for an item: Infinity while the server cache holds it, a fetched projection's expiry, 0 for none. */
+    itemFactsExpiry(id: string): number;
     lookupItemFacts(ids: readonly string[]): Promise<void>;
     peekSeasonFacts(seriesId: string, season: number): JsonRecord | null;
     peekServerEntry(itemId: string): JsonRecord | null;

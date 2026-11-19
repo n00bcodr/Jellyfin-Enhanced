@@ -33,6 +33,9 @@ public class BundleServingTests
     [Theory]
     [InlineData("/JellyfinEnhanced/bundle.js", "application/javascript")]
     [InlineData("/JellyfinEnhanced/bundle.js.map", "application/json")]
+    // Upstream abcaa16d: a set of component groups is served the same way.
+    [InlineData("/JellyfinEnhanced/bundle.js?g=core,tags", "application/javascript")]
+    [InlineData("/JellyfinEnhanced/bundle.js.map?g=core,tags", "application/json")]
     public async Task EachEncodingDecodesToTheIdentityBodyWithItsOwnValidator(string path, string mime)
     {
         using var fixture = new ApiPluginFixture();
@@ -65,6 +68,26 @@ public class BundleServingTests
         // during the test, when the background quality-11 upgrade lands.)
         Assert.Equal(3, tags.Count);
         Assert.Equal(tags.Values.Sum(t => t.Count), tags.Values.SelectMany(t => t).Distinct().Count());
+    }
+
+    // Upstream abcaa16d: the g query parameter reaches the action; an unknown, repeated or empty-item group list is
+    // 404, and without g (or with an empty one) the whole manifest is served as before.
+    [Theory]
+    [InlineData("/JellyfinEnhanced/bundle.js?g=core", HttpStatusCode.OK, "window.__JE_BUNDLES")]
+    [InlineData("/JellyfinEnhanced/bundle.js?g=tags,core&v=1", HttpStatusCode.OK, "[\"tags\"]")]
+    [InlineData("/JellyfinEnhanced/bundle.js?g=nope", HttpStatusCode.NotFound, null)]
+    [InlineData("/JellyfinEnhanced/bundle.js?g=core,core", HttpStatusCode.NotFound, null)]
+    [InlineData("/JellyfinEnhanced/bundle.js?g=core,", HttpStatusCode.NotFound, null)]
+    [InlineData("/JellyfinEnhanced/bundle.js.map?g=nope", HttpStatusCode.NotFound, null)]
+    [InlineData("/JellyfinEnhanced/bundle.js?v=1", HttpStatusCode.OK, "window.__JE_BUNDLE_MODULES")]
+    public async Task TheGroupParameterSelectsGroupsOrIsRefused(string path, HttpStatusCode status, string? marker)
+    {
+        using var fixture = new ApiPluginFixture();
+        using var server = BundleServer.Create(fixture);
+        using var client = server.CreateClient();
+        using var response = await Get(client, path);
+        Assert.Equal(status, response.StatusCode);
+        if (marker != null) Assert.Contains(marker, Encoding.UTF8.GetString(await response.Content.ReadAsByteArrayAsync()));
     }
 
     [Fact]

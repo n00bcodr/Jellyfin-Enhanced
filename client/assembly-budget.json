@@ -1,7 +1,7 @@
 {
   "description": "Budget for what the plugin assembly, Jellyfin.Plugin.JellyfinEnhanced.dll, embeds (client assets, pages, tag assets). embeddedBytes: the summed length of its manifest resources as embedded (a packed one at its packed length). The DLL is these plus about 3.1 MB of code. The budget counts the resources, not the DLL file, because gate T runs with coverage and the file on disk is then the instrumented copy (0.65 MB longer); the resources are the same bytes either way. Checked by tests/backend/Api/PackedResourcesTests.cs (gate T). It is a ratchet: lowering the limit needs no reason; a history entry that raises it must give one. `limits` is always the last history entry's.",
   "limits": {
-    "embeddedBytes": 12076124
+    "embeddedBytes": 12341503
   },
   "history": [
     {
@@ -92,6 +92,17 @@
         "embeddedBytes": 12076124
       },
       "reason": "Raised by exactly what the port adds, so the headroom left before it stays as it was. Measured with PackedResourcesTests in a scratch worktree with the limit set to 1: 12,065,782 bytes on 26e472da before the port, 12,072,376 on 6d5dfdc5 with it (+6,594: the Leaving soon page's approve timing in tags/tag-item-menu.js and its minified twin and maps, and the five new strings in en.json)."
+    },
+    {
+      "date": "2026-11-20",
+      "change": "upstream sync: port of upstream abcaa16d (#1088, lazy feature bundles and cheaper tags), branch sync/lazy-abcaa16d",
+      "measured": {
+        "embeddedBytes": 12337755
+      },
+      "limits": {
+        "embeddedBytes": 12341503
+      },
+      "reason": "Raised by exactly what the port adds, so the headroom left before it stays as it was: the painter's script, twin and maps (tags/status-tag-backdrop.js), the larger tag layout, tag and loader scripts with their twins and maps (core/tag-layout.js, tags/*, plugin.js with the component-group loader), js/component-groups.json, and shared-module copies in scripts of groups that load without the provider. Measured with PackedResourcesTests: 12,072,376 bytes on 6d5dfdc5 (unchanged on 1651839c, the base), 12,337,755 with the port (+265,379)."
     }
   ]
 }

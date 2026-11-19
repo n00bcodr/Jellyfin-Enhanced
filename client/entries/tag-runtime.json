@@ -9,6 +9,7 @@
   "js/tags/peopletags.js": "client/src/features/media-tags/types/people/peopletags-entry.ts",
   "js/tags/qualitytags.js": "client/src/features/media-tags/types/quality/qualitytags-entry.ts",
   "js/tags/ratingtags.js": "client/src/features/media-tags/types/ratings/ratingtags-entry.ts",
+  "js/tags/status-tag-backdrop.js": "client/src/features/media-tags/types/status/backdrop/status-tag-backdrop-entry.ts",
   "js/tags/statustags.js": "client/src/features/media-tags/types/status/statustags-entry.ts",
   "js/tags/tag-cache-store.js": "client/src/features/media-tags/pipeline/tag-cache-store-entry.ts",
   "js/tags/tag-direct-play.js": "client/src/features/media-tags/types/direct-play/tag-direct-play-entry.ts",

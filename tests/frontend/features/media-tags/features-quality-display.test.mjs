@@ -532,4 +532,6 @@ test('the quality stylesheet writes the chip box once and one colour rule per qu
   assert.ok(labels.length > 50, `${labels.length} colour rules`);
   assert.ok(['4K', '1080p', 'HDR10', 'ATMOS', 'LOW-RES'].every(label => labels.includes(label)));
   assert.ok(css.length < 60_000, `${css.length} characters`);
+  // Upstream abcaa16d: a chip without a transform: an identity one made every chip a layer of its own.
+  assert.ok(!/transform\s*:/.test(css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/text-transform\s*:/g, '')), 'no transform on quality chips');
 });

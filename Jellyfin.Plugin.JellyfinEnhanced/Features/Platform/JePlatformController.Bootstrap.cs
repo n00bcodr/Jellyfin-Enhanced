@@ -621,6 +621,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 _logger.Error($"Bootstrap: could not read the component-script manifest: {ex.Message}");
             }
 
+            IReadOnlyList<BootstrapComponentGroup>? componentGroups = null;
+            try
+            {
+                componentGroups = Features.Platform.Services.ClientScriptBundle.GetComponentGroupsDocument();
+            }
+            catch (Exception ex)
+            {
+                // The client then loads the whole manifest as one group.
+                _logger.Error($"Bootstrap: could not read the component-group file: {ex.Message}");
+            }
+
             var isAdmin = IsAdminUser();
 
             var settingsSnapshot = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadRevisionedSettings(authorizedUserId));
@@ -647,6 +658,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                     HiddenContent = TryLoadUserDocument("hidden-content.json", authorizedUserId, () => _hiddenContentDocumentService.LoadUserHiddenContentDocument(authorizedUserId)),
                 },
                 ComponentScripts = componentScripts,
+                // Which modules load together and on demand (js/component-groups.json).
+                ComponentGroups = componentGroups,
                 Prefetched = BuildBootstrapPrefetched(config, userId.Value, authorizedUserId, isAdmin),
             });
         }

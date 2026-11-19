@@ -1,4 +1,4 @@
-import { apiClient, settingsUi, type TagRuntimeBridge } from '../host';
+import { apiClient, settingsUi, settingsUiLoaded, type TagRuntimeBridge } from '../host';
 import { isRecord, own as tableEntry, record, type JsonRecord } from '../pipeline/dto';
 import { normalizeLayout, type Layout } from '../layout/layout-rules';
 import type { LayoutLock } from '../layout/tag-look';
@@ -315,7 +315,7 @@ export function createItemEditor(JE: TagRuntimeBridge) {
         let item: JsonRecord | null;
         let admin: boolean;
         try {
-            [item, admin] = await Promise.all([options.item ? Promise.resolve(options.item) : fetchItem(id), serverMode ? Promise.resolve(true) : isAdministrator()]);
+            [item, admin] = await Promise.all([options.item ? Promise.resolve(options.item) : fetchItem(id), serverMode ? Promise.resolve(true) : isAdministrator(), settingsUiLoaded(JE)]);
         } catch (err) {
             abandon();
             throw err;

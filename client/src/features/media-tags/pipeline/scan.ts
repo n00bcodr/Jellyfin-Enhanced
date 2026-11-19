@@ -11,6 +11,8 @@ const CHUNK_MIN_CARDS = 4;
 const CHUNK_MAX_CARDS = 40;
 /** Card images whose item id lives on an ancestor's data-id / data-itemid. */
 const CARD_IMAGE_SELECTOR = '.cardImageContainer, div.listItemImage';
+/** How the identity observer watches one scanned card image: its artwork (the inline style), with the old value. */
+const ARTWORK_WATCH: MutationObserverInit = { attributes: true, attributeFilter: ['style'], attributeOldValue: true };
 
 /**
  * Card scanning and rendering: idle scheduling, the scan loop, render targets and card identity.
@@ -19,6 +21,50 @@ const CARD_IMAGE_SELECTOR = '.cardImageContainer, div.listItemImage';
  * @param deps - The other pipeline modules' functions, filled in by createTagPipeline before any of them runs.
  */
 export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: PipelineFns) {
+    /** The page's card identity observer (see releaseReusedCards); set by adoptIdentityObserver. */
+    let identityObserver: MutationObserver | null = null;
+    /** Card images the identity observer watches the artwork of. */
+    let artworkWatched = new WeakSet<HTMLElement>();
+    /**
+     * Card images a scan passed over because nothing named their item yet: no item id on the
+     * card and no artwork to read one from. Their artwork is watched so the scan runs again
+     * when it arrives (see releaseReusedCards).
+     */
+    const awaitingIdentity = new WeakSet<HTMLElement>();
+
+    /**
+     * Watch a scanned card image's artwork for a reuse in place. Only scanned images are
+     * watched, each on its own: a page-wide watch of `style` also heard every other inline
+     * style write on the page, such as a scroller moving its row on each wheel event and
+     * each animation frame.
+     */
+    function watchArtwork(el: HTMLElement): void {
+        if (!identityObserver || artworkWatched.has(el)) return;
+        artworkWatched.add(el);
+        identityObserver.observe(el, ARTWORK_WATCH);
+    }
+
+    /** Mark a card image scanned (see runScan) and watch its artwork. */
+    function markProcessed(el: HTMLElement): void {
+        s.processedCards.add(el);
+        watchArtwork(el);
+    }
+
+    /**
+     * Take the page's card identity observer, which hears the item id attributes page-wide,
+     * and register the artwork of the card images scanned before it existed, and of ones a
+     * reset released that still hold tags.
+     */
+    function adoptIdentityObserver(observer: MutationObserver): void {
+        identityObserver = observer;
+        artworkWatched = new WeakSet();
+        for (const el of document.querySelectorAll<HTMLElement>(CARD_IMAGE_SELECTOR)) {
+            const owner = el.closest<HTMLElement>('.cardScalable') || el;
+            if (s.processedCards.has(el) || awaitingIdentity.has(el)
+                || Array.from(owner.children).some((c) => c.classList.contains('je-tag-host'))) watchArtwork(el);
+        }
+    }
+
     /**
      * Schedule scan. Coalesces multiple mutations into a single scan start.
      */
@@ -64,8 +110,9 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
      * Render one classified card from its server entry, or from the local
      * caches with a batch-fetch fallback. The host is collected for one
      * corner-stacking pass over the whole slice instead of a layout per card.
+     * @returns Whether there was anything to draw it from (the server entry, or a local cache).
      */
-    function renderCard(card: ScannedCard, serverEntry: JsonRecord | undefined, hosts: HTMLElement[]): void {
+    function renderCard(card: ScannedCard, serverEntry: JsonRecord | undefined, hosts: HTMLElement[]): boolean {
         const { el, itemId, itemType } = card;
         const renderTarget = resolveRenderTarget(el);
         const layout = JE.core.tagLayout;
@@ -92,15 +139,17 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
                 }
             }
             hosts.push(renderTarget);
-            return; // Fully rendered from server cache, skip queue
+            return true; // Fully rendered from server cache, skip queue
         }
 
         // Fall back to localStorage/hot cache, then batch fetch for misses
         let allCacheHits = true;
+        let anyCacheHit = false;
         for (const [, renderer] of s.renderers) {
             if (!renderer.isEnabled()) continue;
             if (renderer.renderFromCache) {
-                if (!renderer.renderFromCache(renderTarget, itemId)) allCacheHits = false;
+                if (renderer.renderFromCache(renderTarget, itemId)) anyCacheHit = true;
+                else allCacheHits = false;
             } else {
                 allCacheHits = false;
             }
@@ -110,6 +159,7 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
         if (!allCacheHits || awaiting) {
             s.requestQueue.push({ el, renderTarget, itemId, itemType, cardId, awaiting, reuse: card.reuse });
         }
+        return anyCacheHit;
     }
 
     /**
@@ -158,6 +208,7 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
         function renderChunk(chunk: ScannedCard[], entries: Map<string, JsonRecord>): void {
             const started = performance.now();
             const hosts: HTMLElement[] = [];
+            let drawn = 0;
             for (const card of chunk) {
                 // Gone since classification (page changed): release it in case
                 // it comes back, exactly like a card skipped before marking.
@@ -168,11 +219,18 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
                 // Reused for another item while its entry was looked up: it was
                 // released then, and the next scan renders the new item.
                 if (!stillShows(card)) continue;
-                renderCard(card, entries.get(card.itemId), hosts);
+                if (renderCard(card, entries.get(card.itemId), hosts)) drawn++;
             }
             // One coalesced layout pass for the slice instead of one per card.
             JE.core.tagRenderer.applyCornerStacking(hosts);
-            recordRenderCost(performance.now() - started, chunk.length);
+            // What a card costs is learnt from the cards that were drawn. A slice with nothing to
+            // draw from takes next to no time. While the server's tag data is still on its way (a
+            // first load) that says nothing of what its cards will cost: counted, it made the cost
+            // look like nothing, and the slice that then drew the page's cards took forty of them.
+            // With no data to wait for, cards that draw nothing are all there is to do, and are
+            // gone through as fast as they go.
+            if (drawn) recordRenderCost(performance.now() - started, drawn);
+            else if (!s.loadInFlight) recordRenderCost(performance.now() - started, chunk.length);
             continueScan();
         }
 
@@ -197,20 +255,26 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
 
                 // Skip contexts that should never have tags
                 if (deps.shouldSkipElement(el)) {
-                    s.processedCards.add(el);
+                    markProcessed(el);
                     continue;
                 }
 
                 const itemId = getItemId(el);
-                if (!itemId) continue;
-
-                const itemType = getItemType(el);
-                if (itemType && !isMediaType(itemType)) {
-                    s.processedCards.add(el);
+                if (!itemId) {
+                    // Nothing else would bring the scan back to it: JE's own chips landing in
+                    // other cards no longer wake the body subscribers.
+                    awaitingIdentity.add(el);
+                    watchArtwork(el);
                     continue;
                 }
 
-                s.processedCards.add(el);
+                const itemType = getItemType(el);
+                if (itemType && !isMediaType(itemType)) {
+                    markProcessed(el);
+                    continue;
+                }
+
+                markProcessed(el);
                 chunk.push({ el, itemId, itemType, reuse: s.cardReuse.get(el) || 0 });
                 ids.push(itemId);
             }
@@ -319,15 +383,25 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
      * scanned card under a changed identity (its layout controller, slots,
      * caption outlet and review key go with it, and lookups still in flight
      * for it are dropped by stillShows), then scan again so the new item
-     * renders.
+     * renders. The records are data-id / data-itemid changes anywhere on the
+     * page and artwork changes of the scanned card images (watchArtwork). A
+     * card image scanned before anything named its item (awaitingIdentity) is
+     * scanned again when its artwork arrives.
      * @param mutations - Attribute records with old values.
      */
     function releaseReusedCards(mutations: MutationRecord[]) {
         let released = false;
         for (const record of mutations) {
-            if (!isIdentityChange(record)) continue;
             const target = record.target;
             if (!(target instanceof HTMLElement)) continue;
+            // A card image scanned before anything named its item: its first artwork may (to
+            // isIdentityChange a first load is no change, rightly so for a card that had an id).
+            if (record.attributeName === 'style' && awaitingIdentity.has(target) && getItemId(target)) {
+                awaitingIdentity.delete(target);
+                released = true;
+                continue;
+            }
+            if (!isIdentityChange(record)) continue;
             const images = target.matches(CARD_IMAGE_SELECTOR)
                 ? [target]
                 : Array.from(target.querySelectorAll<HTMLElement>(CARD_IMAGE_SELECTOR));
@@ -365,7 +439,7 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
             if (!itemId || (changed && !changed.has(itemId)) || unchanged?.(itemId)) continue;
             s.cardReuse.set(el, (s.cardReuse.get(el) || 0) + 1);
             JE.core.tagLayout?.clearCard(el.closest<HTMLElement>('.cardScalable') || el);
-            if (hidden.has(itemId)) s.processedCards.add(el);
+            if (hidden.has(itemId)) markProcessed(el);
             else {
                 s.processedCards.delete(el);
                 released = true;
@@ -402,5 +476,5 @@ export function createScan(s: PipelineState, JE: TagRuntimeBridge, deps: Pipelin
         return parent?.getAttribute('data-type') || null;
     }
 
-    return { idleYield, scheduleScan, runScan, resolveRenderTarget, stillShows, releaseReusedCards, refreshVisibleCards };
+    return { idleYield, scheduleScan, runScan, resolveRenderTarget, stillShows, releaseReusedCards, refreshVisibleCards, adoptIdentityObserver };
 }

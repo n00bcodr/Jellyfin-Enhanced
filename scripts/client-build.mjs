@@ -256,11 +256,12 @@ async function prepareSharedModules(ts, esbuild, root, entries, componentScripts
       + `the per-script copies. Remove it from the manifest, or review the binding (reviewed.<file>.bindings + reason):\n${findings.join('\n')}`);
   }
   const stubs = new Map();
+  const loads = groupLoads(root, componentScripts);
   return {
     generated: isSharedModuleInput,
     options(output) {
       if (!componentScripts.includes(output)) return {};
-      const { plugins, inject } = sharedModulesBuild({ root, modules, output, exportsOf: source => analysis.get(source).exports });
+      const { plugins, inject } = sharedModulesBuild({ root, modules, output, exportsOf: source => analysis.get(source).exports, loads: provider => loads(output, provider) });
       return plugins.length ? { plugins, inject } : {};
     },
     record(output, result) {
@@ -277,6 +278,41 @@ async function prepareSharedModules(ts, esbuild, root, entries, componentScripts
       }
       if (errors.length) throw new Error(`${sharedManifestPath}:\n${errors.join('\n')}`);
     },
+  };
+}
+
+/**
+ * Upstream abcaa16d: js/component-groups.json loads component scripts in groups, so a script can run on a page that
+ * never ran another. `loads(output, provider)` says whether every page that runs `output` has run `provider` first:
+ * the provider is in core, or in output's group or a group it is (transitively) after. Without a groups file every
+ * script runs on every page, in manifest order. The client resolves the file the same way
+ * (client/src/bootstrap/loader/groups.ts); a malformed file fails the build here rather than in the browser.
+ */
+function groupLoads(root, componentScripts) {
+  const path = `${pluginDirectory}/js/component-groups.json`;
+  const file = safePath(root, path);
+  if (!existsSync(file)) return () => true;
+  const groups = JSON.parse(readFileSync(file, 'utf8')).groups;
+  if (!Array.isArray(groups)) throw new Error(`${path}: expected an object with a "groups" array`);
+  const groupOf = new Map();
+  const after = new Map([['core', []]]);
+  for (const group of groups) {
+    if (typeof group?.id !== 'string' || !Array.isArray(group.modules)) throw new Error(`${path}: every group needs an id and modules`);
+    for (const id of group.after ?? []) if (!after.has(id)) throw new Error(`${path}: ${group.id} is after ${id}, which is not an earlier group`);
+    after.set(group.id, (group.after ?? []).filter(id => id !== 'core'));
+    for (const module of group.modules) {
+      if (!componentScripts.includes(`js/${module}`)) throw new Error(`${path}: ${group.id} lists ${module}, which is not in js/component-scripts.json`);
+      groupOf.set(`js/${module}`, group.id);
+    }
+  }
+  const closure = id => {
+    const seen = new Set([id]);
+    for (const next of [id]) for (const up of after.get(next) ?? []) if (!seen.has(up)) { seen.add(up); closure(up).forEach(more => seen.add(more)); }
+    return seen;
+  };
+  return (output, provider) => {
+    const from = groupOf.get(provider) ?? 'core';
+    return from === 'core' || closure(groupOf.get(output) ?? 'core').has(from);
   };
 }
 

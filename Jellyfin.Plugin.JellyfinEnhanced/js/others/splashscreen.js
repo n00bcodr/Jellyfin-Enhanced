@@ -89,6 +89,7 @@
     let hardTimeout = null;
     let detachReadyListeners = null;
     let isHidden = false;
+    let barLoadingElements = null;
     function installPreemptiveStyles() {
       try {
         const style = document.createElement("style");
@@ -132,7 +133,13 @@
       }
     }
     function removeMediaBarSplash() {
-      document.querySelectorAll("#page-loader, .bar-loading:not(.je-loading)").forEach((element) => {
+      const mediaBarElements = [];
+      if (document.getElementById("page-loader")) mediaBarElements.push(...document.querySelectorAll("#page-loader"));
+      barLoadingElements ?? (barLoadingElements = document.getElementsByClassName("bar-loading"));
+      for (const element of barLoadingElements) {
+        if (!element.classList.contains("je-loading")) mediaBarElements.push(element);
+      }
+      mediaBarElements.forEach((element) => {
         if (element.parentNode) {
           console.log("🪼 Jellyfin Enhanced: Removing media-bar splash element");
           element.remove();

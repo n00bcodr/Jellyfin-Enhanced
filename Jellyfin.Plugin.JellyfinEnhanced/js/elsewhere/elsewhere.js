@@ -203,11 +203,38 @@
     return container;
   }
 
-  // client/generated-shared/stub/client/src/features/details-providers/links.ts
-  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/links");
-  var export02 = /* @__PURE__ */ sharedExport(shared3, "externalLink");
-  var export2 = /* @__PURE__ */ sharedExport(shared3, "pathSegment");
-  var export32 = /* @__PURE__ */ sharedExport(shared3, "safeHref");
+  // client/src/features/shared/url-domain.ts
+  function safeExternalUrl(value, base) {
+    try {
+      const url = new URL(value, base);
+      return ["http:", "https:", "mailto:", "tel:", "ftp:", "blob:"].includes(url.protocol) ? value : "#";
+    } catch {
+      return "#";
+    }
+  }
+
+  // client/src/features/details-providers/links.ts
+  function safeHref(url) {
+    return safeExternalUrl(url, window.location.href);
+  }
+  function externalLink(helpers, url, options = {}) {
+    const shared4 = helpers?.createExternalLink;
+    if (shared4) return shared4(url, options);
+    const anchor = document.createElement("a");
+    anchor.setAttribute("is", "emby-linkbutton");
+    anchor.href = safeHref(url);
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    if (options.title) anchor.title = options.title;
+    if (options.className) anchor.className = options.className;
+    if (options.text) anchor.textContent = options.text;
+    if (options.resetStyle) anchor.style.cssText = "padding:0;background:none;border-radius:0;min-width:0;";
+    if (typeof options.setup === "function") options.setup(anchor);
+    return anchor;
+  }
+  function pathSegment(id) {
+    return encodeURIComponent(id);
+  }
 
   // client/src/features/details-providers/elsewhere-branding.ts
   function resolveBrandingIconUrl(configuredUrl, uploadVersion) {
@@ -245,13 +272,13 @@
   }
 
   // client/generated-shared/stub/client/src/features/details-providers/wire.ts
-  var shared4 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
-  var export5 = /* @__PURE__ */ sharedExport(shared4, "field");
-  var export6 = /* @__PURE__ */ sharedExport(shared4, "int");
-  var export72 = /* @__PURE__ */ sharedExport(shared4, "isRecord");
-  var export8 = /* @__PURE__ */ sharedExport(shared4, "list");
-  var export112 = /* @__PURE__ */ sharedExport(shared4, "str");
-  var export13 = /* @__PURE__ */ sharedExport(shared4, "text");
+  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
+  var export5 = /* @__PURE__ */ sharedExport(shared3, "field");
+  var export6 = /* @__PURE__ */ sharedExport(shared3, "int");
+  var export72 = /* @__PURE__ */ sharedExport(shared3, "isRecord");
+  var export8 = /* @__PURE__ */ sharedExport(shared3, "list");
+  var export112 = /* @__PURE__ */ sharedExport(shared3, "str");
+  var export13 = /* @__PURE__ */ sharedExport(shared3, "text");
 
   // client/src/features/details-providers/elsewhere-domain.ts
   function parseProviderList(raw) {
@@ -824,7 +851,7 @@
       const generation = settingsGeneration;
       const current = () => sameSession() && generation === settingsGeneration;
       if (UseSeerrProviders) {
-        const seerrUrl = export0().getUrl(`/JellyfinEnhanced/jellyseerr/${mediaType}/${export2(tmdbId)}`);
+        const seerrUrl = export0().getUrl(`/JellyfinEnhanced/jellyseerr/${mediaType}/${pathSegment(tmdbId)}`);
         JE.core.api.fetch(seerrUrl, { cacheKey: `seerr-providers:${mediaType}:${tmdbId}` }).then((detail) => {
           if (current()) callback(null, seerrWatchProviders(detail));
         }).catch((error) => {
@@ -832,7 +859,7 @@
         });
         return;
       }
-      const path = `/${mediaType}/${export2(tmdbId)}/watch/providers`;
+      const path = `/${mediaType}/${pathSegment(tmdbId)}/watch/providers`;
       const url = export0().getUrl(`/JellyfinEnhanced/tmdb${path}`);
       JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` }).then((data) => {
         if (current()) callback(null, decodeWatchProviders(data));
@@ -847,7 +874,7 @@
       const key = `${tmdbId}:${seasonNumber}`;
       let pending = seasonProvidersCache.get(key);
       if (!pending) {
-        const url = export0().getUrl(`/JellyfinEnhanced/tmdb/tv/${export2(tmdbId)}/season/${seasonNumber}/watch/providers`);
+        const url = export0().getUrl(`/JellyfinEnhanced/tmdb/tv/${pathSegment(tmdbId)}/season/${seasonNumber}/watch/providers`);
         pending = JE.core.api.fetch(url).then(decodeWatchProviders).catch(() => {
           seasonProvidersCache.delete(key);
           return null;
@@ -859,7 +886,7 @@
     function fetchTmdbSeasonNumbers(tmdbId) {
       let pending = tmdbSeasonNumbersCache.get(tmdbId);
       if (!pending) {
-        const url = export0().getUrl(`/JellyfinEnhanced/tmdb/tv/${export2(tmdbId)}`);
+        const url = export0().getUrl(`/JellyfinEnhanced/tmdb/tv/${pathSegment(tmdbId)}`);
         pending = JE.core.api.fetch(url).then((data) => {
           const seasons = export5(data, "seasons");
           return Array.isArray(seasons) ? new Set(seasons.map((season) => export6(export5(season, "season_number"))).filter((n) => n !== void 0)) : null;
@@ -991,7 +1018,7 @@
       const linkUrl = seasonView.link || regionData?.link || "";
       const hasFilteredServices = !!seasonGroups || filteredServices.length > 0;
       const brandedEmpty = !hasFilteredServices && !!BRANDING_TEXT;
-      const title = export02(JE.helpers, hasFilteredServices && linkUrl ? linkUrl : "#", { title: "JustWatch" });
+      const title = externalLink(JE.helpers, hasFilteredServices && linkUrl ? linkUrl : "#", { title: "JustWatch" });
       if (hasFilteredServices) {
         title.textContent = JE.t("elsewhere_panel_available_in", { region: regionName(userRegion) });
       } else if (BRANDING_TEXT) {
@@ -1019,7 +1046,7 @@
       }
       if (hasFilteredServices && linkUrl) {
         title.classList.add("elsewhere-link-reset");
-        title.href = export32(linkUrl);
+        title.href = safeHref(linkUrl);
         title.style.padding = "0";
         title.style.margin = "0";
       } else if (brandedEmpty) {
@@ -1197,7 +1224,7 @@
                 align-items: center;
                 margin-bottom: 10px;
             `);
-      const title = export02(JE.helpers, regionData.link || "#", { title: "JustWatch" });
+      const title = externalLink(JE.helpers, regionData.link || "#", { title: "JustWatch" });
       title.textContent = JE.t("elsewhere_panel_available_in_region", { region: regionName(region) });
       title.style.cssText = `
                 font-weight: 600;
@@ -1210,7 +1237,7 @@
             `;
       if (regionData.link) {
         title.classList.add("elsewhere-link-reset");
-        title.href = export32(regionData.link);
+        title.href = safeHref(regionData.link);
         title.style.padding = "0";
         title.style.margin = "0";
       }

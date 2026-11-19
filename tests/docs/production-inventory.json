@@ -1362,6 +1362,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/component-groups.json",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json",
       "category": "js"
     },
@@ -2227,6 +2231,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-short-dates.json",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-tag-backdrop.js",
       "category": "js"
     },
     {
@@ -10978,6 +10986,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Platform/Services/CdnAssetService.cs"
     },
     {
+      "literal": "component-groups.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Platform/Services/ClientScriptBundle.cs"
+    },
+    {
       "literal": "component-scripts.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/Platform/Services/ClientScriptBundle.cs"
     },
@@ -11352,10 +11364,10 @@
   ],
   "counts": {
     "build_targets": 1,
-    "files": 568,
+    "files": 570,
     "routes": 228,
     "configuration_properties": 793,
-    "storage_references": 99,
+    "storage_references": 100,
     "scheduled_tasks": 17,
     "locales": 33
   }

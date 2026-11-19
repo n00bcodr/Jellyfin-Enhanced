@@ -374,3 +374,15 @@ test('bulk SDH facts are subtitle-only and malformed title substrings do not qua
   assert.equal(h.chips()[0].dataset.jeSdh, undefined);
   assert.equal(h.chips()[1].dataset.jeSdh, 'true');
 });
+
+test('chips beside a dimmed partial flag stay positioned, in a browser without :has() too', t => {
+  const h = setup(t);
+  h.renderer.injectCss();
+  const css = h.document.getElementById('language-tags-styles').textContent;
+  // A dimmed flag paints late (its opacity makes it a layer): the chips of its group are positioned so they still
+  // paint after it. No other chip is positioned, so a group without one needs no layer.
+  assert.match(css, /\.language-overlay-container:has\(\.language-flag-partial\) \.language-chip \{ position: relative; \}/);
+  // A browser without :has() drops that rule: there every chip is positioned, which paints the same.
+  assert.match(css, /@supports not selector\(:has\(\*\)\) \{ \.language-overlay-container \.language-chip \{ position: relative; \} \}/);
+  assert.equal(css.match(/position:\s*relative/g).length, 2, 'and nowhere else');
+});

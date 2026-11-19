@@ -10,13 +10,13 @@ Sources are relative to this folder; outputs are relative to `Jellyfin.Plugin.Je
 
 | source | output | load position |
 |---|---|---|
-| `calendar-custom-tab.ts` | `js/arr/calendar/calendar-custom-tab.js` | 173 |
-| `calendar-page-actions.ts` | `js/arr/calendar/calendar-page-actions.js` | 170 |
-| `calendar-page-data.ts` | `js/arr/calendar/calendar-page-data.js` | 167 |
-| `calendar-page-init.ts` | `js/arr/calendar/calendar-page-init.js` | 171 |
-| `calendar-page-render-events.ts` | `js/arr/calendar/calendar-page-render-events.js` | 168 |
-| `calendar-page-render-views.ts` | `js/arr/calendar/calendar-page-render-views.js` | 169 |
-| `calendar-page-styles.ts` | `js/arr/calendar/calendar-page-styles.js` | 166 |
+| `calendar-custom-tab.ts` | `js/arr/calendar/calendar-custom-tab.js` | 174 |
+| `calendar-page-actions.ts` | `js/arr/calendar/calendar-page-actions.js` | 171 |
+| `calendar-page-data.ts` | `js/arr/calendar/calendar-page-data.js` | 168 |
+| `calendar-page-init.ts` | `js/arr/calendar/calendar-page-init.js` | 172 |
+| `calendar-page-render-events.ts` | `js/arr/calendar/calendar-page-render-events.js` | 169 |
+| `calendar-page-render-views.ts` | `js/arr/calendar/calendar-page-render-views.js` | 170 |
+| `calendar-page-styles.ts` | `js/arr/calendar/calendar-page-styles.js` | 167 |
 
 ## Public API and global slots
 

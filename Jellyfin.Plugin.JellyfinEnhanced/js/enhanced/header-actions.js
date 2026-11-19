@@ -130,7 +130,12 @@
     let overflowNative = [];
     const mirrors = /* @__PURE__ */ new Map();
     const observed = /* @__PURE__ */ new Set();
-    const resizeObserver = new ResizeObserver(schedule);
+    let hiddenMoreWidth = null;
+    function remeasure() {
+      hiddenMoreWidth = null;
+      schedule();
+    }
+    const resizeObserver = new ResizeObserver(remeasure);
     const sourceObserver = new MutationObserver((records) => {
       if (records.some((record) => record.target !== ui?.launcher)) schedule();
     });
@@ -372,6 +377,7 @@
       current.classList.add("je-header-actions-host");
       row?.classList.add("je-header-actions-row");
       current.prepend(currentTray);
+      hiddenMoreWidth = null;
       document.querySelectorAll("[data-je-header-fallback]").forEach((stale) => {
         if (stale !== current && !stale.children.length) stale.remove();
       });
@@ -412,8 +418,14 @@
       if (currentRow.classList.contains("je-launcher-tight")) currentRow.classList.remove("je-launcher-tight");
       let available = Math.max(0, availableWidth(currentRow, currentHeader) - chrome);
       let fullWidth = visibleSources.reduce((width, source) => width + outerWidth(source), 0) + gap * Math.max(0, visibleSources.length - 1);
-      launcher.style.setProperty("display", "inline-flex", "important");
-      const moreWidth = outerWidth(launcher);
+      let moreWidth;
+      if (hiddenMoreWidth !== null && launcher.style.display === "none" && (!visibleSources.length || fullWidth <= available && available >= hiddenMoreWidth * 2)) {
+        moreWidth = hiddenMoreWidth;
+      } else {
+        launcher.style.setProperty("display", "inline-flex", "important");
+        moreWidth = outerWidth(launcher);
+        hiddenMoreWidth = moreWidth;
+      }
       if (visibleSources.length && fullWidth > available && available < moreWidth) {
         currentRow.classList.add("je-launcher-tight");
         available = Math.max(0, availableWidth(currentRow, currentHeader) - chrome);
@@ -530,11 +542,11 @@
           attributes: true,
           attributeFilter: ["title", "aria-label", "data-header-label", "disabled", "hidden", "style"]
         });
-        window.addEventListener("resize", schedule);
-        window.visualViewport?.addEventListener("resize", schedule);
+        window.addEventListener("resize", remeasure);
+        window.visualViewport?.addEventListener("resize", remeasure);
         window.visualViewport?.addEventListener("scroll", layoutPanel);
         window.addEventListener("hashchange", closeLauncher);
-        document.fonts?.addEventListener("loadingdone", schedule);
+        document.fonts?.addEventListener("loadingdone", remeasure);
       }
       attachTray(currentTray, current);
       return currentTray;
@@ -553,6 +565,7 @@
       header?.classList.remove("je-header-actions-host");
       row?.classList.remove("je-header-actions-row", "je-launcher-tight");
       header = row = null;
+      hiddenMoreWidth = null;
       compactMode = false;
       resizeObserver.disconnect();
       observed.clear();

@@ -100,6 +100,7 @@
     hasApiClient: () => hasApiClient,
     mediaTagsContext: () => mediaTagsContext,
     settingsUi: () => settingsUi,
+    settingsUiLoaded: () => settingsUiLoaded,
     tagRuntimeHost: () => tagRuntimeHost
   });
   function tagRuntimeHost() {
@@ -118,6 +119,7 @@
   function settingsUi(JE2) {
     return JE2.internals?.enhancedUi;
   }
+  var settingsUiLoaded = (JE2) => JE2.loader?.ensure(["settings"]);
   function hasApiClient() {
     const host = window;
     return host.ApiClient !== void 0 && host.ApiClient !== null;
@@ -821,8 +823,8 @@
                     box-shadow: 0 1px 4px rgba(0,0,0,0.4);
                     border: 1px solid rgba(255,255,255,0.15);
                     /* backdrop-filter removed — blur causes jank during hover animations */
+                    /* No transform: an identity one made every chip a layer of its own (paint, composite, hit-test). */
                     opacity: 1;
-                    transform: translateY(0);
                     white-space: nowrap;
                     flex-shrink: 0;
                     line-height: 1.2;

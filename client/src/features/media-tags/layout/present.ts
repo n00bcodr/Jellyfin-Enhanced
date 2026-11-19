@@ -494,6 +494,18 @@ export function createPresent(s: LayoutState, JE: LayoutHost, deps: LayoutFns) {
         delete ctrl.host.dataset.jeShape;
         delete ctrl.host.dataset.jeEdge;
         delete ctrl.host.dataset.jeGenreBound;
+        delete ctrl.host.dataset.jeFlow;
+        // A host left live (a touch leaves its card hovered) goes with the card; the pointer still on it makes the next card live again.
+        delete ctrl.host.dataset.jeLive;
+        const due = s.restTimers.get(ctrl.host);
+        if (due !== undefined) { clearTimeout(due); s.restTimers.delete(ctrl.host); }
+        if (s.lingering === ctrl.host) s.lingering = null;
+        ctrl.layered.clear();
+        ctrl.kinds = '';
+        ctrl.flowKinds = '';
+        s.pendingAlike.delete(ctrl);
+        s.pendingFreed.delete(ctrl);
+        s.pendingSnap.delete(ctrl);
     }
 
     function presentAll(ctrl: CardController) {
@@ -541,7 +553,9 @@ export function createPresent(s: LayoutState, JE: LayoutHost, deps: LayoutFns) {
             presentGroup(ctrl, conf, group);
         refreshPill(ctrl, conf);
         syncIndicatorGap(ctrl, conf);
+        deps.syncFlow(ctrl, conf);
         deps.scheduleFit(ctrl);
+        deps.scheduleSnap(ctrl);
         // Poster preset: the card's colours follow its artwork (tags/tag-poster-colours.js).
         JE.tagPosterColours?.track(ctrl.host);
     }

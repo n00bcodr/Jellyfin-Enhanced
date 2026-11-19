@@ -10,15 +10,15 @@ Sources are relative to this folder; outputs are relative to `Jellyfin.Plugin.Je
 
 | source | output | load position |
 |---|---|---|
-| `active-streams-entry.ts` | `js/extras/active-streams.js` | 179 |
+| `active-streams-entry.ts` | `js/extras/active-streams.js` | 180 |
 | `events-entry.ts` | `js/enhanced/events.js` | 38 |
 | `header-actions-entry.ts` | `js/enhanced/header-actions.js` | 14 |
 | `login-image-entry.ts` | `js/extras/login-image.js` | – |
 | `native-tabs-entry.ts` | `js/enhanced/native-tabs.js` | 15 |
-| `plugin-icons-entry.ts` | `js/extras/plugin-icons.js` | 176 |
-| `plugin-revisions-entry.ts` | `js/extras/plugin-revisions.js` | 177 |
+| `plugin-icons-entry.ts` | `js/extras/plugin-icons.js` | 177 |
+| `plugin-revisions-entry.ts` | `js/extras/plugin-revisions.js` | 178 |
 | `splashscreen-entry.ts` | `js/others/splashscreen.js` | – |
-| `theme-selector-entry.ts` | `js/extras/theme-selector.js` | 178 |
+| `theme-selector-entry.ts` | `js/extras/theme-selector.js` | 179 |
 
 ## Public API and global slots
 

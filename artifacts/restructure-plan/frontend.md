@@ -204,7 +204,7 @@ Run it with `node --test tests/frontend/architecture/feature-boundaries.test.mjs
 
 Preconditions for **every** step:
 - The ~650 uncommitted rewrite changes are committed first. They are not this plan's work, and the owner decides how. Work happens on a branch, or in a git worktree per parallel track.
-- Never edit `component-scripts.json` or an output key in `client/entries/*.json`.
+- Never edit `component-scripts.json` or an output key in `client/entries/*.json`, except to add a module listed in `scripts/component-outputs-approved.json` (an upstream commit's module, approved by the maintainer; AGENTS.md, "Shipped outputs").
 - Never hand-edit `client/generated-manifest.json`, `Jellyfin.Plugin.JellyfinEnhanced/js/**` built outputs, `docs/rewrite/migration-inventory.json` or `contracts/*.ts`. Regenerate them.
 
 **Standard gate (G)**, run at the end of every step:
@@ -218,8 +218,7 @@ scripts/restructure-gates.sh tool   # PLAN gate TOOL: python3 tests/run.py tooli
 npm run test:client-build
 node --test tests/frontend/bootstrap/bootstrap-manifest.test.mjs
 npm test                        # whole tests/frontend suite (node tests/frontend/run.mjs)
-git diff --exit-code restructure-base -- Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json   # vs the base commit, not the index (review-r2 F7)
-( set -e; for f in client/entries/*.json; do diff <(git show restructure-base:$f | jq -S keys) <(jq -S keys $f); done )   # output keys unchanged (review-r1 F8; the old grep was a no-op)
+node scripts/check-component-outputs.mjs   # component-scripts.json and output keys = restructure-base plus scripts/component-outputs-approved.json (was: git diff --exit-code restructure-base, review-r2 F7, and a keys diff per manifest, review-r1 F8)
 ```
 Prefer `scripts/restructure-gates.sh fe`, which wraps the above and exits non-zero on the first failure (PLAN.md step 1).
 

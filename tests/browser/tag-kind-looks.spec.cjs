@@ -36,7 +36,7 @@ async function setup(page, width = 262) {
   await page.mouse.move(0, 0);
 }
 
-/** Redraw with these settings and settle the fitting pass. */
+/** Redraw with these settings and settle the fitting pass and the whole-pixel pass. */
 async function draw(page, settings) {
   await page.evaluate(async (settings) => {
     const JE = window.JellyfinEnhanced;
@@ -44,6 +44,11 @@ async function draw(page, settings) {
     window.preview.refresh();
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     JE.core.tagLayout.flushFit();
+    // The whole-pixel pass follows a fit after the next paint, in idle time: settled here too, so the boxes read
+    // are those the page comes to rest in (with the containers' nudges, where the browser has any), however busy
+    // the machine is.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    JE.core.tagLayout.flushSnap();
     document.querySelectorAll('.je-mtp-card').forEach((card) => card.classList.toggle('je-tag-reveal', !!settings.hover));
   }, settings);
 }

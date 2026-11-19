@@ -144,7 +144,10 @@ export function createFitApply(s: LayoutState, JE: LayoutHost, deps: LayoutFns) 
             s.genreAfterFit.add(host);
             return;
         }
-        const names = (Array.from(host.querySelectorAll<HTMLElement>(':scope > .je-tag-slot:not([data-je-slot="hover"]) .genre-tag > .genre-text')));
+        // A card resting in flow does not render its genre names (focus alone never showed them): there is nothing
+        // to bound until the pointer makes it live, and boxes read now would all be empty.
+        const resting = host.dataset.jeFlow === '1' && !host.dataset.jeLive;
+        const names = resting ? [] : Array.from(host.querySelectorAll<HTMLElement>(':scope > .je-tag-slot:not([data-je-slot="hover"]) .genre-tag > .genre-text'));
         const tip = (host.querySelector<HTMLElement>(':scope > .je-tag-more-tip'));
         if (names.length === 0 && !tip)
             return;
@@ -277,19 +280,59 @@ export function createFitApply(s: LayoutState, JE: LayoutHost, deps: LayoutFns) 
 
     function onReveal(event: Event) {
         const target = (event.target instanceof Element ? event.target : null);
-        const card = target?.closest<HTMLElement>('.card');
-        if (!card || card === s.revealedCard)
+        const pointer = event.type === 'pointerover';
+        const card = target?.closest<HTMLElement>('.card, .listItem');
+        // A host found still under the pointer when it was due back in flow (a touch leaves its card hovered and
+        // sends no pointerout later): looked at again now that the pointer is elsewhere.
+        if (pointer && s.lingering && !(card && card.contains(s.lingering))) {
+            const left = s.lingering.closest('.card, .listItem');
+            s.lingering = null;
+            if (left) deps.restLater(left);
+        }
+        if (!card)
+            return;
+        const host = card.querySelector<HTMLElement>('.je-tag-host');
+        // The pointer on a card whose tags hide on hover reveals nothing (the host is transparent while it is
+        // there): no bound to place, and no layout to force for it on every card a scroll moves under the pointer.
+        // The card is not recorded, so focus moving into it (which does show its names once the pointer leaves)
+        // still bounds it.
+        if (pointer && deps.hidesOnHover(host))
+            return;
+        // A card the pointer is on or that holds focus is laid out positioned, as it always was: its genre names can
+        // float from their icons, and CSS written for a hovered or focused card finds what it was written against.
+        // Flow is for cards at rest (live.ts).
+        const live = deps.goLive(host);
+        if (card === s.revealedCard && !live)
             return;
         s.revealedCard = card;
-        fitReveal((card.querySelector<HTMLElement>('.je-tag-host')));
+        try {
+            fitReveal(host);
+        }
+        finally {
+            // Whatever the bound did, the names must not stay held at their starting opacity.
+            if (live && host) deps.showNames(host);
+        }
     }
 
     if (typeof document !== 'undefined' && document.addEventListener) {
         document.addEventListener('pointerover', onReveal, { passive: true });
         document.addEventListener('focusin', onReveal);
         document.addEventListener('pointerout', (event) => {
-            if (s.revealedCard && !(event.relatedTarget instanceof Node && s.revealedCard.contains(event.relatedTarget)))
+            const to = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+            if (s.revealedCard && !(to && s.revealedCard.contains(to)))
                 s.revealedCard = null;
+            // A card the pointer leaves (it may have gone live as its tags arrived, never "revealed").
+            const card = event.target instanceof Element ? event.target.closest('.card, .listItem') : null;
+            if (!card || (to && card.contains(to)))
+                return;
+            deps.restLater(card);
+            // Its slots were fading under the pointer when they were to be inspected: once they are back.
+            const host = card.querySelector<HTMLElement>('.je-tag-host');
+            s.lastLeft.host = host;
+            s.lastLeft.at = performance.now();
+            const ctrl = host && s.uninspected.delete(host) ? s.controllers.get(host) : null;
+            if (ctrl)
+                deps.inspectLater(ctrl, false);
         }, { passive: true });
     }
 

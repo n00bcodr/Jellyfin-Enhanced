@@ -7,7 +7,8 @@ import type { SnapshotBase } from './tag-cache-store';
 // all; the server's background warm is rate-limited, so a large library
 // takes a while).
 const SERVER_CACHE_WAIT_DELAYS = [2000, 3000, 5000, 5000, 10000, 10000, 15000, 15000, 30000, 30000, 30000, 30000, 60000, 60000];
-const PERSIST_SLICE = 250; // entries per idle-slice write (each put clones its entry on this thread)
+const PERSIST_SLICE = 250; // most entries per idle-slice write (each put clones its entry on this thread)
+const PERSIST_BUDGET_MS = 4; // a background slice ends early once its puts took this long (slow devices write less per slice)
 const PERSIST_START_DELAY_MS = 1500; // let the page's first tag scans have the idle time before persisting
 // A full load comes in pages of this many entries (GET tag-cache?limit=&after=): no response, parse or
 // string holds the whole library. A server without paging answers the first request in full.
@@ -177,10 +178,14 @@ export function createServerCache(s: PipelineState, JE: TagRuntimeBridge, deps: 
             const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
             // Another tab already stored newer data: keep it.
             if (!await store.beginFullWrite(scope, token, { servedAt })) return;
-            for (let i = 0; i < entries.length; i += PERSIST_SLICE) {
+            for (let i = 0; i < entries.length;) {
                 await deps.idleYield();
                 if (generation !== s.persistGeneration) return;
-                if (!await store.putManyIfOwner(scope, token, entries.slice(i, i + PERSIST_SLICE))) return;
+                const slice = entries.slice(i, i + PERSIST_SLICE);
+                // true: the whole slice; a number: the budget ended it early.
+                const wrote = await store.putManyIfOwner(scope, token, slice, PERSIST_BUDGET_MS);
+                if (!wrote) return;
+                i += wrote === true ? slice.length : wrote;
             }
             if (generation !== s.persistGeneration) return;
             if (await store.commitFullWrite(scope, token, meta)) {

@@ -19,6 +19,33 @@
     return Object.fromEntries(Object.entries(value));
   }
 
+  // client/src/features/shared/header-lookup.ts
+  function hiddenByInlineStyle(element) {
+    for (let node = element; node && node !== document.body; node = node.parentElement) {
+      if (node.style?.display === "none") return true;
+    }
+    return false;
+  }
+  function createLegacyHeaderCheck(navigation) {
+    let rendered = null;
+    let watched = false;
+    return (legacy) => {
+      if (hiddenByInlineStyle(legacy)) return false;
+      if (legacy !== rendered && legacy.offsetParent === null) return false;
+      if (rendered !== legacy) {
+        rendered = legacy;
+        const onNavigate = navigation()?.onNavigate;
+        if (!watched && typeof onNavigate === "function") {
+          watched = true;
+          onNavigate(() => {
+            rendered = null;
+          });
+        }
+      }
+      return true;
+    };
+  }
+
   // client/src/features/shared/helpers.ts
   function createHelpers(JE2, api) {
     let muiHeaderButtonCSSInjected = false;
@@ -233,9 +260,10 @@
       const rect = element.getBoundingClientRect();
       return rect.top >= 0 && rect.left >= 0 && rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) && rect.right <= (window.innerWidth || document.documentElement.clientWidth);
     }
+    const legacyHeaderShown = createLegacyHeaderCheck(() => JE2.core?.navigation);
     function getHeaderRightContainer() {
       const legacy = document.querySelector(".headerRight:not([data-je-header-fallback])");
-      if (legacy && legacy.offsetParent !== null) {
+      if (legacy && legacyHeaderShown(legacy)) {
         attachDrawerAutoClose(legacy);
         return legacy;
       }

@@ -15,11 +15,11 @@
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
   var export0 = /* @__PURE__ */ sharedExport(shared, "apiClient");
   var export1 = /* @__PURE__ */ sharedExport(shared, "hasApiClient");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
   var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
-  var export42 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
   var export10 = /* @__PURE__ */ sharedExport(shared2, "record");
 
   // client/src/features/media-tags/types/logo/logotags.ts
@@ -220,7 +220,7 @@
           if (ctx.shouldIgnore(el)) return true;
           if (el.closest(".je-hidden")) return true;
           const cached = ctx.getPersistent(itemId) ?? ctx.hot?.get(itemId);
-          if (!export42(cached) || !Array.isArray(cached.l)) return false;
+          if (!export4(cached) || !Array.isArray(cached.l)) return false;
           applyLogoTags(ctx, el, readLogos(cached.l));
           return true;
         },
@@ -246,7 +246,7 @@
   }
 
   // client/src/features/media-tags/types/logo/logotags-entry.ts
-  createLogoTags(export4());
+  createLogoTags(export5());
 })();
 })();
 //# sourceMappingURL=logotags.js.map

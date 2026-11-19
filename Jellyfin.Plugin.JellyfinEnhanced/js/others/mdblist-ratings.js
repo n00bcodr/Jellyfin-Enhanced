@@ -24,19 +24,47 @@
   var export7 = /* @__PURE__ */ sharedExport(shared2, "lookupDetailsItem");
   var export9 = /* @__PURE__ */ sharedExport(shared2, "removeFirst");
 
-  // client/generated-shared/stub/client/src/features/details-providers/links.ts
-  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/links");
-  var export02 = /* @__PURE__ */ sharedExport(shared3, "externalLink");
-  var export2 = /* @__PURE__ */ sharedExport(shared3, "pathSegment");
+  // client/src/features/shared/url-domain.ts
+  function safeExternalUrl(value, base) {
+    try {
+      const url = new URL(value, base);
+      return ["http:", "https:", "mailto:", "tel:", "ftp:", "blob:"].includes(url.protocol) ? value : "#";
+    } catch {
+      return "#";
+    }
+  }
+
+  // client/src/features/details-providers/links.ts
+  function safeHref(url) {
+    return safeExternalUrl(url, window.location.href);
+  }
+  function externalLink(helpers, url, options = {}) {
+    const shared4 = helpers?.createExternalLink;
+    if (shared4) return shared4(url, options);
+    const anchor = document.createElement("a");
+    anchor.setAttribute("is", "emby-linkbutton");
+    anchor.href = safeHref(url);
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    if (options.title) anchor.title = options.title;
+    if (options.className) anchor.className = options.className;
+    if (options.text) anchor.textContent = options.text;
+    if (options.resetStyle) anchor.style.cssText = "padding:0;background:none;border-radius:0;min-width:0;";
+    if (typeof options.setup === "function") options.setup(anchor);
+    return anchor;
+  }
+  function pathSegment(id) {
+    return encodeURIComponent(id);
+  }
 
   // client/generated-shared/stub/client/src/features/details-providers/wire.ts
-  var shared4 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
-  var export5 = /* @__PURE__ */ sharedExport(shared4, "field");
-  var export6 = /* @__PURE__ */ sharedExport(shared4, "int");
-  var export72 = /* @__PURE__ */ sharedExport(shared4, "isRecord");
-  var export92 = /* @__PURE__ */ sharedExport(shared4, "num");
-  var export11 = /* @__PURE__ */ sharedExport(shared4, "str");
-  var export13 = /* @__PURE__ */ sharedExport(shared4, "text");
+  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
+  var export5 = /* @__PURE__ */ sharedExport(shared3, "field");
+  var export6 = /* @__PURE__ */ sharedExport(shared3, "int");
+  var export72 = /* @__PURE__ */ sharedExport(shared3, "isRecord");
+  var export92 = /* @__PURE__ */ sharedExport(shared3, "num");
+  var export11 = /* @__PURE__ */ sharedExport(shared3, "str");
+  var export13 = /* @__PURE__ */ sharedExport(shared3, "text");
 
   // client/src/features/details-providers/provider-domain.ts
   async function resolveProviderTarget(item, allowPerson, seriesLookup) {
@@ -257,7 +285,7 @@
         const badgeTitle = `${badge.label}: ${badge.score}${votesText}`;
         const iconHtml = badge.logo ? `<img class="je-mdblist-logo" src="${escapeHtml(JE.cdn.url("mdblist-logos", badge.logo))}" alt="${escapeHtml(badge.label)}" loading="lazy">` : `<span class="je-mdblist-source">${escapeHtml(badge.label)}</span>`;
         const badgeHtml = `${iconHtml}<span>${escapeHtml(badge.scoreText)}</span>`;
-        const element = badge.link ? export02(JE.helpers, badge.link, { className: "je-mdblist-badge", title: badgeTitle, resetStyle: true, setup: (anchor) => {
+        const element = badge.link ? externalLink(JE.helpers, badge.link, { className: "je-mdblist-badge", title: badgeTitle, resetStyle: true, setup: (anchor) => {
           anchor.innerHTML = badgeHtml;
         } }) : Object.assign(document.createElement("span"), { className: "je-mdblist-badge", title: badgeTitle, innerHTML: badgeHtml });
         wrap2.appendChild(element);
@@ -303,7 +331,7 @@
     async function fetchRatings(tmdbId, apiMediaType) {
       try {
         const cacheKey = `mdblist-ratings:/${apiMediaType}/${tmdbId}`;
-        const data = await JE.core.api.plugin(`/mdblist-ratings/${apiMediaType}/${export2(tmdbId)}`, { cacheKey });
+        const data = await JE.core.api.plugin(`/mdblist-ratings/${apiMediaType}/${pathSegment(tmdbId)}`, { cacheKey });
         if (isUnconfirmed(data)) JE.core.api.manager.clearCacheMatching(cacheKey);
         return decodeMdblistEntry(data);
       } catch (e) {

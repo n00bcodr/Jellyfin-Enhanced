@@ -1,0 +1,19 @@
+{
+  "//": [
+    "Component modules added to js/component-scripts.json (and their client/entries output keys) since restructure-base.",
+    "Gate FE G (scripts/restructure-gates.sh, scripts/check-component-outputs.mjs) compares both with restructure-base plus",
+    "exactly these additions: every entry restructure-base has stays, under its name and in its order, and a module that",
+    "restructure-base lacks must be listed here, placed right after the entry named in \"after\" and keyed in \"manifest\".",
+    "An addition comes only from an upstream commit that adds a module, and only with the maintainer's approval (AGENTS.md,",
+    "\"Shipped outputs\"): \"upstream\" is that commit, \"why\" says in one line why the module is not folded into another output."
+  ],
+  "additions": [
+    {
+      "module": "tags/status-tag-backdrop.js",
+      "after": "tags/statustags.js",
+      "manifest": "client/entries/tag-runtime.json",
+      "upstream": "abcaa16d21dc3a02b2f524b8b7565360c8d6878e",
+      "why": "Upstream's status-tag backdrop painter is a component group of its own (tag-status-backdrop) that no page loads at boot: folded into statustags.js it would load with every tagged page. Approved by the maintainer for this commit on 2026-11-20."
+    }
+  ]
+}

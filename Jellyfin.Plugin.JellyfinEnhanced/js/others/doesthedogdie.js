@@ -24,19 +24,47 @@
   var export32 = /* @__PURE__ */ sharedExport(shared2, "hashItemId");
   var export7 = /* @__PURE__ */ sharedExport(shared2, "lookupDetailsItem");
 
-  // client/generated-shared/stub/client/src/features/details-providers/links.ts
-  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/links");
-  var export03 = /* @__PURE__ */ sharedExport(shared3, "externalLink");
-  var export2 = /* @__PURE__ */ sharedExport(shared3, "pathSegment");
+  // client/src/features/shared/url-domain.ts
+  function safeExternalUrl(value, base) {
+    try {
+      const url = new URL(value, base);
+      return ["http:", "https:", "mailto:", "tel:", "ftp:", "blob:"].includes(url.protocol) ? value : "#";
+    } catch {
+      return "#";
+    }
+  }
+
+  // client/src/features/details-providers/links.ts
+  function safeHref(url) {
+    return safeExternalUrl(url, window.location.href);
+  }
+  function externalLink(helpers, url, options = {}) {
+    const shared4 = helpers?.createExternalLink;
+    if (shared4) return shared4(url, options);
+    const anchor = document.createElement("a");
+    anchor.setAttribute("is", "emby-linkbutton");
+    anchor.href = safeHref(url);
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    if (options.title) anchor.title = options.title;
+    if (options.className) anchor.className = options.className;
+    if (options.text) anchor.textContent = options.text;
+    if (options.resetStyle) anchor.style.cssText = "padding:0;background:none;border-radius:0;min-width:0;";
+    if (typeof options.setup === "function") options.setup(anchor);
+    return anchor;
+  }
+  function pathSegment(id) {
+    return encodeURIComponent(id);
+  }
 
   // client/generated-shared/stub/client/src/features/details-providers/wire.ts
-  var shared4 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
-  var export5 = /* @__PURE__ */ sharedExport(shared4, "field");
-  var export6 = /* @__PURE__ */ sharedExport(shared4, "int");
-  var export72 = /* @__PURE__ */ sharedExport(shared4, "isRecord");
-  var export8 = /* @__PURE__ */ sharedExport(shared4, "list");
-  var export9 = /* @__PURE__ */ sharedExport(shared4, "num");
-  var export11 = /* @__PURE__ */ sharedExport(shared4, "str");
+  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
+  var export5 = /* @__PURE__ */ sharedExport(shared3, "field");
+  var export6 = /* @__PURE__ */ sharedExport(shared3, "int");
+  var export72 = /* @__PURE__ */ sharedExport(shared3, "isRecord");
+  var export8 = /* @__PURE__ */ sharedExport(shared3, "list");
+  var export9 = /* @__PURE__ */ sharedExport(shared3, "num");
+  var export11 = /* @__PURE__ */ sharedExport(shared3, "str");
 
   // client/src/features/details-providers/provider-domain.ts
   async function resolveProviderTarget(item, allowPerson, seriesLookup) {
@@ -219,7 +247,7 @@
         }
         const foot = el("div", "je-ddd-foot");
         const href = `https://www.doesthedogdie.com/media/${entry.ItemId}`;
-        foot.appendChild(export03(JE.helpers, href, { text: POWERED_BY, resetStyle: true }));
+        foot.appendChild(externalLink(JE.helpers, href, { text: POWERED_BY, resetStyle: true }));
         body.appendChild(foot);
       };
       render();
@@ -347,7 +375,7 @@
     async function fetchEntry(type, tmdbId) {
       try {
         const cacheKey = `ddd:/${type}/${tmdbId}`;
-        const data = await JE.core.api.plugin(`/ddd/${type}/${export2(tmdbId)}`, { cacheKey });
+        const data = await JE.core.api.plugin(`/ddd/${type}/${pathSegment(tmdbId)}`, { cacheKey });
         if (isUnconfirmed(data)) JE.core.api.manager.clearCacheMatching(cacheKey);
         return decodeDddEntry(data);
       } catch (e) {

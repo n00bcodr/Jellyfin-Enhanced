@@ -10,9 +10,9 @@ Sources are relative to this folder; outputs are relative to `Jellyfin.Plugin.Je
 
 | source | output | load position |
 |---|---|---|
-| `activity-custom-tab.ts` | `js/extras/activity-custom-tab.js` | 181 |
-| `activity-page.ts` | `js/extras/activity-page.js` | 180 |
-| `colored-activity-icons.ts` | `js/extras/colored-activity-icons.js` | 174 |
+| `activity-custom-tab.ts` | `js/extras/activity-custom-tab.js` | 182 |
+| `activity-page.ts` | `js/extras/activity-page.js` | 181 |
+| `colored-activity-icons.ts` | `js/extras/colored-activity-icons.js` | 175 |
 
 ## Public API and global slots
 

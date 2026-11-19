@@ -80,12 +80,15 @@ export function createTagPipeline(JE: TagRuntimeBridge) {
         }, { priority: 0 });
 
         // Cards reused in place for another item (see releaseReusedCards):
-        // one attribute observer for the page, never one per card.
+        // one attribute observer for the page, never one per card. It hears
+        // the item id attributes page-wide, and the artwork of each scanned
+        // card image through that image's own registration (scan.ts watchArtwork).
         const createObserver = JE.core?.dom?.createObserver || JE.helpers?.createObserver;
         if (typeof createObserver === 'function') {
-            createObserver('tag-pipeline-card-identity', deps.releaseReusedCards, document.body, {
-                subtree: true, attributes: true, attributeFilter: ['data-id', 'data-itemid', 'style'], attributeOldValue: true,
+            const observer: unknown = createObserver('tag-pipeline-card-identity', deps.releaseReusedCards, document.body, {
+                subtree: true, attributes: true, attributeFilter: ['data-id', 'data-itemid'], attributeOldValue: true,
             });
+            if (observer instanceof MutationObserver) deps.adoptIdentityObserver(observer);
         }
 
         // Also trigger on navigation
@@ -123,12 +126,14 @@ export function createTagPipeline(JE: TagRuntimeBridge) {
             });
         }
 
-        // Inject CSS containment for all tag overlay containers.
-        // This tells the browser these elements are independent from the rest of the
-        // card layout, so hover transforms don't trigger re-layout/re-paint of overlays.
-        // will-change:transform promotes each container to its own compositor layer.
+        // Base CSS for the tag host and the group containers inside it. The containers used
+        // to carry `contain: layout style` (from when cards scaled on hover). It made each one
+        // a stacking context of its own, around six a card, which cost more to paint, composite
+        // and hit-test on every frame than it saved: they are flex containers positioned by
+        // their slot, so nothing about their layout or paint order needs it. (Chromium painted
+        // a contained box from a whole pixel; layout/snap.ts moves the containers there instead.)
         if (JE.helpers?.addCSS) {
-            // Base CSS: tag host and containment
+            // Base CSS: tag host
             JE.helpers.addCSS('je-tag-pipeline-perf', `
                 .je-tag-host {
                     position: absolute !important;
@@ -144,7 +149,6 @@ export function createTagPipeline(JE: TagRuntimeBridge) {
                 .je-tag-host .age-rating-overlay-container,
                 .je-tag-host .status-overlay-container,
                 .je-tag-host .logo-overlay-container {
-                    contain: layout style;
                     pointer-events: none;
                     z-index: auto !important;
                 }
@@ -222,6 +226,7 @@ export function createTagPipeline(JE: TagRuntimeBridge) {
         lookupServerEntries: deps.lookupServerEntries,
         rememberItemFacts: deps.rememberItemFacts,
         peekItemFacts: deps.peekItemFacts,
+        itemFactsExpiry: deps.itemFactsExpiry,
         lookupItemFacts: deps.lookupItemFacts,
         peekSeasonFacts: deps.peekSeasonFacts,
         /**

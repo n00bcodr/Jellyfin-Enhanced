@@ -15,15 +15,220 @@
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
   var export0 = /* @__PURE__ */ sharedExport(shared, "apiClient");
   var export1 = /* @__PURE__ */ sharedExport(shared, "hasApiClient");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
   var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
-  var export42 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
   var export9 = /* @__PURE__ */ sharedExport(shared2, "own");
   var export10 = /* @__PURE__ */ sharedExport(shared2, "record");
   var export11 = /* @__PURE__ */ sharedExport(shared2, "records");
   var export12 = /* @__PURE__ */ sharedExport(shared2, "stringList");
+
+  // client/src/features/media-tags/types/direct-play/card-watch.ts
+  function createCardWatch(host) {
+    const watched = /* @__PURE__ */ new Set();
+    let watchedRef = /* @__PURE__ */ new WeakMap();
+    let watchedSweepAt = 256;
+    const settled = /* @__PURE__ */ new Set();
+    let settledRef = /* @__PURE__ */ new WeakMap();
+    let rewatched = /* @__PURE__ */ new WeakSet();
+    let settledTimer = 0;
+    let settledAt = 0;
+    const hasWeakRef = () => typeof WeakRef === "function";
+    function watch(card) {
+      const io = host.watcher();
+      if (!io) return false;
+      noteWatched(card);
+      io.observe(card);
+      return true;
+    }
+    function noteWatched(card) {
+      if (watchedRef.has(card) || !hasWeakRef()) return;
+      const ref = new WeakRef(card);
+      watched.add(ref);
+      watchedRef.set(card, ref);
+      if (watched.size >= watchedSweepAt) {
+        watchedCards();
+        watchedSweepAt = Math.max(256, watched.size * 2);
+      }
+    }
+    function dropWatched(card) {
+      const ref = watchedRef.get(card);
+      if (!ref) return;
+      watched.delete(ref);
+      watchedRef.delete(card);
+    }
+    function watchedCards() {
+      const cards = [];
+      for (const ref of [...watched]) {
+        const card = ref.deref();
+        if (!card) watched.delete(ref);
+        else if (!card.isConnected) host.untrack(card);
+        else cards.push(card);
+      }
+      return cards;
+    }
+    function settle(card) {
+      if (settledRef.has(card)) return true;
+      const entry = host.entry(card);
+      const observer = host.observer();
+      if (!entry || !observer || !hasWeakRef()) return false;
+      const answeredAt = host.answeredAt(entry);
+      if (answeredAt === null) return false;
+      const ref = new WeakRef(card);
+      settled.add(ref);
+      settledRef.set(card, ref);
+      host.visible.delete(card);
+      rewatched.delete(card);
+      dropWatched(card);
+      observer.unobserve(card);
+      armSettled(answeredAt + host.ttlMs);
+      return true;
+    }
+    function rewatch(card, whereOnly) {
+      const ref = settledRef.get(card);
+      if (!ref) return;
+      settled.delete(ref);
+      settledRef.delete(card);
+      if (whereOnly) rewatched.add(card);
+      else rewatched.delete(card);
+      watch(card);
+    }
+    function rewatchSettled() {
+      for (const ref of [...settled]) {
+        const card = ref.deref();
+        if (card && host.entry(card)) rewatch(card, false);
+        else settled.delete(ref);
+      }
+    }
+    function armSettled(at) {
+      if (settledTimer && settledAt <= at) return;
+      if (settledTimer) clearTimeout(settledTimer);
+      settledAt = at;
+      settledTimer = setTimeout(checkSettled, Math.max(0, at - Date.now()));
+    }
+    function checkSettled() {
+      settledTimer = 0;
+      settledAt = 0;
+      let next = 0;
+      for (const ref of [...settled]) {
+        const card = ref.deref();
+        const entry = card ? host.entry(card) : void 0;
+        if (!card || !entry) {
+          settled.delete(ref);
+          continue;
+        }
+        if (!card.isConnected) {
+          host.untrack(card);
+          continue;
+        }
+        const answeredAt = host.answeredAt(entry);
+        if (answeredAt === null) {
+          rewatch(card, true);
+          continue;
+        }
+        const at = answeredAt + host.ttlMs;
+        if (!next || at < next) next = at;
+      }
+      if (next) armSettled(next);
+    }
+    function forget(card) {
+      const ref = settledRef.get(card);
+      if (ref) {
+        settled.delete(ref);
+        settledRef.delete(card);
+      }
+      rewatched.delete(card);
+      dropWatched(card);
+    }
+    function reset() {
+      watched.clear();
+      watchedRef = /* @__PURE__ */ new WeakMap();
+      watchedSweepAt = 256;
+      settled.clear();
+      settledRef = /* @__PURE__ */ new WeakMap();
+      rewatched = /* @__PURE__ */ new WeakSet();
+      if (settledTimer) clearTimeout(settledTimer);
+      settledTimer = 0;
+      settledAt = 0;
+    }
+    return {
+      watch,
+      settle,
+      rewatch,
+      rewatchSettled,
+      armSettled,
+      watchedCards,
+      forget,
+      reset,
+      /** Whether a card is released from the observer. */
+      isSettled: (card) => settledRef.has(card),
+      /** Whether a card was watched again by a lapse and not reported since (and forget that it was). */
+      takeRewatched: (card) => rewatched.delete(card),
+      /** Whether any card is watched or released (another profile or bitrate then matters). */
+      busy: () => settled.size > 0 || watched.size > 0,
+      /** How many cards are watched (still on the page) and released. */
+      counts: () => ({ watching: [...watched].filter((ref) => ref.deref()?.isConnected).length, settled: settled.size }),
+      /** Whether a released card's answer may have gone (memory dropped one). */
+      anySettled: () => settled.size > 0
+    };
+  }
+
+  // client/src/features/media-tags/types/direct-play/playback-request.ts
+  var REASONS = {
+    ContainerNotSupported: ["status_tag_dp_reason_container", "container"],
+    VideoCodecNotSupported: ["status_tag_dp_reason_video_codec", "video"],
+    VideoCodecTagNotSupported: ["status_tag_dp_reason_video_codec", "video"],
+    AudioCodecNotSupported: ["status_tag_dp_reason_audio_codec", "audio"],
+    ContainerBitrateExceedsLimit: ["status_tag_dp_reason_bitrate"],
+    VideoBitrateNotSupported: ["status_tag_dp_reason_bitrate"],
+    AudioBitrateNotSupported: ["status_tag_dp_reason_bitrate"],
+    SubtitleCodecNotSupported: ["status_tag_dp_reason_subtitles"],
+    VideoRangeTypeNotSupported: ["status_tag_dp_reason_range"],
+    VideoProfileNotSupported: ["status_tag_dp_reason_video_format"],
+    VideoLevelNotSupported: ["status_tag_dp_reason_video_format"],
+    VideoResolutionNotSupported: ["status_tag_dp_reason_video_format"],
+    VideoBitDepthNotSupported: ["status_tag_dp_reason_video_format"],
+    VideoFramerateNotSupported: ["status_tag_dp_reason_video_format"],
+    RefFramesNotSupported: ["status_tag_dp_reason_video_format"],
+    AnamorphicVideoNotSupported: ["status_tag_dp_reason_video_format"],
+    InterlacedVideoNotSupported: ["status_tag_dp_reason_video_format"],
+    AudioChannelsNotSupported: ["status_tag_dp_reason_audio_format"],
+    AudioProfileNotSupported: ["status_tag_dp_reason_audio_format"],
+    AudioSampleRateNotSupported: ["status_tag_dp_reason_audio_format"],
+    AudioBitDepthNotSupported: ["status_tag_dp_reason_audio_format"],
+    SecondaryAudioNotSupported: ["status_tag_dp_reason_audio_format"]
+  };
+  function requestHeaders() {
+    const headers = { Accept: "application/json", "Content-Type": "application/json" };
+    const client = export0();
+    if (typeof client.setRequestHeaders === "function") {
+      client.setRequestHeaders(headers);
+      return headers;
+    }
+    const fields = [["Client", export0().appName?.()], ["Device", export0().deviceName?.()], ["DeviceId", export0().deviceId?.()], ["Version", export0().appVersion?.()], ["Token", export0().accessToken?.()]].filter(([, value]) => value).map(([name, value]) => `${name}="${value}"`);
+    if (fields.length) headers.Authorization = `MediaBrowser ${fields.join(", ")}`;
+    return headers;
+  }
+  function askPlaybackInfo(deadlineMs, url, body) {
+    const controller = new AbortController();
+    let timer;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(Object.assign(new Error("PlaybackInfo timed out"), { timedOut: true }));
+      }, deadlineMs);
+    });
+    const work = (async () => {
+      const response = await fetch(url, { method: "POST", headers: requestHeaders(), body, signal: controller.signal });
+      if (!response.ok) throw new Error(`PlaybackInfo answered ${response.status}`);
+      return response.json();
+    })();
+    work.catch(() => {
+    });
+    return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+  }
 
   // client/src/features/media-tags/types/direct-play/device-profile.ts
   function profileWindow() {
@@ -518,7 +723,7 @@
 
   // client/src/features/media-tags/types/direct-play/tag-direct-play.ts
   function isTimedOut(error) {
-    return export42(error) && error.timedOut === true;
+    return export4(error) && error.timedOut === true;
   }
   function storedResult(value) {
     return {
@@ -543,30 +748,6 @@
     const STORE_CAP = 2e3;
     const PERSIST_DELAY_MS = 2e3;
     const DEFAULT_BITRATE = 12e7;
-    const REASONS = {
-      ContainerNotSupported: ["status_tag_dp_reason_container", "container"],
-      VideoCodecNotSupported: ["status_tag_dp_reason_video_codec", "video"],
-      VideoCodecTagNotSupported: ["status_tag_dp_reason_video_codec", "video"],
-      AudioCodecNotSupported: ["status_tag_dp_reason_audio_codec", "audio"],
-      ContainerBitrateExceedsLimit: ["status_tag_dp_reason_bitrate"],
-      VideoBitrateNotSupported: ["status_tag_dp_reason_bitrate"],
-      AudioBitrateNotSupported: ["status_tag_dp_reason_bitrate"],
-      SubtitleCodecNotSupported: ["status_tag_dp_reason_subtitles"],
-      VideoRangeTypeNotSupported: ["status_tag_dp_reason_range"],
-      VideoProfileNotSupported: ["status_tag_dp_reason_video_format"],
-      VideoLevelNotSupported: ["status_tag_dp_reason_video_format"],
-      VideoResolutionNotSupported: ["status_tag_dp_reason_video_format"],
-      VideoBitDepthNotSupported: ["status_tag_dp_reason_video_format"],
-      VideoFramerateNotSupported: ["status_tag_dp_reason_video_format"],
-      RefFramesNotSupported: ["status_tag_dp_reason_video_format"],
-      AnamorphicVideoNotSupported: ["status_tag_dp_reason_video_format"],
-      InterlacedVideoNotSupported: ["status_tag_dp_reason_video_format"],
-      AudioChannelsNotSupported: ["status_tag_dp_reason_audio_format"],
-      AudioProfileNotSupported: ["status_tag_dp_reason_audio_format"],
-      AudioSampleRateNotSupported: ["status_tag_dp_reason_audio_format"],
-      AudioBitDepthNotSupported: ["status_tag_dp_reason_audio_format"],
-      SecondaryAudioNotSupported: ["status_tag_dp_reason_audio_format"]
-    };
     const memory = /* @__PURE__ */ new Map();
     const queue = /* @__PURE__ */ new Map();
     const inFlight = /* @__PURE__ */ new Map();
@@ -574,7 +755,18 @@
     let tracked = /* @__PURE__ */ new WeakMap();
     const visible = /* @__PURE__ */ new Set();
     const unsaved = /* @__PURE__ */ new Map();
-    const pendingNotify = /* @__PURE__ */ new Set();
+    const pendingNotify = /* @__PURE__ */ new Map();
+    const cards = createCardWatch({
+      entry: (card) => tracked.get(card),
+      visible,
+      watcher: () => watcher(),
+      observer: () => observer,
+      answeredAt: (entry) => settledAnswer(entry)?.t ?? null,
+      ttlMs: TTL_MS,
+      untrack: (card) => untrack(card)
+    });
+    let ratedHash = "";
+    let failedSeen = false;
     let observer = null;
     let sliceScheduled = false;
     let generation = 0;
@@ -704,7 +896,7 @@ ${name}=${value}`;
       return isProfile(copy) ? copy : profile;
     }
     function isProfile(p) {
-      return export42(p) && Array.isArray(p.DirectPlayProfiles);
+      return export4(p) && Array.isArray(p.DirectPlayProfiles);
     }
     function build() {
       const b = browserFlags();
@@ -727,7 +919,7 @@ ${name}=${value}`;
         const shell = typeof window !== "undefined" ? profileWindow().NativeShell?.AppHost : null;
         const version = export1() && export0().appVersion?.() || "";
         const native = typeof shell?.getDeviceProfile === "function" ? shell.getDeviceProfile(builder, version) : null;
-        if (export42(native) && typeof native.then === "function") {
+        if (export4(native) && typeof native.then === "function") {
           const pending = Promise.resolve(native).then((answer) => {
             if (!isProfile(answer) || own !== builds) return;
             const profile2 = recording(() => withHostSettings(profileSettings, clone(answer), b));
@@ -769,6 +961,7 @@ ${name}=${value}`;
       rated = null;
       primed = null;
       primedKey = "";
+      cards.rewatchSettled();
     }
     function current() {
       if (!override && settingsChanged()) rebuild();
@@ -777,13 +970,16 @@ ${name}=${value}`;
       if (rated?.base === base && rated.bitrate === bitrate) return rated.value;
       const value = { profile: base.profile, bitrate, hash: hashOf({ profile: base.hash, bitrate }) };
       rated = { base, bitrate, value };
+      const changed = ratedHash !== "" && ratedHash !== value.hash;
+      ratedHash = value.hash;
+      if (changed) cards.rewatchSettled();
       return value;
     }
     function classify(info, sourceId = "") {
       const answers = export10(info).MediaSources;
       const sources = Array.isArray(answers) ? answers : [];
       const source = sourceId && export11(sources).find((s) => s.Id === sourceId) || sources[0] || null;
-      if (!export42(source)) return null;
+      if (!export4(source)) return null;
       let reasons = Array.isArray(source.TranscodeReasons) ? export12(source.TranscodeReasons) : typeof source.TranscodeReasons === "string" ? source.TranscodeReasons.split(/[,\s]+/).filter(Boolean) : [];
       if (!reasons.length && typeof source.TranscodingUrl === "string") {
         const match = /[?&]TranscodeReasons=([^&]+)/i.exec(source.TranscodingUrl);
@@ -828,24 +1024,28 @@ ${name}=${value}`;
           const stored = await store.getDirectPlay(s, hash);
           if (gen !== generation || primedKey !== key) return;
           const now = Date.now();
-          let loaded = 0;
+          const loaded = [];
           for (const [id, value] of stored) {
             const memoryKey = `${hash}|${id}`;
             if (!memory.has(memoryKey) && value && now - value.t < TTL_MS) {
-              memory.set(memoryKey, { r: storedResult(value.r), t: value.t, ...typeof value.m === "string" ? { m: value.m } : {} });
-              loaded++;
+              const answer = { r: storedResult(value.r), t: value.t, ...typeof value.m === "string" ? { m: value.m } : {} };
+              memory.set(memoryKey, answer);
+              if (answer.r === null) failedSeen = true;
+              loaded.push(String(id).split("@")[0] ?? "");
             }
           }
-          if (!loaded) return;
-          for (const card of visible) {
+          if (!loaded.length) return;
+          for (const card of /* @__PURE__ */ new Set([...cards.watchedCards(), ...visible])) {
             const entry = tracked.get(card);
             if (!entry) continue;
             const memoryKey = `${hash}|${itemKey(entry)}`;
             const known = memory.get(memoryKey);
-            if (known && !inFlight.has(memoryKey) && sameMedia(known, entry.media)) {
+            if (!known || inFlight.has(memoryKey) || !sameMedia(known, entry.media)) continue;
+            if (visible.has(card)) {
               queue.delete(memoryKey);
-              pendingNotify.add(entry.onResult);
+              notifySoon(entry, loaded);
             }
+            cards.settle(card);
           }
           scheduleSlice();
         } catch {
@@ -853,6 +1053,12 @@ ${name}=${value}`;
       })();
       primed = loading;
       return loading;
+    }
+    function notifySoon(entry, more) {
+      let ids = pendingNotify.get(entry.onResult);
+      if (!ids) pendingNotify.set(entry.onResult, ids = /* @__PURE__ */ new Set());
+      ids.add(entry.id);
+      if (more) for (const id of more) ids.add(id);
     }
     function persistSoon() {
       if (persistTimer) return;
@@ -884,9 +1090,11 @@ ${name}=${value}`;
     function remember(key, value) {
       memory.delete(key);
       memory.set(key, value);
+      if (value.r === null) failedSeen = true;
       if (memory.size > MEMORY_CAP) {
         const [oldest] = memory.keys();
         if (oldest !== void 0) memory.delete(oldest);
+        if (cards.anySettled()) cards.armSettled(Date.now());
       }
     }
     function peek(itemId, media, source = "") {
@@ -902,6 +1110,12 @@ ${name}=${value}`;
       if (!value || !sameMedia(value, media)) return true;
       return Date.now() - value.t >= (value.r === null ? RETRY_MS : TTL_MS);
     }
+    function settledAnswer(entry) {
+      const key = `${current().hash}|${itemKey(entry)}`;
+      if (inFlight.has(key)) return null;
+      const value = memory.get(key);
+      return value && value.r !== null && sameMedia(value, entry.media || "") && Date.now() - value.t < TTL_MS ? value : null;
+    }
     function watcher() {
       if (observer || typeof IntersectionObserver === "undefined") return observer;
       const own = new IntersectionObserver((entries) => {
@@ -913,12 +1127,17 @@ ${name}=${value}`;
             untrack(card);
             continue;
           }
+          if (cards.isSettled(card)) continue;
+          const whereOnly = cards.takeRewatched(card);
           if (isIntersecting) {
             visible.add(card);
-            enqueue(card);
-          } else visible.delete(card);
+            if (!whereOnly) enqueue(card);
+          } else {
+            visible.delete(card);
+            cards.settle(card);
+          }
         }
-        scheduleSlice();
+        if (queue.size || pendingNotify.size) scheduleSlice();
         armRetry();
       }, { rootMargin: "200px 0px" });
       observer = own;
@@ -936,6 +1155,7 @@ ${name}=${value}`;
       }
       if (!inFlight.has(key) && !due(key, media)) {
         counters.fromMemory++;
+        cards.settle(card);
         return;
       }
       const job = queue.get(key) || { id: entry.id, source: entry.source || "", cards: /* @__PURE__ */ new Set(), media };
@@ -946,9 +1166,16 @@ ${name}=${value}`;
     function track(card, itemId, onResult, media = "", source = "") {
       hookSession();
       const previous = tracked.get(card);
-      tracked.set(card, { id: itemId, onResult, media, source });
+      const entry = { id: itemId, onResult, media, source };
+      tracked.set(card, entry);
+      listen(true);
       prime();
+      if (cards.isSettled(card)) {
+        if (!settledAnswer(entry)) cards.rewatch(card, false);
+        return;
+      }
       if (previous && previous.id === itemId && (previous.source || "") === source) {
+        if (cards.takeRewatched(card)) return;
         if (visible.has(card)) {
           enqueue(card);
           scheduleSlice();
@@ -956,18 +1183,19 @@ ${name}=${value}`;
         return;
       }
       if (previous) visible.delete(card);
-      const io = watcher();
-      if (io) io.observe(card);
-      else {
+      if (!watcher()) {
         visible.add(card);
         enqueue(card);
         scheduleSlice();
+        return;
       }
+      if (!cards.settle(card)) cards.watch(card);
     }
     function untrack(card) {
       if (!tracked.has(card)) return;
       tracked.delete(card);
       visible.delete(card);
+      cards.forget(card);
       observer?.unobserve(card);
       for (const [key, job] of queue) {
         job.cards.delete(card);
@@ -1003,9 +1231,9 @@ ${name}=${value}`;
       }
       const notify = [...pendingNotify];
       pendingNotify.clear();
-      for (const fn of notify) {
+      for (const [fn, ids] of notify) {
         try {
-          fn();
+          fn(ids);
         } catch (e) {
           console.warn(`${logPrefix} A badge pass failed.`, e);
         }
@@ -1027,35 +1255,6 @@ ${name}=${value}`;
       counters.maxSliceMs = Math.max(counters.maxSliceMs, performance.now() - started);
       if (pendingNotify.size || queue.size && network.size < MAX_IN_FLIGHT) scheduleSlice();
     }
-    function requestHeaders() {
-      const headers = { Accept: "application/json", "Content-Type": "application/json" };
-      const client = export0();
-      if (typeof client.setRequestHeaders === "function") {
-        client.setRequestHeaders(headers);
-        return headers;
-      }
-      const fields = [["Client", export0().appName?.()], ["Device", export0().deviceName?.()], ["DeviceId", export0().deviceId?.()], ["Version", export0().appVersion?.()], ["Token", export0().accessToken?.()]].filter(([, value]) => value).map(([name, value]) => `${name}="${value}"`);
-      if (fields.length) headers.Authorization = `MediaBrowser ${fields.join(", ")}`;
-      return headers;
-    }
-    function askPlaybackInfo(url, body) {
-      const controller = new AbortController();
-      let timer;
-      const deadline = new Promise((_, reject) => {
-        timer = setTimeout(() => {
-          controller.abort();
-          reject(Object.assign(new Error("PlaybackInfo timed out"), { timedOut: true }));
-        }, DEADLINE_MS);
-      });
-      const work = (async () => {
-        const response = await fetch(url, { method: "POST", headers: requestHeaders(), body, signal: controller.signal });
-        if (!response.ok) throw new Error(`PlaybackInfo answered ${response.status}`);
-        return response.json();
-      })();
-      work.catch(() => {
-      });
-      return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
-    }
     async function launch(key, job) {
       if (!export1()) return;
       const gen = generation;
@@ -1069,6 +1268,7 @@ ${name}=${value}`;
       let value;
       try {
         const info = await askPlaybackInfo(
+          DEADLINE_MS,
           export0().getUrl(`Items/${encodeURIComponent(job.id)}/PlaybackInfo`, { UserId: userId, StartTimeTicks: 0, IsPlayback: false, AutoOpenLiveStream: false, MaxStreamingBitrate: bitrate, ...job.source ? { MediaSourceId: job.source } : {} }),
           JSON.stringify({ UserId: userId, DeviceProfile: profile, MaxStreamingBitrate: bitrate, EnableDirectPlay: true, EnableDirectStream: true, EnableTranscoding: true, AllowVideoStreamCopy: true, AllowAudioStreamCopy: true, IsPlayback: false, AutoOpenLiveStream: false, ...job.source ? { MediaSourceId: job.source } : {} })
         );
@@ -1101,11 +1301,15 @@ ${name}=${value}`;
       armRetry();
       for (const card of job.cards) {
         const entry = tracked.get(card);
-        if (entry && itemKey(entry) === itemKey(job)) pendingNotify.add(entry.onResult);
+        if (entry && itemKey(entry) === itemKey(job)) {
+          notifySoon(entry);
+          cards.settle(card);
+        }
       }
       scheduleSlice();
     }
     function nextRetryAt() {
+      if (!failedSeen) return 0;
       const { hash } = current();
       let earliest = 0;
       for (const card of visible) {
@@ -1138,6 +1342,8 @@ ${name}=${value}`;
       generation++;
       for (const card of [...visible]) untrack(card);
       visible.clear();
+      cards.reset();
+      listen(false);
       tracked = /* @__PURE__ */ new WeakMap();
       queue.clear();
       inFlight.clear();
@@ -1154,9 +1360,29 @@ ${name}=${value}`;
       JE.session?.onUserChange?.("direct-play", () => {
         reset();
         memory.clear();
+        failedSeen = false;
         unsaved.clear();
         rebuild();
       });
+      JE.core?.navigation?.onNavigate?.(lookAgain);
+    }
+    const lookAgain = () => {
+      if (cards.busy() || visible.size) current();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") lookAgain();
+    };
+    let listening = false;
+    function listen(on) {
+      if (listening === on) return;
+      listening = on;
+      if (on) {
+        document.addEventListener("visibilitychange", onVisible);
+        window.addEventListener("online", lookAgain);
+      } else {
+        document.removeEventListener("visibilitychange", onVisible);
+        window.removeEventListener("online", lookAgain);
+      }
     }
     const api = {
       INPUTS,
@@ -1186,15 +1412,15 @@ ${name}=${value}`;
         if (!profile) built = null;
         primed = null;
       },
-      /** @returns Slice and request counters. */
-      stats: () => ({ ...counters, queued: queue.size, inFlight: network.size, memory: memory.size })
+      /** @returns Slice and request counters, and how many cards are watched and released. */
+      stats: () => ({ ...counters, queued: queue.size, inFlight: network.size, memory: memory.size, ...cards.counts() })
     };
     JE.tagDirectPlay = api;
     return api;
   }
 
   // client/src/features/media-tags/types/direct-play/tag-direct-play-entry.ts
-  createDirectPlay(export4());
+  createDirectPlay(export5());
 })();
 })();
 //# sourceMappingURL=tag-direct-play.js.map

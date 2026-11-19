@@ -13,11 +13,11 @@
 
   // client/generated-shared/stub/client/src/features/media-tags/host.ts
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
   var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
-  var export42 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
 
   // client/src/features/media-tags/types/custom/customtags.ts
   function createCustomTags(JE) {
@@ -53,7 +53,7 @@
       "live_tv"
     ];
     function pick(obj, key) {
-      if (!export42(obj)) return void 0;
+      if (!export4(obj)) return void 0;
       if (obj[key] !== void 0 && obj[key] !== null) return obj[key];
       const pascal = key.charAt(0).toUpperCase() + key.slice(1);
       return obj[pascal] ?? void 0;
@@ -128,7 +128,7 @@ ${source}`;
     }
     function getCachedEntry(ctx, itemId) {
       const entry = ctx.hot?.get(itemId) ?? ctx.getPersistent(itemId);
-      if (export42(entry) && entry.r === currentRules().key && Array.isArray(entry.ids)) return entry.ids.map(String);
+      if (export4(entry) && entry.r === currentRules().key && Array.isArray(entry.ids)) return entry.ids.map(String);
       if (entry !== void 0) ctx.deletePersistent(itemId);
       return null;
     }
@@ -287,7 +287,7 @@ ${source}`;
   }
 
   // client/src/features/media-tags/types/custom/customtags-entry.ts
-  createCustomTags(export4());
+  createCustomTags(export5());
 })();
 })();
 //# sourceMappingURL=customtags.js.map

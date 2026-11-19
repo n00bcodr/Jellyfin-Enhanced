@@ -95,7 +95,6 @@ JE.initializePauseScreen = function() {
           this.createOverlay();
           this.setupKeyboardAccessibility();
           this.setupVideoObserver();
-          this.setupInteractionListeners();
         }
 
         getCredentials() {
@@ -337,7 +336,9 @@ JE.initializePauseScreen = function() {
           this.pauseScreenTimer = setTimeout(tryShowWhenIdle, this.pauseScreenDelayMs);
         }
 
+        /** Listen for the interaction that postpones the overlay while there is a video (handleVideoChange to clearState). */
         setupInteractionListeners() {
+          if (this.interactionListeners) return;
           // Track last mouse position for movement threshold
           let lastMouseX: number | null = null;
           let lastMouseY: number | null = null;
@@ -383,6 +384,12 @@ JE.initializePauseScreen = function() {
           this.interactionListeners.push({ event: 'mousemove', listener: handleMouseMove });
         }
 
+        /** Stop listening for interaction (no video, or teardown). */
+        removeInteractionListeners() {
+          this.interactionListeners?.forEach(({ event, listener }) => document.removeEventListener(event, listener));
+          this.interactionListeners = null;
+        }
+
         checkForVideoChanges() {
           const video = document.querySelector<HTMLVideoElement>(".videoPlayerContainer video");
           if (video && video !== this.currentVideo) {
@@ -396,6 +403,8 @@ JE.initializePauseScreen = function() {
           this.clearState();
           this.currentVideo = video;
           this.cleanupListeners = this.attachVideoListeners(video);
+          this.lastUserInteractionAt = Date.now();
+          this.setupInteractionListeners();
 
           // Clear item cache on video change so a new item always fetches fresh data
           this.itemCache.clear();
@@ -752,6 +761,7 @@ JE.initializePauseScreen = function() {
           this.currentItemId = null;
           this.readyItemId = null;
           this.currentVideo = null;
+          this.removeInteractionListeners();
         }
 
         destroy() {
@@ -767,12 +777,7 @@ JE.initializePauseScreen = function() {
           if (this.observer) { this.observer.unsubscribe(); this.observer = null; }
 
           // Clean up interaction listeners
-          if (this.interactionListeners) {
-            this.interactionListeners.forEach(({ event, listener }) => {
-              document.removeEventListener(event, listener);
-            });
-            this.interactionListeners = null;
-          }
+          this.removeInteractionListeners();
 
           // Revoke blob URLs
           for (const url of this.imgBlobCache.values()) URL.revokeObjectURL(url);

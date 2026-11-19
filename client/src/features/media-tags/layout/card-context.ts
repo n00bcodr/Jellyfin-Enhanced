@@ -118,7 +118,7 @@ export function createCardContext(s: LayoutState, JE: LayoutHost, deps: LayoutFn
         }
         if (!ctrl && create) {
             deps.injectStyles();
-            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: '', shape: shapeOfCard(host) };
+            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: '', shape: shapeOfCard(host), layered: new Set(), kinds: '', flowKinds: '' };
             s.controllers.set(host, ctrl);
         }
         return ctrl;
@@ -278,6 +278,8 @@ export function createCardContext(s: LayoutState, JE: LayoutHost, deps: LayoutFn
         const ctrl = target ? controllerFor(target, false) : null;
         if (ctrl?.pendingPresentation && ctrl.host.isConnected)
             deps.presentAll(ctrl);
+        // The status-tag painter let go of the card while it was off the page (types/status/backdrop/).
+        if (ctrl?.host.isConnected) JE.statusTagBackdrop?.resume?.(ctrl.host);
     }
 
     return { shapeOfCard, shapeOf, shapesInUse, findHost, ensureHost, captionAnchor, isIgnoredContext, controllerFor, contextOf, isAwaiting, resolveLayout, lookSource, setPreviewLook, cardIdentity, setCardContext, awaitCardContext, endAwait, releaseCardContext, resumePresentation };

@@ -10,14 +10,14 @@ Sources are relative to this folder; outputs are relative to `Jellyfin.Plugin.Je
 
 | source | output | load position |
 |---|---|---|
-| `actions-entry.ts` | `js/arr/requests/requests-page-actions.js` | 164 |
-| `custom-tab-entry.ts` | `js/arr/requests/requests-custom-tab.js` | 172 |
-| `data-entry.ts` | `js/arr/requests/requests-page-data.js` | 160 |
-| `init-entry.ts` | `js/arr/requests/requests-page-init.js` | 165 |
-| `render-cards-entry.ts` | `js/arr/requests/requests-page-render-cards.js` | 162 |
-| `render-entry.ts` | `js/arr/requests/requests-page-render.js` | 163 |
-| `render-helpers-entry.ts` | `js/arr/requests/requests-page-render-helpers.js` | 161 |
-| `styles-entry.ts` | `js/arr/requests/requests-page-styles.js` | 159 |
+| `actions-entry.ts` | `js/arr/requests/requests-page-actions.js` | 165 |
+| `custom-tab-entry.ts` | `js/arr/requests/requests-custom-tab.js` | 173 |
+| `data-entry.ts` | `js/arr/requests/requests-page-data.js` | 161 |
+| `init-entry.ts` | `js/arr/requests/requests-page-init.js` | 166 |
+| `render-cards-entry.ts` | `js/arr/requests/requests-page-render-cards.js` | 163 |
+| `render-entry.ts` | `js/arr/requests/requests-page-render.js` | 164 |
+| `render-helpers-entry.ts` | `js/arr/requests/requests-page-render-helpers.js` | 162 |
+| `styles-entry.ts` | `js/arr/requests/requests-page-styles.js` | 160 |
 
 ## Public API and global slots
 

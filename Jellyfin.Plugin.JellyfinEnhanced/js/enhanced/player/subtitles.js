@@ -2,22 +2,103 @@
 "use strict";
 (() => {
   // client/src/host/context.ts
-  function sharedModule(id) {
-    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
-    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
-    return namespace;
-  }
-  function sharedExport(namespace, name) {
-    return namespace[name];
+  function featureContext(feature, core, slots) {
+    const shared = core.core?.featureContext;
+    if (typeof shared !== "function") {
+      throw new Error(`${feature}: JE.core.featureContext is missing; core/ui-kit.js must load before feature scripts`);
+    }
+    return shared(feature, core, slots);
   }
 
-  // client/generated-shared/stub/client/src/features/player/host.ts
-  var shared = /* @__PURE__ */ sharedModule("features/player/host");
-  var export0 = /* @__PURE__ */ sharedExport(shared, "playerHost");
+  // client/src/features/player/host.ts
+  function playerHost() {
+    const host = window;
+    const JE2 = host.JellyfinEnhanced;
+    if (!JE2) throw new Error("Player loaded before Jellyfin Enhanced");
+    const ctx = featureContext("player", JE2, {
+      internalSlots: ["player", "nowPlaying", "autoSkip", "subtitleSync", "osdPlayback"],
+      internalsObject: () => JE2.internals = JE2.internals || {}
+    });
+    const requireApi = () => {
+      if (!host.ApiClient) throw new Error("Jellyfin API unavailable");
+      return host.ApiClient;
+    };
+    const ApiClient2 = {
+      getCurrentUserId: () => host.ApiClient?.getCurrentUserId() ?? null,
+      deviceId: () => host.ApiClient?.deviceId?.() ?? "",
+      serverId: () => {
+        const id = host.ApiClient?.serverId;
+        return typeof id === "function" ? id.call(host.ApiClient) : id ?? "";
+      },
+      serverAddress: () => requireApi().serverAddress(),
+      getUrl: (path, params) => requireApi().getUrl(path, params),
+      ajax: (options) => requireApi().ajax(options),
+      getItem: (userId, itemId) => requireApi().getItem(userId, itemId)
+    };
+    return { JE: JE2, ApiClient: ApiClient2, ctx };
+  }
 
-  // client/generated-shared/stub/client/src/features/player/lifetime.ts
-  var shared2 = /* @__PURE__ */ sharedModule("features/player/lifetime");
-  var export02 = /* @__PURE__ */ sharedExport(shared2, "createPlayerLifetime");
+  // client/src/features/player/lifetime.ts
+  function createPlayerLifetime(JE2, name) {
+    let generation = 0;
+    let controller = new AbortController();
+    const cleanups = /* @__PURE__ */ new Set();
+    const timers = /* @__PURE__ */ new Set();
+    function reset() {
+      generation++;
+      controller.abort();
+      controller = new AbortController();
+      for (const cleanup of cleanups) cleanup();
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+    }
+    JE2.session?.onUserChange(name + "-lifetime", reset);
+    if (JE2.core?.navigation) JE2.core.navigation.onNavigate(reset);
+    else window.addEventListener("hashchange", reset);
+    function lease(video) {
+      const captured = generation, hash = location.hash;
+      const session = JE2.session?.createLease?.();
+      const source = video ? video.currentSrc || video.src : null;
+      return { signal: controller.signal, current: () => captured === generation && hash === location.hash && (!session || session.isCurrent()) && (!video || video.isConnected && (video.currentSrc || video.src) === source) };
+    }
+    return {
+      lease,
+      reset,
+      onReset(cleanup) {
+        cleanups.add(cleanup);
+        return () => cleanups.delete(cleanup);
+      },
+      timeout(callback, delay) {
+        const id = window.setTimeout(() => {
+          timers.delete(id);
+          callback();
+        }, delay);
+        timers.add(id);
+        return id;
+      },
+      cancel(id) {
+        if (id != null) {
+          clearTimeout(id);
+          timers.delete(id);
+        }
+      },
+      sleep(delay, signal) {
+        return new Promise((resolve) => {
+          if (signal.aborted) {
+            resolve();
+            return;
+          }
+          const done = () => {
+            clearTimeout(id);
+            signal.removeEventListener("abort", done);
+            resolve();
+          };
+          const id = window.setTimeout(done, delay);
+          signal.addEventListener("abort", done, { once: true });
+        });
+      }
+    };
+  }
 
   // client/src/features/shared/settings-values.ts
   function isSafeCssColor(value) {
@@ -31,8 +112,8 @@
   }
 
   // client/src/features/player/subtitles.ts
-  var { JE, ApiClient } = export0();
-  var lifetime = export02(JE, "subtitles");
+  var { JE, ApiClient } = playerHost();
+  var lifetime = createPlayerLifetime(JE, "subtitles");
   var subtitleObserver = null;
   var currentSubtitleStyle = { textColor: "", bgColor: "", fontSize: 1.2, fontFamily: "inherit", textShadow: void 0 };
   var STYLED_ATTR = "data-je-subtitle-styled";

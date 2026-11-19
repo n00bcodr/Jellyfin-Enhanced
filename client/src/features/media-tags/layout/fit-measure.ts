@@ -2,7 +2,7 @@ import * as rules from './layout-rules';
 import { centreRowLimit, chipsThatFit, FIT_MAX_ROWS, rowBudget, rowsHeight, shapeOfSize } from './layout-fitting';
 import { EDGE_SPACINGS, TAG_GAPS, TAG_SCALES } from './layout-rules';
 import type { CardController, LayoutHost } from './layout-runtime-types';
-import { childrenOf, type FitPlan, type FitRow, INDICATOR_BEFORE, type LayoutFns, type LayoutState, STACK_INSET, STACK_LIFT } from './state';
+import { childrenOf, type FitPlan, type FitRow, INDICATOR_BEFORE, type LayoutFns, type LayoutState, SNAP_SAME_PX, STACK_INSET, STACK_LIFT } from './state';
 
 const NARROW_CARD_PX = 160;
 const SAME_WIDTH_PX = 0.01;
@@ -108,7 +108,10 @@ export function createFitMeasure(s: LayoutState, JE: LayoutHost, deps: LayoutFns
     function scheduleFit(ctrl: CardController) {
         if (s.fitting || !(s.FIT_LAYOUTS.has(ctrl.layout || '') || centreSlots(ctrl).length || cornerLanguageGroups(ctrl).length || indicatorGapsToMeasure(ctrl) || needsShape(ctrl) || needsRadius(ctrl)))
             return;
+        deps.watchFonts();
         s.pendingFit.add(ctrl);
+        // The pass measures the layout as it is without the whole-pixel nudges, which are worked out again after it.
+        deps.unsnap(ctrl);
         watchSize(ctrl.host);
         if (s.fitScheduled)
             return;
@@ -119,16 +122,8 @@ export function createFitMeasure(s: LayoutState, JE: LayoutHost, deps: LayoutFns
             requestAnimationFrame(flushFit);
     }
 
-    const fittedWidths: WeakMap<HTMLElement, {
-        observed: number;
-        observedHeight: number;
-        fitted: number;
-        fittedHeight: number;
-        measured: {
-            width: number;
-            height: number;
-        } | null;
-    }> = new WeakMap();
+    // Each card's sizes (state.ts FittedSize): the whole-pixel pass reads and notes them too (snap.ts).
+    const fittedWidths = s.fittedWidths;
 
     function watchSize(host: HTMLElement) {
         if (typeof ResizeObserver !== 'function' || fittedWidths.has(host))
@@ -160,8 +155,21 @@ export function createFitMeasure(s: LayoutState, JE: LayoutHost, deps: LayoutFns
             const height = entry.contentRect.height;
             if (width <= 0)
                 continue;
+            // Its resting layout was left undecided while it had no size (a page drawn hidden).
+            if (s.unmeasured.delete(ctrl))
+                deps.syncFlow(ctrl, deps.resolveLayout(ctrl));
             sizes.observed = width;
             sizes.observedHeight = height;
+            // The whole box as it is laid out (scaled), where the browser says.
+            const box = entry.borderBoxSize?.[0];
+            sizes.boxWidth = box ? box.inlineSize : undefined;
+            sizes.boxHeight = box ? box.blockSize : undefined;
+            // Another size than the whole-pixel pass measured at (flushSnap): the card's containers lie elsewhere.
+            if (sizes.snapWidth !== undefined && (Math.abs(width - sizes.snapWidth) >= SNAP_SAME_PX || Math.abs(height - (sizes.snapHeight ?? 0)) >= SNAP_SAME_PX)) {
+                sizes.snapWidth = width;
+                sizes.snapHeight = height;
+                deps.snapAgain(ctrl);
+            }
             // The first observation reports the size the queued fit is about to use.
             if (sizes.fitted < 0) {
                 sizes.fitted = width;
@@ -279,6 +287,9 @@ export function createFitMeasure(s: LayoutState, JE: LayoutHost, deps: LayoutFns
         finally {
             s.fitting = false;
         }
+        // What was fitted is laid out by the next frame: its whole-pixel nudges are measured once the page is at rest again.
+        for (const ctrl of list)
+            deps.scheduleSnap(ctrl);
         // Genre names asked for while this pass was pending, and those of revealed
         // cards it changed, are bounded against the fitted chips.
         const bound = new Set(s.genreAfterFit);
@@ -719,5 +730,5 @@ export function createFitMeasure(s: LayoutState, JE: LayoutHost, deps: LayoutFns
         }
     }
 
-    return { holdsGroups, moreChipOf, posterStack, chipLabel, scheduleFit, unwatchSize, flushFit, prepareFitText };
+    return { holdsGroups, moreChipOf, posterStack, chipLabel, scheduleFit, unwatchSize, flushFit, prepareFitText, watchSize, edgeOf };
 }

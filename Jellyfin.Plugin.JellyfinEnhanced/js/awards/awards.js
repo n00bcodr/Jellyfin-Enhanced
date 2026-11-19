@@ -24,18 +24,19 @@
   var export7 = /* @__PURE__ */ sharedExport(shared2, "lookupDetailsItem");
   var export9 = /* @__PURE__ */ sharedExport(shared2, "removeFirst");
 
-  // client/generated-shared/stub/client/src/features/details-providers/links.ts
-  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/links");
-  var export2 = /* @__PURE__ */ sharedExport(shared3, "pathSegment");
+  // client/src/features/details-providers/links.ts
+  function pathSegment(id) {
+    return encodeURIComponent(id);
+  }
 
   // client/generated-shared/stub/client/src/features/details-providers/wire.ts
-  var shared4 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
-  var export5 = /* @__PURE__ */ sharedExport(shared4, "field");
-  var export72 = /* @__PURE__ */ sharedExport(shared4, "isRecord");
-  var export8 = /* @__PURE__ */ sharedExport(shared4, "list");
-  var export92 = /* @__PURE__ */ sharedExport(shared4, "num");
-  var export11 = /* @__PURE__ */ sharedExport(shared4, "str");
-  var export122 = /* @__PURE__ */ sharedExport(shared4, "stringList");
+  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
+  var export5 = /* @__PURE__ */ sharedExport(shared3, "field");
+  var export72 = /* @__PURE__ */ sharedExport(shared3, "isRecord");
+  var export8 = /* @__PURE__ */ sharedExport(shared3, "list");
+  var export92 = /* @__PURE__ */ sharedExport(shared3, "num");
+  var export11 = /* @__PURE__ */ sharedExport(shared3, "str");
+  var export122 = /* @__PURE__ */ sharedExport(shared3, "stringList");
 
   // client/src/features/details-providers/provider-domain.ts
   async function resolveProviderTarget(item, allowPerson, seriesLookup) {
@@ -139,7 +140,7 @@
     async function fetchAwards(tmdbId, apiMediaType) {
       try {
         const cacheKey = `awards:/${apiMediaType}/${tmdbId}`;
-        const data = await JE.core.api.plugin(`/awards/${apiMediaType}/${export2(tmdbId)}`, { cacheKey });
+        const data = await JE.core.api.plugin(`/awards/${apiMediaType}/${pathSegment(tmdbId)}`, { cacheKey });
         if (isUnconfirmed(data)) JE.core.api.manager.clearCacheMatching(cacheKey);
         return normalizeAwardsData(data);
       } catch (e) {

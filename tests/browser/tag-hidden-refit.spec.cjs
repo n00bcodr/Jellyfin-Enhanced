@@ -216,7 +216,7 @@ for (const hidden of [false, true]) test(`a height-only change refits a card who
   expect(await page.evaluate(() => window.__passes)).toBe(0);
 });
 
-test('legacy cards that never needed a fit are not watched', async ({ page }) => {
+test('legacy cards that never needed a fit are not watched for fitting; the whole-pixel pass has a watch of its own', async ({ page, browserName }) => {
   await page.goto('/');
   await page.setContent('<div class="card"><div class="cardBox"><div class="cardScalable" style="position:relative;width:180px;height:270px"><div class="je-tag-host"></div></div></div></div>');
   await page.evaluate(en => {
@@ -228,13 +228,33 @@ test('legacy cards that never needed a fit are not watched', async ({ page }) =>
   for (const file of ['core/ui-kit.js','core/dom-observer.js','core/tag-renderer-base.js','core/tag-layout.js','tags/tag-layout-styles.js',
     'tags/tag-styles.js','tags/status-vocabulary.js','tags/statustags.js']) await page.addScriptTag({path:path.join(root,file)});
   const observed = await page.evaluate(async () => {
-    const JE=JellyfinEnhanced,h=document.querySelector('.je-tag-host');
+    const JE=JellyfinEnhanced,L=JE.core.tagLayout,h=document.querySelector('.je-tag-host');
     Object.assign(JE.currentSettings,{statusTagsEnabled:true,statusTagsShowJustAdded:true,statusTagsJustAddedDays:30});
-    JE.initializeStatusTags();JE.core.tagLayout.invalidateSettings();
+    JE.initializeStatusTags();L.invalidateSettings();
+    const frames=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    // The fitting pass on its own (whole pixels off): nothing to fit, so nothing is watched.
+    L.wholePixels=false;
     JE.tagPipeline.status.renderFromServerCache(h,{Type:'Movie',DateCreated:new Date().toISOString()});
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-    return {legacy:h.dataset.jeLegacy,chips:h.querySelectorAll('.status-tag').length,observed:window.__observed};
+    await frames();
+    const fitting=window.__observed;
+    // With whole pixels on, Chromium's family watches the page's pixel grid and the host that pass measured, so
+    // that the card is measured again when it changes size (its containers are not watched one by one).
+    L.wholePixels=true;L.refreshPresentation();
+    await frames();
+    // (That pass runs in idle time.)
+    for(let i=0;i<100&&(L.snapStats().waiting||!h.dataset.jeFlow);i++)await new Promise(r=>setTimeout(r,20));
+    await frames();
+    return {legacy:h.dataset.jeLegacy,chips:h.querySelectorAll('.status-tag').length,fitting,watched:window.__observed-fitting,
+      nudged:!!h.querySelector('[data-je-group]').style.getPropertyValue('--je-snap-x'),passes:L.snapStats().passes};
   });
   expect(observed.chips).toBe(1);
-  expect(observed.observed).toBe(0);
+  expect(observed.fitting).toBe(0);
+  if (browserName === 'chromium') {
+    expect(observed.passes).toBeGreaterThan(0);
+    // The root (for the pixel grid) and the host.
+    expect(observed.watched).toBe(2);
+  } else {
+    expect(observed.watched).toBe(0);
+    expect(observed.passes).toBe(0);
+  }
 });

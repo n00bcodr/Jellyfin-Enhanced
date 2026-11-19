@@ -110,7 +110,11 @@
         ["BookmarkCurrentTime", () => {
           const bookmarks = ctx2.peer("bookmarks");
           if (bookmarks?.showModal) bookmarks.showModal("add");
-          else console.warn("🪼 Jellyfin Enhanced: New bookmark system not loaded, using fallback");
+          else if (JE.pluginConfig?.BookmarksEnabled && JE.loader) {
+            void JE.loader.ensure(["bookmarks"]).then(() => {
+              if (JE.isVideoPage()) ctx2.peer("bookmarks")?.showModal?.("add");
+            });
+          } else console.warn("🪼 Jellyfin Enhanced: New bookmark system not loaded, using fallback");
         }],
         ["CycleAspectRatio", () => JE.cycleAspect?.()],
         // Toggles jellyfin-web's own stats panel through its settings menu, kept invisible;

@@ -60,6 +60,8 @@ export function createSplashScreen(readConfig: () => SplashBridge['pluginConfig'
     let detachReadyListeners: (() => void) | null = null;
     /** The boot splash is one-shot per document: once hidden it never reappears (CHR-SPLASH-1). */
     let isHidden = false;
+    /** Live .bar-loading collection, created on first use. */
+    let barLoadingElements: HTMLCollectionOf<Element> | null = null;
 
     function installPreemptiveStyles(): void {
         try {
@@ -106,7 +108,17 @@ export function createSplashScreen(readConfig: () => SplashBridge['pluginConfig'
     }
 
     function removeMediaBarSplash(): void {
-        document.querySelectorAll('#page-loader, .bar-loading:not(.je-loading)').forEach(element => {
+        // Polled for a while after the splash goes (see hideSplashScreen), so it asks the
+        // document's id and class indexes instead of matching a selector list against every
+        // element on each tick.
+        const mediaBarElements: Element[] = [];
+        // An id can be duplicated; the index only answers with the first.
+        if (document.getElementById('page-loader')) mediaBarElements.push(...document.querySelectorAll('#page-loader'));
+        barLoadingElements ??= document.getElementsByClassName('bar-loading');
+        for (const element of barLoadingElements) {
+            if (!element.classList.contains('je-loading')) mediaBarElements.push(element);
+        }
+        mediaBarElements.forEach(element => {
             if (element.parentNode) {
                 console.log('🪼 Jellyfin Enhanced: Removing media-bar splash element');
                 element.remove();

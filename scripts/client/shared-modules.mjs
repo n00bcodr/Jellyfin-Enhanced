@@ -59,11 +59,14 @@ function resolveRelative(resolveDir, specifier) {
 
 /**
  * The esbuild plugin and inject list for one component-script output (`js/<path>`). `exportsOf(source)` lists the
- * module's runtime exports.
+ * module's runtime exports. `loads(provider)` says whether every page that runs this output has run the provider
+ * first (js/component-groups.json: the provider is in core, or in this output's group or a group it is after): only
+ * then does the output read the published copy; otherwise it inlines its own (the module is stateless, so the copies
+ * behave the same).
  */
-export function sharedModulesBuild({ root, modules, output, exportsOf }) {
+export function sharedModulesBuild({ root, modules, output, exportsOf, loads = () => true }) {
   const provided = modules.filter(module => module.provider === output);
-  const stubbed = new Map(modules.filter(module => module.provider !== output).map(module => [resolve(root, module.source), module]));
+  const stubbed = new Map(modules.filter(module => module.provider !== output && loads(module.provider)).map(module => [resolve(root, module.source), module]));
   if (!provided.length && !stubbed.size) return { plugins: [], inject: [] };
   const plugin = {
     name: 'je-shared-modules',

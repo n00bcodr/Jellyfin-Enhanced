@@ -450,6 +450,8 @@
       throw new Error("Expected an HTML tag");
     return clone;
   }
+  var SNAP_SAME_PX = 2e-3;
+  var REST_AFTER_MS = 200;
   var STACK_INSET = 6;
   var STACK_LIFT = "--je-stack-lift";
   var INDICATOR_BEFORE = "--je-indicator-before";
@@ -498,7 +500,22 @@
       genreAfterFit: /* @__PURE__ */ new Set(),
       revealedCard: null,
       moreTipSeq: 0,
-      reinitPending: null
+      reinitPending: null,
+      fittedWidths: /* @__PURE__ */ new WeakMap(),
+      flowAlike: /* @__PURE__ */ new Map(),
+      flowVerdicts: /* @__PURE__ */ new Map(),
+      flowEpoch: 1,
+      pendingAlike: /* @__PURE__ */ new Set(),
+      pendingFreed: /* @__PURE__ */ new Set(),
+      pendingSnap: /* @__PURE__ */ new Set(),
+      unmeasured: /* @__PURE__ */ new WeakSet(),
+      restTimers: /* @__PURE__ */ new WeakMap(),
+      lingering: null,
+      lastLeft: { host: null, at: 0 },
+      uninspected: /* @__PURE__ */ new WeakSet(),
+      layoutScale: 0,
+      flowCounters: { probes: 0, inspections: 0 },
+      snapCounters: { passes: 0, cards: 0, moved: 0, deferred: 0, passMs: 0, held: 0 }
     };
   }
 
@@ -597,7 +614,7 @@
       }
       if (!ctrl && create) {
         deps.injectStyles();
-        ctrl = { host, itemId, groups: /* @__PURE__ */ new Map(), nodes: /* @__PURE__ */ new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: "", shape: shapeOfCard(host) };
+        ctrl = { host, itemId, groups: /* @__PURE__ */ new Map(), nodes: /* @__PURE__ */ new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: "", shape: shapeOfCard(host), layered: /* @__PURE__ */ new Set(), kinds: "", flowKinds: "" };
         s.controllers.set(host, ctrl);
       }
       return ctrl;
@@ -739,6 +756,7 @@
       const ctrl = target ? controllerFor(target, false) : null;
       if (ctrl?.pendingPresentation && ctrl.host.isConnected)
         deps.presentAll(ctrl);
+      if (ctrl?.host.isConnected) JE.statusTagBackdrop?.resume?.(ctrl.host);
     }
     return { shapeOfCard, shapeOf, shapesInUse, findHost, ensureHost, captionAnchor, isIgnoredContext, controllerFor, contextOf, isAwaiting, resolveLayout, lookSource, setPreviewLook, cardIdentity, setCardContext, awaitCardContext, endAwait, releaseCardContext, resumePresentation };
   }
@@ -855,7 +873,8 @@
         s.genreAfterFit.add(host);
         return;
       }
-      const names = Array.from(host.querySelectorAll(':scope > .je-tag-slot:not([data-je-slot="hover"]) .genre-tag > .genre-text'));
+      const resting = host.dataset.jeFlow === "1" && !host.dataset.jeLive;
+      const names = resting ? [] : Array.from(host.querySelectorAll(':scope > .je-tag-slot:not([data-je-slot="hover"]) .genre-tag > .genre-text'));
       const tip = host.querySelector(":scope > .je-tag-more-tip");
       if (names.length === 0 && !tip)
         return;
@@ -965,18 +984,45 @@
     }
     function onReveal(event) {
       const target = event.target instanceof Element ? event.target : null;
-      const card = target?.closest(".card");
-      if (!card || card === s.revealedCard)
+      const pointer = event.type === "pointerover";
+      const card = target?.closest(".card, .listItem");
+      if (pointer && s.lingering && !(card && card.contains(s.lingering))) {
+        const left = s.lingering.closest(".card, .listItem");
+        s.lingering = null;
+        if (left) deps.restLater(left);
+      }
+      if (!card)
+        return;
+      const host = card.querySelector(".je-tag-host");
+      if (pointer && deps.hidesOnHover(host))
+        return;
+      const live = deps.goLive(host);
+      if (card === s.revealedCard && !live)
         return;
       s.revealedCard = card;
-      fitReveal(card.querySelector(".je-tag-host"));
+      try {
+        fitReveal(host);
+      } finally {
+        if (live && host) deps.showNames(host);
+      }
     }
     if (typeof document !== "undefined" && document.addEventListener) {
       document.addEventListener("pointerover", onReveal, { passive: true });
       document.addEventListener("focusin", onReveal);
       document.addEventListener("pointerout", (event) => {
-        if (s.revealedCard && !(event.relatedTarget instanceof Node && s.revealedCard.contains(event.relatedTarget)))
+        const to = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+        if (s.revealedCard && !(to && s.revealedCard.contains(to)))
           s.revealedCard = null;
+        const card = event.target instanceof Element ? event.target.closest(".card, .listItem") : null;
+        if (!card || to && card.contains(to))
+          return;
+        deps.restLater(card);
+        const host = card.querySelector(".je-tag-host");
+        s.lastLeft.host = host;
+        s.lastLeft.at = performance.now();
+        const ctrl = host && s.uninspected.delete(host) ? s.controllers.get(host) : null;
+        if (ctrl)
+          deps.inspectLater(ctrl, false);
       }, { passive: true });
     }
     function cardLinkOf(host) {
@@ -1269,7 +1315,9 @@ ${scoped} {${original}}`;
     function scheduleFit(ctrl) {
       if (s.fitting || !(s.FIT_LAYOUTS.has(ctrl.layout || "") || centreSlots(ctrl).length || cornerLanguageGroups(ctrl).length || indicatorGapsToMeasure(ctrl) || needsShape(ctrl) || needsRadius(ctrl)))
         return;
+      deps.watchFonts();
       s.pendingFit.add(ctrl);
+      deps.unsnap(ctrl);
       watchSize(ctrl.host);
       if (s.fitScheduled)
         return;
@@ -1279,7 +1327,7 @@ ${scoped} {${original}}`;
       else
         requestAnimationFrame(flushFit);
     }
-    const fittedWidths = /* @__PURE__ */ new WeakMap();
+    const fittedWidths = s.fittedWidths;
     function watchSize(host) {
       if (typeof ResizeObserver !== "function" || fittedWidths.has(host))
         return;
@@ -1308,8 +1356,18 @@ ${scoped} {${original}}`;
         const height = entry.contentRect.height;
         if (width <= 0)
           continue;
+        if (s.unmeasured.delete(ctrl))
+          deps.syncFlow(ctrl, deps.resolveLayout(ctrl));
         sizes.observed = width;
         sizes.observedHeight = height;
+        const box = entry.borderBoxSize?.[0];
+        sizes.boxWidth = box ? box.inlineSize : void 0;
+        sizes.boxHeight = box ? box.blockSize : void 0;
+        if (sizes.snapWidth !== void 0 && (Math.abs(width - sizes.snapWidth) >= SNAP_SAME_PX || Math.abs(height - (sizes.snapHeight ?? 0)) >= SNAP_SAME_PX)) {
+          sizes.snapWidth = width;
+          sizes.snapHeight = height;
+          deps.snapAgain(ctrl);
+        }
         if (sizes.fitted < 0) {
           sizes.fitted = width;
           sizes.fittedHeight = height;
@@ -1407,6 +1465,8 @@ ${scoped} {${original}}`;
       } finally {
         s.fitting = false;
       }
+      for (const ctrl of list)
+        deps.scheduleSnap(ctrl);
       const bound = new Set(s.genreAfterFit);
       s.genreAfterFit.clear();
       for (const ctrl of list)
@@ -1789,7 +1849,619 @@ ${scoped} {${original}}`;
         }
       }
     }
-    return { holdsGroups, moreChipOf, posterStack, chipLabel, scheduleFit, unwatchSize, flushFit, prepareFitText };
+    return { holdsGroups, moreChipOf, posterStack, chipLabel, scheduleFit, unwatchSize, flushFit, prepareFitText, watchSize, edgeOf };
+  }
+
+  // client/src/features/media-tags/layout/flow.ts
+  var FLOW_LAYOUTS = /* @__PURE__ */ new Set(["corners", "bands", "caption"]);
+  var classOf = (el) => el.getAttribute("class") || "";
+  function createFlow(s, JE, deps) {
+    let flowSupport = null;
+    let flowAllowed = null;
+    let namesFloat = null;
+    function flowSupported() {
+      if (flowSupport === null) {
+        const css = typeof CSS !== "undefined" && typeof CSS.supports === "function" ? CSS : null;
+        flowSupport = !!css && css.supports("container-type", "size") && css.supports("max-height", "1cqh") && css.supports("overflow", "clip");
+      }
+      return flowSupport;
+    }
+    function flowAllowedByPage() {
+      if (flowAllowed === null) {
+        let value = "";
+        try {
+          value = getComputedStyle(document.documentElement).getPropertyValue("--je-tag-flow");
+        } catch {
+          value = "";
+        }
+        flowAllowed = String(value || "").trim().toLowerCase() !== "off";
+      }
+      return flowAllowed;
+    }
+    function genreNamesFloat(host) {
+      if (namesFloat === null) {
+        const name = host.querySelector(".genre-tag > .genre-text");
+        if (!name) return true;
+        let position = "";
+        try {
+          position = getComputedStyle(name).position;
+        } catch {
+          position = "";
+        }
+        namesFloat = position !== "static" && position !== "relative";
+      }
+      return namesFloat;
+    }
+    function flowFor(ctrl, conf, read = true) {
+      if (!deps.api.restingFlow || !FLOW_LAYOUTS.has(conf.layout) || !flowSupported()) return false;
+      if (flowAllowed === null && !read) return null;
+      if (!flowAllowedByPage()) return false;
+      if (conf.layout === "corners" && conf.edge === "flush") return false;
+      const host = ctrl.host;
+      if (!host.closest(".card, .listItem")) return false;
+      const blur = host.dataset.jeBlur === "1";
+      let names = false;
+      for (const child of host.children) {
+        if (!child.classList.contains("je-tag-slot") || !(child instanceof HTMLElement)) continue;
+        if (s.CENTRE_SLOTS.has(child.dataset.jeSlot || "")) return false;
+        if (child.querySelector(".language-flag-partial")) return false;
+        if (blur && child.querySelector(".status-tag")) return false;
+        if (!names && child.querySelector(".genre-tag")) names = true;
+      }
+      if (!names) return true;
+      if (namesFloat === null && !read) return null;
+      return genreNamesFloat(host);
+    }
+    let flowSheets = -1;
+    let reprobeQueued = false;
+    function afterPaint(fn) {
+      if (typeof JE.core.dom?.afterNextPaint === "function") JE.core.dom.afterNextPaint(fn);
+      else requestAnimationFrame(fn);
+    }
+    function forgetPageCss() {
+      flowAllowed = null;
+      namesFloat = null;
+      s.flowVerdicts.clear();
+      s.flowAlike.clear();
+      s.flowEpoch++;
+    }
+    function noteSheets() {
+      const sheets = document.styleSheets ? document.styleSheets.length : 0;
+      if (sheets === flowSheets) return;
+      const first = flowSheets < 0;
+      flowSheets = sheets;
+      if (!first) queueReprobe();
+    }
+    function awaitSize(ctrl) {
+      s.unmeasured.add(ctrl);
+      deps.watchSize(ctrl.host);
+    }
+    function queueReprobe() {
+      if (reprobeQueued) return;
+      reprobeQueued = true;
+      afterPaint(() => {
+        reprobeQueued = false;
+        reprobe();
+      });
+    }
+    function reprobe() {
+      forgetPageCss();
+      for (const el of document.querySelectorAll(".je-tag-host")) {
+        const ctrl = s.controllers.get(el);
+        if (!ctrl || !ctrl.layout) continue;
+        ctrl.layered.clear();
+        deps.queueFlow(ctrl);
+      }
+    }
+    const OWN_Z_INDEX = {
+      [s.CONTAINER_CLASS.quality]: "100",
+      [s.CONTAINER_CLASS.genre]: "101",
+      [s.CONTAINER_CLASS.language]: "101",
+      [s.CONTAINER_CLASS.rating]: "10",
+      [s.CONTAINER_CLASS.ageRating]: "10",
+      [s.CONTAINER_CLASS.status]: "10",
+      [s.CONTAINER_CLASS.logos]: "10",
+      [s.CONTAINER_CLASS.custom]: "10"
+    };
+    function flowContext(ctrl, conf) {
+      const card = ctrl.host.closest(".card, .listItem");
+      const page = ctrl.host.closest(".page, .mainAnimatedPage");
+      const indicators = card ? card.querySelector(".cardIndicators") : null;
+      return `${page ? page.id || classOf(page) : ""}|${card ? classOf(card) : ""}|${card ? card.getAttribute("data-type") || "" : ""}|${indicators ? Array.from(indicators.children, classOf).join(",") : ""}|${conf.layout}|${conf.legacy ? 1 : 0}|${deps.edgeOf(ctrl)}|${conf.tagScale}|${conf.tagGap}`;
+    }
+    function slotKinds(ctrl, conf) {
+      const context = flowContext(ctrl, conf);
+      const kinds = [];
+      for (const child of ctrl.host.children) {
+        if (!child.classList.contains("je-tag-slot") || !(child instanceof HTMLElement)) continue;
+        kinds.push([child, `${context}|${child.dataset.jeSlot || ""}|${Array.from(child.children, classOf).join(",")}`]);
+      }
+      return kinds;
+    }
+    const awaitingImages = /* @__PURE__ */ new WeakSet();
+    function imagesLoading(slot) {
+      for (const img of slot.querySelectorAll("img")) if (!img.complete) return true;
+      return false;
+    }
+    function awaitImages(ctrl) {
+      const host = ctrl.host;
+      if (awaitingImages.has(host)) return;
+      awaitingImages.add(host);
+      const settled = () => {
+        host.removeEventListener("load", settled, true);
+        host.removeEventListener("error", settled, true);
+        awaitingImages.delete(host);
+        if (!host.isConnected || s.controllers.get(host) !== ctrl || !ctrl.layout) return;
+        syncFlow(ctrl, deps.resolveLayout(ctrl));
+        deps.snapAgain(ctrl);
+      };
+      host.addEventListener("load", settled, true);
+      host.addEventListener("error", settled, true);
+    }
+    function measurableKinds(ctrl, conf) {
+      const kinds = slotKinds(ctrl, conf);
+      const ready = kinds.filter(([slot]) => !imagesLoading(slot));
+      if (ready.length < kinds.length) awaitImages(ctrl);
+      return ready;
+    }
+    function laidOutAlike(ctrl, conf) {
+      let known = true;
+      let differs = false;
+      let kinds = "";
+      for (const [, key] of slotKinds(ctrl, conf)) {
+        kinds += `${key}
+`;
+        const alike = s.flowAlike.get(key);
+        if (alike === false) differs = true;
+        if (alike === void 0) known = false;
+      }
+      ctrl.kinds = kinds;
+      if (differs) return false;
+      return known ? true : null;
+    }
+    function styleReader(el) {
+      try {
+        if (typeof el.computedStyleMap === "function") {
+          const map = el.computedStyleMap();
+          return (property) => {
+            try {
+              const value = map.get(property);
+              return value === null || value === void 0 ? "" : String(value);
+            } catch {
+              return "";
+            }
+          };
+        }
+        const cs = getComputedStyle(el);
+        return (property) => cs.getPropertyValue(property);
+      } catch {
+        return null;
+      }
+    }
+    function layeredByPage(el) {
+      const read = styleReader(el);
+      if (!read) return false;
+      const off = (property, none) => {
+        const value = read(property);
+        return !!value && value !== none;
+      };
+      if (off("position", "static") || off("transform", "none") || off("translate", "none") || off("rotate", "none") || off("scale", "none") || off("opacity", "1") || off("filter", "none") || off("backdrop-filter", "none") || off("mix-blend-mode", "normal") || off("clip-path", "none") || off("mask-image", "none") || off("perspective", "none") || off("will-change", "auto") || off("isolation", "auto") || /paint|layout|strict|content/.test(read("contain") || "")) return true;
+      const z = read("z-index");
+      return !!z && z !== "auto" && z !== OWN_Z_INDEX[el.classList[0] ?? ""];
+    }
+    const inspected = /* @__PURE__ */ new WeakMap();
+    const inspectTimers = /* @__PURE__ */ new WeakMap();
+    function layeredFlow(ctrl, conf, read, fresh) {
+      const host = ctrl.host;
+      let context = "";
+      let unknown = false;
+      const look = (el, where, passing = false) => {
+        if (!context) context = flowContext(ctrl, conf);
+        const key = `${context}|${where}|${el.tagName}|${classOf(el)}`;
+        let layered = s.flowVerdicts.get(key);
+        if (layered === void 0) {
+          if (!read || passing) {
+            unknown = true;
+            if (fresh && !passing) fresh.add(key);
+            return false;
+          }
+          layered = layeredByPage(el);
+          s.flowVerdicts.set(key, layered);
+          s.flowCounters.inspections++;
+        }
+        if (layered && el instanceof HTMLElement) ctrl.layered.add(el);
+        return true;
+      };
+      const hides = deps.hidesOnHover(host);
+      let hovered = false;
+      if (hides) {
+        try {
+          hovered = !!host.closest(".card, .listItem")?.matches(":hover");
+        } catch {
+          hovered = false;
+        }
+      }
+      const easingBack = hides && !hovered && s.lastLeft.host === host && performance.now() - s.lastLeft.at < REST_AFTER_MS;
+      let fading = false;
+      for (const child of host.children) {
+        if (!child.classList.contains("je-tag-slot") || !(child instanceof HTMLElement)) continue;
+        const slot = child.dataset.jeSlot || "";
+        if (inspected.get(child) !== `${s.flowEpoch}`) {
+          if (look(child, `${slot}|slot`, hovered || easingBack)) inspected.set(child, `${s.flowEpoch}`);
+          else if (hovered || easingBack) fading = true;
+        }
+        for (const node of child.children) {
+          const parts = node.getElementsByTagName("*");
+          const stamp = `${s.flowEpoch}:${parts.length}`;
+          if (inspected.get(node) === stamp) continue;
+          const group = (node instanceof HTMLElement ? node.dataset.jeGroup : "") || classOf(node);
+          let seen = look(node, `${slot}|${group}`);
+          for (const part of Array.from(parts)) {
+            if (part.namespaceURI !== "http://www.w3.org/1999/xhtml" && part.localName !== "svg") continue;
+            if (part.classList.contains("genre-text")) continue;
+            let chip = part;
+            while (chip.parentElement && chip.parentElement !== node) chip = chip.parentElement;
+            if (!look(part, `${slot}|${group}|${chip === part ? "" : classOf(chip)}`)) seen = false;
+          }
+          if (seen) inspected.set(node, stamp);
+        }
+      }
+      if (fading) inspectLater(ctrl, hovered);
+      if (ctrl.layered.size > 0) return true;
+      return unknown ? null : false;
+    }
+    function inspectLater(ctrl, hovered) {
+      const host = ctrl.host;
+      if (hovered) {
+        s.uninspected.add(host);
+        return;
+      }
+      if (inspectTimers.has(host)) return;
+      inspectTimers.set(host, setTimeout(() => {
+        inspectTimers.delete(host);
+        if (host.isConnected && s.controllers.get(host) === ctrl && ctrl.layout) syncFlow(ctrl, deps.resolveLayout(ctrl));
+      }, REST_AFTER_MS));
+    }
+    function decideFlow(ctrl, conf) {
+      const host = ctrl.host;
+      const alike = laidOutAlike(ctrl, conf);
+      const eligible = flowFor(ctrl, conf, false);
+      if (eligible !== true) return eligible;
+      for (const el of ctrl.layered) if (!host.contains(el)) ctrl.layered.delete(el);
+      if (ctrl.layered.size > 0) return false;
+      if (alike !== true) return alike;
+      if (!host.dataset.jeLive && deps.notAtRest(host)) host.dataset.jeLive = "1";
+      else if (host.dataset.jeLive && !s.restTimers.has(host) && s.lingering !== host && !deps.notAtRest(host)) delete host.dataset.jeLive;
+      if (host.dataset.jeLive) return true;
+      const layered = layeredFlow(ctrl, conf, false);
+      return layered === null ? null : !layered;
+    }
+    function markFlow(ctrl, flow, measure = false) {
+      const host = ctrl.host;
+      if (flow !== (host.dataset.jeFlow === "1")) {
+        if (flow) host.dataset.jeFlow = "1";
+        else delete host.dataset.jeFlow;
+        if (measure && deps.snapSupported()) s.pendingSnap.add(ctrl);
+      }
+      if (flow) ctrl.flowKinds = ctrl.kinds;
+    }
+    function syncFlow(ctrl, conf) {
+      const host = ctrl.host;
+      noteSheets();
+      const flow = decideFlow(ctrl, conf);
+      if (flow !== null) {
+        markFlow(ctrl, flow);
+        return;
+      }
+      deps.queueFlow(ctrl);
+      if (host.dataset.jeFlow === "1" && ctrl.flowKinds === ctrl.kinds) return;
+      markFlow(ctrl, false);
+    }
+    return {
+      forgetPageCss,
+      flowFor,
+      syncFlow,
+      decideFlow,
+      markFlow,
+      layeredFlow,
+      measurableKinds,
+      awaitSize,
+      awaitImages,
+      imagesLoading,
+      queueReprobe,
+      inspectLater
+    };
+  }
+
+  // client/src/features/media-tags/layout/flow-idle.ts
+  var ALIKE_PX = 0.1;
+  var FLOW_IDLE_TIMEOUT_MS = 2e3;
+  var IDLE_SLICE_MS = 12;
+  var IDLE_SLICE_MIN_CARDS = 2;
+  var IDLE_SLICE_MAX_CARDS = 48;
+  var IDLE_LIGHT_CARD = 0.25;
+  var IDLE_NEXT_TIMEOUT_MS = 500;
+  function createFlowIdle(s, JE, deps) {
+    void JE;
+    let alikeScheduled = false;
+    let flowQueued = 0;
+    let flowSeen = 0;
+    let idleMsPerCard = 1.5;
+    function queueFlow(ctrl) {
+      s.pendingAlike.add(ctrl);
+      queueIdle();
+    }
+    function queueIdle() {
+      flowQueued++;
+      scheduleAlike();
+    }
+    function scheduleAlike(next = false) {
+      if (alikeScheduled) return;
+      alikeScheduled = true;
+      flowSeen = flowQueued;
+      if (typeof requestIdleCallback === "function") requestIdleCallback((deadline) => flushIdle(deadline), { timeout: next ? IDLE_NEXT_TIMEOUT_MS : FLOW_IDLE_TIMEOUT_MS });
+      else setTimeout(() => flushIdle(), next ? 16 : 200);
+    }
+    function idleSliceRoom(deadline) {
+      let room = IDLE_SLICE_MS;
+      try {
+        if (deadline && deadline.didTimeout) room = IDLE_SLICE_MS / 2;
+        else if (deadline && typeof deadline.timeRemaining === "function") room = Math.min(IDLE_SLICE_MS, deadline.timeRemaining());
+      } catch {
+      }
+      return room;
+    }
+    function idleSliceCards(room) {
+      return Math.max(IDLE_SLICE_MIN_CARDS, Math.min(IDLE_SLICE_MAX_CARDS, Math.floor(room / Math.max(idleMsPerCard, 0.05))));
+    }
+    function flushIdle(deadline) {
+      alikeScheduled = false;
+      if (flowQueued !== flowSeen) {
+        scheduleAlike();
+        return;
+      }
+      const began = performance.now();
+      const room = idleSliceRoom(deadline);
+      for (; ; ) {
+        const started = performance.now();
+        const worked = idleSlice(idleSliceCards(room - (started - began)));
+        if (worked > 0) idleMsPerCard = idleMsPerCard * 0.5 + (performance.now() - started) / worked * 0.5;
+        const more = s.pendingAlike.size > 0 || s.pendingFreed.size > 0 || s.pendingSnap.size > 0 && deps.snapReady();
+        if (!more) return;
+        if (worked > 0 || performance.now() - began >= room) break;
+      }
+      scheduleAlike(true);
+    }
+    function idleSlice(count) {
+      const snapping = s.pendingSnap.size > 0 && deps.snapReady();
+      const measuring = [];
+      const deciding = [];
+      const freed = [];
+      let taken = 0;
+      if (snapping) {
+        for (const ctrl of s.pendingSnap) {
+          if (taken >= count) break;
+          measuring.push(ctrl);
+          if (s.pendingAlike.has(ctrl)) {
+            deciding.push(ctrl);
+            taken += 1;
+          } else taken += IDLE_LIGHT_CARD;
+        }
+      }
+      for (const ctrl of s.pendingAlike) {
+        if (taken >= count) break;
+        if (snapping && s.pendingSnap.has(ctrl)) continue;
+        deciding.push(ctrl);
+        taken += 1;
+      }
+      for (const ctrl of s.pendingFreed) {
+        if (taken >= count) break;
+        freed.push(ctrl);
+        taken += IDLE_LIGHT_CARD;
+      }
+      for (const ctrl of measuring) s.pendingSnap.delete(ctrl);
+      for (const ctrl of deciding) {
+        s.pendingAlike.delete(ctrl);
+        s.pendingFreed.delete(ctrl);
+      }
+      for (const ctrl of freed) s.pendingFreed.delete(ctrl);
+      const measuredBefore = s.snapCounters.cards;
+      const plans = measuring.length ? deps.measureSnap(measuring) : null;
+      const measured = s.snapCounters.cards - measuredBefore;
+      const decided = flushAlike(deciding);
+      let marked = 0;
+      for (const ctrl of freed) {
+        if (!ctrl.host.isConnected || s.controllers.get(ctrl.host) !== ctrl || !ctrl.layout || ctrl.host.dataset.jeFlow === "1") continue;
+        if (deps.decideFlow(ctrl, deps.resolveLayout(ctrl)) === true) {
+          deps.markFlow(ctrl, true, true);
+          marked++;
+        }
+      }
+      if (plans) deps.applySnap(plans);
+      return decided + IDLE_LIGHT_CARD * (Math.max(0, measured - decided) + marked);
+    }
+    function boxesOf(host, slots, positioned) {
+      const origin = host.getBoundingClientRect();
+      return slots.map(([slot]) => {
+        const boxes = [];
+        const add = (el) => {
+          const r = el.getBoundingClientRect();
+          boxes.push(r.left - origin.left, r.top - origin.top, r.width, r.height);
+        };
+        add(slot);
+        for (const node of slot.children) {
+          if (positioned && (node.classList.contains(s.CONTAINER_CLASS.quality) || node.classList.contains(s.CONTAINER_CLASS.language))) {
+            let cs;
+            try {
+              cs = getComputedStyle(node);
+            } catch {
+              cs = null;
+            }
+            if (cs && (cs.overflowX && cs.overflowX !== "hidden" || cs.overflowY && cs.overflowY !== "hidden")) return null;
+          }
+          add(node);
+          for (const chip of node.children) add(chip);
+        }
+        return boxes;
+      });
+    }
+    function askBrowser(probes) {
+      if (!probes.length) return;
+      const marked = probes.map((probe) => probe.host.dataset.jeFlow === "1");
+      const flip = (host, flow) => {
+        if (flow) host.dataset.jeFlow = "1";
+        else delete host.dataset.jeFlow;
+      };
+      const first = probes.map((probe, i) => boxesOf(probe.host, probe.slots, !marked[i]));
+      probes.forEach((probe, i) => {
+        if (marked[i] && probe.ctrl) deps.layeredFlow(probe.ctrl, probe.conf, true);
+      });
+      probes.forEach((probe, i) => flip(probe.host, !marked[i]));
+      const second = probes.map((probe, i) => boxesOf(probe.host, probe.slots, !!marked[i]));
+      probes.forEach((probe, i) => {
+        if (!marked[i] && probe.ctrl) deps.layeredFlow(probe.ctrl, probe.conf, true);
+      });
+      probes.forEach((probe, i) => {
+        probe.slots.forEach(([, key], k) => {
+          const a = first[i]?.[k], b = second[i]?.[k];
+          s.flowAlike.set(key, !!a && !!b && a.length === b.length && a.every((value, at) => Math.abs(value - (b[at] ?? NaN)) <= ALIKE_PX));
+        });
+        flip(probe.host, !!marked[i]);
+        s.flowCounters.probes += probe.slots.length;
+      });
+    }
+    function flushAlike(cards) {
+      if (!cards) {
+        cards = Array.from(s.pendingAlike);
+        s.pendingAlike.clear();
+      }
+      const list = cards.filter((c) => c.host.isConnected && s.controllers.get(c.host) === c && c.layout);
+      const probes = [];
+      const claimed = /* @__PURE__ */ new Set();
+      const deciding = [];
+      for (const ctrl of list) {
+        const host = ctrl.host;
+        const waits = !!host.dataset.jeLive || !(host.clientWidth > 0);
+        if (waits) {
+          if (deps.decideFlow(ctrl, deps.resolveLayout(ctrl)) === true) deps.markFlow(ctrl, true, true);
+          else if (!host.dataset.jeLive) deps.awaitSize(ctrl);
+          continue;
+        }
+        const conf = deps.resolveLayout(ctrl);
+        deciding.push([ctrl, conf]);
+        if (deps.flowFor(ctrl, conf, true) !== true) continue;
+        const slots = deps.measurableKinds(ctrl, conf).filter(([, key]) => !s.flowAlike.has(key) && !claimed.has(key));
+        for (const [, key] of slots) claimed.add(key);
+        const fresh = /* @__PURE__ */ new Set();
+        deps.layeredFlow(ctrl, conf, false, fresh);
+        let inspect = false;
+        for (const key of fresh) if (!claimed.has(key)) {
+          claimed.add(key);
+          inspect = true;
+        }
+        if (slots.length || inspect) probes.push({ host, slots, ctrl: inspect ? ctrl : null, conf });
+      }
+      askBrowser(probes);
+      for (const [ctrl, conf] of deciding) {
+        const flow = deps.decideFlow(ctrl, conf);
+        if (flow !== null) deps.markFlow(ctrl, flow, true);
+      }
+      if (!probes.length) return deciding.length;
+      for (const el of document.querySelectorAll(".je-tag-host:not([data-je-flow])")) {
+        const ctrl = s.controllers.get(el);
+        if (!ctrl || !ctrl.layout || s.pendingAlike.has(ctrl) || s.pendingFreed.has(ctrl)) continue;
+        if (deps.decideFlow(ctrl, deps.resolveLayout(ctrl)) === true) s.pendingFreed.add(ctrl);
+      }
+      return deciding.length;
+    }
+    return {
+      queueFlow,
+      queueIdle,
+      flushAlike,
+      /** What the idle pass still has to do, and what a card costs a slice (performance checks). */
+      idleStats: () => ({ waiting: s.pendingAlike.size + s.pendingFreed.size + s.pendingSnap.size, msPerCard: idleMsPerCard })
+    };
+  }
+
+  // client/src/features/media-tags/layout/fonts-refit.ts
+  var FONTS_SETTLE_MS = 150;
+  function unicodeRanges(text) {
+    const ranges = [];
+    for (const part of String(text || "U+0-10FFFF").split(",")) {
+      const found = /U\+([0-9a-f?]+)(?:-([0-9a-f]+))?/i.exec(part);
+      if (!found || !found[1]) continue;
+      const from = parseInt(found[1].replace(/\?/g, "0"), 16);
+      const to = found[2] ? parseInt(found[2], 16) : parseInt(found[1].replace(/\?/g, "F"), 16);
+      if (from <= to) ranges.push([from, to]);
+    }
+    return ranges;
+  }
+  function createFontsRefit(s, JE, deps) {
+    void JE;
+    let fontsWatched = false;
+    let fontsDue = 0;
+    let fontRanges = [];
+    function watchFonts() {
+      if (fontsWatched) return;
+      fontsWatched = true;
+      try {
+        document.fonts?.addEventListener?.("loadingdone", (event) => {
+          const faces = event?.fontfaces;
+          if (faces && !faces.length) return;
+          if (!faces) fontRanges = null;
+          else if (fontRanges) {
+            try {
+              for (const face of faces) fontRanges.push(...unicodeRanges(face.unicodeRange));
+            } catch {
+              fontRanges = null;
+            }
+          }
+          if (!fontsDue) fontsDue = setTimeout(refitForFonts, FONTS_SETTLE_MS);
+        });
+      } catch {
+      }
+    }
+    function refitForFonts() {
+      fontsDue = 0;
+      const ranges = fontRanges;
+      fontRanges = [];
+      const drawn = /* @__PURE__ */ new Map();
+      const concerns = (host) => {
+        if (!ranges) return true;
+        const text = host.textContent || "";
+        for (let i = 0; i < text.length; i++) {
+          const code = text.codePointAt(i) ?? 0;
+          if (code > 65535) i++;
+          if (code <= 32) continue;
+          let can = drawn.get(code);
+          if (can === void 0) {
+            can = ranges.some(([from = 0, to = 0]) => code >= from && code <= to);
+            drawn.set(code, can);
+          }
+          if (can) return true;
+        }
+        return false;
+      };
+      for (const host of document.querySelectorAll(".je-tag-host")) {
+        const ctrl = s.controllers.get(host);
+        if (!ctrl || !ctrl.layout || !concerns(host)) continue;
+        const card = host.closest(".card, .listItem") || host.parentElement;
+        let busy = false;
+        try {
+          busy = !!card && card.matches(":hover, :focus-within");
+        } catch {
+          busy = false;
+        }
+        if (busy) {
+          ctrl.refit = true;
+          deps.snapLater(ctrl);
+          continue;
+        }
+        deps.scheduleFit(ctrl);
+        if (!s.pendingFit.has(ctrl) && deps.snapSupported()) deps.snapAgain(ctrl);
+      }
+    }
+    return { watchFonts };
   }
 
   // client/src/features/media-tags/layout/groups.ts
@@ -1819,7 +2491,9 @@ ${scoped} {${original}}`;
         if (conf.layout === "summary")
           deps.refreshPill(ctrl, conf);
         deps.syncIndicatorGap(ctrl, conf);
+        deps.syncFlow(ctrl, conf);
         deps.scheduleFit(ctrl);
+        deps.scheduleSnap(ctrl);
       }
       return true;
     }
@@ -1836,7 +2510,9 @@ ${scoped} {${original}}`;
       if (conf.layout === "summary")
         deps.refreshPill(ctrl, conf);
       deps.syncIndicatorGap(ctrl, conf);
+      deps.syncFlow(ctrl, conf);
       deps.scheduleFit(ctrl);
+      deps.scheduleSnap(ctrl);
     }
     function hasGroup(target, groupId) {
       const group = normalizeGroup(groupId);
@@ -1912,6 +2588,8 @@ ${scoped} {${original}}`;
       document.querySelectorAll("[data-je-review-key]").forEach((el) => {
         delete el.dataset.jeReviewKey;
       });
+      deps.releaseScale();
+      deps.releaseBands();
     }
     function prepareCard(target) {
       if (!target || !deps.reservesCaption(deps.resolveLayout(deps.findHost(target) || target), target))
@@ -2070,6 +2748,78 @@ ${scoped} {${original}}`;
     return [`:is(.je-tag-host, .je-tag-caption)[${KIND_LOOKS_ATTR}="${n}"] { --je-tag-base-scale: var(--je-tag-scale, 1); }`, ...rules].join("\n");
   }
 
+  // client/src/features/media-tags/layout/live.ts
+  function createLive(s, JE, deps) {
+    void JE;
+    const focusWatched = /* @__PURE__ */ new WeakSet();
+    function hidesOnHover(host) {
+      if (!host || !document.body?.classList.contains("je-tags-hide-on-hover")) return false;
+      const layout2 = host.dataset.jeLayout;
+      return layout2 !== "summary" && layout2 !== "minimal";
+    }
+    function notAtRest(host) {
+      try {
+        const card = host.closest(".card, .listItem");
+        const at = !!card && (card.matches(":focus-within") || !hidesOnHover(host) && card.matches(":hover"));
+        if (at && card) watchFocusOut(card);
+        return at;
+      } catch {
+        return false;
+      }
+    }
+    function watchFocusOut(card) {
+      if (focusWatched.has(card)) return;
+      focusWatched.add(card);
+      card.addEventListener("focusout", (event) => {
+        const to = event instanceof FocusEvent && event.relatedTarget instanceof Node ? event.relatedTarget : null;
+        if (!(to && card.contains(to))) restLater(card);
+      });
+    }
+    function goLive(host) {
+      if (!host || host.dataset.jeFlow !== "1") return false;
+      const due = s.restTimers.get(host);
+      if (due !== void 0) {
+        clearTimeout(due);
+        s.restTimers.delete(host);
+      }
+      if (host.dataset.jeLive) return false;
+      host.dataset.jeLive = "in";
+      const card = host.closest(".card, .listItem");
+      if (card) watchFocusOut(card);
+      return true;
+    }
+    function showNames(host) {
+      if (host.dataset.jeLive !== "in") return;
+      const name = host.querySelector(".genre-tag > .genre-text");
+      try {
+        if (name) void getComputedStyle(name).opacity;
+      } catch {
+      }
+      host.dataset.jeLive = "1";
+    }
+    function restLater(card) {
+      const host = card.querySelector(".je-tag-host[data-je-live]");
+      if (!host || s.restTimers.has(host)) return;
+      s.restTimers.set(host, setTimeout(() => {
+        s.restTimers.delete(host);
+        if (notAtRest(host)) {
+          let over = false;
+          try {
+            over = card.matches(":hover");
+          } catch {
+            over = false;
+          }
+          if (over) s.lingering = host;
+          return;
+        }
+        delete host.dataset.jeLive;
+        const ctrl = s.controllers.get(host);
+        if (ctrl && host.isConnected) deps.syncFlow(ctrl, deps.resolveLayout(ctrl));
+      }, REST_AFTER_MS));
+    }
+    return { hidesOnHover, notAtRest, goLive, showNames, restLater };
+  }
+
   // client/src/features/media-tags/layout/looks.ts
   function createLooks(s, JE, deps) {
     function requireLook() {
@@ -2147,6 +2897,7 @@ ${scoped} {${original}}`;
       lookSettingsCache.clear();
       s.cachedSettings = null;
       s.cachedLooks = null;
+      deps.forgetPageCss();
     }
     function currentLooks() {
       if (!s.cachedLooks)
@@ -2162,12 +2913,28 @@ ${scoped} {${original}}`;
       JE.core.ui.injectCss("je-tag-layout", deps.api.buildStyles());
       window.addEventListener("resize", refitOnResize, { passive: true });
     }
+    const RESIZE_SETTLE_MS = 250;
+    let resizeSettle = 0;
+    let probedWidth = typeof window !== "undefined" ? window.innerWidth : 0;
+    let refitWidth = probedWidth;
+    let refitTall = typeof window !== "undefined" ? window.innerHeight >= window.innerWidth : false;
     function refitOnResize() {
+      if (resizeSettle) clearTimeout(resizeSettle);
+      resizeSettle = setTimeout(() => {
+        resizeSettle = 0;
+        if (window.innerWidth === probedWidth) return;
+        probedWidth = window.innerWidth;
+        deps.queueReprobe();
+      }, RESIZE_SETTLE_MS);
+      const tall = window.innerHeight >= window.innerWidth;
+      if (window.innerWidth === refitWidth && tall === refitTall) return;
       if (s.resizeQueued)
         return;
       s.resizeQueued = true;
       requestAnimationFrame(() => {
         s.resizeQueued = false;
+        refitWidth = window.innerWidth;
+        refitTall = window.innerHeight >= window.innerWidth;
         for (const host of document.querySelectorAll(".je-tag-host")) {
           const ctrl = s.controllers.get(host);
           if (ctrl)
@@ -2620,6 +3387,20 @@ ${scoped} {${original}}`;
       delete ctrl.host.dataset.jeShape;
       delete ctrl.host.dataset.jeEdge;
       delete ctrl.host.dataset.jeGenreBound;
+      delete ctrl.host.dataset.jeFlow;
+      delete ctrl.host.dataset.jeLive;
+      const due = s.restTimers.get(ctrl.host);
+      if (due !== void 0) {
+        clearTimeout(due);
+        s.restTimers.delete(ctrl.host);
+      }
+      if (s.lingering === ctrl.host) s.lingering = null;
+      ctrl.layered.clear();
+      ctrl.kinds = "";
+      ctrl.flowKinds = "";
+      s.pendingAlike.delete(ctrl);
+      s.pendingFreed.delete(ctrl);
+      s.pendingSnap.delete(ctrl);
     }
     function presentAll(ctrl) {
       ctrl.pendingPresentation = false;
@@ -2659,10 +3440,499 @@ ${scoped} {${original}}`;
         presentGroup(ctrl, conf, group);
       refreshPill(ctrl, conf);
       syncIndicatorGap(ctrl, conf);
+      deps.syncFlow(ctrl, conf);
       deps.scheduleFit(ctrl);
+      deps.scheduleSnap(ctrl);
       JE.tagPosterColours?.track(ctrl.host);
     }
     return { reservesCaption, removeNodes, refreshPill, presentGroup, syncIndicatorGap, teardown, presentAll };
+  }
+
+  // client/src/features/media-tags/layout/snap-grid.ts
+  var MOVE_ONLY = /^matrix\(1, 0, 0, 1, (-?[\d.e-]+), (-?[\d.e-]+)\)$/;
+  var TRANSLATE_PX = /^(-?[\d.e-]+)(px|%)(?: (-?[\d.e-]+)(px|%))?(?: 0px)?$/;
+  var NO_SCALE = /^(?:none|1(?: 1){0,2})$/;
+  var NO_ROTATE = /^(?:none|(?:.* )?0deg)$/;
+  function startsPixelGrid(style, moves) {
+    const contain = style.contain || "";
+    const paint = /\b(?:paint|content|strict)\b/.test(contain);
+    const layout2 = /\b(?:layout|content|strict)\b/.test(contain);
+    const styled = /\b(?:style|content|strict)\b/.test(contain) || !!style.containerType && style.containerType !== "normal";
+    return paint || layout2 && styled || /\b(?:transform|scale|rotate)\b/.test(style.willChange || "") || !!style.contentVisibility && style.contentVisibility !== "visible" || !moves;
+  }
+  function createGridReader(epoch) {
+    const gridFacts = /* @__PURE__ */ new WeakMap();
+    function gridFact(el) {
+      let fact = gridFacts.get(el);
+      if (fact && fact.epoch === epoch()) return fact;
+      fact = { epoch: epoch(), starts: false, move: null };
+      try {
+        const style = getComputedStyle(el);
+        const transform = style.transform || "none";
+        const matrix = transform === "none" ? null : MOVE_ONLY.exec(transform);
+        const translate = style.translate && style.translate !== "none" ? style.translate : "";
+        const shift = translate ? TRANSLATE_PX.exec(translate) : null;
+        const turned = !NO_SCALE.test(style.scale || "none") || !NO_ROTATE.test(style.rotate || "none");
+        const moves = (transform === "none" || !!matrix) && (!translate || !!shift) && !turned;
+        fact.starts = startsPixelGrid(style, moves);
+        if (!fact.starts && (matrix || shift)) {
+          let dx = 0;
+          let dy = 0;
+          if (shift) {
+            const box = shift[2] === "%" || shift[4] === "%" ? el.getBoundingClientRect() : null;
+            dx = Number(shift[1]) * (shift[2] === "%" && box ? box.width / 100 : 1);
+            dy = Number(shift[3] || 0) * (shift[4] === "%" && box ? box.height / 100 : 1);
+          }
+          fact.move = [(matrix ? Number(matrix[1]) : 0) + dx, (matrix ? Number(matrix[2]) : 0) + dy];
+        }
+      } catch {
+      }
+      if (!fact.move) gridFacts.set(el, fact);
+      return fact;
+    }
+    function gridOrigin(el, memo) {
+      if (!el || el === document.documentElement) return { x: 0, y: 0 };
+      const known = memo.get(el);
+      if (known) return known;
+      const fact = gridFact(el);
+      let origin;
+      if (fact.starts) {
+        const rect = el.getBoundingClientRect();
+        origin = { x: rect.left, y: rect.top };
+      } else {
+        const up = gridOrigin(el.parentElement, memo);
+        const move = fact.move;
+        origin = move ? { x: up.x + (move[0] ?? 0), y: up.y + (move[1] ?? 0) } : up;
+      }
+      memo.set(el, origin);
+      return origin;
+    }
+    return { gridOrigin };
+  }
+  function snapUnits(value, scale) {
+    const units = Math.round(value * scale * 64);
+    return Math.floor(units / 64 + 0.5) * 64 - units;
+  }
+
+  // client/src/features/media-tags/layout/snap.ts
+  var SNAPPED_GROUPS = /* @__PURE__ */ new Set(["genre", "quality", "language", "rating", "ageRating", "status", "logos"]);
+  var SNAP_SETTLE_MS = 120;
+  var SNAP_AGAIN_EVENTS = ["pointerleave", "focusout", "transitionend", "transitioncancel", "animationend", "animationcancel"];
+  var SNAP_PROPERTIES = [["vx", "--je-snap-x"], ["vy", "--je-snap-y"], ["left", "--je-band-left"]];
+  var SCALED_PX = 0.05;
+  function createSnap(s, JE, deps) {
+    void JE;
+    const nudges = /* @__PURE__ */ new WeakMap();
+    let snapSettle = 0;
+    let snapSupport = null;
+    let scaleObserver = null;
+    const snapWaiting = /* @__PURE__ */ new WeakSet();
+    const grid = createGridReader(() => s.flowEpoch);
+    const unitsToPx = (units) => units / 64 / s.layoutScale;
+    function snapSupported() {
+      if (snapSupport === null) {
+        snapSupport = false;
+        try {
+          snapSupport = navigator.vendor === "Google Inc." && typeof ResizeObserver === "function" && typeof ResizeObserverEntry === "function" && "devicePixelContentBoxSize" in ResizeObserverEntry.prototype;
+        } catch {
+          snapSupport = false;
+        }
+        if (snapSupport) {
+          for (const [, name] of SNAP_PROPERTIES) {
+            try {
+              CSS.registerProperty({ name, syntax: "*", inherits: false });
+            } catch {
+            }
+          }
+        }
+      }
+      return snapSupport && deps.api.wholePixels;
+    }
+    function watchScale() {
+      if (scaleObserver || typeof ResizeObserver !== "function") return;
+      try {
+        scaleObserver = new ResizeObserver((entries) => {
+          const entry = entries[entries.length - 1];
+          const css = entry?.contentBoxSize?.[0]?.inlineSize ?? 0;
+          const device = entry?.devicePixelContentBoxSize?.[0]?.inlineSize ?? 0;
+          if (!(css > 0 && device > 0)) return;
+          const ratio = window.devicePixelRatio || 1;
+          const scale = Math.abs(device - css * ratio) <= 1 ? ratio : Math.round(device / css * 100) / 100;
+          if (scale === s.layoutScale) return;
+          const first = !s.layoutScale;
+          s.layoutScale = scale;
+          if (!first) for (const el of document.querySelectorAll(".je-tag-host")) {
+            const ctrl = s.controllers.get(el);
+            if (ctrl && ctrl.layout) s.pendingSnap.add(ctrl);
+          }
+          if (s.pendingSnap.size) deps.queueIdle();
+        });
+        scaleObserver.observe(document.documentElement, { box: "device-pixel-content-box" });
+        deps.watchFonts();
+      } catch {
+        scaleObserver = null;
+        snapSupport = false;
+      }
+    }
+    function snapReady() {
+      if (!snapSupported()) {
+        s.pendingSnap.clear();
+        return false;
+      }
+      if (!s.layoutScale) {
+        watchScale();
+        return false;
+      }
+      return true;
+    }
+    function scheduleSnap(ctrl, settle = false) {
+      if (!snapSupported()) return;
+      watchScale();
+      s.pendingSnap.add(ctrl);
+      if (!settle) {
+        deps.queueIdle();
+        return;
+      }
+      if (snapSettle) clearTimeout(snapSettle);
+      snapSettle = setTimeout(() => {
+        snapSettle = 0;
+        deps.queueIdle();
+      }, SNAP_SETTLE_MS);
+    }
+    function unsnap(ctrl) {
+      for (const slot of ctrl.host.children) {
+        for (const node of slot.children) {
+          if (!(node instanceof HTMLElement) || !nudges.has(node)) continue;
+          nudges.delete(node);
+          for (const [, name] of SNAP_PROPERTIES) node.style.removeProperty(name);
+        }
+      }
+    }
+    function snapAgain(ctrl) {
+      if (ctrl.layout === "bands") unsnap(ctrl);
+      scheduleSnap(ctrl, true);
+    }
+    function noteSnapSize(host, width, height) {
+      deps.watchSize(host);
+      const sizes = s.fittedWidths.get(host);
+      if (!sizes) return;
+      const known = width > 0 && sizes.observed >= 0;
+      sizes.snapWidth = known ? sizes.observed : width;
+      sizes.snapHeight = known ? sizes.observedHeight : height;
+    }
+    function scaled(host, rect) {
+      const sizes = s.fittedWidths.get(host);
+      const width = host.offsetWidth;
+      const height = host.offsetHeight;
+      if (sizes && sizes.boxWidth !== void 0 && sizes.boxHeight !== void 0) {
+        let agrees = false;
+        for (const [across, down] of [[sizes.boxWidth, sizes.boxHeight], [sizes.boxHeight, sizes.boxWidth]]) {
+          if (Math.abs(across - width) > 0.5 || Math.abs(down - height) > 0.5) continue;
+          agrees = true;
+          if (Math.abs(rect.width - across) <= SCALED_PX && Math.abs(rect.height - down) <= SCALED_PX) return false;
+        }
+        if (agrees) return true;
+      }
+      return Math.abs(rect.width - width) > 0.51 || Math.abs(rect.height - height) > 0.51;
+    }
+    function snapLater(ctrl) {
+      const host = ctrl.host;
+      const card = host.closest(".card, .listItem") || host.parentElement;
+      if (!card || snapWaiting.has(host)) return;
+      snapWaiting.add(host);
+      s.snapCounters.deferred++;
+      const inState = (state) => {
+        try {
+          return card.matches(state);
+        } catch {
+          return false;
+        }
+      };
+      const settling = () => {
+        try {
+          return card.getAnimations({ subtree: true }).some((animation) => animation.playState === "running" && /^(?:transform|scale|translate|rotate|zoom)$/.test(animation.transitionProperty || ""));
+        } catch {
+          return false;
+        }
+      };
+      const again = (event) => {
+        if (event.type === "pointerleave") {
+          if (event.target !== card || settling()) return;
+        } else if (event.type === "focusout") {
+          const to = event instanceof FocusEvent ? event.relatedTarget : null;
+          if (to instanceof Node && card.contains(to) || settling()) return;
+        } else if (inState(":hover") || inState(":focus-within")) {
+          return;
+        }
+        for (const type of SNAP_AGAIN_EVENTS) card.removeEventListener(type, again, true);
+        snapWaiting.delete(host);
+        if (!(host.isConnected && s.controllers.get(host) === ctrl && ctrl.layout)) return;
+        if (ctrl.refit) {
+          ctrl.refit = false;
+          deps.scheduleFit(ctrl);
+        }
+        scheduleSnap(ctrl, true);
+      };
+      for (const type of SNAP_AGAIN_EVENTS) card.addEventListener(type, again, true);
+    }
+    function measureSnap(cards) {
+      if (!snapReady()) return null;
+      if (!cards) {
+        cards = Array.from(s.pendingSnap);
+        s.pendingSnap.clear();
+      }
+      const started = performance.now();
+      const list = cards.filter((c) => c.host.isConnected && s.controllers.get(c.host) === c && c.layout);
+      const plans = [];
+      const memo = /* @__PURE__ */ new Map();
+      for (const ctrl of list) {
+        if (s.pendingFit.has(ctrl)) continue;
+        const host = ctrl.host;
+        const hostRect = host.getBoundingClientRect();
+        if (!(hostRect.width > 0 && hostRect.height > 0)) {
+          noteSnapSize(host, 0, 0);
+          continue;
+        }
+        if (scaled(host, hostRect)) {
+          snapLater(ctrl);
+          continue;
+        }
+        s.snapCounters.cards++;
+        let any = false;
+        let loading = false;
+        for (const slot of host.children) {
+          if (!slot.classList.contains("je-tag-slot") || !(slot instanceof HTMLElement)) continue;
+          const band = ctrl.layout === "bands" && slot.dataset.jeSlot === "top";
+          const items = [];
+          let origin = null;
+          for (const node of slot.children) {
+            if (!(node instanceof HTMLElement)) continue;
+            const group = node.dataset.jeGroup;
+            const snapped = !!group && SNAPPED_GROUPS.has(group);
+            if (!snapped && !band) continue;
+            const was = nudges.get(node);
+            const rect = node.getBoundingClientRect();
+            if (!(rect.width > 0 && rect.height > 0)) {
+              if (was) plans.push({ node, x: 0, y: 0, vx: 0, left: 0, band: null });
+              continue;
+            }
+            origin ?? (origin = grid.gridOrigin(slot, memo));
+            const ux = rect.left - origin.x - (was ? was.x : 0);
+            const uy = rect.top - origin.y - (was ? was.y : 0);
+            items.push({ node, rect, ux, uy, dx: snapped ? unitsToPx(snapUnits(ux, s.layoutScale)) : 0, dy: snapped ? unitsToPx(snapUnits(uy, s.layoutScale)) : 0, group: !!group });
+          }
+          if (!loading && deps.imagesLoading(slot)) loading = true;
+          if (!items.length) continue;
+          any = true;
+          if (band) deps.watchBand(slot);
+          const values = !band || !origin ? null : deps.bandHeld(slot) ? items.map(() => null) : deps.bandNudges(slot, origin, items);
+          items.forEach((item, i) => {
+            if (!item.group) return;
+            if (!values) {
+              plans.push({ node: item.node, x: item.dx, y: item.dy, vx: item.dx, left: 0, band: null });
+              return;
+            }
+            const value = values[i];
+            plans.push({ node: item.node, x: value ? item.dx : 0, y: item.dy, vx: value ? value.vx : 0, left: value ? value.left : 0, band: slot });
+          });
+        }
+        if (any) noteSnapSize(host, hostRect.width, hostRect.height);
+        if (loading) deps.awaitImages(ctrl);
+      }
+      s.snapCounters.passes++;
+      s.snapCounters.passMs += performance.now() - started;
+      return plans;
+    }
+    function applySnap(plans) {
+      for (const plan of plans) {
+        const { node } = plan;
+        const was = nudges.get(node);
+        const next = { x: plan.x, y: plan.y, vx: plan.vx ? `${plan.vx}px` : "", vy: plan.y ? `${plan.y}px` : "", left: plan.left ? `${plan.left}px` : "" };
+        for (const [key, name] of SNAP_PROPERTIES) {
+          if ((was ? was[key] : "") === next[key]) continue;
+          if (next[key]) node.style.setProperty(name, next[key]);
+          else node.style.removeProperty(name);
+          s.snapCounters.moved++;
+          if (plan.band && key !== "vy") deps.noteBandWrite(plan.band);
+        }
+        if (next.vx || next.vy || next.left) nudges.set(node, next);
+        else nudges.delete(node);
+      }
+    }
+    function releaseScale() {
+      scaleObserver?.disconnect();
+      scaleObserver = null;
+    }
+    function flushSnap() {
+      const plans = measureSnap();
+      if (plans) applySnap(plans);
+    }
+    return {
+      snapSupported,
+      snapReady,
+      scheduleSnap,
+      unsnap,
+      snapAgain,
+      snapLater,
+      measureSnap,
+      applySnap,
+      flushSnap,
+      releaseScale,
+      /** Counts of the whole-pixel pass and the time its reads took (performance checks). */
+      snapStats: () => ({ ...s.snapCounters, scale: s.layoutScale, waiting: s.pendingSnap.size })
+    };
+  }
+
+  // client/src/features/media-tags/layout/snap-bands.ts
+  var BAND_OWN_MS = 1e3;
+  var BAND_LINE_PX = 1;
+  function createSnapBands(s, JE, deps) {
+    void JE;
+    let bandObserver = null;
+    const bandSizes = /* @__PURE__ */ new WeakMap();
+    const bandRooms = /* @__PURE__ */ new WeakMap();
+    const bandWrites = /* @__PURE__ */ new WeakMap();
+    const bandHeld = /* @__PURE__ */ new WeakSet();
+    let bandsWatched = /* @__PURE__ */ new WeakSet();
+    const toUnits = (px) => Math.round(px * s.layoutScale * 64);
+    const unitsToPx = (units) => units / 64 / s.layoutScale;
+    function onBandSizes(entries) {
+      for (const entry of entries) {
+        const slot = entry.target;
+        if (!slot.isConnected) {
+          bandObserver?.unobserve(slot);
+          bandsWatched.delete(slot);
+          bandSizes.delete(slot);
+          continue;
+        }
+        const seen = bandSizes.get(slot);
+        const { width, height } = entry.contentRect;
+        bandSizes.set(slot, [width, height]);
+        const host = slot.closest(".je-tag-host");
+        const ctrl = host ? s.controllers.get(host) : null;
+        if (!ctrl || !ctrl.layout || !(slot instanceof HTMLElement)) continue;
+        const wrote = bandWrites.get(slot);
+        const recent = wrote !== void 0 && performance.now() - wrote < BAND_OWN_MS;
+        const room = bandRooms.get(slot);
+        const own = recent && room !== void 0 && bandSignature(slot) === room.held;
+        const lines = own && room !== void 0 && Math.abs(height - room.height) >= BAND_LINE_PX;
+        const changed = seen ? Math.abs((seen[0] ?? 0) - width) >= SNAP_SAME_PX || Math.abs((seen[1] ?? 0) - height) >= SNAP_SAME_PX : lines;
+        if (!changed) continue;
+        if (bandHeld.has(slot)) {
+          if (own) continue;
+          bandHeld.delete(slot);
+        } else if (lines) {
+          bandHeld.add(slot);
+          s.snapCounters.held++;
+        }
+        deps.snapAgain(ctrl);
+        if (bandHeld.has(slot)) bandWrites.set(slot, performance.now());
+      }
+    }
+    function bandSignature(slot) {
+      try {
+        const style = getComputedStyle(slot);
+        const box = slot.getBoundingClientRect();
+        const pad = (side) => parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
+        const rects = [];
+        for (const child of slot.children) {
+          const rect = child.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) rects.push(rect);
+        }
+        return bandHolds(box.width - pad("left") - pad("right"), style.columnGap, rects);
+      } catch {
+        return "";
+      }
+    }
+    function bandHolds(room, gap, rects) {
+      return `${toUnits(room)}:${gap}:${rects.map((rect) => `${toUnits(rect.width)}x${toUnits(rect.height)}`).join(",")}`;
+    }
+    function watchBand(slot) {
+      if (bandsWatched.has(slot)) return;
+      bandsWatched.add(slot);
+      if (!bandObserver) bandObserver = new ResizeObserver(onBandSizes);
+      bandObserver.observe(slot);
+    }
+    function releaseBands() {
+      bandObserver?.disconnect();
+      bandObserver = null;
+      bandsWatched = /* @__PURE__ */ new WeakSet();
+    }
+    function bandNudges(slot, origin, items) {
+      const out = new Array(items.length).fill(null);
+      let gap = 0;
+      let start = 0;
+      let end = 0;
+      try {
+        const style = getComputedStyle(slot);
+        const box = slot.getBoundingClientRect();
+        const pad = (side) => parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
+        gap = Math.floor((parseFloat(style.columnGap) || 0) * s.layoutScale * 64 + 1e-3);
+        start = toUnits(box.left + pad("left") - origin.x);
+        end = toUnits(box.right - pad("right") - origin.x);
+        bandRooms.set(slot, { height: box.height - pad("top") - pad("bottom"), held: bandHolds(box.width - pad("left") - pad("right"), style.columnGap, items.map((item) => item.rect)) });
+      } catch {
+        return out;
+      }
+      const at = (i) => items[i];
+      const lines = [];
+      items.forEach((item, i) => {
+        const line = lines[lines.length - 1];
+        if (line && Math.abs(at(line[0] ?? 0).uy - item.uy) < 1) line.push(i);
+        else lines.push([i]);
+      });
+      const pixel = 64 * s.layoutScale;
+      const plans = lines.map((line) => {
+        const n = line.length;
+        const x = line.map((i) => toUnits(at(i).ux));
+        const w = line.map((i) => toUnits(at(i).rect.width));
+        const d = line.map((i) => toUnits(at(i).dx));
+        const xs = (j) => x[j] ?? 0, ws = (j) => w[j] ?? 0, ds = (j) => d[j] ?? 0;
+        const free = end - start - w.reduce((sum, width) => sum + width, 0) - gap * (n - 1);
+        const plan = { values: null, free, gives: 0, head: ws(0), headNudge: ds(0) };
+        if (line.some((i) => !at(i).group)) return plan;
+        const first = at(line[0] ?? 0).node === slot.firstElementChild;
+        const between = (j) => xs(j + 1) - (xs(j) + ws(j)) - gap;
+        let roomy = first ? n === 1 || between(0) >= 2 * pixel : xs(0) - start >= pixel;
+        for (let j = first ? 1 : 0; j < n - 1; j++) roomy = roomy && between(j) >= pixel;
+        if (!roomy) return plan;
+        const lengths = (j) => j >= (first ? 2 : 1);
+        plan.values = line.map((_, j) => ({ vx: unitsToPx(ds(j)), left: lengths(j) ? unitsToPx(between(j - 1) + ds(j)) : 0 }));
+        const taken = d.reduce((sum, nudge, j) => sum + (first && j === 0 ? nudge : -nudge) + (lengths(j) ? between(j - 1) + nudge : 0), 0);
+        plan.gives = Math.max(0, -taken);
+        return plan;
+      });
+      const slack = Math.max(4, Math.round(pixel / 8));
+      for (let k = 0; k + 1 < plans.length; k++) {
+        const above = plans[k];
+        const below = plans[k + 1];
+        if (!above || !below || !above.values && !below.values) continue;
+        const room = above.free + (above.values ? above.gives : 0);
+        const needs = below.head - (below.values ? Math.max(0, below.headNudge) : 0) + gap;
+        if (room + slack >= needs) {
+          above.values = null;
+          below.values = null;
+        }
+      }
+      plans.forEach((plan, k) => {
+        const values = plan.values;
+        if (values) (lines[k] ?? []).forEach((i, j) => {
+          out[i] = values[j] ?? null;
+        });
+      });
+      return out;
+    }
+    return {
+      bandNudges,
+      watchBand,
+      releaseBands,
+      /** A band's margins across were just written or taken off (onBandSizes blames a change of lines on them for a moment). */
+      noteBandWrite: (slot) => {
+        bandWrites.set(slot, performance.now());
+      },
+      /** Whether a band is held: left as it is across until it changes size for another reason. */
+      bandHeld: (slot) => bandHeld.has(slot)
+    };
   }
 
   // client/src/features/media-tags/layout/tag-layout.ts
@@ -2675,6 +3945,10 @@ ${scoped} {${original}}`;
     Object.assign(deps, createFitMeasure(s, JE, deps));
     Object.assign(deps, createFitApply(s, JE, deps));
     Object.assign(deps, createGroups(s, JE, deps));
+    const flow = createFlow(s, JE, deps);
+    const idle = createFlowIdle(s, JE, deps);
+    const snap = createSnap(s, JE, deps);
+    Object.assign(deps, flow, idle, createLive(s, JE, deps), snap, createSnapBands(s, JE, deps), createFontsRefit(s, JE, deps));
     JE.session?.onUserChange?.("tag-layout", () => {
       deps.invalidateSettings();
       deps.clearAll();
@@ -2838,6 +4112,34 @@ ${scoped} {${original}}`;
       POSITION_TO_SLOT,
       POSITION_SETTINGS,
       buildStyles: null,
+      /**
+       * Whether resting cards may be laid out in flow (flow.ts flowFor). Off, every card keeps the positioned
+       * layout; refreshPresentation() applies a change to cards already on the page (the pixel-comparison harness
+       * flips it).
+       */
+      restingFlow: true,
+      /**
+       * Decide a card's resting layout again: something outside this module changed what it may be (a status tag
+       * gained or lost its live backdrop filter, the status-tag painter).
+       */
+      syncFlowOf(host) {
+        const ctrl = host ? s.controllers.get(host) : null;
+        if (ctrl && ctrl.layout) deps.syncFlow(ctrl, deps.resolveLayout(ctrl));
+      },
+      /** What is remembered of the page's CSS, and how often it was asked (performance checks). */
+      flowStats: () => ({ alike: s.flowAlike.size, verdicts: s.flowVerdicts.size, ...s.flowCounters }),
+      /**
+       * Whether group containers are nudged to the whole pixel they were painted from when they were contained
+       * (snap.ts). Off, they stay where the layout puts them; refreshPresentation() applies a change to cards
+       * already on the page (the pixel-comparison harness flips it).
+       */
+      wholePixels: true,
+      /** Run the pending whole-pixel pass now (tests; the page runs it in idle time). */
+      flushSnap: snap.flushSnap,
+      /** Counts of the whole-pixel pass and the time its reads took (performance checks). */
+      snapStats: snap.snapStats,
+      /** What the idle pass still has to do, and what a card costs a slice (performance checks). */
+      idleStats: idle.idleStats,
       normalizeGroup,
       readEdge,
       normalizeSettings: deps.normalizeSettings,

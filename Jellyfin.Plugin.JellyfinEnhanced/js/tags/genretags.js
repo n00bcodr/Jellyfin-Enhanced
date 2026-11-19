@@ -13,7 +13,7 @@
 
   // client/generated-shared/stub/client/src/features/media-tags/host.ts
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
   var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
@@ -464,7 +464,7 @@
   }
 
   // client/src/features/media-tags/types/genre/genretags-entry.ts
-  createGenreTags(export4());
+  createGenreTags(export5());
 })();
 })();
 //# sourceMappingURL=genretags.js.map

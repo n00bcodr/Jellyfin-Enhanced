@@ -15,7 +15,8 @@
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
   var export0 = /* @__PURE__ */ sharedExport(shared, "apiClient");
   var export3 = /* @__PURE__ */ sharedExport(shared, "settingsUi");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export4 = /* @__PURE__ */ sharedExport(shared, "settingsUiLoaded");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
   var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
@@ -392,7 +393,7 @@
       let item;
       let admin;
       try {
-        [item, admin] = await Promise.all([options.item ? Promise.resolve(options.item) : fetchItem(id), serverMode ? Promise.resolve(true) : isAdministrator()]);
+        [item, admin] = await Promise.all([options.item ? Promise.resolve(options.item) : fetchItem(id), serverMode ? Promise.resolve(true) : isAdministrator(), export4(JE)]);
       } catch (err) {
         abandon();
         throw err;
@@ -906,7 +907,7 @@
   }
 
   // client/src/features/media-tags/editor/tag-item-editor-entry.ts
-  createItemEditor(export4());
+  createItemEditor(export5());
 })();
 })();
 //# sourceMappingURL=tag-item-editor.js.map

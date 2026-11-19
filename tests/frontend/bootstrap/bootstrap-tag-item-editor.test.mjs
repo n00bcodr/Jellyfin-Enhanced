@@ -388,6 +388,25 @@ test('the editor waits for the item data before it opens; a session change meanw
   }
 });
 
+// The dialog's preview uses the settings panel's preview code (JE.internals.enhancedUi), which loads on demand: the
+// "settings" component group (client/src/bootstrap/loader/group-rules.ts).
+test('the editor asks the loader for the settings group alongside the item, and mounts only once it has loaded', async t => {
+  const h = setup(t, { html: card(MOVIE, 'Movie') });
+  const asked = [];
+  const group = deferred();
+  h.JE.loader = { ensure: ids => { asked.push([...ids]); return group.promise; } };
+  const opening = h.JE.tagItemEditor.open(MOVIE);
+  await h.settle();
+  assert.deepEqual(asked, [['settings']]);
+  assert.ok(h.requests.includes(`item:${MOVIE}`), 'the item is fetched meanwhile, not after');
+  assert.equal(h.editor(), null, 'not before the preview code is there');
+  group.resolve();
+  assert.equal(await opening, true);
+  await h.settle();
+  assert.ok(h.editor(), 'mounted once the group has loaded');
+  assert.ok(h.$('.je-tie-card'), 'with its preview card');
+});
+
 // Every open attempt has its own identity: navigation, close() or another open while it waits cancels it.
 test('navigating away while the editor waits for its item data opens nothing', async t => {
   const answer = deferred();

@@ -29,30 +29,129 @@
   }
 
   // client/src/host/context.ts
-  function sharedModule(id) {
-    const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
-    if (!namespace) throw new Error(`${id} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);
-    return namespace;
+  function featureContext(feature, core, slots) {
+    const shared = core.core?.featureContext;
+    if (typeof shared !== "function") {
+      throw new Error(`${feature}: JE.core.featureContext is missing; core/ui-kit.js must load before feature scripts`);
+    }
+    return shared(feature, core, slots);
   }
-  function sharedExport(namespace, name) {
-    return namespace[name];
+
+  // client/src/features/player/host.ts
+  function playerHost() {
+    const host = window;
+    const JE2 = host.JellyfinEnhanced;
+    if (!JE2) throw new Error("Player loaded before Jellyfin Enhanced");
+    const ctx2 = featureContext("player", JE2, {
+      internalSlots: ["player", "nowPlaying", "autoSkip", "subtitleSync", "osdPlayback"],
+      internalsObject: () => JE2.internals = JE2.internals || {}
+    });
+    const requireApi = () => {
+      if (!host.ApiClient) throw new Error("Jellyfin API unavailable");
+      return host.ApiClient;
+    };
+    const ApiClient2 = {
+      getCurrentUserId: () => host.ApiClient?.getCurrentUserId() ?? null,
+      deviceId: () => host.ApiClient?.deviceId?.() ?? "",
+      serverId: () => {
+        const id = host.ApiClient?.serverId;
+        return typeof id === "function" ? id.call(host.ApiClient) : id ?? "";
+      },
+      serverAddress: () => requireApi().serverAddress(),
+      getUrl: (path, params) => requireApi().getUrl(path, params),
+      ajax: (options) => requireApi().ajax(options),
+      getItem: (userId, itemId) => requireApi().getItem(userId, itemId)
+    };
+    return { JE: JE2, ApiClient: ApiClient2, ctx: ctx2 };
   }
 
-  // client/generated-shared/stub/client/src/features/player/host.ts
-  var shared = /* @__PURE__ */ sharedModule("features/player/host");
-  var export0 = /* @__PURE__ */ sharedExport(shared, "playerHost");
+  // client/src/features/player/wire.ts
+  function record(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {};
+  }
+  var text = (v) => typeof v === "string" ? v : void 0;
+  var number = (v) => typeof v === "number" && Number.isFinite(v) ? v : void 0;
+  var strings = (v) => Array.isArray(v) ? v.filter((s) => typeof s === "string") : [];
+  var list = (v) => Array.isArray(v) ? v : [];
+  function stream(v) {
+    const r = record(v);
+    const fps = (v2) => typeof v2 === "string" ? v2 : number(v2);
+    return { Type: text(r.Type), Index: number(r.Index), ReferenceFrameRate: fps(r.ReferenceFrameRate), RealFrameRate: fps(r.RealFrameRate), AverageFrameRate: fps(r.AverageFrameRate), DisplayTitle: text(r.DisplayTitle), Title: text(r.Title), Language: text(r.Language), Codec: text(r.Codec), IsTextSubtitleStream: typeof r.IsTextSubtitleStream === "boolean" ? r.IsTextSubtitleStream : void 0 };
+  }
+  function decodeItem(v) {
+    const r = record(v);
+    return { Id: text(r.Id), Type: text(r.Type), SeriesId: text(r.SeriesId), ParentId: text(r.ParentId), RunTimeTicks: number(r.RunTimeTicks), ProductionYear: number(r.ProductionYear), CommunityRating: number(r.CommunityRating), CriticRating: number(r.CriticRating), OfficialRating: text(r.OfficialRating), Overview: text(r.Overview), Container: text(r.Container), Genres: strings(r.Genres), Tags: strings(r.Tags), ImageTags: { Logo: text(record(r.ImageTags).Logo) }, MediaStreams: list(r.MediaStreams).map(stream), MediaSources: list(r.MediaSources).map((v2) => {
+      const s = record(v2);
+      return { Id: text(s.Id), MediaStreams: list(s.MediaStreams).map(stream) };
+    }) };
+  }
+  var decodeItems = (v) => list(record(v).Items).map(decodeItem);
 
-  // client/generated-shared/stub/client/src/features/player/wire.ts
-  var shared2 = /* @__PURE__ */ sharedModule("features/player/wire");
-  var export1 = /* @__PURE__ */ sharedExport(shared2, "decodeItems");
-
-  // client/generated-shared/stub/client/src/features/player/lifetime.ts
-  var shared3 = /* @__PURE__ */ sharedModule("features/player/lifetime");
-  var export02 = /* @__PURE__ */ sharedExport(shared3, "createPlayerLifetime");
+  // client/src/features/player/lifetime.ts
+  function createPlayerLifetime(JE2, name) {
+    let generation = 0;
+    let controller = new AbortController();
+    const cleanups = /* @__PURE__ */ new Set();
+    const timers = /* @__PURE__ */ new Set();
+    function reset() {
+      generation++;
+      controller.abort();
+      controller = new AbortController();
+      for (const cleanup of cleanups) cleanup();
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+    }
+    JE2.session?.onUserChange(name + "-lifetime", reset);
+    if (JE2.core?.navigation) JE2.core.navigation.onNavigate(reset);
+    else window.addEventListener("hashchange", reset);
+    function lease(video) {
+      const captured = generation, hash = location.hash;
+      const session = JE2.session?.createLease?.();
+      const source = video ? video.currentSrc || video.src : null;
+      return { signal: controller.signal, current: () => captured === generation && hash === location.hash && (!session || session.isCurrent()) && (!video || video.isConnected && (video.currentSrc || video.src) === source) };
+    }
+    return {
+      lease,
+      reset,
+      onReset(cleanup) {
+        cleanups.add(cleanup);
+        return () => cleanups.delete(cleanup);
+      },
+      timeout(callback, delay) {
+        const id = window.setTimeout(() => {
+          timers.delete(id);
+          callback();
+        }, delay);
+        timers.add(id);
+        return id;
+      },
+      cancel(id) {
+        if (id != null) {
+          clearTimeout(id);
+          timers.delete(id);
+        }
+      },
+      sleep(delay, signal) {
+        return new Promise((resolve) => {
+          if (signal.aborted) {
+            resolve();
+            return;
+          }
+          const done = () => {
+            clearTimeout(id);
+            signal.removeEventListener("abort", done);
+            resolve();
+          };
+          const id = window.setTimeout(done, delay);
+          signal.addEventListener("abort", done, { once: true });
+        });
+      }
+    };
+  }
 
   // client/src/features/player/playback-rating-badge.ts
-  var { JE, ApiClient, ctx } = export0();
-  var lifetime = export02(JE, "playback-rating-badge");
+  var { JE, ApiClient, ctx } = playerHost();
+  var lifetime = createPlayerLifetime(JE, "playback-rating-badge");
   var logPrefix = "🪼 Jellyfin Enhanced: Playback Rating Badge:";
   var BADGE_ID = "je-playback-rating-badge";
   var STYLE_ID = "je-playback-rating-badge-style";
@@ -89,7 +188,7 @@
       url: ApiClient.getUrl(`/Users/${userId}/Items`, { Ids: ids.join(","), Fields: "OfficialRating,Genres,Tags" }),
       dataType: "json"
     });
-    return export1(result);
+    return decodeItems(result);
   }
   async function fetchInfo(userId, itemId) {
     const lease = lifetime.lease();

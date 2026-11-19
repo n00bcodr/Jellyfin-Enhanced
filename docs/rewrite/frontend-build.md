@@ -117,7 +117,9 @@ The builder deliberately does not delete production resources automatically.
 ## The served bundle: minified twins, one featureContext, shared modules, size budget
 
 `GET /JellyfinEnhanced/bundle.js` (`Features/Platform/Services/ClientScriptBundle.cs`)
-concatenates the scripts listed in `js/component-scripts.json`. For each of them
+concatenates the scripts listed in `js/component-scripts.json`: all of them, or with
+`?g=<group>,<group>` the component groups of `js/component-groups.json` a page needs
+(`docs/advanced/project-structure.md`, "Component groups"). For each of them
 the builder also writes a minified twin, `min/js/<path>` plus `min/js/<path>.map`:
 the same source and wrapper with esbuild `minify`, an external map without
 `sourcesContent` (the server copies each source's text from the readable map, so
@@ -179,6 +181,12 @@ such modules, each with its *provider*: the first script in
   `client/generated-shared/{publish,stub}/…` in outputs and maps; that folder
   never exists on disk.
 
+Component groups load on demand, so a script can run on a page where a module's
+provider never does. The build reads `js/component-groups.json`: a reader gets a
+stub only when the provider's group is `core`, the reader's own group or a group
+it is `after` (so the provider has always run first); any other reader bundles
+its own copy of the module, as it would without `client/shared-modules.json`.
+
 Source files do not change. The build fails if a script that reads a shared
 module is listed before its provider, if a listed module has no other user, or
 if the module **or anything it imports** may hold state: a top-level
@@ -186,8 +194,9 @@ if the module **or anything it imports** may hold state: a top-level
 stateful module are two separate states, which one shared copy would merge). A
 binding the syntactic check cannot clear needs a `reviewed` entry with its
 reason. `tests/client-build/shared-modules.test.mjs` also checks the committed
-outputs (one carrier per module, every reader after it) and that no client
-source mutates a shared module's constant tables.
+outputs (one carrier per module, every stubbed reader after it and in a group that
+always loads with the carrier's) and that no client source mutates a shared module's
+constant tables.
 
 Only add a module when sharing saves bytes: the provider publishes the whole
 namespace, and each reader pays for a small stub. Modules left duplicated on
@@ -200,6 +209,11 @@ harness does it in `load()`, Playwright specs through `provideFeatureContext`).
 -9 (`tests/backend/Api/BundleBudgetTests.cs` in the backend suite, and
 `scripts/restructure-gates.sh size`). It is a ratchet: lower `limits` freely; a
 new `history` entry that raises either limit must give a `reason`.
+`scripts/bundle-budgets.json` (upstream abcaa16d's file) caps what a cold Home
+load asks for under the component-group loader, in three scenarios: the groups,
+their modules and their raw and gzip bytes
+(`tests/frontend/bootstrap/bootstrap-bundle-budget.test.mjs`;
+`node scripts/bundle-budgets.mjs` prints today's numbers).
 
 ## Direct .NET builds
 

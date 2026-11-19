@@ -15,7 +15,25 @@ public sealed class BootstrapResponse
     public required bool HasPluginPages { get; init; }
     public required BootstrapUserDocuments UserSettings { get; init; }
     public required IReadOnlyList<string>? ComponentScripts { get; init; }
+    /// <summary>
+    /// The "groups" array of js/component-groups.json (which modules load together and on
+    /// demand), without its notes. Null when the file is unusable: the client then loads the
+    /// whole manifest as one group.
+    /// </summary>
+    public required IReadOnlyList<BootstrapComponentGroup>? ComponentGroups { get; init; }
     public required BootstrapPrefetched Prefetched { get; init; }
+}
+
+/// <summary>One entry of js/component-groups.json, named as the file names it.</summary>
+public sealed class BootstrapComponentGroup
+{
+    [System.Text.Json.Serialization.JsonPropertyName("id")]
+    public required string Id { get; init; }
+    [System.Text.Json.Serialization.JsonPropertyName("after")]
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? After { get; init; }
+    [System.Text.Json.Serialization.JsonPropertyName("modules")]
+    public required IReadOnlyList<string> Modules { get; init; }
 }
 
 /// <summary>Null means the document could not be loaded, never an empty replacement.</summary>

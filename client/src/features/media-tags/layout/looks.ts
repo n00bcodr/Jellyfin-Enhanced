@@ -97,6 +97,7 @@ export function createLooks(s: LayoutState, JE: LayoutHost, deps: LayoutFns) {
         lookSettingsCache.clear();
         s.cachedSettings = null;
         s.cachedLooks = null;
+        deps.forgetPageCss();
     }
 
     function currentLooks() {
@@ -115,12 +116,39 @@ export function createLooks(s: LayoutState, JE: LayoutHost, deps: LayoutFns) {
         window.addEventListener('resize', refitOnResize, { passive: true });
     }
 
+    /** How long a window size must hold before the page's CSS is asked about again (ms), and the timer that waits for it. */
+    const RESIZE_SETTLE_MS = 250;
+    let resizeSettle: ReturnType<typeof setTimeout> | 0 = 0;
+    /** The window width the page's CSS was last asked about at. */
+    let probedWidth = typeof window !== 'undefined' ? window.innerWidth : 0;
+    /** The window width cards were last re-fitted for, and whether the window was taller than wide. */
+    let refitWidth = probedWidth;
+    let refitTall = typeof window !== 'undefined' ? window.innerHeight >= window.innerWidth : false;
+
+    /** Card sizes follow the window's width: re-fit every fitted card once per frame of resizing it (or of turning it). */
     function refitOnResize() {
+        // The page's CSS may answer differently at this size (a media query crossed): asked again once the size holds.
+        // (The width: a phone's address bar coming and going resizes the window on every scroll.)
+        if (resizeSettle) clearTimeout(resizeSettle);
+        resizeSettle = setTimeout(() => {
+            resizeSettle = 0;
+            if (window.innerWidth === probedWidth) return;
+            probedWidth = window.innerWidth;
+            deps.queueReprobe();
+        }, RESIZE_SETTLE_MS);
+        // Tag sizes follow the window's width (vw units, media queries), its orientation and each card's own size, not
+        // the window's height. A resize that changes the height alone refits nothing: a card whose size did change is
+        // refitted by the size observer, and every card queued here would have its whole-pixel nudges taken off for
+        // the fit (scheduleFit), on a phone each time the address bar comes or goes.
+        const tall = window.innerHeight >= window.innerWidth;
+        if (window.innerWidth === refitWidth && tall === refitTall) return;
         if (s.resizeQueued)
             return;
         s.resizeQueued = true;
         requestAnimationFrame(() => {
             s.resizeQueued = false;
+            refitWidth = window.innerWidth;
+            refitTall = window.innerHeight >= window.innerWidth;
             for (const host of document.querySelectorAll<HTMLElement>('.je-tag-host')) {
                 const ctrl = s.controllers.get((host));
                 if (ctrl)

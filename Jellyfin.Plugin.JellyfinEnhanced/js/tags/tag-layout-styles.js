@@ -13,7 +13,7 @@
 
   // client/generated-shared/stub/client/src/features/media-tags/host.ts
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/src/features/media-tags/layout/tag-layout-styles.ts
   function createLayoutStyles(JE) {
@@ -32,6 +32,12 @@
     const LEGACY_EDGE = (slot) => `.je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="${slot}"] > ${LEGACY_MOBILE_GROUPS}`;
     const EDGE = '.je-tag-host[data-je-layout="corners"][data-je-edge] > .je-tag-slot';
     const FLUSH = '.je-tag-host[data-je-layout="corners"][data-je-edge="flush"] > .je-tag-slot';
+    const FLOW = ".je-tag-host[data-je-flow]:not([data-je-live])";
+    const FLOW_SLOT = `${FLOW} > .je-tag-slot`;
+    const FLOW_RISING = `${FLOW_SLOT}:is([data-je-slot="bl"], [data-je-slot="br"])`;
+    const FLOW_ROWS = 12;
+    const SNAP_X = "var(--je-snap-x, 0px)";
+    const SNAP_Y = "var(--je-snap-y, 0px)";
     const BOX_CHIP = ":is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)";
     const FLUSH_BOX = `:is(${BOX_CHIP}, .genre-tag)`;
     const CHIP_LINK = ":is(.awards-link, .language-link)";
@@ -94,6 +100,69 @@
             }
         `;
     }
+    function buildFlowStyles() {
+      const rows = Array.from({ length: FLOW_ROWS }, (_, i) => `${FLOW_RISING} > :nth-child(${i + 1}) { grid-row: ${FLOW_ROWS - i}; }`).join("\n            ");
+      return `
+            ${FLOW} {
+                display: grid;
+                grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+                container-type: size;
+            }
+            ${FLOW_SLOT} {
+                position: static;
+                grid-area: 1 / 1;
+                min-width: 0; min-height: 0;
+            }
+            ${FLOW_SLOT} > [data-je-group] { position: static; }
+
+            /* corners: the inset the four stacks had, as a margin */
+            ${FLOW_SLOT}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) {
+                margin: var(--je-edge, 6px);
+            }
+            .cardScalable:has(.countIndicator, .playedIndicator) > ${FLOW}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
+            .cardIndicators ~ ${FLOW}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
+                margin-top: calc(var(--je-edge, 6px) + ${INDICATOR_OFFSET});
+            }
+            ${NO_HAS} {
+                ${ANY_CARD}[data-je-flow]:not([data-je-live])[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
+                .cardIndicators ~ ${FLOW}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
+                    margin-top: calc(var(--je-edge, 6px) + ${INDICATOR_OFFSET});
+                }
+            }
+            ${FLOW_RISING} {
+                display: grid;
+                grid-template-rows: repeat(${FLOW_ROWS}, auto);
+                grid-template-columns: minmax(0, 1fr);
+                align-content: end;
+                row-gap: 0;
+            }
+            ${FLOW_SLOT}[data-je-slot="bl"] { justify-items: start; }
+            ${FLOW_SLOT}[data-je-slot="br"] { justify-items: end; }
+            ${FLOW_RISING} > * { margin-top: calc(calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)) + ${SNAP_Y}); }
+            ${rows}
+            /* 90% (85% on phones) of the image, as the corner rules above work out to. */
+            ${FLOW_RISING} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) { max-height: 90cqh; }
+            @media (max-width: 480px) {
+                ${FLOW_RISING} > :is(.quality-overlay-container, .genre-overlay-container) { max-height: 85cqh; }
+            }
+
+            /* bands: the top band from the top edge, the bottom band from the bottom */
+            ${FLOW_SLOT}[data-je-slot="top"] { align-self: start; }
+            ${FLOW_SLOT}[data-je-slot="bottom"] { align-self: end; }
+            /* caption: the small poster stack in its corner */
+            ${FLOW_SLOT}[data-je-slot="poster"] { justify-self: start; align-self: start; margin: 6px; }
+
+            /* A genre icon is positioned to hold its floating name. A resting card shows no name
+               (it was there at opacity 0): the icon holds nothing, and the name is left out until
+               the pointer brings the card back to the positioned layout. */
+            ${FLOW} .genre-tag { position: static; }
+            ${FLOW} .genre-tag > .genre-text { display: none; }
+            /* The first style pass of a card going live: a name that was not rendered fades in from here. */
+            .je-tag-host.je-tag-host[data-je-live="in"] .genre-tag > .genre-text { opacity: 0; }
+            /* The same clip (it also trims the chips' shadows at the group's edge) without a scroll container. */
+            ${FLOW} :is(.quality-overlay-container, .language-overlay-container) { overflow: clip; }
+        `;
+    }
     function buildStyles() {
       const css = `
             /* Positions are physical, as on native posters: "Top left" is top left on a right-to-left page too.
@@ -112,7 +181,8 @@
                 position: relative;
                 flex-shrink: 0;
                 top: auto; right: auto; bottom: auto; left: auto;
-                margin: 0;
+                /* No margin of its own: only the whole-pixel nudge, which is 0 until the controller sets it. */
+                margin: ${SNAP_Y} calc(0px - ${SNAP_X}) calc(0px - ${SNAP_Y}) ${SNAP_X};
             }
 
             /* corners: one stack per corner, first priority at the corner edge */
@@ -241,31 +311,31 @@
             }
             ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
             .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap] {
-                margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - var(--je-indicator-before, 0px));
+                margin-top: calc(max(0px, ${LEGACY_INDICATOR_OFFSET} - var(--je-indicator-before, 0px)) + ${SNAP_Y});
             }
             ${NO_HAS} {
                 ${ANY_CARD}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
                 .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap] {
-                    margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - var(--je-indicator-before, 0px));
+                    margin-top: calc(max(0px, ${LEGACY_INDICATOR_OFFSET} - var(--je-indicator-before, 0px)) + ${SNAP_Y});
                 }
             }
             /* ... and on phones the rating, age rating and status containers sit
                4px from the card edges instead of 6px. */
             @media (max-width: 480px) {
-                ${LEGACY_EDGE("tl")} { margin-left: -2px; }
-                ${LEGACY_EDGE("bl")} { margin-left: -2px; }
-                ${LEGACY_EDGE("tr")} { margin-right: -2px; }
-                ${LEGACY_EDGE("br")} { margin-right: -2px; }
-                ${LEGACY_EDGE("tl")}:first-child, ${LEGACY_EDGE("tr")}:first-child { margin-top: -2px; }
-                ${LEGACY_EDGE("bl")}:first-child, ${LEGACY_EDGE("br")}:first-child { margin-bottom: -2px; }
+                ${LEGACY_EDGE("tl")} { margin-left: calc(-2px + ${SNAP_X}); }
+                ${LEGACY_EDGE("bl")} { margin-left: calc(-2px + ${SNAP_X}); }
+                ${LEGACY_EDGE("tr")} { margin-right: calc(-2px - ${SNAP_X}); }
+                ${LEGACY_EDGE("br")} { margin-right: calc(-2px - ${SNAP_X}); }
+                ${LEGACY_EDGE("tl")}:first-child, ${LEGACY_EDGE("tr")}:first-child { margin-top: calc(-2px + ${SNAP_Y}); }
+                ${LEGACY_EDGE("bl")}:first-child, ${LEGACY_EDGE("br")}:first-child { margin-bottom: calc(-2px - ${SNAP_Y}); }
                 ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap],
                 .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap] {
-                    margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px));
+                    margin-top: calc(max(0px, ${LEGACY_INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px)) + ${SNAP_Y});
                 }
                 ${NO_HAS} {
                     ${ANY_CARD}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap],
                     .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap] {
-                        margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px));
+                        margin-top: calc(max(0px, ${LEGACY_INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px)) + ${SNAP_Y});
                     }
                 }
             }
@@ -353,8 +423,10 @@
                 min-width: 0;
                 max-width: 100%;
             }
+            /* (An auto margin takes one side of a group's whole-pixel nudge, and shares the line's free space in whole
+               layout units. A nudged line keeps one auto margin and gets the others as lengths: layout/snap-bands.ts bandNudges.) */
             ${host("bands")}[data-je-slot="top"] > [data-je-group] + [data-je-group] {
-                margin-left: auto;
+                margin-left: var(--je-band-left, auto);
             }
             ${host("bands")}[data-je-slot="top"] > [data-je-group]:first-child {
                 justify-content: flex-start;
@@ -655,6 +727,8 @@
                 opacity: 0 !important;
             }
 
+            ${buildFlowStyles()}
+
             @media (prefers-reduced-motion: reduce) {
                 ${SLOT}, .je-tag-host > .je-tag-more-tip { transition: none; }
             }
@@ -668,7 +742,7 @@
   }
 
   // client/src/features/media-tags/layout/tag-layout-styles-entry.ts
-  createLayoutStyles(export4());
+  createLayoutStyles(export5());
 })();
 })();
 //# sourceMappingURL=tag-layout-styles.js.map

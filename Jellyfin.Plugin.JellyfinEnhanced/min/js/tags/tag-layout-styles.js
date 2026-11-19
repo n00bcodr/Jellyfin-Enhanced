@@ -1,9 +1,9 @@
 (() => {
-"use strict";(()=>{function k(s){let i=window.JellyfinEnhanced?.core?.sharedModules?.[s];if(!i)throw new Error(`${s} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);return i}function C(s,i){return s[i]}var S=k("features/media-tags/host");var O=C(S,"tagRuntimeHost");function z(s){let i=":is(:is(.card, .listItem):is(:hover, :focus-within), .je-tag-reveal)",w="body.je-tags-hide-on-hover .card:hover",v=':is(.je-mtp, .je-tie-side)[data-je-hide-on-hover="true"] .je-tag-reveal',e=".je-tag-host > .je-tag-slot",t=n=>`.je-tag-host[data-je-layout="${n}"] > .je-tag-slot`,p=".cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host",h="@supports not selector(:has(*))",j=".cardScalable > .je-tag-host",u="clamp(20px, 3vw, 30px)",g="calc(clamp(20px, 3vw, 30px) * var(--je-tag-scale, 1))",y=`${e}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"])`,x=':is([data-je-group="rating"], [data-je-group="ageRating"], [data-je-group="status"])',l=n=>`.je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="${n}"] > ${x}`,r='.je-tag-host[data-je-layout="corners"][data-je-edge] > .je-tag-slot',m='.je-tag-host[data-je-layout="corners"][data-je-edge="flush"] > .je-tag-slot',d=":is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)",b=`:is(${d}, .genre-tag)`,o=":is(.awards-link, .language-link)",c=`:is(${e}[data-je-slot="poster"], ${e}[data-je-slot="corner"], .je-tag-host[data-je-layout="minimal"] > .je-tag-slot[data-je-slot="top"])`,f=`:is([data-je-group] > ${b}, [data-je-group] > ${o} > ${d}, .je-tag-more)`;function $(n=""){let a=n?`${n} ${m}`:m;return`
+"use strict";(()=>{function R(i){let n=window.JellyfinEnhanced?.core?.sharedModules?.[i];if(!n)throw new Error(`${i} is not in JE.core.sharedModules: load its provider first (client/shared-modules.json)`);return n}function A(i,n){return i[n]}var P=R("features/media-tags/host");var E=A(P,"tagRuntimeHost");function q(i){let n=":is(:is(.card, .listItem):is(:hover, :focus-within), .je-tag-reveal)",O="body.je-tags-hide-on-hover .card:hover",S=':is(.je-mtp, .je-tie-side)[data-je-hide-on-hover="true"] .je-tag-reveal',e=".je-tag-host > .je-tag-slot",t=r=>`.je-tag-host[data-je-layout="${r}"] > .je-tag-slot`,m=".cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host",x="@supports not selector(:has(*))",u=".cardScalable > .je-tag-host",y="clamp(20px, 3vw, 30px)",c="calc(clamp(20px, 3vw, 30px) * var(--je-tag-scale, 1))",I=`${e}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"])`,b=':is([data-je-group="rating"], [data-je-group="ageRating"], [data-je-group="status"])',g=r=>`.je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="${r}"] > ${b}`,s='.je-tag-host[data-je-layout="corners"][data-je-edge] > .je-tag-slot',$='.je-tag-host[data-je-layout="corners"][data-je-edge="flush"] > .je-tag-slot',p=".je-tag-host[data-je-flow]:not([data-je-live])",l=`${p} > .je-tag-slot`,w=`${l}:is([data-je-slot="bl"], [data-je-slot="br"])`,k=12,f="var(--je-snap-x, 0px)",d="var(--je-snap-y, 0px)",h=":is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)",C=`:is(${h}, .genre-tag)`,o=":is(.awards-link, .language-link)",j=`:is(${e}[data-je-slot="poster"], ${e}[data-je-slot="corner"], .je-tag-host[data-je-layout="minimal"] > .je-tag-slot[data-je-slot="top"])`,v=`:is([data-je-group] > ${C}, [data-je-group] > ${o} > ${h}, .je-tag-more)`;function z(r=""){let a=r?`${r} ${$}`:$;return`
             /* Flush removes the visible edge seam while preserving the chip's
                border-box metrics. Clip only the touching sides of its shadow;
                the inward sides keep the group's original border and shadow. */
-            ${a} ${f} {
+            ${a} ${v} {
                 --je-flush-clip-top: -12px; --je-flush-clip-right: -12px;
                 --je-flush-clip-bottom: -12px; --je-flush-clip-left: -12px;
                 clip-path: inset(var(--je-flush-clip-top) var(--je-flush-clip-right) var(--je-flush-clip-bottom) var(--je-flush-clip-left));
@@ -13,29 +13,29 @@
                 --je-flush-clip-top: -100vw; --je-flush-clip-right: -100vw;
                 --je-flush-clip-bottom: -100vw; --je-flush-clip-left: -100vw;
             }
-            ${a}:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"]) ${f} {
+            ${a}:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"]) ${v} {
                 border-left-color: transparent !important; --je-flush-clip-left: 0px;
                 --je-flush-ring-left: 0px; --je-flush-ring-content: ''; --je-tag-ring-outline: transparent;
                 border-top-left-radius: 0; border-bottom-left-radius: 0;
             }
-            ${a}:is([data-je-slot="tr"], [data-je-slot="br"], [data-je-slot="mr"]) ${f} {
+            ${a}:is([data-je-slot="tr"], [data-je-slot="br"], [data-je-slot="mr"]) ${v} {
                 border-right-color: transparent !important; --je-flush-clip-right: 0px;
                 --je-flush-ring-right: 0px; --je-flush-ring-content: ''; --je-tag-ring-outline: transparent;
                 border-top-right-radius: 0; border-bottom-right-radius: 0;
             }
-            ${a}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${b}:first-child,
-            ${a}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${o}:first-child > ${d},
-            ${a}[data-je-slot="tc"] ${f}[data-je-flush-top],
-            ${a}[data-je-slot="tc"] ${o}[data-je-flush-top] > ${d},
+            ${a}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${C}:first-child,
+            ${a}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${o}:first-child > ${h},
+            ${a}[data-je-slot="tc"] ${v}[data-je-flush-top],
+            ${a}[data-je-slot="tc"] ${o}[data-je-flush-top] > ${h},
             ${a}:is([data-je-slot="tl"], [data-je-slot="tr"]) > .je-tag-more:only-child {
                 border-top-color: transparent !important; --je-flush-clip-top: 0px;
                 --je-flush-ring-top: 0px; --je-flush-ring-content: ''; --je-tag-ring-outline: transparent;
                 border-top-left-radius: 0; border-top-right-radius: 0;
             }
-            ${a}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${b}:last-child,
-            ${a}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${o}:last-child > ${d},
-            ${a}[data-je-slot="bc"] ${f}[data-je-flush-bottom],
-            ${a}[data-je-slot="bc"] ${o}[data-je-flush-bottom] > ${d},
+            ${a}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${C}:last-child,
+            ${a}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${o}:last-child > ${h},
+            ${a}[data-je-slot="bc"] ${v}[data-je-flush-bottom],
+            ${a}[data-je-slot="bc"] ${o}[data-je-flush-bottom] > ${h},
             ${a}:is([data-je-slot="bl"], [data-je-slot="br"]) > .je-tag-more:only-child {
                 border-bottom-color: transparent !important; --je-flush-clip-bottom: 0px;
                 --je-flush-ring-bottom: 0px; --je-flush-ring-content: ''; --je-tag-ring-outline: transparent;
@@ -52,7 +52,67 @@
                 border: 1px solid var(--je-tag-ring-color, transparent);
                 border-width: var(--je-flush-ring-top, 1px) var(--je-flush-ring-right, 1px) var(--je-flush-ring-bottom, 1px) var(--je-flush-ring-left, 1px);
             }
-        `}function I(){let n=`
+        `}function T(){let r=Array.from({length:k},(a,F)=>`${w} > :nth-child(${F+1}) { grid-row: ${k-F}; }`).join(`
+            `);return`
+            ${p} {
+                display: grid;
+                grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+                container-type: size;
+            }
+            ${l} {
+                position: static;
+                grid-area: 1 / 1;
+                min-width: 0; min-height: 0;
+            }
+            ${l} > [data-je-group] { position: static; }
+
+            /* corners: the inset the four stacks had, as a margin */
+            ${l}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) {
+                margin: var(--je-edge, 6px);
+            }
+            .cardScalable:has(.countIndicator, .playedIndicator) > ${p}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
+            .cardIndicators ~ ${p}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
+                margin-top: calc(var(--je-edge, 6px) + ${c});
+            }
+            ${x} {
+                ${u}[data-je-flow]:not([data-je-live])[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
+                .cardIndicators ~ ${p}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
+                    margin-top: calc(var(--je-edge, 6px) + ${c});
+                }
+            }
+            ${w} {
+                display: grid;
+                grid-template-rows: repeat(${k}, auto);
+                grid-template-columns: minmax(0, 1fr);
+                align-content: end;
+                row-gap: 0;
+            }
+            ${l}[data-je-slot="bl"] { justify-items: start; }
+            ${l}[data-je-slot="br"] { justify-items: end; }
+            ${w} > * { margin-top: calc(calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)) + ${d}); }
+            ${r}
+            /* 90% (85% on phones) of the image, as the corner rules above work out to. */
+            ${w} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) { max-height: 90cqh; }
+            @media (max-width: 480px) {
+                ${w} > :is(.quality-overlay-container, .genre-overlay-container) { max-height: 85cqh; }
+            }
+
+            /* bands: the top band from the top edge, the bottom band from the bottom */
+            ${l}[data-je-slot="top"] { align-self: start; }
+            ${l}[data-je-slot="bottom"] { align-self: end; }
+            /* caption: the small poster stack in its corner */
+            ${l}[data-je-slot="poster"] { justify-self: start; align-self: start; margin: 6px; }
+
+            /* A genre icon is positioned to hold its floating name. A resting card shows no name
+               (it was there at opacity 0): the icon holds nothing, and the name is left out until
+               the pointer brings the card back to the positioned layout. */
+            ${p} .genre-tag { position: static; }
+            ${p} .genre-tag > .genre-text { display: none; }
+            /* The first style pass of a card going live: a name that was not rendered fades in from here. */
+            .je-tag-host.je-tag-host[data-je-live="in"] .genre-tag > .genre-text { opacity: 0; }
+            /* The same clip (it also trims the chips' shadows at the group's edge) without a scroll container. */
+            ${p} :is(.quality-overlay-container, .language-overlay-container) { overflow: clip; }
+        `}function L(){let r=`
             /* Positions are physical, as on native posters: "Top left" is top left on a right-to-left page too.
                The host lays out left to right; each chip's text keeps its own direction (first strong letter). */
             .je-tag-host { direction: ltr; }
@@ -69,7 +129,8 @@
                 position: relative;
                 flex-shrink: 0;
                 top: auto; right: auto; bottom: auto; left: auto;
-                margin: 0;
+                /* No margin of its own: only the whole-pixel nudge, which is 0 until the controller sets it. */
+                margin: ${d} calc(0px - ${f}) calc(0px - ${d}) ${f};
             }
 
             /* corners: one stack per corner, first priority at the corner edge */
@@ -91,11 +152,11 @@
             ${e} > :is(.quality-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container, .logo-overlay-container) {
                 max-width: 100%;
             }
-            ${y} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) {
+            ${I} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) {
                 max-height: calc(90% + 10.8px);
             }
             @media (max-width: 480px) {
-                ${y} > :is(.quality-overlay-container, .genre-overlay-container) { max-height: calc(85% + 10.2px); }
+                ${I} > :is(.quality-overlay-container, .genre-overlay-container) { max-height: calc(85% + 10.2px); }
             }
             /* Centre anchors only: leave the original four corner rules untouched.
                Measured reserves keep rows between corner stacks and columns
@@ -151,7 +212,7 @@
             ${t("corners")} > [data-je-group] > ${o}[data-je-fit-width] {
                 display: inline-flex; overflow: visible;
             }
-            ${t("corners")} ${o}[data-je-fit-width] > ${d} {
+            ${t("corners")} ${o}[data-je-fit-width] > ${h} {
                 max-width: var(--je-chip-fit-width); min-width: 0; box-sizing: border-box;
             }
             ${t("corners")} ${o}[data-je-fit-width] > .awards-tag > span:last-child,
@@ -160,29 +221,29 @@
             }
             /* A stack chip wider than the card keeps its whole box at the slot's
                inset and ellipsizes its label the same way. */
-            ${c} > [data-je-group] > [data-je-fit-width],
-            ${c} ${o}[data-je-fit-width] > ${d} {
+            ${j} > [data-je-group] > [data-je-fit-width],
+            ${j} ${o}[data-je-fit-width] > ${h} {
                 max-width: var(--je-chip-fit-width); min-width: 0; box-sizing: border-box;
             }
-            ${c} > [data-je-group] > [data-je-fit-width] { overflow: visible; }
-            ${c} > [data-je-group] > ${o}[data-je-fit-width] { display: inline-flex; }
-            ${c} [data-je-fit-width] :is(.je-tag-fit-text, .custom-tag-text, .rating-text),
-            ${c} [data-je-fit-width].awards-tag > span:last-child,
-            ${c} ${o}[data-je-fit-width] > .awards-tag > span:last-child {
+            ${j} > [data-je-group] > [data-je-fit-width] { overflow: visible; }
+            ${j} > [data-je-group] > ${o}[data-je-fit-width] { display: inline-flex; }
+            ${j} [data-je-fit-width] :is(.je-tag-fit-text, .custom-tag-text, .rating-text),
+            ${j} [data-je-fit-width].awards-tag > span:last-child,
+            ${j} ${o}[data-je-fit-width] > .awards-tag > span:last-child {
                 display: block; min-width: 0;
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
             }
 
             /* Jellyfin's played / unplayed-count indicator sits top-right; a card
                with a group set to top-right moves that stack below it. */
-            ${p}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
+            ${m}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
             .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
-                top: calc(6px + ${g});
+                top: calc(6px + ${c});
             }
-            ${h} {
-                ${j}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
+            ${x} {
+                ${u}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
                 .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
-                    top: calc(6px + ${g});
+                    top: calc(6px + ${c});
                 }
             }
             /* Settings saved before layouts (data-je-legacy) keep the original
@@ -196,33 +257,33 @@
             .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap]:not(:first-child) {
                 --je-indicator-before: 9999px;
             }
-            ${p}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
+            ${m}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
             .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap] {
-                margin-top: max(0px, ${u} - var(--je-indicator-before, 0px));
+                margin-top: calc(max(0px, ${y} - var(--je-indicator-before, 0px)) + ${d});
             }
-            ${h} {
-                ${j}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
+            ${x} {
+                ${u}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
                 .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap] {
-                    margin-top: max(0px, ${u} - var(--je-indicator-before, 0px));
+                    margin-top: calc(max(0px, ${y} - var(--je-indicator-before, 0px)) + ${d});
                 }
             }
             /* ... and on phones the rating, age rating and status containers sit
                4px from the card edges instead of 6px. */
             @media (max-width: 480px) {
-                ${l("tl")} { margin-left: -2px; }
-                ${l("bl")} { margin-left: -2px; }
-                ${l("tr")} { margin-right: -2px; }
-                ${l("br")} { margin-right: -2px; }
-                ${l("tl")}:first-child, ${l("tr")}:first-child { margin-top: -2px; }
-                ${l("bl")}:first-child, ${l("br")}:first-child { margin-bottom: -2px; }
-                ${p}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${x}[data-je-indicator-gap],
-                .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${x}[data-je-indicator-gap] {
-                    margin-top: max(0px, ${u} - 2px - var(--je-indicator-before, 0px));
+                ${g("tl")} { margin-left: calc(-2px + ${f}); }
+                ${g("bl")} { margin-left: calc(-2px + ${f}); }
+                ${g("tr")} { margin-right: calc(-2px - ${f}); }
+                ${g("br")} { margin-right: calc(-2px - ${f}); }
+                ${g("tl")}:first-child, ${g("tr")}:first-child { margin-top: calc(-2px + ${d}); }
+                ${g("bl")}:first-child, ${g("br")}:first-child { margin-bottom: calc(-2px - ${d}); }
+                ${m}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${b}[data-je-indicator-gap],
+                .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${b}[data-je-indicator-gap] {
+                    margin-top: calc(max(0px, ${y} - 2px - var(--je-indicator-before, 0px)) + ${d});
                 }
-                ${h} {
-                    ${j}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${x}[data-je-indicator-gap],
-                    .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${x}[data-je-indicator-gap] {
-                        margin-top: max(0px, ${u} - 2px - var(--je-indicator-before, 0px));
+                ${x} {
+                    ${u}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${b}[data-je-indicator-gap],
+                    .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${b}[data-je-indicator-gap] {
+                        margin-top: calc(max(0px, ${y} - 2px - var(--je-indicator-before, 0px)) + ${d});
                     }
                 }
             }
@@ -240,40 +301,40 @@
                 overflow: hidden;
                 border-radius: var(--je-card-radius, 0px);
             }
-            ${r}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) { inset: var(--je-edge); }
-            ${r}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) {
+            ${s}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) { inset: var(--je-edge); }
+            ${s}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) {
                 max-height: calc(90% + 1.8 * var(--je-edge));
             }
             @media (max-width: 480px) {
-                ${r}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) > :is(.quality-overlay-container, .genre-overlay-container) { max-height: calc(85% + 1.7 * var(--je-edge)); }
+                ${s}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) > :is(.quality-overlay-container, .genre-overlay-container) { max-height: calc(85% + 1.7 * var(--je-edge)); }
             }
-            ${r}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="c"]) {
+            ${s}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="c"]) {
                 width: max(0px, calc(100% - 2 * var(--je-anchor-reserve, var(--je-edge))));
             }
-            ${r}[data-je-slot="tc"] { top: var(--je-anchor-top, var(--je-edge)); }
-            ${r}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, var(--je-edge)); }
-            ${r}[data-je-slot="c"] { max-width: calc(100% - 2 * var(--je-edge)); }
-            ${r}:is([data-je-slot="ml"], [data-je-slot="mr"]) {
+            ${s}[data-je-slot="tc"] { top: var(--je-anchor-top, var(--je-edge)); }
+            ${s}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, var(--je-edge)); }
+            ${s}[data-je-slot="c"] { max-width: calc(100% - 2 * var(--je-edge)); }
+            ${s}:is([data-je-slot="ml"], [data-je-slot="mr"]) {
                 max-height: max(0px, calc(100% - 2 * var(--je-anchor-reserve, var(--je-edge))));
                 max-width: calc(50% - var(--je-edge));
             }
-            ${r}[data-je-slot="ml"] { left: var(--je-edge); }
-            ${r}[data-je-slot="mr"] { right: var(--je-edge); }
-            ${p}[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"],
+            ${s}[data-je-slot="ml"] { left: var(--je-edge); }
+            ${s}[data-je-slot="mr"] { right: var(--je-edge); }
+            ${m}[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"],
             .cardIndicators ~ .je-tag-host[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"] {
-                top: calc(var(--je-edge) + ${g});
+                top: calc(var(--je-edge) + ${c});
             }
-            ${h} {
-                ${j}[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"],
+            ${x} {
+                ${u}[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"],
                 .cardIndicators ~ .je-tag-host[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"] {
-                    top: calc(var(--je-edge) + ${g});
+                    top: calc(var(--je-edge) + ${c});
                 }
             }
-            ${$()}
-            ${m}[data-je-slot="tc"] { top: var(--je-anchor-top, 0px); align-items: flex-start; overflow: visible; }
+            ${z()}
+            ${$}[data-je-slot="tc"] { top: var(--je-anchor-top, 0px); align-items: flex-start; overflow: visible; }
             /* A flush status chip rides above the count and watched badges. */
             .je-tag-host[data-je-layout="corners"][data-je-edge="flush"]:has(> [data-je-slot="tc"] .status-tag) { z-index: 3; }
-            ${m}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, 0px); align-items: flex-end; overflow: visible; }
+            ${$}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, 0px); align-items: flex-end; overflow: visible; }
 
             /* Genre names float toward the inside of the card. */
             .je-tag-slot:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"], [data-je-slot="poster"], [data-je-slot="top"]) .genre-tag .genre-text {
@@ -310,19 +371,21 @@
                 min-width: 0;
                 max-width: 100%;
             }
+            /* (An auto margin takes one side of a group's whole-pixel nudge, and shares the line's free space in whole
+               layout units. A nudged line keeps one auto margin and gets the others as lengths: layout/snap-bands.ts bandNudges.) */
             ${t("bands")}[data-je-slot="top"] > [data-je-group] + [data-je-group] {
-                margin-left: auto;
+                margin-left: var(--je-band-left, auto);
             }
             ${t("bands")}[data-je-slot="top"] > [data-je-group]:first-child {
                 justify-content: flex-start;
                 margin-right: auto;
             }
-            ${p}[data-je-layout="bands"] > .je-tag-slot[data-je-slot="top"] {
-                padding-right: calc(10px + ${g});
+            ${m}[data-je-layout="bands"] > .je-tag-slot[data-je-slot="top"] {
+                padding-right: calc(10px + ${c});
             }
-            ${h} {
-                ${j}[data-je-layout="bands"] > .je-tag-slot[data-je-slot="top"] {
-                    padding-right: calc(10px + ${g});
+            ${x} {
+                ${u}[data-je-layout="bands"] > .je-tag-slot[data-je-slot="top"] {
+                    padding-right: calc(10px + ${c});
                 }
             }
             /* At most two rows; the fitting pass hides the rest behind "+N", and
@@ -482,7 +545,7 @@
                 visibility: hidden;
                 transition: opacity 0.15s ease, visibility 0.15s;
             }
-            ${i} .je-tag-host > .je-tag-more-tip {
+            ${n} .je-tag-host > .je-tag-more-tip {
                 opacity: 1;
                 visibility: visible;
             }
@@ -542,11 +605,11 @@
                 opacity: 0;
             }
             /* Cards, and list rows (a season's episodes) whose image holds the tags. */
-            ${i} .je-tag-host > .je-tag-slot[data-je-slot="hover"] { opacity: 1; }
+            ${n} .je-tag-host > .je-tag-slot[data-je-slot="hover"] { opacity: 1; }
             /* The summaries give way to the reveal, unless it had no room for a row. */
-            ${i} .je-tag-host:not(:has(> .je-tag-slot[data-je-slot="hover"][data-je-overflow])) > .je-tag-slot:is([data-je-slot="pill"], [data-je-slot="dots"], [data-je-slot="corner"]) { opacity: 0; }
+            ${n} .je-tag-host:not(:has(> .je-tag-slot[data-je-slot="hover"][data-je-overflow])) > .je-tag-slot:is([data-je-slot="pill"], [data-je-slot="dots"], [data-je-slot="corner"]) { opacity: 0; }
             /* Hidden linked summaries must not intercept the revealed chips, regardless of their groups. */
-            ${i} .je-tag-host:not(:has(> .je-tag-slot[data-je-slot="hover"][data-je-overflow])) > .je-tag-slot[data-je-slot="pill"] .je-tag-pill[href] { pointer-events: none; }
+            ${n} .je-tag-host:not(:has(> .je-tag-slot[data-je-slot="hover"][data-je-overflow])) > .je-tag-slot[data-je-slot="pill"] .je-tag-pill[href] { pointer-events: none; }
             html .je-tag-host > .je-tag-slot[data-je-slot="hover"] .genre-tag {
                 width: auto; min-width: 0; height: auto;
                 padding: calc(2px * var(--je-tag-scale, 1)) calc(7px * var(--je-tag-scale, 1)) calc(2px * var(--je-tag-scale, 1)) calc(4px * var(--je-tag-scale, 1));
@@ -605,15 +668,17 @@
             html .je-tag-host > .je-tag-slot[data-je-slot="corner"] .rating-star-icon { font-size: calc(11px * var(--je-tag-scale, 1)) !important; }
 
             /* Hide Tags on Hover: everything but the summary / minimal reveal. */
-            ${w} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
-            ${w} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip,
-            ${v} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
-            ${v} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip {
+            ${O} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
+            ${O} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip,
+            ${S} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
+            ${S} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip {
                 opacity: 0 !important;
             }
+
+            ${T()}
 
             @media (prefers-reduced-motion: reduce) {
                 ${e}, .je-tag-host > .je-tag-more-tip { transition: none; }
             }
-        `;return s.core.tagLayout?.preserveLegacySizing?.(n)||n}s.core?.tagLayout&&(s.core.tagLayout.buildStyles=I,s.core.tagLayout.buildFlushStyles=$)}z(O());})();
+        `;return i.core.tagLayout?.preserveLegacySizing?.(r)||r}i.core?.tagLayout&&(i.core.tagLayout.buildStyles=L,i.core.tagLayout.buildFlushStyles=z)}q(E());})();
 })();

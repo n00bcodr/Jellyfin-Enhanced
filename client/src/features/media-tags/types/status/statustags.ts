@@ -2,6 +2,8 @@ import { apiClient, hasApiClient, type TagRuntimeBridge } from '../../host';
 import { finite, isRecord, own, record, stringList, text, type JsonRecord } from '../../pipeline/dto';
 import { addedDate, fromItem, fromServerEntry, normId, readFacts, readLeaving, releasedInOneDrop, toInt, toMs, watchedAll, type EpisodeFacts, type LeavingFacts, type MediaInputs, type StatusData } from './status-facts';
 import type { RefreshInfo, TagCtx, TagSpec } from '../../pipeline/contract';
+import { createSeriesWatch } from './series-watch';
+import { backdropStyles, createBackdropRequest } from './status-backdrop-request';
 
 interface BadgeDefinition { kind: string; style: string; label: string; compact?: string }
 interface StatusBadge { kind: string; key: string; label: string; compact?: string; rank?: number; title?: string }
@@ -72,6 +74,7 @@ export function createStatusTags(JE: TagRuntimeBridge) {
     const logPrefix = '🪼 Jellyfin Enhanced: Status Tags:';
     const containerClass = 'status-overlay-container';
     const tagClass = 'status-tag';
+    const { trackBackdrop, hostOf } = createBackdropRequest(JE, tagClass);
     const vocabulary = JE.statusVocabulary;
     const badgeDefinitions: Readonly<Record<string, BadgeDefinition>> = vocabulary.badges;
     const DAY_MS = vocabulary.thresholds.dayMs;
@@ -160,14 +163,21 @@ export function createStatusTags(JE: TagRuntimeBridge) {
     let calendarEventsRegistered = false;
     /** False between teardown/user reset/the document's own pagehide (not the bubbling one jellyfin-web dispatches on each view it leaves, nor a bfcache hide) and the next activation. */
     let statusActive: boolean = false;
-    /** One observer for all schedule-reading cards. */
-    let seriesObserver: IntersectionObserver|null = null;
-    /** Cards currently intersecting the viewport. */
-    let intersectingCards: WeakSet<HTMLElement> = new WeakSet();
-    /** Targets explicitly released when removed or recycled. */
-    const observedSeriesCards: Set<HTMLElement> = new Set();
     /** Shared removal/identity watcher for schedule targets. */
     let seriesTargetObserver: MutationObserver|null = null;
+    /** Which schedule-reading cards are under the one viewport observer, and their rests (series-watch.ts). */
+    const seriesWatch = createSeriesWatch<TagCtx, LiveCard>({
+        card: el => liveCards.get(el),
+        current: (el, card) => card?.domId === cardIdentity(el),
+        eligible: (el, card) => eligibleSeriesCard(el, card),
+        // Only after eligible() said yes for this card.
+        request: (ctx, card, retry) => {
+            if (card.data.seriesId) requestSeries(ctx, card.data.seriesId);
+            if (retry) armSeriesRetry(ctx);
+        },
+        restUntil: card => seriesRestUntil(card),
+        forgetLive: el => { liveCards.delete(el); delete el.dataset[LIVE_ATTR]; },
+    });
 
     /**
      * Every drawn card whose badge live data can change (a Movie/Series with
@@ -751,7 +761,8 @@ export function createStatusTags(JE: TagRuntimeBridge) {
         }
         container.appendChild(tag);
 
-        ctx.commitOverlay(el, container);
+        // The badge's blurred backdrop follows once the card is laid out (status-backdrop-request.ts).
+        if (ctx.commitOverlay(el, container)) trackBackdrop(hostOf(el));
     }
 
     /**
@@ -788,7 +799,7 @@ export function createStatusTags(JE: TagRuntimeBridge) {
         // All date badges can change when a local day passes.
         const previous = liveCards.get(el);
         if (!readsSeries || (previous && (previous.id !== normId(itemId) || previous.domId !== cardIdentity(el)))) {
-            unobserveSeriesCard(el);
+            seriesWatch.unobserve(el);
         }
         liveCards.set(el, { domId: cardIdentity(el), id: normId(itemId), data, shown: badgeKey(badge), rev: trackRev });
         el.dataset[LIVE_ATTR] = '1';
@@ -800,48 +811,39 @@ export function createStatusTags(JE: TagRuntimeBridge) {
         applyStatusTag(ctx, el, badge);
     }
 
-    /**
-     * Observe schedule readers through one viewport observer, retaining identity guards.
-     * @param ctx @param {HTMLElement} el
-     * */
+    /** Observe schedule readers through one viewport observer, retaining identity guards (series-watch.ts). */
     function observeSeriesCard(ctx: TagCtx, el: HTMLElement): void {
-        if (!seriesObserver && typeof IntersectionObserver !== 'undefined') {
-            const observer = new IntersectionObserver(entries => {
-                if (seriesObserver !== observer) return; // A queued callback from before cleanup.
-                for (const { target, isIntersecting } of entries) {
-                    if (!(target instanceof HTMLElement)) continue;
-                    const host = target;
-                    if (!observedSeriesCards.has(host)) continue;
-                    const card = liveCards.get(host);
-                    if (!host.isConnected || card?.domId !== cardIdentity(host)) {
-                        forgetSeriesCard(host);
-                        continue;
-                    }
-                    if (isIntersecting) intersectingCards.add(host);
-                    else intersectingCards.delete(host);
-                    if (isIntersecting && eligibleSeriesCard(host, card)) {
-                        requestSeries(ctx, card.data.seriesId);
-                        armSeriesRetry(ctx);
-                    }
-                }
-            });
-            seriesObserver = observer;
-            seriesTargetObserver = new MutationObserver(() => {
-                for (const host of observedSeriesCards) {
-                    const card = liveCards.get(host);
-                    if (!host.isConnected || card?.domId !== cardIdentity(host)) forgetSeriesCard(host);
-                }
-            });
+        if (!seriesWatch.adopted() && typeof IntersectionObserver !== 'undefined') {
+            const observer = new IntersectionObserver(entries => seriesWatch.report(ctx, observer, entries));
+            seriesWatch.adopt(observer);
+            seriesTargetObserver = new MutationObserver(() => seriesWatch.sweep());
             seriesTargetObserver.observe(document.body, {
                 subtree: true, childList: true, attributes: true, attributeFilter: ['data-id', 'data-itemid'],
             });
         }
-        if (seriesObserver && !observedSeriesCards.has(el)) {
-            observedSeriesCards.add(el);
-            seriesObserver.observe(el);
-        }
-        const card = liveCards.get(el);
-        if (eligibleSeriesCard(el, card)) requestSeries(ctx, card.data.seriesId);
+        seriesWatch.observe(ctx, el);
+    }
+
+    /** Release all targets; the next schedule render creates observers lazily. */
+    function releaseSeriesObservers(): void {
+        seriesWatch.release();
+        seriesTargetObserver?.disconnect();
+        seriesTargetObserver = null;
+    }
+
+    /**
+     * Until when nothing can be asked for a schedule-reading card: its series' facts are fresh
+     * (not loading, not due a retry) and, for an ended series, the parent facts the finale rules
+     * read are held (requestSeries asks for them whenever such a card comes on screen without them).
+     * @returns Ms since the epoch, or 0 when something can be asked now.
+     */
+    function seriesRestUntil(card: LiveCard | undefined): number {
+        const id = card?.data.seriesId;
+        const known = id ? seriesInfo.get(id) : null;
+        if (!id || !known || known.loading || known.retry || !(Date.now() < known.expires)) return 0;
+        if (!TMDB_ENDED.has(known.facts?.status ?? '') || !JE.tagPipeline?.lookupItemFacts) return known.expires;
+        const parentUntil = JE.tagPipeline.itemFactsExpiry?.(id) || 0;
+        return parentUntil > Date.now() ? Math.min(known.expires, parentUntil) : 0;
     }
 
     /** @param el @returns Current pipeline card identity. */
@@ -850,33 +852,9 @@ export function createStatusTags(JE: TagRuntimeBridge) {
         return card?.getAttribute('data-id') || card?.getAttribute('data-itemid') || null;
     }
 
-    /** @param el @returns Release a target and its previous visibility. */
-    function unobserveSeriesCard(el: HTMLElement): void {
-        seriesObserver?.unobserve(el);
-        observedSeriesCards.delete(el);
-        intersectingCards.delete(el);
-    }
-
-    /** @param el @returns Forget a removed or recycled card's live data. */
-    function forgetSeriesCard(el: HTMLElement): void {
-        unobserveSeriesCard(el);
-        liveCards.delete(el);
-        delete el.dataset[LIVE_ATTR];
-    }
-
-    /** @returns Release all targets; the next schedule render creates observers lazily. */
-    function releaseSeriesObservers(): void {
-        for (const el of observedSeriesCards) forgetSeriesCard(el);
-        seriesObserver?.disconnect();
-        seriesObserver = null;
-        seriesTargetObserver?.disconnect();
-        seriesTargetObserver = null;
-        intersectingCards = new WeakSet();
-    }
-
     /** @param el @param {Object|undefined} card */
     function eligibleSeriesCard(el: HTMLElement, card: LiveCard | undefined): card is SeriesCard {
-        return el.isConnected && intersectingCards.has(el) && !!card && isCurrentRecord(card)
+        return el.isConnected && seriesWatch.intersecting(el) && !!card && isCurrentRecord(card)
             && card.domId === cardIdentity(el)
             && !el.closest('.je-hidden') && wantsSeriesFacts(card.data);
     }
@@ -935,9 +913,11 @@ export function createStatusTags(JE: TagRuntimeBridge) {
             if (replacedAt.size + updatedIds.length > REPLACED_AT_CAP) {
                 staleBelowRev = trackRev;
                 replacedAt.clear();
-                return;
+            } else {
+                for (const id of updatedIds) replacedAt.set(normId(id) ?? '', trackRev);
             }
-            for (const id of updatedIds) replacedAt.set(normId(id) ?? '', trackRev);
+            // A resting card whose parent facts left the cache can ask again.
+            seriesWatch.check(ctx);
             return;
         }
         staleBelowRev = trackRev;
@@ -947,6 +927,8 @@ export function createStatusTags(JE: TagRuntimeBridge) {
         seriesQueue.clear();
         parentFactsQueue.clear();
         parentFactsLoads.clear();
+        // No series is known any more: every resting card can ask again.
+        seriesWatch.check(ctx);
         ctx.clearPersistent();
         ctx.hot?.clear();
         if (info?.replaced && JE.currentSettings?.statusTagsEnabled) reinitializeStatusTags();
@@ -959,17 +941,24 @@ export function createStatusTags(JE: TagRuntimeBridge) {
      * or a card that falls back to its library badge or none). Each badge
      * goes through the layout controller, which re-presents its card;
      * overlays it does not manage are re-stacked in one pass.
+     *
+     * Data about single items (a direct-play answer) names them: the pass then reads only the
+     * cards of those items, and is not the page's pass of the day (renderedDay stays, so the
+     * next full pass still runs).
      * @param ctx - Factory context.
+     * @param itemIds - The only items whose cards can have changed; omitted, every card.
      * */
-    function applyLivePass(ctx: TagCtx): void {
+    function applyLivePass(ctx: TagCtx, itemIds?: Iterable<string>): void {
         if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
-        renderedDay = localDay(Date.now());
+        const only = itemIds ? new Set(Array.from(itemIds, normId)) : null;
+        if (!only) renderedDay = localDay(Date.now());
         const hosts: HTMLElement[] = [];
         document.querySelectorAll<HTMLElement>(LIVE_SELECTOR).forEach((el) => {
             const card = liveCards.get(el);
-            if (!card || ctx.shouldIgnore(el) || el.closest('.je-hidden')) return;
+            if (!card || (only && !only.has(card.id))) return;
+            if (ctx.shouldIgnore(el) || el.closest('.je-hidden')) return;
             if (!isCurrentRecord(card) || card.domId !== cardIdentity(el)) {
-                forgetSeriesCard(el);
+                seriesWatch.forget(el);
                 return;
             }
             const badge = pickBadge(card.data, card.id, el);
@@ -1073,7 +1062,7 @@ export function createStatusTags(JE: TagRuntimeBridge) {
                 const ids = [...parentFactsQueue].slice(0, PARENT_FACTS_BATCH);
                 for (const id of ids) parentFactsQueue.delete(id);
                 const visible = new Set<string>();
-                for (const el of observedSeriesCards) {
+                for (const el of seriesWatch.observed()) {
                     const card = liveCards.get(el);
                     if (eligibleSeriesCard(el, card)) visible.add(card.data.seriesId);
                 }
@@ -1082,6 +1071,7 @@ export function createStatusTags(JE: TagRuntimeBridge) {
                 if (epoch !== seriesEpoch) return;
                 for (const id of ids) parentFactsLoads.delete(id);
                 if (batch.some(id => JE.tagPipeline?.peekItemFacts(id))) applyLivePass(ctx);
+                seriesWatch.restAnswered(ctx);
             }
         } finally {
             parentFactsLoading = false;
@@ -1168,6 +1158,7 @@ export function createStatusTags(JE: TagRuntimeBridge) {
         }
         if (changed || renderedDay !== localDay(Date.now())) applyLivePass(ctx);
         armSeriesRetry(ctx);
+        seriesWatch.restAnswered(ctx);
     }
 
     /**
@@ -1211,6 +1202,8 @@ export function createStatusTags(JE: TagRuntimeBridge) {
     function refreshCalendar(ctx: TagCtx): void {
         if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
         applyLivePass(ctx);
+        // Rests that ended while the tab slept: those cards go back under the observer.
+        seriesWatch.wake(ctx);
         for (const id of [...seriesInfo.keys()].filter(visibleSeries())) requestSeries(ctx, id);
         armMidnight(ctx);
         armSeriesRetry(ctx);
@@ -1226,6 +1219,7 @@ export function createStatusTags(JE: TagRuntimeBridge) {
             if (timer !== null) clearTimeout(timer);
         }
         midnightTimer = seriesTimer = seriesRetryTimer = parentFactsTimer = null;
+        seriesWatch.stop();
         seriesQueue.clear();
         parentFactsQueue.clear();
         parentFactsLoads.clear();
@@ -1245,9 +1239,12 @@ export function createStatusTags(JE: TagRuntimeBridge) {
         armMidnight(ctx);
     }
 
-    /** One live pass for the direct-play answers a slice applied (one stable callback, so a slice runs it once). */
-    function onDirectPlayAnswer() {
-        if (statusCtx) applyLivePass(statusCtx);
+    /**
+     * One live pass for the direct-play answers a slice applied (one stable callback, so a slice
+     * runs it once), over the cards of the items answered (all of them when none are named).
+     */
+    function onDirectPlayAnswer(itemIds?: Set<string>) {
+        if (statusCtx) applyLivePass(statusCtx, itemIds);
     }
 
     /** Factory spec — everything status-specific lives here. */
@@ -1299,7 +1296,7 @@ export function createStatusTags(JE: TagRuntimeBridge) {
                     text-overflow: ellipsis;
                     max-width: 100%;
                     pointer-events: none;
-                }
+                }${backdropStyles(tagClass)}
                 .${tagClass}--trending .${tagClass}-rank { color: #ffd166; }
                 /* Only the direct-play warning takes hover, for its tooltip. */
                 .${tagClass}[data-je-dp] { pointer-events: auto; cursor: help; }

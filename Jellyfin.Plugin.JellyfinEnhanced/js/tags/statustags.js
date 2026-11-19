@@ -15,12 +15,12 @@
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
   var export0 = /* @__PURE__ */ sharedExport(shared, "apiClient");
   var export1 = /* @__PURE__ */ sharedExport(shared, "hasApiClient");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
   var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
   var export2 = /* @__PURE__ */ sharedExport(shared2, "finite");
-  var export42 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
   var export9 = /* @__PURE__ */ sharedExport(shared2, "own");
   var export10 = /* @__PURE__ */ sharedExport(shared2, "record");
   var export11 = /* @__PURE__ */ sharedExport(shared2, "records");
@@ -30,7 +30,7 @@
   // client/src/features/media-tags/types/status/status-facts.ts
   var MAX_DATE_MS = 864e13;
   function readLeaving(raw) {
-    if (!export42(raw)) return null;
+    if (!export4(raw)) return null;
     const deleteAt = toMs(raw.DeleteAt ?? raw.deleteAt ?? null);
     return { deleteAt: deleteAt !== null && Math.abs(deleteAt) <= MAX_DATE_MS ? deleteAt : null };
   }
@@ -60,7 +60,7 @@
     const count = toInt(span.Count);
     const isLast = export10(src.EpisodeIndex).IsLast;
     return {
-      scenes: export42(src.Scenes) ? src.Scenes : null,
+      scenes: export4(src.Scenes) ? src.Scenes : null,
       status: typeof src.Status === "string" && src.Status ? src.Status : null,
       latestAired: toMs(src.LatestEpisodeAired),
       isLast: typeof isLast === "boolean" ? isLast : null,
@@ -163,11 +163,222 @@
     return paths.some((path) => typeof path === "string" && path.toLowerCase().endsWith(".strm"));
   }
 
+  // client/src/features/media-tags/types/status/series-watch.ts
+  function createSeriesWatch(host) {
+    let seriesObserver = null;
+    let intersectingCards = /* @__PURE__ */ new WeakSet();
+    const observedSeriesCards = /* @__PURE__ */ new Set();
+    let restingSeriesCards = /* @__PURE__ */ new WeakSet();
+    let resumedSeriesCards = /* @__PURE__ */ new WeakSet();
+    let seriesRestTimer = null;
+    let seriesRestAt = 0;
+    function report(ctx, observer, entries) {
+      if (seriesObserver !== observer) return;
+      for (const { target, isIntersecting } of entries) {
+        if (!(target instanceof HTMLElement)) continue;
+        const watched = target;
+        if (!observedSeriesCards.has(watched)) continue;
+        const card = host.card(watched);
+        if (!watched.isConnected || !host.current(watched, card)) {
+          forget(watched);
+          continue;
+        }
+        if (restingSeriesCards.has(watched)) continue;
+        const whereOnly = resumedSeriesCards.delete(watched);
+        if (isIntersecting) intersectingCards.add(watched);
+        else intersectingCards.delete(watched);
+        if (isIntersecting && !whereOnly && card && host.eligible(watched, card)) host.request(ctx, card, true);
+        rest(ctx, watched);
+      }
+    }
+    function sweep() {
+      for (const watched of observedSeriesCards) {
+        const card = host.card(watched);
+        if (!watched.isConnected || !host.current(watched, card)) forget(watched);
+      }
+    }
+    function observe(ctx, el) {
+      if (seriesObserver && !observedSeriesCards.has(el)) {
+        observedSeriesCards.add(el);
+        if (!rest(ctx, el)) seriesObserver.observe(el);
+      } else if (restingSeriesCards.has(el)) {
+        if (!host.restUntil(host.card(el))) resume(el, false);
+      } else {
+        resumedSeriesCards.delete(el);
+      }
+      const card = host.card(el);
+      if (card && host.eligible(el, card)) host.request(ctx, card, false);
+    }
+    function unobserve(el) {
+      seriesObserver?.unobserve(el);
+      observedSeriesCards.delete(el);
+      intersectingCards.delete(el);
+      restingSeriesCards.delete(el);
+      resumedSeriesCards.delete(el);
+    }
+    function forget(el) {
+      unobserve(el);
+      host.forgetLive(el);
+    }
+    function release() {
+      for (const el of observedSeriesCards) forget(el);
+      seriesObserver?.disconnect();
+      seriesObserver = null;
+      intersectingCards = /* @__PURE__ */ new WeakSet();
+      restingSeriesCards = /* @__PURE__ */ new WeakSet();
+      resumedSeriesCards = /* @__PURE__ */ new WeakSet();
+    }
+    function rest(ctx, el) {
+      if (restingSeriesCards.has(el)) return true;
+      if (!seriesObserver || !observedSeriesCards.has(el)) return false;
+      const until = host.restUntil(host.card(el));
+      if (!until) return false;
+      restingSeriesCards.add(el);
+      resumedSeriesCards.delete(el);
+      intersectingCards.delete(el);
+      seriesObserver.unobserve(el);
+      armRest(ctx, until);
+      return true;
+    }
+    function resume(el, whereOnly) {
+      if (!restingSeriesCards.delete(el)) return;
+      if (whereOnly) resumedSeriesCards.add(el);
+      else resumedSeriesCards.delete(el);
+      seriesObserver?.observe(el);
+    }
+    function check(ctx, whereOnly = true) {
+      if (seriesRestTimer !== null) clearTimeout(seriesRestTimer);
+      seriesRestTimer = null;
+      seriesRestAt = 0;
+      let next = 0;
+      for (const el of observedSeriesCards) {
+        if (!restingSeriesCards.has(el)) continue;
+        const until = host.restUntil(host.card(el));
+        if (!until) resume(el, whereOnly);
+        else if (!next || until < next) next = until;
+      }
+      if (next) armRest(ctx, next);
+    }
+    function armRest(ctx, at) {
+      if (seriesRestTimer !== null && seriesRestAt <= at) return;
+      if (seriesRestTimer !== null) clearTimeout(seriesRestTimer);
+      seriesRestAt = at;
+      seriesRestTimer = setTimeout(() => {
+        seriesRestTimer = null;
+        seriesRestAt = 0;
+        check(ctx);
+      }, Math.max(0, at - Date.now()));
+    }
+    function restAnswered(ctx) {
+      for (const el of observedSeriesCards) rest(ctx, el);
+    }
+    function wake(ctx) {
+      for (const el of observedSeriesCards) resumedSeriesCards.delete(el);
+      check(ctx, false);
+    }
+    function stop() {
+      if (seriesRestTimer !== null) clearTimeout(seriesRestTimer);
+      seriesRestTimer = null;
+      seriesRestAt = 0;
+    }
+    return {
+      report,
+      sweep,
+      observe,
+      unobserve,
+      /** Take the viewport observer statustags.ts created (it calls report). */
+      adopt: (observer) => {
+        seriesObserver = observer;
+      },
+      /** Whether there is a viewport observer. */
+      adopted: () => seriesObserver !== null,
+      forget,
+      release,
+      check,
+      restAnswered,
+      wake,
+      stop,
+      /** Whether the card is on screen as far as the observer last said. */
+      intersecting: (el) => intersectingCards.has(el),
+      /** The observed cards, resting ones included. */
+      observed: () => observedSeriesCards
+    };
+  }
+
+  // client/src/features/media-tags/types/status/status-backdrop-request.ts
+  var BACKDROP_GROUP = "tag-status-backdrop";
+  var BACKDROP_RETRY_MS = 5e3;
+  var BACKDROP_RETRY_MAX_MS = 6e4;
+  function createBackdropRequest(JE, tagClass) {
+    let backdropAsked = false;
+    let backdropPause = 0;
+    let backdropNotBefore = 0;
+    let backdropTimer = 0;
+    function trackBackdrop(host) {
+      if (!host) return;
+      if (JE.statusTagBackdrop) {
+        JE.statusTagBackdrop.track(host);
+        return;
+      }
+      if (host.dataset.jeBlur !== "1") {
+        host.dataset.jeBlur = "1";
+        JE.core?.tagLayout?.syncFlowOf?.(host);
+      }
+      if (Date.now() >= backdropNotBefore) askForBackdrop();
+    }
+    function askForBackdrop() {
+      const loader = JE.loader;
+      if (backdropAsked || JE.statusTagBackdrop || typeof loader?.ensure !== "function") return;
+      backdropAsked = true;
+      if (backdropTimer) clearTimeout(backdropTimer);
+      backdropTimer = 0;
+      let asked;
+      try {
+        asked = Promise.resolve(loader.ensure([BACKDROP_GROUP], { pace: "boot" }));
+      } catch {
+        asked = Promise.resolve();
+      }
+      asked.catch(() => {
+      }).then(() => {
+        backdropAsked = false;
+        if (JE.statusTagBackdrop) return;
+        let ran = false;
+        try {
+          ran = loader.state?.()[BACKDROP_GROUP] === "ready";
+        } catch {
+          ran = false;
+        }
+        if (ran) {
+          backdropNotBefore = Infinity;
+          return;
+        }
+        backdropPause = Math.min(BACKDROP_RETRY_MAX_MS, backdropPause ? backdropPause * 2 : BACKDROP_RETRY_MS);
+        backdropNotBefore = Date.now() + backdropPause;
+        backdropTimer = setTimeout(() => {
+          backdropTimer = 0;
+          if (document.querySelector(`.je-tag-host .${tagClass}`)) askForBackdrop();
+        }, backdropPause);
+      });
+    }
+    function hostOf(el) {
+      if (el.classList?.contains("je-tag-host")) return el;
+      const host = Array.from(el.children || []).find((child) => child.classList.contains("je-tag-host"));
+      return host instanceof HTMLElement ? host : null;
+    }
+    return { trackBackdrop, hostOf };
+  }
+  var backdropStyles = (tagClass) => `
+                .je-tag-host:not([data-je-blur]) .${tagClass} {
+                    -webkit-backdrop-filter: none;
+                    backdrop-filter: none;
+                }`;
+
   // client/src/features/media-tags/types/status/statustags.ts
   function createStatusTags(JE) {
     const logPrefix = "🪼 Jellyfin Enhanced: Status Tags:";
     const containerClass = "status-overlay-container";
     const tagClass = "status-tag";
+    const { trackBackdrop, hostOf } = createBackdropRequest(JE, tagClass);
     const vocabulary = JE.statusVocabulary;
     const badgeDefinitions = vocabulary.badges;
     const DAY_MS = vocabulary.thresholds.dayMs;
@@ -214,10 +425,22 @@
     let renderedDay = null;
     let calendarEventsRegistered = false;
     let statusActive = false;
-    let seriesObserver = null;
-    let intersectingCards = /* @__PURE__ */ new WeakSet();
-    const observedSeriesCards = /* @__PURE__ */ new Set();
     let seriesTargetObserver = null;
+    const seriesWatch = createSeriesWatch({
+      card: (el) => liveCards.get(el),
+      current: (el, card) => card?.domId === cardIdentity(el),
+      eligible: (el, card) => eligibleSeriesCard(el, card),
+      // Only after eligible() said yes for this card.
+      request: (ctx, card, retry) => {
+        if (card.data.seriesId) requestSeries(ctx, card.data.seriesId);
+        if (retry) armSeriesRetry(ctx);
+      },
+      restUntil: (card) => seriesRestUntil(card),
+      forgetLive: (el) => {
+        liveCards.delete(el);
+        delete el.dataset[LIVE_ATTR];
+      }
+    });
     const liveCards = /* @__PURE__ */ new WeakMap();
     let trackRev = 0;
     let staleBelowRev = 0;
@@ -498,7 +721,7 @@
     }
     function getCachedEntry(ctx, itemId) {
       const entry = ctx.getPersistent(itemId) ?? ctx.hot?.get(itemId);
-      if (!export42(entry) || entry.v !== CACHE_ENTRY_VERSION) return null;
+      if (!export4(entry) || entry.v !== CACHE_ENTRY_VERSION) return null;
       if (typeof entry.timestamp !== "number" || Date.now() - entry.timestamp > CACHE_FRESH_MS) return null;
       return {
         fetchedAt: entry.timestamp,
@@ -508,7 +731,7 @@
         premiere: export2(entry.p),
         latest: export2(entry.l),
         status: export13(entry.st),
-        scenes: export42(entry.sc) ? entry.sc : null,
+        scenes: export4(entry.sc) ? entry.sc : null,
         latestAired: export2(entry.la),
         isLast: typeof entry.il === "boolean" ? entry.il : null,
         latestIndex: Array.isArray(entry.li) ? { s: Number(entry.li[0]), e: Number(entry.li[1]), isLast: entry.li[2] === true } : null,
@@ -580,7 +803,7 @@
         tag.textContent = badge.label;
       }
       container.appendChild(tag);
-      ctx.commitOverlay(el, container);
+      if (ctx.commitOverlay(el, container)) trackBackdrop(hostOf(el));
     }
     function badgeKey(badge) {
       return `${localDay(Date.now())}|${badge ? `${badge.kind}|${badge.key}|${badge.label}|${badge.rank ?? ""}|${badge.title ?? ""}` : ""}`;
@@ -596,7 +819,7 @@
       const badge = pickBadge(data, itemId, el);
       const previous = liveCards.get(el);
       if (!readsSeries || previous && (previous.id !== normId(itemId) || previous.domId !== cardIdentity(el))) {
-        unobserveSeriesCard(el);
+        seriesWatch.unobserve(el);
       }
       liveCards.set(el, { domId: cardIdentity(el), id: normId(itemId), data, shown: badgeKey(badge), rev: trackRev });
       el.dataset[LIVE_ATTR] = "1";
@@ -606,33 +829,10 @@
       applyStatusTag(ctx, el, badge);
     }
     function observeSeriesCard(ctx, el) {
-      if (!seriesObserver && typeof IntersectionObserver !== "undefined") {
-        const observer = new IntersectionObserver((entries) => {
-          if (seriesObserver !== observer) return;
-          for (const { target, isIntersecting } of entries) {
-            if (!(target instanceof HTMLElement)) continue;
-            const host = target;
-            if (!observedSeriesCards.has(host)) continue;
-            const card2 = liveCards.get(host);
-            if (!host.isConnected || card2?.domId !== cardIdentity(host)) {
-              forgetSeriesCard(host);
-              continue;
-            }
-            if (isIntersecting) intersectingCards.add(host);
-            else intersectingCards.delete(host);
-            if (isIntersecting && eligibleSeriesCard(host, card2)) {
-              requestSeries(ctx, card2.data.seriesId);
-              armSeriesRetry(ctx);
-            }
-          }
-        });
-        seriesObserver = observer;
-        seriesTargetObserver = new MutationObserver(() => {
-          for (const host of observedSeriesCards) {
-            const card2 = liveCards.get(host);
-            if (!host.isConnected || card2?.domId !== cardIdentity(host)) forgetSeriesCard(host);
-          }
-        });
+      if (!seriesWatch.adopted() && typeof IntersectionObserver !== "undefined") {
+        const observer = new IntersectionObserver((entries) => seriesWatch.report(ctx, observer, entries));
+        seriesWatch.adopt(observer);
+        seriesTargetObserver = new MutationObserver(() => seriesWatch.sweep());
         seriesTargetObserver.observe(document.body, {
           subtree: true,
           childList: true,
@@ -640,37 +840,27 @@
           attributeFilter: ["data-id", "data-itemid"]
         });
       }
-      if (seriesObserver && !observedSeriesCards.has(el)) {
-        observedSeriesCards.add(el);
-        seriesObserver.observe(el);
-      }
-      const card = liveCards.get(el);
-      if (eligibleSeriesCard(el, card)) requestSeries(ctx, card.data.seriesId);
+      seriesWatch.observe(ctx, el);
+    }
+    function releaseSeriesObservers() {
+      seriesWatch.release();
+      seriesTargetObserver?.disconnect();
+      seriesTargetObserver = null;
+    }
+    function seriesRestUntil(card) {
+      const id = card?.data.seriesId;
+      const known = id ? seriesInfo.get(id) : null;
+      if (!id || !known || known.loading || known.retry || !(Date.now() < known.expires)) return 0;
+      if (!TMDB_ENDED.has(known.facts?.status ?? "") || !JE.tagPipeline?.lookupItemFacts) return known.expires;
+      const parentUntil = JE.tagPipeline.itemFactsExpiry?.(id) || 0;
+      return parentUntil > Date.now() ? Math.min(known.expires, parentUntil) : 0;
     }
     function cardIdentity(el) {
       const card = el.closest("[data-id], [data-itemid]");
       return card?.getAttribute("data-id") || card?.getAttribute("data-itemid") || null;
     }
-    function unobserveSeriesCard(el) {
-      seriesObserver?.unobserve(el);
-      observedSeriesCards.delete(el);
-      intersectingCards.delete(el);
-    }
-    function forgetSeriesCard(el) {
-      unobserveSeriesCard(el);
-      liveCards.delete(el);
-      delete el.dataset[LIVE_ATTR];
-    }
-    function releaseSeriesObservers() {
-      for (const el of observedSeriesCards) forgetSeriesCard(el);
-      seriesObserver?.disconnect();
-      seriesObserver = null;
-      seriesTargetObserver?.disconnect();
-      seriesTargetObserver = null;
-      intersectingCards = /* @__PURE__ */ new WeakSet();
-    }
     function eligibleSeriesCard(el, card) {
-      return el.isConnected && intersectingCards.has(el) && !!card && isCurrentRecord(card) && card.domId === cardIdentity(el) && !el.closest(".je-hidden") && wantsSeriesFacts(card.data);
+      return el.isConnected && seriesWatch.intersecting(el) && !!card && isCurrentRecord(card) && card.domId === cardIdentity(el) && !el.closest(".je-hidden") && wantsSeriesFacts(card.data);
     }
     function visibleSeries() {
       let ids;
@@ -695,9 +885,10 @@
         if (replacedAt.size + updatedIds.length > REPLACED_AT_CAP) {
           staleBelowRev = trackRev;
           replacedAt.clear();
-          return;
+        } else {
+          for (const id of updatedIds) replacedAt.set(normId(id) ?? "", trackRev);
         }
-        for (const id of updatedIds) replacedAt.set(normId(id) ?? "", trackRev);
+        seriesWatch.check(ctx);
         return;
       }
       staleBelowRev = trackRev;
@@ -707,19 +898,22 @@
       seriesQueue.clear();
       parentFactsQueue.clear();
       parentFactsLoads.clear();
+      seriesWatch.check(ctx);
       ctx.clearPersistent();
       ctx.hot?.clear();
       if (info?.replaced && JE.currentSettings?.statusTagsEnabled) reinitializeStatusTags();
     }
-    function applyLivePass(ctx) {
+    function applyLivePass(ctx, itemIds) {
       if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
-      renderedDay = localDay(Date.now());
+      const only = itemIds ? new Set(Array.from(itemIds, normId)) : null;
+      if (!only) renderedDay = localDay(Date.now());
       const hosts = [];
       document.querySelectorAll(LIVE_SELECTOR).forEach((el) => {
         const card = liveCards.get(el);
-        if (!card || ctx.shouldIgnore(el) || el.closest(".je-hidden")) return;
+        if (!card || only && !only.has(card.id)) return;
+        if (ctx.shouldIgnore(el) || el.closest(".je-hidden")) return;
         if (!isCurrentRecord(card) || card.domId !== cardIdentity(el)) {
-          forgetSeriesCard(el);
+          seriesWatch.forget(el);
           return;
         }
         const badge = pickBadge(card.data, card.id, el);
@@ -794,7 +988,7 @@
           const ids = [...parentFactsQueue].slice(0, PARENT_FACTS_BATCH);
           for (const id of ids) parentFactsQueue.delete(id);
           const visible = /* @__PURE__ */ new Set();
-          for (const el of observedSeriesCards) {
+          for (const el of seriesWatch.observed()) {
             const card = liveCards.get(el);
             if (eligibleSeriesCard(el, card)) visible.add(card.data.seriesId);
           }
@@ -803,6 +997,7 @@
           if (epoch !== seriesEpoch) return;
           for (const id of ids) parentFactsLoads.delete(id);
           if (batch.some((id) => JE.tagPipeline?.peekItemFacts(id))) applyLivePass(ctx);
+          seriesWatch.restAnswered(ctx);
         }
       } finally {
         parentFactsLoading = false;
@@ -810,14 +1005,14 @@
       }
     }
     function readSeriesFacts(raw) {
-      if (!export42(raw)) return null;
-      const episode = (ep, withType) => export42(ep) && airDay(ep.date) !== null ? { date: String(ep.date), season: toInt(ep.season), episode: toInt(ep.episode), ...withType ? { type: typeof ep.type === "string" ? ep.type : null } : {} } : null;
+      if (!export4(raw)) return null;
+      const episode = (ep, withType) => export4(ep) && airDay(ep.date) !== null ? { date: String(ep.date), season: toInt(ep.season), episode: toInt(ep.episode), ...withType ? { type: typeof ep.type === "string" ? ep.type : null } : {} } : null;
       return {
         status: typeof raw.status === "string" ? raw.status : null,
         last: episode(raw.lastAired, true),
         regular: episode(raw.lastRegularAired, true),
         next: episode(raw.nextAired, false),
-        seasonEpisodes: export42(raw.seasonEpisodes) ? raw.seasonEpisodes : null
+        seasonEpisodes: export4(raw.seasonEpisodes) ? raw.seasonEpisodes : null
       };
     }
     async function flushSeries(ctx) {
@@ -870,6 +1065,7 @@
       }
       if (changed || renderedDay !== localDay(Date.now())) applyLivePass(ctx);
       armSeriesRetry(ctx);
+      seriesWatch.restAnswered(ctx);
     }
     function armSeriesRetry(ctx) {
       if (seriesRetryTimer) clearTimeout(seriesRetryTimer);
@@ -901,6 +1097,7 @@
     function refreshCalendar(ctx) {
       if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
       applyLivePass(ctx);
+      seriesWatch.wake(ctx);
       for (const id of [...seriesInfo.keys()].filter(visibleSeries())) requestSeries(ctx, id);
       armMidnight(ctx);
       armSeriesRetry(ctx);
@@ -912,6 +1109,7 @@
         if (timer !== null) clearTimeout(timer);
       }
       midnightTimer = seriesTimer = seriesRetryTimer = parentFactsTimer = null;
+      seriesWatch.stop();
       seriesQueue.clear();
       parentFactsQueue.clear();
       parentFactsLoads.clear();
@@ -928,8 +1126,8 @@
       statusActive = true;
       armMidnight(ctx);
     }
-    function onDirectPlayAnswer() {
-      if (statusCtx) applyLivePass(statusCtx);
+    function onDirectPlayAnswer(itemIds) {
+      if (statusCtx) applyLivePass(statusCtx, itemIds);
     }
     const spec = {
       logPrefix,
@@ -978,7 +1176,7 @@
                     text-overflow: ellipsis;
                     max-width: 100%;
                     pointer-events: none;
-                }
+                }${backdropStyles(tagClass)}
                 .${tagClass}--trending .${tagClass}-rank { color: #ffd166; }
                 /* Only the direct-play warning takes hover, for its tooltip. */
                 .${tagClass}[data-je-dp] { pointer-events: auto; cursor: help; }
@@ -1117,7 +1315,7 @@
   }
 
   // client/src/features/media-tags/types/status/statustags-entry.ts
-  createStatusTags(export4());
+  createStatusTags(export5());
 })();
 })();
 //# sourceMappingURL=statustags.js.map

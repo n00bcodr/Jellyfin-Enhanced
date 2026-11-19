@@ -14,9 +14,9 @@ This section follows the client from loader injection through initialization and
 
 `Features/Platform/Services/ScriptInjectionStartupFilter.cs` injects the loader into web responses. It asks Jellyfin for the plain `index.html`, then serves the injected page itself with Brotli or gzip, a strong ETag per encoding and working 304s, and caches it keyed by the file's own ETag/Last-Modified. `GET /JellyfinEnhanced/script` serves `js/plugin.js`; it is separate from the component bundle. `JellyfinEnhanced.csproj` embeds `js/**`, and `GetScript` in `Features/Platform/JePlatformController.Assets.cs` serves individual resources at `/JellyfinEnhanced/js/{path}`.
 
-The ordered module list lives in `js/component-scripts.json`: 181 component modules, with paths relative to `js/`. Entries starting with `//` are ordering notes.
+The ordered module list lives in `js/component-scripts.json`: 183 component modules, with paths relative to `js/`. Entries starting with `//` are ordering notes. `js/component-groups.json` splits those modules into groups that load together; see [Component groups](#component-groups).
 
-**Modules execute in manifest order.** Place a module after every producer whose exports it reads at load time. A consumer loaded too early can capture `undefined`.
+**Modules execute in manifest order.** Place a module after every producer whose exports it reads at load time. A consumer loaded too early can capture `undefined`. A page runs only the groups it needs, so a module also has to be in a group that loads with, or after, every group it reads from.
 
 The initialization stages and user-switch behavior are:
 
@@ -24,8 +24,10 @@ The initialization stages and user-switch behavior are:
 |---|---|
 | Early UI | Dedicated loaders inject `js/others/splashscreen.js` and, when enabled, `js/extras/login-image.js` before the component stage so they can affect the login screen. |
 | Translations | `js/enhanced/translations.js` starts loading at the beginning of `initialize()`, in parallel with bootstrap. It loads/caches locale JSON and resolves `JE.t` before components run. |
-| Bootstrap | Authenticated `GET /JellyfinEnhanced/bootstrap` returns version, token user ID, public configuration, administrator-only private configuration, Custom Tabs / Plugin Pages presence flags, five user documents and the component list. Non-admin `PrivateConfig` is null. The loader falls back to individual endpoints if bootstrap fails. |
-| Components | After configuration is applied, production loads `GET /JellyfinEnhanced/bundle.js`; development mode and bundle failure use individual scripts. |
+| Bootstrap | Authenticated `GET /JellyfinEnhanced/bootstrap` returns version, token user ID, public configuration, administrator-only private configuration, Custom Tabs / Plugin Pages presence flags, five user documents, the component list and the component groups. Non-admin `PrivateConfig` is null. The loader falls back to individual endpoints if bootstrap fails. |
+| Components | After configuration is applied, the loader works out which component groups the page needs and loads `core` plus those groups with one `GET /JellyfinEnhanced/bundle.js?g=…` request. Once those groups' features have started it asks again, with the settings `JE.loadSettings()` resolved and the address as it then is, and loads anything that adds as a second request; boot is complete (`JE.initialized`) after that. Development mode and bundle failure use individual scripts. |
+| Feature start-up | The loader calls each loaded group's start-up functions (`JE.initializeX()` and similar), in a fixed order and under the same conditions as before groups existed, then sets `JE.initialized = true`. That flag means the groups this page needed at boot have loaded and started; groups loaded later start right after their modules run. |
+| Later loads | After boot the loader loads further groups when the address changes, when a Home tab holding a JE page becomes active, when a video starts loading or playing, after a user switch, and when code calls a function a group provides (for example `JE.showEnhancedPanel()`). |
 | User switches | `js/core/session.js` detects identity changes and resets registered feature state. The loader reloads the incoming user's documents and the public config fields the server projects per user (`TagLookItemOverrides`, filtered to the items that user can see) and emits `je:user-data-loaded`. Async work uses identity epochs to discard stale results. |
 
 The bootstrap's `UserSettings` members are `Settings`, `Shortcuts`, `Bookmark`, `Elsewhere` and `HiddenContent`. A document-loading failure yields null for that document. Bootstrap always loads the token user's data, with no target-user parameter, and is served with `no-store`.
@@ -36,24 +38,124 @@ Components consume a value once, shortly after bootstrap, through `JE.takePrefet
 
 ### Bundle and development mode
 
-`Features/Platform/Services/ClientScriptBundle.cs` builds the bundle on first use and caches it by the plugin's script cache key (version plus DLL timestamp). It wraps each manifest file in a function and publishes `window.__JE_BUNDLE_MODULES`.
+`Features/Platform/Services/ClientScriptBundle.cs` serves the component modules as one script. It wraps each manifest file in a function, so the loader can run the modules one at a time, and serves each module's minified twin (`min/js/<path>`).
 
-The index source map at `/JellyfinEnhanced/bundle.js.map` uses `sections` to preserve original filenames and line numbers in DevTools and stack traces. Bundle and map routes are anonymous; production responses use `public, max-age=31536000, immutable`.
+- `GET /JellyfinEnhanced/bundle.js?g=core,tags` serves the named groups. The script has one statement per group, `window.__JE_BUNDLES["<id>"] = { total, modules: [...] }`, in the order of the groups file (`core` first), each group's modules in manifest order. An unknown, repeated or malformed group list returns `404`.
+- `GET /JellyfinEnhanced/bundle.js` without `g` serves the whole manifest as before: one array, `window.__JE_BUNDLE_MODULES`.
+- Each group's part is built once per plugin script cache key (version plus DLL timestamp); a requested combination is assembled from those parts, and the most recent 24 combinations are kept. Like the whole bundle, a combination is kept pre-compressed (Brotli and gzip, with a strong ETag per encoding). The slow Brotli pass that follows the first one runs for one combination at a time.
 
-The loader waits for browser idle time, with a 100 ms timeout. It then executes functions in order, yielding between modules at an approximately 10 ms budget. This reduces interference with initial rendering; a synchronous module can still exceed the budget and occupy the main thread. A top-level exception is reported and skipped without re-running that module.
+The index source map at `/JellyfinEnhanced/bundle.js.map` (with the same optional `g`) uses `sections` to preserve original filenames and line numbers in DevTools and stack traces; it is built when first requested. Bundle and map routes are anonymous; production responses use `public, max-age=31536000, immutable`, because the URL carries the cache key.
 
-If the bundle request fails or the bundle does not define a valid module array, the loader injects individual files with `script.async = false`. Downloads can overlap; execution follows manifest order.
+At boot the loader waits for browser idle time, with a 100 ms timeout, and fetches at low priority. It then executes functions in order, yielding between modules at an approximately 10 ms budget. This reduces interference with initial rendering; a synchronous module can still exceed the budget and occupy the main thread. The groups of a page the user went to are requested at once and run the same way, in idle time; a group something asked for directly (the settings panel, a shortcut) keeps the short slices but does not wait for idle time. A top-level exception is reported and skipped without re-running that module.
+
+Requests for groups run strictly in the order they were asked for, so a group that another one is `after` has always run first, even if its request was slower.
+
+If a bundle request fails, or the bundle does not define a group's modules (for example after a syntax error), the loader injects that group's files individually with `script.async = false`. Downloads can overlap; execution follows manifest order, so only a broken file fails. If none of those files arrive (for example offline), the loader forgets the group. It asks again by itself after 5 seconds, doubling to a minute while the failures last, and at once when something calls for the group; page changes in between ask for nothing.
+
+If no usable groups file is available (bootstrap carries no `ComponentGroups` and the embedded `js/component-groups.json` cannot be loaded, or the file is invalid), the loader treats every module as `core` and requests `bundle.js?v=…` without `g`, as it did before groups existed.
 
 Administrator setting, under [**Admin** → **Developer Settings**](../open-in-jellyfin.md?tab=admin&card=developer-settings):
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Dev Mode** | Off (`DevMode=false`) | Loads individual component scripts and serves script responses with `no-store`. Direct bundle requests also rebuild rather than using the process cache. |
+| **Dev Mode** | Off (`DevMode=false`) | Loads individual component scripts and serves script responses with `no-store`. Groups still load only when needed, but each group's files load one by one, in order, instead of as a bundle. Direct bundle requests also rebuild rather than using the process cache. |
 
 !!! note
     Development mode still serves embedded resources. Rebuild the plugin and load the new assembly after editing JavaScript; it does not read loose source files from your checkout.
 
 `DisableScriptInjectionMiddleware=false` is a server configuration property without an admin-page control. It gates the request-time injection middleware. `BrandingAssetStartupFilter.cs` handles custom image assets separately from script injection.
+
+### Component groups
+
+A page runs only the client modules it needs. `js/component-groups.json` lists the groups; each has an `id`, a `note` saying what it holds and when it loads, its `modules` (manifest paths, listed in manifest order) and optionally `after`. Every manifest module that no group lists is in the implicit group `core`, which every page loads.
+
+- A module belongs to one group. Inside a group, modules run in manifest order.
+- `after` names earlier groups in the file whose modules must have run first, because this group reads their exports while it loads or cannot work without them. Loading a group always loads its `after` groups too.
+- Groups that load together run in the order of the file, `core` first.
+- The server (`ClientScriptBundle.cs`) and the loader (`client/src/bootstrap/loader/group-loader.ts`) check the file the same way: unique, well-formed ids, every module in the manifest and in one group only, and `after` naming only earlier groups.
+- A module that `client/shared-modules.json` shares between scripts is published by its provider. A script reads the published copy only when the provider's group is `core`, its own group or a group it is `after`, so the provider has always run first; anywhere else `npm run client:build` bundles a copy of the module into the script.
+
+The loader (repository root `client/src/bootstrap/loader/`, built into `js/plugin.js`) decides when each group loads:
+
+| Rule | Where | What it holds |
+|---|---|---|
+| `FEATURE_GROUPS` | `group-rules.ts` | One entry per group except `core`: `needed(route)`, asked at boot and at each trigger below; `with()`, groups to load alongside it when the need depends on configuration or the group works without them; `exports`, JE functions that load the group when called before it has loaded. |
+| `FEATURE_INITIALIZERS` | `features.ts` | The start-up calls, as `[group, initializer, condition]`, in the order they have always run. At boot every entry of a loaded group runs in this order; a group loaded later runs its own entries right after its modules. |
+| `FEATURE_PAGES` | `group-rules.ts` | JE's own pages: enabling flag, delivery settings, Home tab and placeholder, own address and Plugin Pages address. |
+
+`group-loader.ts` resolves the groups, requests and runs them in batches and retries a group that could not be fetched; `group-triggers.ts` asks the rules again at each trigger, installs the stand-ins, registers the Home tabs and publishes `JE.loader`.
+
+The loader asks every rule again, and loads whatever is missing in one request, at boot (once from the settings document and again once the first groups' features have started, with the resolved settings), on every navigation (before the new view shows), when a Home tab holding a JE page's placeholder becomes active, when a `<video>` fires `loadstart`, `play` or `playing`, and after a user switch once the new user's data has loaded. A group stays loaded once it has loaded.
+
+For each function in a group's `exports`, the loader installs a stand-in until the group loads. Calling it loads the group and then makes the same call; the module replaces the stand-in when it runs. The stand-in returns a promise, so only calls whose result the caller does not use straight away get one.
+
+After a group loaded on demand starts, the loader adds and removes an empty hidden element on `<body>`, so features that wait for a change through the shared body observer see one on a page that has already settled.
+
+**JE pages.** Hidden Content, Catch Up, Recommendations, Requests, Calendar, Activity, Leaving Soon and the Bookmarks library each load when their feature is enabled and one of these holds:
+
+- The page is not delivered as a Home tab (neither JE's own Home tab nor Custom Tabs) and has its own address: Bookmarks, Hidden Content, Recommendations, Requests and Calendar. Such a page adds its own sidebar link and takes over its address as it starts, so it loads at boot.
+- The address is the page's own (`#/bookmarks`, `#/hidden-content`, `#/recommendations`, `#/downloads`, `#/calendar`).
+- The address is a Plugin Pages page that names it. A Plugin Pages address that names none of JE's pages loads them all.
+- The address is Home with `jeTab=<id>` naming its tab. For Recommendations, a category address on Home (`jeCategory=`) also counts.
+- The Home tab holding the page's placeholder is the active one.
+
+So that JE's own Home tabs are in the tab strip from the first Home render, the loader registers them itself as soon as `core` has run, with the same id, title, icon and placeholder the page's own module registers, in this order: Hidden Content, Catch Up, Recommendations, Requests, Calendar, Activity, Leaving Soon, Bookmarks.
+
+The groups, in the order they run:
+
+| Group | What it holds | After | Loads when |
+|---|---|---|---|
+| `core` | 24 modules: navigation, session, lifecycle, the shared DOM observer, UI kit, API client, settings resolution (`enhanced/config.js`), helpers, header actions, native tabs, icons, the random button, keyboard shortcuts and menu entries (`enhanced/events.js`), theme detection, injected styles and the settings panel's entry points. Also small modules other code needs at once: media language, rating sources, Continue Watching / Next Up removal, subtitle presets, now playing, coloured ratings and the Home Screen Sections discovery handler. | | Every page. |
+| `tags` | Poster tags: shared renderer, layout, look rules, cache store and pipeline, the nine poster tag renderers, web tag styles, review ratings on posters, and the item menu's Media Tags row and editor. Its `tags/tag-item-menu.js` also carries the Maintainerr and removal-request rows of the item menu and the Leaving Soon page with its Home tab (upstream's groups `removal-menu` and `leavingsoon-page`, folded into that output here). | | At boot, when any poster tag type (quality, genre, rating, age rating, status, awards, custom, language or logo) is on for the user, or when the server offers Maintainerr actions or removal requests; and by the JE page rule above for Leaving Soon (no standalone delivery). |
+| `tag-direct-play` | Status tags' direct-play warning. | `tags` | With the tags, when Status tags and their direct-play warning are on for the user. |
+| `tag-poster-colours` | Poster colour sampling for the Poster tag style. | `tags` | With the tags, when web tag styles are active (`TagStyleWebActive`). |
+| `tag-status-backdrop` | The blurred backdrop of status tags, painted as a picture under each tag. | `tags` | When the first status tag is drawn on a page (`tags/statustags.js` asks for it); never at boot. |
+| `tag-people` | People tags on cast cards. | | On an item's details page, when People tags are on for the user. |
+| `spoiler-guard` | Spoiler Guard. | | At boot, when Spoiler Guard is enabled. Never waits for a page, so it acts before content paints. |
+| `details` | Details-page chips and buttons: media information, release dates and their page wiring. | | On an item's details page. |
+| `player` | Playback controls (with the OSD playback helpers), auto-skip (with Subtitle Sync), the OSD rating and the pause screen. | | On the video page; when a `<video>` starts loading or playing on any page; or when a player shortcut function is called. |
+| `player-badge` | The rating badge shown when playback starts. | | At boot, when the badge is enabled, so it hears the first `playing` event. |
+| `hidden-content` | Hidden Content filtering, buttons, dialogs and panel. | | At boot, when Hidden Content is enabled. Never waits for a page, so it acts before content paints. |
+| `hidden-content-page` | The Hidden Content management page and its tab. | `hidden-content` | JE page rule above; also with `settings` when Hidden Content is enabled. |
+| `catchup` | The Catch Up page. | | JE page rule above (no standalone delivery). |
+| `settings` | The settings panel. | `tags`, `tag-direct-play`, `tag-poster-colours`, `tag-people` | When `JE.showEnhancedPanel()` is first called, on the plugin's admin configuration page (whose Media Tags tab uses the panel's preview), and when the per-item Media Tags editor opens (it uses the same preview). |
+| `bookmarks` | Bookmark store and the player's bookmark markers. | | On the video page or once a video has started, when Bookmarks are enabled; also with `bookmarks-library`. |
+| `bookmarks-library` | The Bookmarks library page. | `bookmarks` | JE page rule above. |
+| `elsewhere` | Streaming providers on details pages. | | On an item's details page, when Elsewhere is enabled. |
+| `reviews` | Reviews on details pages. | | On an item's details page, when any review source is enabled. |
+| `awards` | Awards on details pages. | | On an item's details page, when awards are shown. |
+| `mdblist` | MDBList ratings on details pages. | | On an item's details page, when MDBList ratings are enabled and shown on details pages. |
+| `content-warnings` | Content warnings (Does the Dog Die). | | On an item's details page, when content warnings are enabled. |
+| `seerr-api` | Seerr API client, request manager and status helpers. | | At boot, when Seerr is enabled. When Seerr search results are on, it also makes the one-time Seerr account check at boot. |
+| `seerr` | Seerr search results, cards, request and More Info dialogs, details-page rows and links, issue reporting and discovery sections. | `seerr-api` | When Seerr is enabled, on search, details and list pages; or when `JE.jellyseerrMoreInfo.open` or `JE.jellyseerrIssueReporter.showReportModal` is called from elsewhere. |
+| `recommendations` | The Recommendations page. | `seerr` | JE page rule above. |
+| `arr-links` | Sonarr, Radarr and Bazarr links on details pages. | | At boot, when \*arr links are enabled and the user is an administrator. |
+| `arr-tag-links` | \*arr tags shown as links on details pages. | | On an item's details page, when \*arr tags are shown as links. |
+| `requests-page` | The Requests / Downloads page. | | JE page rule above. |
+| `calendar-page` | The Calendar page. | | JE page rule above. |
+| `dashboard` | Coloured activity icons, plugin icons and links, plugin revision lists. | | On dashboard and configuration pages (addresses starting with `dashboard`, `configurationpage` or `settings`). |
+| `theme-selector` | The theme selector. | | At boot, when enabled. |
+| `active-streams` | The Active Streams header widget. | | At boot, when enabled. |
+| `activity-page` | The Activity page. | | JE page rule above (no standalone delivery). |
+| `letterboxd` | Letterboxd links on details pages. | | On an item's details page, when Letterboxd links are enabled. |
+
+The details-page groups other than `details` read the shared module `details-providers/links.ts` from their own copy, since they can load without `details` having run.
+
+`JE.loader` (also `window.JellyfinEnhanced.loader`) lets features and automation work with the groups:
+
+| Member | What it does |
+|---|---|
+| `ensure(ids, { pace })` | Loads the groups (and their `after` groups) if needed. Resolves once they have run and started, after every batch asked for before them; it never rejects. `pace` is optional: `'boot'` fetches at low priority and runs the modules in idle time, for work that can wait for the page (the status-tag backdrop is asked for this way). |
+| `needed()` | The groups the current page, configuration and user need. |
+| `state()` | Each group asked for so far: `loading` or `ready`. |
+| `settled()` | Resolves when nothing is loading. |
+| `catalog()` | The rules above as data: groups and their exports, start-up calls and pages. Tests compare it with the groups file. |
+
+`JE.initialized` covers only the groups the page needed at boot. Code or automation that needs a feature which loads on demand should `await JE.loader.ensure(['<group>'])` or `JE.loader.settled()` instead of waiting for its `JE` property to appear.
+
+Whenever Bookmarks is enabled, the loader also sets `window.JE` to the plugin's namespace as soon as the boot groups' scripts have run, unless the page has a `window.JE` of its own.
+
+`tests/frontend/bootstrap/bootstrap-groups.test.mjs` checks the split (the file is well formed, every group has a rule, each start-up function and export is defined by its own group, and each group loads with only what it is `after`), `bootstrap-loader-groups.test.mjs` the loader's behaviour (`tests/frontend/helpers/loader-harness.mjs` boots the real loader with a simulated script transport), and `bootstrap-bundle-budget.test.mjs` the size of a cold Home load against repository root `scripts/bundle-budgets.json` (`node scripts/bundle-budgets.mjs` prints today's numbers).
 
 ## File Structure
 
@@ -94,6 +196,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 └── js/
     ├── plugin.js
     ├── component-scripts.json
+    ├── component-groups.json         # Which component modules load together, and on demand
     ├── fonts/                        # Full and subset Material Symbols WOFF2 files
     ├── locales/                      # 33 bundled JSON files, including regional variants
     ├── core/                         # Shared browser primitives
@@ -225,7 +328,7 @@ These indexes group client modules and relevant supporting server files by web f
 | `session.js` | Hooks `ApiClient.setAuthenticationInfo`, follows navigation notifications and reconciles every five seconds. Runs `JE.session.onUserChange` reset handlers and emits `je:user-changed`; supplies identity epochs for async work. |
 | `media-language.js` | Shared language/region-to-flag resolution (`resolveFlag`) and canonical ISO language bases (`canonicalBase`) through `JE.core.mediaLanguage`. |
 | `tag-renderer-base.js` | Overlay creation, deduplication, caching and reinitialization for the genre, language, quality, rating, age-rating and status tags; hands each group to `tag-layout.js`. People and user-review renderers are independent. Also holds **Where to show** (`JE.core.tagScopes`) and the hidden tag lists (`JE.core.tagHidden`), which `tag-layout.js` applies before each group's limit. |
-| `tag-layout.js` | Poster tag layouts (`JE.core.tagLayout`): resolves the user's layout, slots, group order, caps and label density (with the migration for settings saved before layouts), keeps one controller per card and presents each group's chips in slots, the caption outlet, the summary pill, quality dots and the hover scrim. `JE.reinitializeTagLayout()` re-presents every card; Status Tags supply translated compact labels through `data-je-compact`. `resolveLayout()` picks each card's look: lock, then first matching rule, then the default. |
+| `tag-layout.js` | Poster tag layouts (`JE.core.tagLayout`): resolves the user's layout, slots, group order, caps and label density (with the migration for settings saved before layouts), keeps one controller per card and presents each group's chips in slots, the caption outlet, the summary pill, quality dots and the hover scrim. `JE.reinitializeTagLayout()` re-presents every card; Status Tags supply translated compact labels through `data-je-compact`. `resolveLayout()` picks each card's look: lock, then first matching rule, then the default. It also decides which cards rest in flow (asked of the browser in idle time, never while a card is drawn) and, in Chromium-based browsers, moves each group container that used to be contained to the whole pixel it was painted from (`--je-snap-x` / `--je-snap-y`, measured in the same idle pass and again when a card's size changes). |
 | `tag-look.js` | Tag look rules and locks (`JE.core.tagLook`): normalization, condition matching, card facts from cache entries, saving rules, locking and unlocking. |
 | `ui-kit.js` | HTML escaping, toasts, deduplicated CSS injection and scroll-friendly direct/delegated tap listeners. |
 
@@ -326,6 +429,7 @@ Administrator settings under [**\*arr** → **Shoko**](../open-in-jellyfin.md?ta
 | `logotags.js` | Logo Tags: the streaming provider, network or studio logo chips (server-proxied images, name chips with initials as the fallback); also builds the hub preview's samples. |
 | `customtags.js` | Custom Tags: one chip per administrator rule the item matched (label, optional genre-set icon, with source tooltips for administrators only), from the cache entry's or `tag-data`'s `CustomTags`; Tag Styles hooks `data-je-custom`. |
 | `statustags.js` | Status Tags: first-match badge per card for added/release dates, season milestones, schedules, trending and optional series status. Batches visible series through `status-tags/series`, guards stale card/user answers and supplies compact labels and `data-je-status` styling hooks. |
+| `status-tag-backdrop.js` | The blurred backdrop of status tags, painted once as a picture under each tag instead of `backdrop-filter` (the artwork under the tag, blurred the way Chromium's backdrop filter blurs it, in idle slices, once the page has been quiet). A component group of its own: `statustags.js` asks for it when the first status tag is drawn, so a page without one never downloads it, and a tag has the live `backdrop-filter` until its picture is there and wherever a picture cannot stand in. |
 | `peopletags.js` | Cast age, birthplace flags and deceased indicators. |
 | `userreviewtags.js` | Average of rated reviews visible to the current viewer, composed into the rating group through the layout controller. Uses tag-cache averages or batched `/JellyfinEnhanced/reviews/ratings` requests. |
 | `tag-cache-store.js` | IndexedDB snapshot scoped by server and user; memory-only fallback when unavailable. A snapshot from another entry schema is not restored. |

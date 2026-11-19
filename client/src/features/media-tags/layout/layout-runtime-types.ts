@@ -20,6 +20,14 @@ export interface CardController {
     lookKey: string;
     pendingPresentation?: boolean;
     shape: string | null;
+    /** It is to be fitted again when the state it is waited out of ends (snap.ts snapLater). */
+    refit?: boolean;
+    /** Elements of the card the page's CSS moves or makes a layer (flow.ts layeredFlow). */
+    layered: Set<HTMLElement>;
+    /** The kinds of slot the card holds now (flow.ts laidOutAlike). */
+    kinds: string;
+    /** The kinds it held when it was last let into flow. */
+    flowKinds: string;
 }
 export interface LayoutHost {
     currentSettings?: LayoutDocument & {
@@ -46,6 +54,8 @@ export interface LayoutHost {
         tagText?: import('../pipeline/tag-text').TagText | undefined;
     };
     tagPosterColours?: Pick<PosterColours, 'track' | 'release'>;
+    /** The status-tag backdrop painter (types/status/backdrop/), once its group has loaded. */
+    statusTagBackdrop?: { resume?(host: HTMLElement): void };
     session?: {
         onUserChange?(name: string, callback: () => void): unknown;
     };

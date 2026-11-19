@@ -8,7 +8,10 @@
     "(let/var, classes, collections, calls, top-level statements). A binding it cannot clear syntactically needs a",
     "reviewed entry saying why it holds no state. Left duplicated on purpose (stateful): see",
     "artifacts/restructure-plan/step-logs/canopy-k1b.md (hidden-content/host.ts, seerr host-core/host-details/",
-    "host-discovery and everything importing them, e.g. seerr/core/runtime.ts)."
+    "host-discovery and everything importing them, e.g. seerr/core/runtime.ts).",
+    "Component groups (js/component-groups.json, upstream abcaa16d): a script reads the published copy only where every page",
+    "that runs it has run the provider (the provider is in core, or in the script's group or one it is after); a script of",
+    "another group inlines its own copy (scripts/client-build.mjs groupLoads)."
   ],
   "modules": {
     "client/src/contracts/schema.ts": "js/enhanced/config.js",

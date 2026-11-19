@@ -18,14 +18,15 @@ export const scriptLoaded = (src: string, configure?: (script: HTMLScriptElement
 
 /**
  * Load scripts in parallel with execution forced into array order (async=false),
- * so js/core/* runs before dependents. One failure never stops the others.
+ * so js/core/* runs before dependents. One failure never stops the others; the
+ * result says, per script, whether it loaded.
  */
-export async function loadScripts(scripts: readonly string[], basePath: string): Promise<void> {
-    await Promise.allSettled(scripts.map(name => new Promise<void>(resolve => {
+export function loadScripts(scripts: readonly string[], basePath: string): Promise<boolean[]> {
+    return Promise.all(scripts.map(name => new Promise<boolean>(resolve => {
         appendScript(client().getUrl(`${basePath}/${name}?v=${getScriptVersion()}`), script => { script.async = false; },
-            resolve, error => {
+            () => resolve(true), error => {
                 console.error(`🪼 Jellyfin Enhanced: Failed to load script '${name}'`, error);
-                resolve();
+                resolve(false);
             });
     })));
 }

@@ -9,8 +9,8 @@
     "outsideOrderedManifest": 27
   },
   "currentCounts": {
-    "javascriptFiles": 210,
-    "typedOutputs": 210,
+    "javascriptFiles": 211,
+    "typedOutputs": 211,
     "legacyJavascript": 0,
     "inlineRuntimeScripts": 0,
     "typedHtmlScripts": 11
@@ -1625,6 +1625,14 @@
       "manifest": "client/entries/tag-runtime.json"
     },
     {
+      "path": "js/tags/status-tag-backdrop.js",
+      "orderedComponent": true,
+      "existedAtBaseline": false,
+      "status": "typed-output",
+      "source": "client/src/features/media-tags/types/status/backdrop/status-tag-backdrop-entry.ts",
+      "manifest": "client/entries/tag-runtime.json"
+    },
+    {
       "path": "js/tags/status-vocabulary.js",
       "orderedComponent": true,
       "existedAtBaseline": true,
@@ -1753,7 +1761,7 @@
       "source": "client/src/pages/activity-page.ts",
       "template": "client/html/bootstrap-pages/ActivityPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "bff0da1a55b1081e4d1fe60dc6ac5f7fe7f2a13d927ce4492ff647099bf6fa9e"
+      "sha256": "e807ce95d06bd0e9e320f4db8c73bc01405519f1de8c52e6326ba9ba764f139c"
     },
     {
       "path": "PluginPages/BookmarksPage.html",
@@ -1763,7 +1771,7 @@
       "source": "client/src/pages/bookmarks-page.ts",
       "template": "client/html/bootstrap-pages/BookmarksPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "0d5eee3037535545106aec25971924391a272a05cfe9165304b765a28185f38f"
+      "sha256": "0d7976822bd60a79797fd4975049a59ff2e10abc03a58010b5abd4fc99ff2f2e"
     },
     {
       "path": "PluginPages/CalendarPage.html",
@@ -1773,7 +1781,7 @@
       "source": "client/src/pages/calendar-page.ts",
       "template": "client/html/bootstrap-pages/CalendarPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "d0014d2daa4c72fe6824dc805f853e6b44870910db3f09f3f8b422faf12dd3a7"
+      "sha256": "a4bf7872525c2c8f3297be87155554dd8d2bf9a16139b84b7eeb422ad547fd01"
     },
     {
       "path": "PluginPages/CatchUpPage.html",
@@ -1783,7 +1791,7 @@
       "source": "client/src/pages/catchup-page.ts",
       "template": "client/html/bootstrap-pages/CatchUpPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "64c4e3247949ef7d52a1a7e4134132ec0e4343bc67f73ef80bba7905edcf815f"
+      "sha256": "be79e83c3c421be396843d6a9da267437aeeb2a5e7326ad723a69dc1476ca53e"
     },
     {
       "path": "PluginPages/DownloadsPage.html",
@@ -1793,7 +1801,7 @@
       "source": "client/src/pages/downloads-page.ts",
       "template": "client/html/bootstrap-pages/DownloadsPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "7cd97398f22fa8a24ee8ced9270b8395ae48361f4f66b458e7c817d3a2e716e8"
+      "sha256": "df64e37c1520040554fd658d20901c24d5553e31ecc9ec1fe9965e06b1b2f8b6"
     },
     {
       "path": "PluginPages/HiddenContentPage.html",
@@ -1803,7 +1811,7 @@
       "source": "client/src/pages/hidden-content-page.ts",
       "template": "client/html/bootstrap-pages/HiddenContentPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "2aae665c3cb41879ed71cc286550b13d4595133a4daea768abc38ac165ca3bef"
+      "sha256": "b9ca0b9cca3d7c2d4b56d2a32a35f8159d28423a454a19b521c39d8ecf8ced51"
     },
     {
       "path": "PluginPages/LeavingSoonPage.html",
@@ -1813,7 +1821,7 @@
       "source": "client/src/pages/leaving-soon-page.ts",
       "template": "client/html/bootstrap-pages/LeavingSoonPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "f7db6d132a53fbf2a619381035e6f81c08c7af3ebb149fa77df7b39b6936319f"
+      "sha256": "6569d8bde6f7a57517321769bec8ba61982c3e5fee5b9e96dee431b68e38d24f"
     },
     {
       "path": "PluginPages/RecommendationsPage.html",
@@ -1823,7 +1831,7 @@
       "source": "client/src/pages/recommendations-page.ts",
       "template": "client/html/bootstrap-pages/RecommendationsPage.html",
       "manifest": "client/html-entries/bootstrap-pages.json",
-      "sha256": "e51b677c5d96b3a90d14cc30a1fead9fa60b0c059b5f9b19b874494efdd14a72"
+      "sha256": "21d7aaf4b3e37e342eb6edabb5d4475b5c5d8fa4f35367d966f7b92df4cdc267"
     }
   ]
 }

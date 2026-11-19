@@ -6,6 +6,38 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$ref": "#/$defs/BootstrapResponse",
     "$defs": {
+      "BootstrapComponentGroup": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "modules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "modules"
+        ],
+        "additionalProperties": false
+      },
       "SpoilerBlurCollectionEntry": {
         "type": "object",
         "properties": {
@@ -4077,6 +4109,19 @@
       "BootstrapResponse": {
         "type": "object",
         "properties": {
+          "ComponentGroups": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/BootstrapComponentGroup"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "ComponentScripts": {
             "anyOf": [
               {
@@ -4123,6 +4168,7 @@
           }
         },
         "required": [
+          "ComponentGroups",
           "ComponentScripts",
           "HasCustomTabs",
           "HasPluginPages",

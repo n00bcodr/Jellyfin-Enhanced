@@ -11,7 +11,9 @@ export interface EventsBridge {
     /** The same function, published as chrome's facade for the settings panel's shortcut editor (step C4). */
     canonicalCombo?: (combo: unknown) => unknown;
     state: { activeShortcuts?: Record<string, unknown>; removeContext?: RemoveContext | null };
-    pluginConfig: { ClearLocalStorageTimestamp?: unknown; DisableAllShortcuts?: unknown };
+    pluginConfig: { ClearLocalStorageTimestamp?: unknown; DisableAllShortcuts?: unknown; BookmarksEnabled?: unknown };
+    /** The component-group loader (js/plugin.js): `ensure` resolves once the groups have run. */
+    loader?: { ensure(ids: readonly string[]): Promise<void> };
     currentSettings: {
         removeContinueWatchingEnabled?: unknown; longPress2xEnabled?: unknown;
         autoPauseEnabled?: unknown; autoResumeEnabled?: unknown; autoPipEnabled?: unknown;
@@ -97,7 +99,13 @@ export function createEvents(ctx: EventsContext) {
             ['BookmarkCurrentTime', () => {
                 const bookmarks = ctx.peer('bookmarks');
                 if (bookmarks?.showModal) bookmarks.showModal('add');
-                else console.warn('🪼 Jellyfin Enhanced: New bookmark system not loaded, using fallback');
+                else if (JE.pluginConfig?.BookmarksEnabled && JE.loader) {
+                    // The bookmarks module loads with the player (the loader's "bookmarks" group) and may still
+                    // be arriving just after playback starts: open the dialog once it has.
+                    void JE.loader.ensure(['bookmarks']).then(() => {
+                        if (JE.isVideoPage()) ctx.peer('bookmarks')?.showModal?.('add');
+                    });
+                } else console.warn('🪼 Jellyfin Enhanced: New bookmark system not loaded, using fallback');
             }],
             ['CycleAspectRatio', () => JE.cycleAspect?.()],
             // Toggles jellyfin-web's own stats panel through its settings menu, kept invisible;

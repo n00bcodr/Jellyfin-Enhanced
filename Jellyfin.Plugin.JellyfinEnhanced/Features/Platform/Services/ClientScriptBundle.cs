@@ -12,6 +12,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Infrastructure.Assets;
+using Jellyfin.Plugin.JellyfinEnhanced.Transport;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services
 {
@@ -69,6 +70,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services
     /// pre-compressed (brotli and gzip, computed once per build) with a strong
     /// ETag per representation, so the endpoint does not depend on Jellyfin's
     /// response compression (off for HTTPS by default, and at its fastest level).
+    ///
+    /// Groups (upstream abcaa16d): js/component-groups.json assigns manifest modules
+    /// to named groups (every module it does not list belongs to the implicit "core"
+    /// group), so the client downloads and runs only the groups a page needs.
+    /// GET /JellyfinEnhanced/bundle.js?g=a,b serves those groups in one script, one
+    /// statement per group,
+    ///   (window.__JE_BUNDLES = window.__JE_BUNDLES || {})["a"] = { total: n, modules: [ ...the same function wrappers... ] };
+    /// in the groups file's order ("core" first), each group's modules in manifest
+    /// order, with the matching index map at bundle.js.map?g=a,b. Each group's
+    /// statement is built once per cache key and the last few combinations are kept,
+    /// served like the whole bundle (pre-compressed, map built on first request).
+    /// Without <c>g</c> the route serves the whole manifest in the single-array
+    /// format above, unchanged.
     /// </summary>
     internal static class ClientScriptBundle
     {
@@ -76,6 +90,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services
         // scripts/client-build.mjs `minDirectory`: min/js/<path> holds the minified twin of js/<path>.
         private const string MinResourcePrefix = "Jellyfin.Plugin.JellyfinEnhanced.min.js.";
         private const string ManifestResource = ResourcePrefix + "component-scripts.json";
+        private const string GroupsResource = ResourcePrefix + "component-groups.json";
+
+        /// <summary>The implicit group holding every manifest module no listed group claims.</summary>
+        internal const string CoreGroupId = "core";
+
+        /// <summary>Most group ids one bundle request may name.</summary>
+        internal const int MaxGroupsPerRequest = 64;
+
+        // Most distinct group combinations kept assembled; the per-group pieces are always kept.
+        private const int MaxCachedCombinations = 24;
+
+        // Group ids are interpolated into a JS string literal and a URL query.
+        private static readonly Regex SafeGroupId = new(@"^[a-z][a-z0-9-]{0,39}$", RegexOptions.Compiled);
 
         // Manifest paths are interpolated into a block comment and a JS string
         // literal, so only plain relative paths are accepted.
@@ -84,6 +111,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services
         private static readonly object _lock = new();
         private static string[]? _manifest;
         private static (string CacheKey, ServedBundle Bundle)? _cached;
+        private static ComponentGroup[]? _groups;
+        private static string? _groupCacheKey;
+        private static readonly Dictionary<string, GroupPiece> _groupPieces = new(StringComparer.Ordinal);
+        private static readonly Dictionary<string, ServedBundle> _groupCombinations = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// One component group: its id, the groups whose modules must have run
+        /// before its own, and its module paths (relative to js/) in manifest order.
+        /// </summary>
+        internal sealed record ComponentGroup(string Id, IReadOnlyList<string> After, IReadOnlyList<string> Scripts);
+
+        /// <summary>One group's statement, built once per cache key: its text, line count and per-module sections.</summary>
+        private sealed class GroupPiece
+        {
+            public string Text { get; init; } = string.Empty;
+            public int LineCount { get; init; }
+            public IReadOnlyList<Section> Sections { get; init; } = Array.Empty<Section>();
+        }
 
         /// <summary>
         /// The ordered component-script paths (relative to js/), with the "//"
@@ -108,6 +153,248 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services
                 .ToArray();
             _manifest = manifest;
             return manifest;
+        }
+
+        /// <summary>
+        /// The component groups, "core" first and then in the order of
+        /// js/component-groups.json. "core" holds every manifest module that no
+        /// listed group claims. Throws when the groups file is missing or invalid
+        /// (unknown or duplicated module, bad id, an <c>after</c> that does not
+        /// name an earlier group); callers then fall back to the whole manifest.
+        /// </summary>
+        internal static IReadOnlyList<ComponentGroup> GetComponentGroups()
+        {
+            var groups = _groups;
+            if (groups != null)
+            {
+                return groups;
+            }
+
+            using var document = ReadGroupsFile();
+            groups = ResolveGroups(GetComponentScripts(), document.RootElement);
+            _groups = groups;
+            return groups;
+        }
+
+        /// <summary>
+        /// The <c>groups</c> array of js/component-groups.json as written (ids,
+        /// <c>after</c> and module lists, without the notes), for the bootstrap
+        /// payload: the client resolves it against the manifest the same way this
+        /// class does. Validated first, so a file this class rejects is never handed out.
+        /// </summary>
+        internal static IReadOnlyList<BootstrapComponentGroup> GetComponentGroupsDocument()
+        {
+            GetComponentGroups();
+            using var document = ReadGroupsFile();
+            return document.RootElement.GetProperty("groups").EnumerateArray().Select(entry => new BootstrapComponentGroup
+            {
+                Id = entry.GetProperty("id").GetString()!,
+                After = entry.TryGetProperty("after", out var after) ? after.EnumerateArray().Select(name => name.GetString()!).ToArray() : null,
+                Modules = entry.GetProperty("modules").EnumerateArray().Select(module => module.GetString()!).ToArray(),
+            }).ToArray();
+        }
+
+        private static JsonDocument ReadGroupsFile()
+        {
+            using var stream = PackedResources.Open(Assembly.GetExecutingAssembly(), GroupsResource)
+                ?? throw new InvalidOperationException("Embedded component-group file js/component-groups.json is missing.");
+            return JsonDocument.Parse(stream);
+        }
+
+        /// <summary>
+        /// Resolves a parsed groups file against the manifest. Internal so tests
+        /// can feed it malformed files.
+        /// </summary>
+        internal static ComponentGroup[] ResolveGroups(IReadOnlyList<string> manifest, JsonElement root)
+        {
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("groups", out var list) || list.ValueKind != JsonValueKind.Array)
+            {
+                throw new InvalidOperationException("js/component-groups.json must be an object with a \"groups\" array.");
+            }
+
+            var position = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (var i = 0; i < manifest.Count; i++)
+            {
+                position[manifest[i]] = i;
+            }
+
+            var owner = new Dictionary<string, string>(StringComparer.Ordinal);
+            var seen = new HashSet<string>(StringComparer.Ordinal) { CoreGroupId };
+            var resolved = new List<ComponentGroup>();
+            foreach (var entry in list.EnumerateArray())
+            {
+                var id = entry.ValueKind == JsonValueKind.Object && entry.TryGetProperty("id", out var idElement) && idElement.ValueKind == JsonValueKind.String
+                    ? idElement.GetString() ?? string.Empty
+                    : string.Empty;
+                if (!SafeGroupId.IsMatch(id))
+                {
+                    throw new InvalidOperationException($"js/component-groups.json: '{id}' is not a valid group id.");
+                }
+
+                if (!seen.Add(id))
+                {
+                    throw new InvalidOperationException($"js/component-groups.json: group '{id}' is defined twice (\"{CoreGroupId}\" is implicit).");
+                }
+
+                var after = new List<string>();
+                if (entry.TryGetProperty("after", out var afterElement))
+                {
+                    if (afterElement.ValueKind != JsonValueKind.Array)
+                    {
+                        throw new InvalidOperationException($"js/component-groups.json: group '{id}' has an \"after\" that is not an array.");
+                    }
+
+                    foreach (var dependency in afterElement.EnumerateArray())
+                    {
+                        var name = dependency.ValueKind == JsonValueKind.String ? dependency.GetString() ?? string.Empty : string.Empty;
+                        // Only earlier groups: the file order is then a valid run order and cannot hold a cycle.
+                        if (name == id || !seen.Contains(name))
+                        {
+                            throw new InvalidOperationException($"js/component-groups.json: group '{id}' is after '{name}', which is not an earlier group.");
+                        }
+
+                        if (name != CoreGroupId && !after.Contains(name))
+                        {
+                            after.Add(name);
+                        }
+                    }
+                }
+
+                if (!entry.TryGetProperty("modules", out var modulesElement) || modulesElement.ValueKind != JsonValueKind.Array)
+                {
+                    throw new InvalidOperationException($"js/component-groups.json: group '{id}' has no \"modules\" array.");
+                }
+
+                var scripts = new List<string>();
+                foreach (var module in modulesElement.EnumerateArray())
+                {
+                    var path = module.ValueKind == JsonValueKind.String ? (module.GetString() ?? string.Empty).Trim() : string.Empty;
+                    if (!position.ContainsKey(path))
+                    {
+                        throw new InvalidOperationException($"js/component-groups.json: group '{id}' lists '{path}', which is not in js/component-scripts.json.");
+                    }
+
+                    if (owner.TryGetValue(path, out var other))
+                    {
+                        throw new InvalidOperationException($"js/component-groups.json: '{path}' is listed in both '{other}' and '{id}'.");
+                    }
+
+                    owner[path] = id;
+                    scripts.Add(path);
+                }
+
+                if (scripts.Count == 0)
+                {
+                    throw new InvalidOperationException($"js/component-groups.json: group '{id}' lists no modules.");
+                }
+
+                scripts.Sort((a, b) => position[a].CompareTo(position[b]));
+                resolved.Add(new ComponentGroup(id, after, scripts));
+            }
+
+            var core = manifest.Where(path => !owner.ContainsKey(path)).ToArray();
+            resolved.Insert(0, new ComponentGroup(CoreGroupId, Array.Empty<string>(), core));
+            return resolved.ToArray();
+        }
+
+        /// <summary>
+        /// Parses the <c>g</c> query value of a bundle request ("a,b,c") into known
+        /// group ids in serving order ("core" first, then the groups file's order).
+        /// Returns null for anything else: empty, an unknown or repeated id, or
+        /// more than <see cref="MaxGroupsPerRequest"/> ids.
+        /// </summary>
+        internal static IReadOnlyList<string>? ParseGroupRequest(string? value)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length > 4096)
+            {
+                return null;
+            }
+
+            var requested = value.Split(',');
+            if (requested.Length > MaxGroupsPerRequest)
+            {
+                return null;
+            }
+
+            var groups = GetComponentGroups();
+            var wanted = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var id in requested)
+            {
+                if (!groups.Any(group => group.Id == id) || !wanted.Add(id))
+                {
+                    return null;
+                }
+            }
+
+            return groups.Where(group => wanted.Contains(group.Id)).Select(group => group.Id).ToArray();
+        }
+
+        /// <summary>
+        /// One script holding the given groups, and its source map (identity bytes).
+        /// The ids must come from <see cref="ParseGroupRequest"/>. Same caching as
+        /// <see cref="GetServedGroupBundle"/>.
+        /// </summary>
+        internal static (byte[] Script, byte[] SourceMap) GetGroupBundle(string cacheKey, IReadOnlyList<string> groupIds, bool rebuild, Logger logger)
+        {
+            var served = GetServedGroupBundle(cacheKey, groupIds, rebuild, logger);
+            return (served.Script.Identity.Bytes, served.SourceMap.Identity.Bytes);
+        }
+
+        /// <summary>
+        /// The groups' script and its map as served (see <see cref="ServedFile"/>).
+        /// Each group's statement is built once per cache key; a combination is
+        /// assembled from those pieces and the most recent few are kept.
+        /// <paramref name="rebuild"/> (dev mode) bypasses both caches.
+        /// </summary>
+        internal static ServedBundle GetServedGroupBundle(string cacheKey, IReadOnlyList<string> groupIds, bool rebuild, Logger logger)
+        {
+            var combination = string.Join(',', groupIds);
+            lock (_lock)
+            {
+                if (rebuild || _groupCacheKey != cacheKey)
+                {
+                    _groupPieces.Clear();
+                    _groupCombinations.Clear();
+                    _groupCacheKey = cacheKey;
+                }
+
+                if (_groupCombinations.TryGetValue(combination, out var assembled))
+                {
+                    return assembled;
+                }
+
+                var groups = GetComponentGroups();
+                var pieces = new List<GroupPiece>(groupIds.Count);
+                foreach (var id in groupIds)
+                {
+                    if (!_groupPieces.TryGetValue(id, out var piece))
+                    {
+                        var group = groups.FirstOrDefault(candidate => candidate.Id == id)
+                            ?? throw new InvalidOperationException($"Unknown component group '{id}'.");
+                        piece = BuildGroupPiece(group, logger);
+                        _groupPieces[id] = piece;
+                    }
+
+                    pieces.Add(piece);
+                }
+
+                var (script, sections) = AssembleGroups(cacheKey, combination, pieces);
+                var bundle = new ServedBundle(
+                    new ServedFile(script, ServedFile.ScriptLevels, upgradeBrotli: !rebuild, logger),
+                    new Lazy<ServedFile>(() => new ServedFile(BuildSourceMap(cacheKey, sections), ServedFile.MapLevels, upgradeBrotli: false, logger)));
+                if (rebuild)
+                {
+                    return bundle;
+                }
+
+                if (_groupCombinations.Count >= MaxCachedCombinations)
+                {
+                    _groupCombinations.Clear();
+                }
+
+                _groupCombinations[combination] = bundle;
+                return bundle;
+            }
         }
 
         /// <summary>
@@ -162,31 +449,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services
             public bool Minified { get; init; }
         }
 
-        private static (byte[] Script, IReadOnlyList<Section> Sections) BuildScript(string cacheKey, Logger logger)
+        /// <summary>
+        /// Accumulates generated script text while keeping the exact 0-based index
+        /// of the line the next append starts on, so each source-map section's
+        /// offset matches the generated script.
+        /// </summary>
+        private sealed class ScriptWriter
         {
-            var scripts = GetComponentScripts();
-            var assembly = Assembly.GetExecutingAssembly();
-            var sb = new StringBuilder(2 * 1024 * 1024);
-            var sections = new List<Section>(scripts.Count);
-            // 0-based index of the line the next append starts on; kept exact so
-            // each source-map section's offset matches the generated bundle.
-            var line = 0;
+            private readonly StringBuilder _text;
 
-            void Append(string text)
+            public ScriptWriter(int capacity)
             {
-                sb.Append(text);
+                _text = new StringBuilder(capacity);
+            }
+
+            public int Line { get; private set; }
+
+            public List<Section> Sections { get; } = new();
+
+            public void Append(string text)
+            {
+                _text.Append(text);
                 foreach (var c in text)
                 {
-                    if (c == '\n') line++;
+                    if (c == '\n') Line++;
                 }
             }
 
-            Append("/* Jellyfin Enhanced component bundle — generated from js/component-scripts.json */\n");
-            Append($"window.__JE_BUNDLE_TOTAL = {scripts.Count};\n");
-            Append("window.__JE_BUNDLE_PROGRESS = 0;\n");
-            Append("window.__JE_BUNDLE_MODULES = [\n");
-
-            foreach (var path in scripts)
+            /// <summary>
+            /// Appends one manifest module wrapped in a parenthesized function (an
+            /// array element), recording its source-map section: its minified twin
+            /// when there is one, else the readable file. A path that is not an
+            /// embedded resource becomes a function that reports the load error,
+            /// mirroring the per-file loader, which logs it and carries on.
+            /// </summary>
+            public void AppendModule(Assembly assembly, string path, Logger logger)
             {
                 string? content = null;
                 var minified = false;
@@ -199,29 +496,86 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform.Services
 
                 if (content == null)
                 {
-                    // Mirror the per-file loader, which logs a load error for a
-                    // missing script and carries on with the next one.
                     logger.Warning($"Component bundle: '{path}' is listed in js/component-scripts.json but is not an embedded resource; skipping.");
                     Append($"/* ---- js/{path} (missing) ---- */\n");
                     Append($"function () {{ console.error(\"🪼 Jellyfin Enhanced: Failed to load script '{path}' (not found in bundle)\"); }},\n");
-                    continue;
+                    return;
                 }
 
                 Append($"/* ---- js/{path} ---- */\n(function () {{\n");
-                var start = line;
+                var start = Line;
                 Append(content);
                 if (!content.EndsWith('\n'))
                 {
                     Append("\n");
                 }
-                sections.Add(new Section { Path = path, Line = start, LineCount = line - start, Minified = minified });
+
+                Sections.Add(new Section { Path = path, Line = start, LineCount = Line - start, Minified = minified });
                 Append("}),\n");
             }
 
-            Append("];\n");
-            Append($"//# sourceMappingURL=bundle.js.map?v={cacheKey}\n");
+            public override string ToString() => _text.ToString();
+        }
 
-            return (Encoding.UTF8.GetBytes(sb.ToString()), sections);
+        private static (byte[] Script, IReadOnlyList<Section> Sections) BuildScript(string cacheKey, Logger logger)
+        {
+            var scripts = GetComponentScripts();
+            var assembly = Assembly.GetExecutingAssembly();
+            var writer = new ScriptWriter(2 * 1024 * 1024);
+
+            writer.Append("/* Jellyfin Enhanced component bundle — generated from js/component-scripts.json */\n");
+            writer.Append($"window.__JE_BUNDLE_TOTAL = {scripts.Count};\n");
+            writer.Append("window.__JE_BUNDLE_PROGRESS = 0;\n");
+            writer.Append("window.__JE_BUNDLE_MODULES = [\n");
+
+            foreach (var path in scripts)
+            {
+                writer.AppendModule(assembly, path, logger);
+            }
+
+            writer.Append("];\n");
+            writer.Append($"//# sourceMappingURL=bundle.js.map?v={cacheKey}\n");
+
+            return (Encoding.UTF8.GetBytes(writer.ToString()), writer.Sections);
+        }
+
+        /// <summary>
+        /// Builds one group's statement. Its sections' lines are relative to the
+        /// statement's first line; <see cref="AssembleGroups"/> shifts them.
+        /// </summary>
+        private static GroupPiece BuildGroupPiece(ComponentGroup group, Logger logger)
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var writer = new ScriptWriter(256 * 1024);
+            writer.Append($"(window.__JE_BUNDLES = window.__JE_BUNDLES || {{}})[\"{group.Id}\"] = {{ total: {group.Scripts.Count}, modules: [\n");
+            foreach (var path in group.Scripts)
+            {
+                writer.AppendModule(assembly, path, logger);
+            }
+
+            writer.Append("] };\n");
+            return new GroupPiece { Text = writer.ToString(), LineCount = writer.Line, Sections = writer.Sections };
+        }
+
+        /// <summary>
+        /// Joins group statements into one script (a header line, the statements,
+        /// the sourceMappingURL line) and the sections of its index source map.
+        /// </summary>
+        private static (byte[] Script, IReadOnlyList<Section> Sections) AssembleGroups(string cacheKey, string combination, List<GroupPiece> pieces)
+        {
+            var text = new StringBuilder(pieces.Sum(piece => piece.Text.Length) + 256);
+            text.Append($"/* Jellyfin Enhanced component groups {combination} — generated from js/component-scripts.json and js/component-groups.json */\n");
+            var sections = new List<Section>();
+            var line = 1; // the header is one line
+            foreach (var piece in pieces)
+            {
+                text.Append(piece.Text);
+                sections.AddRange(piece.Sections.Select(section => new Section { Path = section.Path, Line = line + section.Line, LineCount = section.LineCount, Minified = section.Minified }));
+                line += piece.LineCount;
+            }
+
+            text.Append($"//# sourceMappingURL=bundle.js.map?g={combination}&v={cacheKey}\n");
+            return (Encoding.UTF8.GetBytes(text.ToString()), sections);
         }
 
         /// <summary>The index map for a script built by <see cref="BuildScript"/>, from the embedded per-module maps.</summary>

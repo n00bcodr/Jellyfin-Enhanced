@@ -38,7 +38,9 @@ export function createGroups(s: LayoutState, JE: LayoutHost, deps: LayoutFns) {
             if (conf.layout === 'summary')
                 deps.refreshPill(ctrl, conf);
             deps.syncIndicatorGap(ctrl, conf);
+            deps.syncFlow(ctrl, conf);
             deps.scheduleFit(ctrl);
+            deps.scheduleSnap(ctrl);
         }
         return true;
     }
@@ -56,7 +58,9 @@ export function createGroups(s: LayoutState, JE: LayoutHost, deps: LayoutFns) {
         if (conf.layout === 'summary')
             deps.refreshPill(ctrl, conf);
         deps.syncIndicatorGap(ctrl, conf);
+        deps.syncFlow(ctrl, conf);
         deps.scheduleFit(ctrl);
+        deps.scheduleSnap(ctrl);
     }
 
     function hasGroup(target: HTMLElement, groupId: string) {
@@ -150,6 +154,9 @@ export function createGroups(s: LayoutState, JE: LayoutHost, deps: LayoutFns) {
             clearCard((host));
         document.querySelectorAll<HTMLElement>('.je-tag-caption').forEach((el) => el.remove());
         document.querySelectorAll<HTMLElement>('[data-je-review-key]').forEach((el) => { delete (el).dataset.jeReviewKey; });
+        // Nothing is left to measure: the whole-pixel pass's observers start again with the next card it measures.
+        deps.releaseScale();
+        deps.releaseBands();
     }
 
     function prepareCard(target: HTMLElement) {

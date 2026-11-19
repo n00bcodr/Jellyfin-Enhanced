@@ -17,7 +17,14 @@ export function domBridge(): DomBridge {
     return host.JellyfinEnhanced;
 }
 export function browserDomHost(): DomHost {
-    const noise = '.osdPositionText, .osdDurationText, .startTimeText, .endTimeText, .endsAtText, .videoSubtitlesInner, .videoSecondarySubtitlesInner';
+    // The player's clock and subtitle cue nodes, and a card's tag host (.je-tag-host): it holds
+    // nothing but the tag chips JE itself draws, and they keep changing on a settled page (a
+    // status badge lands when a lookup answers as its card scrolls into view, a live pass swaps
+    // one). No subscriber looks inside a host, yet each of those writes used to wake every
+    // subscriber after the next paint (tab and sidebar watchers, header layout, a full card
+    // scan). The host itself being added to or removed from a card is still reported: its
+    // record's target is the card.
+    const noise = '.osdPositionText, .osdDurationText, .startTimeText, .endTimeText, .endsAtText, .videoSubtitlesInner, .videoSecondarySubtitlesInner, .je-tag-host';
     return {
         document,
         createObserver: callback => new MutationObserver(callback),

@@ -9,11 +9,10 @@
  * rule, so the labels "Locked" and "Rule N" are what the resolver answered,
  * never what the preview assumed.
  *
- * The cards carry the card structure the layout controller needs
- * (.cardBox > .cardScalable + a title block for the caption outlet) but
- * neither .card nor .cardImageContainer, so the tag pipeline and other card
- * features never pick them up. Built lazily by the hub (ui-panel-media-tags.js)
- * when the Media Tags section first shows, disposed when the panel closes.
+ * The cards carry the card structure the layout controller needs (.cardBox > .cardScalable + a title block for the
+ * caption outlet) but neither .card nor .cardImageContainer, so the tag pipeline and other card features never pick
+ * them up. Built lazily by the hub (ui-panel-media-tags.js) when the Media Tags section first shows, disposed when the
+ * panel closes.
  */
 import type { Group } from '../layout/layout-rules';
 import { panelHost, registry, type PanelBridge, type PanelTagLayout, type Settings, type PluginConfig, type CustomTagRule } from './host';
@@ -453,6 +452,7 @@ export function installUiPanelTagPreview(JE: Deps): void {
         #jellyfin-enhanced-panel .je-mtp-card--thumb .je-mtp-scalable { width: 140px; aspect-ratio: 16 / 9; }
         #jellyfin-enhanced-panel .je-mtp-scalable { position: relative; border-radius: 6px; overflow: hidden; contain: paint; }
         #jellyfin-enhanced-panel .je-mtp-art { position: absolute; inset: 0; }
+        #jellyfin-enhanced-panel .je-mtp-card .status-tag { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); } /* A sample keeps the live blur: the painted one (tags/status-tag-backdrop.js) reads a card's own artwork, which a sample has none of. */
         #jellyfin-enhanced-panel .je-mtp-art--movie { background: linear-gradient(170deg, #e2a35d 0%, #b5562f 48%, #3a1d14 100%); }
         #jellyfin-enhanced-panel .je-mtp-art--movie::after { content: ''; position: absolute; left: 0; right: 0; bottom: 18%; height: 22%; background: linear-gradient(175deg, transparent 30%, rgba(60,25,12,0.85) 31%); }
         #jellyfin-enhanced-panel .je-mtp-art--series { background: radial-gradient(ellipse at 50% 58%, #f2f7f7 0%, #9ccfd2 22%, #2c6f7a 55%, #0d2a31 100%); }

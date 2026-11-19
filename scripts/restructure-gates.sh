@@ -442,12 +442,10 @@ fe_checks() (
     node --test tests/frontend/bootstrap/bootstrap-manifest.test.mjs
     frontend_tests
   fi
-  step "FE G: component-scripts.json and client/entries output keys vs restructure-base"
-  git diff --exit-code restructure-base -- Jellyfin.Plugin.JellyfinEnhanced/js/component-scripts.json
-  local f
-  for f in client/entries/*.json; do
-    diff <(git show "restructure-base:$f" | jq -S keys) <(jq -S keys "$f")
-  done
+  step "FE G: component-scripts.json and client/entries output keys vs restructure-base plus the approved additions"
+  # restructure-base's entries unchanged (no removal, rename or reordering), and nothing added that
+  # scripts/component-outputs-approved.json does not list (each with its upstream commit and why).
+  node scripts/check-component-outputs.mjs
 )
 
 # Merge points: be's lanes, with fe's part (which regenerates: client:build, inventory:rewrite) at the end of the checks

@@ -1,21 +1,27 @@
 import { createCardContext } from './card-context';
 import { createFitApply } from './fit-apply';
 import { createFitMeasure } from './fit-measure';
+import { createFlow } from './flow';
+import { createFlowIdle } from './flow-idle';
+import { createFontsRefit } from './fonts-refit';
 import { createGroups } from './groups';
 import { KIND_LOOK_LIMITS, kindLooksCss, kindLooksToWire, readKindLooks, TAG_KINDS } from './kind-looks';
 import { chipsThatFit, compactQualityLabel, preserveLegacySizing, rowBudget, rowsHeight } from './layout-fitting';
 import { DEFAULT_CAPS, DEFAULT_ORDER, DEFAULT_PROFILES, EDGE_SPACINGS, LAYOUT_SLOTS, MAX_CAP, normalizeGroup, POSITION_SETTINGS, POSITION_TO_SLOT, readEdge, readGap, readScale, readShapeOverrides, RECOMMENDED_SHAPES, SHAPES, shapesToWire, SLOT_TO_POSITION, TAG_GAPS, TAG_SCALES } from './layout-rules';
 import type { LayoutHost } from './layout-runtime-types';
+import { createLive } from './live';
 import { createLooks } from './looks';
 import { createPresent } from './present';
+import { createSnap } from './snap';
+import { createSnapBands } from './snap-bands';
 import { createLayoutState, type LayoutFns } from './state';
 
 /**
  * The tag layout: places each card's tag groups in the user's layout and fits them to the card.
  *
  * Split by concern (frontend.md §1b): state.ts holds the shared mutable state, types and constants; looks,
- * card-context, present, fit-measure, fit-apply and groups are `create*(s, JE, deps)` factories over that
- * state. A call into another module goes through `deps`, filled here in source order (each factory sees the
+ * card-context, present, fit-measure, fit-apply, groups, flow, flow-idle, live, snap, snap-bands and fonts-refit are
+ * `create*(s, JE, deps)` factories over that state. A call into another module goes through `deps`, filled here in source order (each factory sees the
  * ones before it), so the modules never import each other. This file builds the published api.
  * @param JE - The layout host (tag-layout-entry.ts).
  */
@@ -28,6 +34,11 @@ export function createTagLayout(JE: LayoutHost) {
     Object.assign(deps, createFitMeasure(s, JE, deps));
     Object.assign(deps, createFitApply(s, JE, deps));
     Object.assign(deps, createGroups(s, JE, deps));
+    // Upstream abcaa16d: resting flow, the idle pass, live cards, whole pixels and fonts that arrive late.
+    const flow = createFlow(s, JE, deps);
+    const idle = createFlowIdle(s, JE, deps);
+    const snap = createSnap(s, JE, deps);
+    Object.assign(deps, flow, idle, createLive(s, JE, deps), snap, createSnapBands(s, JE, deps), createFontsRefit(s, JE, deps));
 
     // A user switch: forget the outgoing user's settings and every fact their
     // cards hold (they may be spoiler-stripped differently for the incoming
@@ -203,6 +214,34 @@ export function createTagLayout(JE: LayoutHost) {
         POSITION_TO_SLOT,
         POSITION_SETTINGS,
         buildStyles: null as (() => string) | null,
+        /**
+         * Whether resting cards may be laid out in flow (flow.ts flowFor). Off, every card keeps the positioned
+         * layout; refreshPresentation() applies a change to cards already on the page (the pixel-comparison harness
+         * flips it).
+         */
+        restingFlow: true,
+        /**
+         * Decide a card's resting layout again: something outside this module changed what it may be (a status tag
+         * gained or lost its live backdrop filter, the status-tag painter).
+         */
+        syncFlowOf(host: HTMLElement) {
+            const ctrl = host ? s.controllers.get(host) : null;
+            if (ctrl && ctrl.layout) deps.syncFlow(ctrl, deps.resolveLayout(ctrl));
+        },
+        /** What is remembered of the page's CSS, and how often it was asked (performance checks). */
+        flowStats: () => ({ alike: s.flowAlike.size, verdicts: s.flowVerdicts.size, ...s.flowCounters }),
+        /**
+         * Whether group containers are nudged to the whole pixel they were painted from when they were contained
+         * (snap.ts). Off, they stay where the layout puts them; refreshPresentation() applies a change to cards
+         * already on the page (the pixel-comparison harness flips it).
+         */
+        wholePixels: true,
+        /** Run the pending whole-pixel pass now (tests; the page runs it in idle time). */
+        flushSnap: snap.flushSnap,
+        /** Counts of the whole-pixel pass and the time its reads took (performance checks). */
+        snapStats: snap.snapStats,
+        /** What the idle pass still has to do, and what a card costs a slice (performance checks). */
+        idleStats: idle.idleStats,
         normalizeGroup,
         readEdge,
         normalizeSettings: deps.normalizeSettings,

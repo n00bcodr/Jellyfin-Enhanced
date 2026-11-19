@@ -22,14 +22,42 @@
   var export10 = /* @__PURE__ */ sharedExport(shared2, "sessionLease");
   var export11 = /* @__PURE__ */ sharedExport(shared2, "visibleDetailPage");
 
-  // client/generated-shared/stub/client/src/features/details-providers/links.ts
-  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/links");
-  var export0 = /* @__PURE__ */ sharedExport(shared3, "externalLink");
-  var export2 = /* @__PURE__ */ sharedExport(shared3, "pathSegment");
+  // client/src/features/shared/url-domain.ts
+  function safeExternalUrl(value, base) {
+    try {
+      const url = new URL(value, base);
+      return ["http:", "https:", "mailto:", "tel:", "ftp:", "blob:"].includes(url.protocol) ? value : "#";
+    } catch {
+      return "#";
+    }
+  }
+
+  // client/src/features/details-providers/links.ts
+  function safeHref(url) {
+    return safeExternalUrl(url, window.location.href);
+  }
+  function externalLink(helpers, url, options = {}) {
+    const shared4 = helpers?.createExternalLink;
+    if (shared4) return shared4(url, options);
+    const anchor = document.createElement("a");
+    anchor.setAttribute("is", "emby-linkbutton");
+    anchor.href = safeHref(url);
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    if (options.title) anchor.title = options.title;
+    if (options.className) anchor.className = options.className;
+    if (options.text) anchor.textContent = options.text;
+    if (options.resetStyle) anchor.style.cssText = "padding:0;background:none;border-radius:0;min-width:0;";
+    if (typeof options.setup === "function") options.setup(anchor);
+    return anchor;
+  }
+  function pathSegment(id) {
+    return encodeURIComponent(id);
+  }
 
   // client/generated-shared/stub/client/src/features/details-providers/wire.ts
-  var shared4 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
-  var export12 = /* @__PURE__ */ sharedExport(shared4, "decodeDetailsItem");
+  var shared3 = /* @__PURE__ */ sharedModule("features/details-providers/wire");
+  var export12 = /* @__PURE__ */ sharedExport(shared3, "decodeDetailsItem");
 
   // client/src/features/details-providers/letterboxd-links.ts
   var JE = export1("Letterboxd links");
@@ -74,7 +102,7 @@
       document.head.appendChild(style);
     }
     function createLinkButton(label, url) {
-      const button = export0(JE.helpers, url, { title: label });
+      const button = externalLink(JE.helpers, url, { title: label });
       if (JE.pluginConfig?.ShowLetterboxdLinkAsText) {
         button.textContent = label;
         button.className = "button-link emby-button letterboxd-link";
@@ -129,7 +157,7 @@
             processedItemIds.add(itemId);
             return;
           }
-          letterboxdUrl = `https://letterboxd.com/imdb/${export2(imdbId)}`;
+          letterboxdUrl = `https://letterboxd.com/imdb/${pathSegment(imdbId)}`;
         }
         anchorElement.appendChild(document.createTextNode(" "));
         anchorElement.appendChild(createLinkButton("Letterboxd", letterboxdUrl));

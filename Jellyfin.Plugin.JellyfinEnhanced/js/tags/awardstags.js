@@ -13,11 +13,11 @@
 
   // client/generated-shared/stub/client/src/features/media-tags/host.ts
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
   var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
-  var export42 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
 
   // client/src/features/media-tags/types/awards/awards-data.ts
   var NAMES = { "imdbTop250": "awards_tags_imdbTop250", "certifiedFresh": "awards_tags_certifiedFresh", "oscar": "awards_tags_oscar", "emmy": "awards_tags_emmy", "letterboxdTop250": "awards_tags_letterboxdTop250" };
@@ -52,7 +52,7 @@
       return facts[key] ?? facts[key.charAt(0).toUpperCase() + key.slice(1)];
     }
     function resolve(facts) {
-      if (!export42(facts) || JE.pluginConfig?.AwardsTagsEnabled === false) return [];
+      if (!export4(facts) || JE.pluginConfig?.AwardsTagsEnabled === false) return [];
       const out = [];
       const admin = JE.pluginConfig || {};
       const push = (id, flag, rank, year) => {
@@ -119,7 +119,7 @@
         },
         renderFromCache(ctx, el, itemId) {
           const cached = ctx.hot?.get(itemId) ?? ctx.getPersistent(itemId);
-          if (!export42(cached)) return false;
+          if (!export4(cached)) return false;
           render(ctx, el, cached.facts);
           return true;
         },
@@ -139,7 +139,7 @@
   }
 
   // client/src/features/media-tags/types/awards/awardstags-entry.ts
-  createAwardsTags(export4());
+  createAwardsTags(export5());
 })();
 })();
 //# sourceMappingURL=awardstags.js.map

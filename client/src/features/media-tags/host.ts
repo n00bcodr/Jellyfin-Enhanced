@@ -19,6 +19,7 @@ import type { DirectPlay } from './types/direct-play/tag-direct-play';
 import type { ItemEditor } from './editor/tag-item-editor';
 import type { MaintainerrMenu } from './editor/maintainerr-item-menu';
 import type { JsonRecord } from './pipeline/dto';
+import type { StatusTagBackdrop } from './types/status/backdrop/painter';
 
 /** Mutable settings documents with dynamic group keys; values stay unknown until read. */
 export type SettingsDocument = Record<string, unknown>;
@@ -68,7 +69,7 @@ export interface TagRuntimeInternals {
 }
 export interface TagRuntimeCore {
     ui: Pick<Ui, 'injectCss' | 'removeCss'>;
-    dom?: Pick<Dom, 'createObserver' | 'onBodyMutation'>;
+    dom?: Pick<Dom, 'createObserver' | 'onBodyMutation'> & Partial<Pick<Dom, 'afterNextPaint'>>;
     api: Pick<CoreApi, 'plugin'>;
     navigation?: Pick<Navigation, 'onNavigate'>;
     lifecycle: Pick<Lifecycle, 'register'>;
@@ -99,7 +100,16 @@ export interface TagRuntimeBridge {
     currentSettings?: SettingsDocument;
     pluginConfig?: SettingsDocument;
     helpers?: TagRuntimeHelpers;
+    /** The component-group loader (js/plugin.js): `ensure` resolves once the groups have run. */
+    loader?: {
+        /** `pace`: 'now' unless given; a caller whose work can wait for the page asks with 'boot' (idle time, low priority). */
+        ensure(ids: readonly string[], options?: { pace?: 'boot' | 'background' | 'now' }): Promise<void>;
+        /** Each group asked for so far. */
+        state?(): Record<string, 'loading' | 'ready'>;
+    };
     internals?: TagRuntimeInternals;
+    /** The status tags' painted backdrop (tags/status-tag-backdrop.js, its own component group): set once that group has run. */
+    statusTagBackdrop?: StatusTagBackdrop;
     spoilerBlur?: SpoilerGuardFacade;
     /** media-tags' facade for the details page's visits: the object in `JE.internals.peopleTags` (step C4). */
     peopleTags?: TagRuntimeInternals['peopleTags'];
@@ -192,6 +202,12 @@ export function mediaTagsContext(JE: TagRuntimeBridge = tagRuntimeHost()): Media
 export function settingsUi<T>(JE: { internals?: { enhancedUi?: T } | undefined }): T | undefined {
     return JE.internals?.enhancedUi;
 }
+/**
+ * The settings panel's preview code behind {@link settingsUi} loads on demand (the loader's "settings" component
+ * group). The item editor's dialog previews with it, so it fetches the group alongside the item: resolves once the
+ * group has run, at once when it already has or there is no loader.
+ */
+export const settingsUiLoaded = (JE: TagRuntimeBridge): Promise<void> | undefined => JE.loader?.ensure(['settings']);
 /** ApiClient, resolved at each call: jellyfin-web replaces it on a server switch. */
 export function hasApiClient(): boolean {
     const host: Window & { ApiClient?: TagApiClient } = window;

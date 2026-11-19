@@ -42,7 +42,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
         }
 
         /// <summary>
-        /// The concatenated component scripts (see Services/ClientScriptBundle).
+        /// The concatenated component scripts (see Services/ClientScriptBundle):
+        /// the groups named by <paramref name="g"/> ("core,tags"), or the whole
+        /// manifest without it. An unknown, repeated or malformed group list is 404.
         /// Same Cache-Control as GetScriptResource: immutable in production (the URL
         /// carries the cache key), no-store and rebuilt per request in dev mode.
         /// Sent pre-compressed (br, else gzip, per Accept-Encoding; Vary: Accept-Encoding)
@@ -51,12 +53,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
         /// response compression, so it is never compressed twice.
         /// </summary>
         [HttpGet("bundle.js")]
-        public ActionResult GetScriptBundle() => GetScriptBundleResource(map: false);
+        public ActionResult GetScriptBundle([FromQuery] string? g = null) => GetScriptBundleResource(map: false, g);
 
         [HttpGet("bundle.js.map")]
-        public ActionResult GetScriptBundleMap() => GetScriptBundleResource(map: true);
+        public ActionResult GetScriptBundleMap([FromQuery] string? g = null) => GetScriptBundleResource(map: true, g);
 
-        private ActionResult GetScriptBundleResource(bool map)
+        private ActionResult GetScriptBundleResource(bool map, string? groupList)
         {
             var plugin = JellyfinEnhanced.Instance;
             if (plugin == null)
@@ -68,7 +70,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
             Features.Platform.Services.EncodedBody body;
             try
             {
-                var bundle = Features.Platform.Services.ClientScriptBundle.GetServedBundle(plugin.ScriptCacheKey, rebuild: devMode, _logger);
+                Features.Platform.Services.ServedBundle bundle;
+                if (groupList == null)
+                {
+                    bundle = Features.Platform.Services.ClientScriptBundle.GetServedBundle(plugin.ScriptCacheKey, rebuild: devMode, _logger);
+                }
+                else
+                {
+                    var groups = Features.Platform.Services.ClientScriptBundle.ParseGroupRequest(groupList);
+                    if (groups == null)
+                    {
+                        return NotFound();
+                    }
+
+                    bundle = Features.Platform.Services.ClientScriptBundle.GetServedGroupBundle(plugin.ScriptCacheKey, groups, rebuild: devMode, _logger);
+                }
+
                 body = (map ? bundle.SourceMap : bundle.Script).Select(Request.Headers.AcceptEncoding.ToString());
             }
             catch (Exception ex)

@@ -1,0 +1,396 @@
+{
+    "notes": [
+        "Which component modules load together, and so which can stay unloaded until a page needs them (upstream abcaa16d's file, written for this tree's module list).",
+        "Every module of js/component-scripts.json that no group here lists belongs to the implicit group \"core\", which every page loads.",
+        "The server serves any set of groups as one script (GET /JellyfinEnhanced/bundle.js?g=core,tags; Features/Platform/Services/ClientScriptBundle.cs) and the loader",
+        "decides which groups a page needs (FEATURE_GROUPS) and which stage-6 initializer belongs to which group (FEATURE_INITIALIZERS), in client/src/bootstrap/loader/.",
+        "Rules: a module is in one group; inside a group modules run in manifest order; \"after\" names groups (listed earlier in this file) whose modules",
+        "must have run first, because this group reads their exports while loading or cannot work without them. The order of this file is the order groups",
+        "run in when several load together. A new module that is not listed here loads on every page: list it in a group unless every page needs it.",
+        "A module of client/shared-modules.json is published by its provider: every script that reads it must be in the provider's group, a group it is after, or core, after the provider (the client build checks this).",
+        "Upstream modules this tree folds into another output are not listed: osd-playback and subtitle-sync are in the player group's playback.js and auto-skip.js,",
+        "the discovery modules in the seerr group's discovery-filter-utils.js, and maintainerr-item-menu (upstream group removal-menu) and the leaving-soon page and tab",
+        "(upstream group leavingsoon-page) in tags/tag-item-menu.js, whose group (tags) therefore loads wherever upstream loads any of those three groups.",
+        "tests/frontend/bootstrap/bootstrap-groups.test.mjs checks the split (each group loads with only what it is after); bootstrap-bundle-budget.test.mjs checks the sizes against scripts/bundle-budgets.json."
+    ],
+    "groups": [
+        {
+            "id": "tags",
+            "note": "Poster tags on cards: the shared renderer, layout, look rules, cache store, pipeline, the nine poster renderers, web tag styles, the review-rating add-on and the item menu's Media Tags row with its editor. tags/tag-item-menu.js also carries upstream's removal-menu module (the Maintainerr / removal-request rows in the item menu) and its leavingsoon-page modules (the Leaving Soon page and tab). Loaded at boot when any poster tag type is on for the user or the server offers the removal rows, and wherever the Leaving Soon page is shown.",
+            "modules": [
+                "core/tag-renderer-base.js",
+                "core/tag-layout.js",
+                "core/tag-look.js",
+                "tags/tag-cache-store.js",
+                "tags/tag-pipeline.js",
+                "tags/tag-layout-styles.js",
+                "tags/genretags.js",
+                "tags/languagetags.js",
+                "tags/qualitytags.js",
+                "tags/ratingtags.js",
+                "tags/ageratingtags.js",
+                "tags/awardstags.js",
+                "tags/status-vocabulary.js",
+                "tags/statustags.js",
+                "tags/logotags.js",
+                "tags/customtags.js",
+                "tags/tag-styles.js",
+                "tags/userreviewtags.js",
+                "tags/tag-item-editor.js",
+                "tags/tag-item-menu.js"
+            ]
+        },
+        {
+            "id": "tag-direct-play",
+            "after": [
+                "tags"
+            ],
+            "note": "The Status group's direct-play warning. Loaded with the tags when that sub-setting is on.",
+            "modules": [
+                "tags/tag-direct-play.js"
+            ]
+        },
+        {
+            "id": "tag-poster-colours",
+            "after": [
+                "tags"
+            ],
+            "note": "Poster colour sampling for the Poster tag style. Loaded with the tags when web tag styles are active.",
+            "modules": [
+                "tags/tag-poster-colours.js"
+            ]
+        },
+        {
+            "id": "tag-status-backdrop",
+            "after": [
+                "tags"
+            ],
+            "note": "The blurred backdrop of status tags, painted as a picture under each tag. Never loaded at boot: tags/statustags.js asks for it when the first status tag is drawn.",
+            "modules": [
+                "tags/status-tag-backdrop.js"
+            ]
+        },
+        {
+            "id": "tag-people",
+            "note": "Age and birthplace tags on cast cards. Loaded on an item's details page when People Tags are on.",
+            "modules": [
+                "tags/peopletags.js"
+            ]
+        },
+        {
+            "id": "spoiler-guard",
+            "note": "Spoiler Guard. Loaded at boot when it is enabled.",
+            "modules": [
+                "enhanced/spoilerguard/ids.js",
+                "enhanced/spoilerguard/state.js",
+                "enhanced/spoilerguard/image-refresh.js",
+                "enhanced/spoilerguard/snooze.js",
+                "enhanced/spoilerguard/dialog.js",
+                "enhanced/spoilerguard/identity.js",
+                "enhanced/spoilerguard/styles.js",
+                "enhanced/spoilerguard/settings-tab.js",
+                "enhanced/spoilerguard/seerr-toggle.js",
+                "enhanced/spoilerguard/detail-button.js",
+                "enhanced/spoilerguard/watched-refresh.js",
+                "enhanced/spoilerguard/index.js"
+            ]
+        },
+        {
+            "id": "details",
+            "note": "Item details chips and buttons. Loaded on an item's details page.",
+            "modules": [
+                "enhanced/itemdetails/features-details-media-info.js",
+                "enhanced/itemdetails/features-release-dates.js",
+                "enhanced/itemdetails/features-details-page.js"
+            ]
+        },
+        {
+            "id": "player",
+            "note": "Player features. Loaded when the video page opens or a video starts.",
+            "modules": [
+                "enhanced/player/playback.js",
+                "enhanced/player/auto-skip.js",
+                "enhanced/player/osd-rating.js",
+                "enhanced/player/pausescreen.js"
+            ]
+        },
+        {
+            "id": "player-badge",
+            "note": "The rating badge shown when playback starts; it has to be listening before the first video does. Loaded at boot when enabled.",
+            "modules": [
+                "enhanced/player/playback-rating-badge.js"
+            ]
+        },
+        {
+            "id": "hidden-content",
+            "note": "Hidden Content filtering, buttons and dialogs. Loaded at boot when it is enabled.",
+            "modules": [
+                "enhanced/hiddencontent/hidden-content-data.js",
+                "enhanced/hiddencontent/hidden-content-save.js",
+                "enhanced/hiddencontent/hidden-content-styles.js",
+                "enhanced/hiddencontent/hidden-content-dialogs.js",
+                "enhanced/hiddencontent/hidden-content-panel.js",
+                "enhanced/hiddencontent/hidden-content-filter.js",
+                "enhanced/hiddencontent/hidden-content-buttons.js",
+                "enhanced/hiddencontent/hidden-content-init.js"
+            ]
+        },
+        {
+            "id": "hidden-content-page",
+            "after": [
+                "hidden-content"
+            ],
+            "note": "The Hidden Content management page.",
+            "modules": [
+                "enhanced/hiddencontent/hidden-content-page-state.js",
+                "enhanced/hiddencontent/hidden-content-page-styles.js",
+                "enhanced/hiddencontent/hidden-content-page-admin.js",
+                "enhanced/hiddencontent/hidden-content-page-cards.js",
+                "enhanced/hiddencontent/hidden-content-page-render.js",
+                "enhanced/hiddencontent/hidden-content-page-nav.js",
+                "enhanced/hiddencontent/hidden-content-page-init.js",
+                "enhanced/hiddencontent/hidden-content-custom-tab.js"
+            ]
+        },
+        {
+            "id": "catchup",
+            "note": "The Catch Up page.",
+            "modules": [
+                "enhanced/catchup/catchup-core.js",
+                "enhanced/catchup/catchup-styles.js",
+                "enhanced/catchup/catchup-deck.js",
+                "enhanced/catchup/catchup-activity.js",
+                "enhanced/catchup/catchup-page.js",
+                "enhanced/catchup/catchup-custom-tab.js"
+            ]
+        },
+        {
+            "id": "settings",
+            "after": [
+                "tags",
+                "tag-direct-play",
+                "tag-poster-colours",
+                "tag-people"
+            ],
+            "note": "The settings panel. Loaded when it is opened, and on the plugin's admin configuration page (whose Media Tags tab uses its previews).",
+            "modules": [
+                "enhanced/settingspanel/ui-release-notes.js",
+                "enhanced/settingspanel/ui-panel-template.js",
+                "enhanced/settingspanel/ui-panel-shortcut-editor.js",
+                "enhanced/settingspanel/ui-panel-settings.js",
+                "enhanced/settingspanel/ui-panel-tag-editor.js",
+                "enhanced/settingspanel/ui-panel-hidden-content.js",
+                "enhanced/settingspanel/ui-panel-language.js",
+                "enhanced/settingspanel/ui-panel-tag-looks.js",
+                "enhanced/settingspanel/ui-panel-tag-preview.js",
+                "enhanced/settingspanel/ui-panel-tag-portable.js",
+                "enhanced/settingspanel/ui-panel-media-tags.js",
+                "enhanced/settingspanel/ui-panel-resize.js",
+                "enhanced/settingspanel/ui-panel.js"
+            ]
+        },
+        {
+            "id": "bookmarks",
+            "note": "Bookmarks: the player's markers and the bookmark store.",
+            "modules": [
+                "enhanced/bookmarks/bookmarks.js"
+            ]
+        },
+        {
+            "id": "bookmarks-library",
+            "after": [
+                "bookmarks"
+            ],
+            "note": "The Bookmarks library page.",
+            "modules": [
+                "enhanced/bookmarks/bookmarks-library-styles.js",
+                "enhanced/bookmarks/bookmarks-library-page.js",
+                "enhanced/bookmarks/bookmarks-library-render.js",
+                "enhanced/bookmarks/bookmarks-library-items.js",
+                "enhanced/bookmarks/bookmarks-library-modals.js",
+                "enhanced/bookmarks/bookmarks-library-replacements.js",
+                "enhanced/bookmarks/bookmarks-library-init.js"
+            ]
+        },
+        {
+            "id": "elsewhere",
+            "note": "Streaming providers on details pages.",
+            "modules": [
+                "elsewhere/elsewhere.js"
+            ]
+        },
+        {
+            "id": "reviews",
+            "note": "Reviews on details pages.",
+            "modules": [
+                "elsewhere/reviews.js"
+            ]
+        },
+        {
+            "id": "awards",
+            "note": "Awards on details pages.",
+            "modules": [
+                "awards/awards.js"
+            ]
+        },
+        {
+            "id": "mdblist",
+            "note": "MDBList ratings on details pages.",
+            "modules": [
+                "others/mdblist-ratings.js"
+            ]
+        },
+        {
+            "id": "content-warnings",
+            "note": "Content warnings (Does the Dog Die) on details pages.",
+            "modules": [
+                "others/doesthedogdie.js"
+            ]
+        },
+        {
+            "id": "seerr-api",
+            "note": "The Seerr API client and status helpers. Loaded at boot when Seerr is enabled.",
+            "modules": [
+                "jellyseerr/seerr-status.js",
+                "jellyseerr/request-manager.js",
+                "jellyseerr/api.js"
+            ]
+        },
+        {
+            "id": "seerr",
+            "after": [
+                "seerr-api"
+            ],
+            "note": "Seerr search, cards, request and More Info dialogs, details-page rows and links, issue reporting and the discovery sections. Loaded on search, details and list pages, and on the first call that opens one of its dialogs.",
+            "modules": [
+                "jellyseerr/jellyseerr.js",
+                "jellyseerr/ui/ui-icons.js",
+                "jellyseerr/ui/ui-styles.js",
+                "jellyseerr/ui/ui-popover.js",
+                "jellyseerr/ui/ui-badges.js",
+                "jellyseerr/ui/ui-cards.js",
+                "jellyseerr/ui/ui-buttons.js",
+                "jellyseerr/ui/ui-quota.js",
+                "jellyseerr/ui/ui-results.js",
+                "jellyseerr/ui/ui-request-modals.js",
+                "jellyseerr/ui/ui-season-modal.js",
+                "jellyseerr/modal.js",
+                "jellyseerr/moreinfo/more-info-modal-styles.js",
+                "jellyseerr/moreinfo/more-info-modal-data.js",
+                "jellyseerr/moreinfo/more-info-modal-seasons.js",
+                "jellyseerr/moreinfo/more-info-modal-badges.js",
+                "jellyseerr/moreinfo/more-info-modal-render.js",
+                "jellyseerr/moreinfo/more-info-modal-actions-tv.js",
+                "jellyseerr/moreinfo/more-info-modal-actions.js",
+                "jellyseerr/moreinfo/more-info-modal-init.js",
+                "jellyseerr/seerr-detail-link.js",
+                "jellyseerr/item-details.js",
+                "jellyseerr/issue-reporter.js",
+                "jellyseerr/seamless-scroll.js",
+                "jellyseerr/discovery/discovery-filter-utils.js",
+                "jellyseerr/discovery/discovery-base.js",
+                "jellyseerr/discovery/network-discovery.js",
+                "jellyseerr/discovery/person-discovery.js",
+                "jellyseerr/discovery/genre-discovery.js",
+                "jellyseerr/discovery/tag-discovery.js",
+                "jellyseerr/discovery/collection-discovery.js"
+            ]
+        },
+        {
+            "id": "recommendations",
+            "after": [
+                "seerr"
+            ],
+            "note": "The Recommendations page.",
+            "modules": [
+                "jellyseerr/recommendations/recommendations-styles.js",
+                "jellyseerr/recommendations/recommendations-catalog.js",
+                "jellyseerr/recommendations/recommendations-data.js",
+                "jellyseerr/recommendations/recommendations-render.js",
+                "jellyseerr/recommendations/recommendations-page.js",
+                "jellyseerr/recommendations/recommendations-category.js",
+                "jellyseerr/recommendations/recommendations-init.js",
+                "jellyseerr/recommendations/recommendations-custom-tab.js"
+            ]
+        },
+        {
+            "id": "arr-links",
+            "note": "Sonarr / Radarr / Bazarr links on details pages (administrators).",
+            "modules": [
+                "arr/arr-links.js"
+            ]
+        },
+        {
+            "id": "arr-tag-links",
+            "note": "*arr tags as links on details pages.",
+            "modules": [
+                "arr/arr-tag-links.js"
+            ]
+        },
+        {
+            "id": "requests-page",
+            "note": "The Requests / Downloads page.",
+            "modules": [
+                "arr/requests/requests-page-styles.js",
+                "arr/requests/requests-page-data.js",
+                "arr/requests/requests-page-render-helpers.js",
+                "arr/requests/requests-page-render-cards.js",
+                "arr/requests/requests-page-render.js",
+                "arr/requests/requests-page-actions.js",
+                "arr/requests/requests-page-init.js",
+                "arr/requests/requests-custom-tab.js"
+            ]
+        },
+        {
+            "id": "calendar-page",
+            "note": "The Calendar page.",
+            "modules": [
+                "arr/calendar/calendar-page-styles.js",
+                "arr/calendar/calendar-page-data.js",
+                "arr/calendar/calendar-page-render-events.js",
+                "arr/calendar/calendar-page-render-views.js",
+                "arr/calendar/calendar-page-actions.js",
+                "arr/calendar/calendar-page-init.js",
+                "arr/calendar/calendar-custom-tab.js"
+            ]
+        },
+        {
+            "id": "dashboard",
+            "note": "Dashboard extras: activity icons, plugin icons and links, plugin revision lists. Loaded on dashboard pages.",
+            "modules": [
+                "extras/colored-activity-icons.js",
+                "extras/plugin-icons.js",
+                "extras/plugin-revisions.js"
+            ]
+        },
+        {
+            "id": "theme-selector",
+            "note": "The theme selector. Loaded at boot when enabled.",
+            "modules": [
+                "extras/theme-selector.js"
+            ]
+        },
+        {
+            "id": "active-streams",
+            "note": "The Active Streams header widget. Loaded at boot when enabled.",
+            "modules": [
+                "extras/active-streams.js"
+            ]
+        },
+        {
+            "id": "activity-page",
+            "note": "The Activity page.",
+            "modules": [
+                "extras/activity-page.js",
+                "extras/activity-custom-tab.js"
+            ]
+        },
+        {
+            "id": "letterboxd",
+            "note": "Letterboxd links on details pages.",
+            "modules": [
+                "others/letterboxd-links.js"
+            ]
+        }
+    ]
+}

@@ -1500,8 +1500,8 @@ The injected web client uses these endpoints to load resources and its initial s
 | GET | `public-config` | Anonymous | Curated public configuration; anonymous Seerr URLs redacted. |
 | GET | `private-config` | Authenticated | Selected private configuration for admins; `{}` for other users. |
 | GET | `bootstrap` | Caller, parseable claim | Initial state described below, `no-store`. |
-| GET | `bundle.js` | Anonymous | Concatenated component JavaScript. |
-| GET | `bundle.js.map` | Anonymous | Component source map, JSON. |
+| GET | `bundle.js` | Anonymous | Concatenated component JavaScript. Optional `g=<group>,<group>` serves only those component groups; without `g`, every component module. |
+| GET | `bundle.js.map` | Anonymous | Component source map, JSON. Takes the same optional `g`. |
 | GET | `host-compat` | Administrator | Build/host diagnostic object. |
 | GET | `locales` | Authenticated | Sorted locale-code string array, excluding base `en`; one-day response-cache duration. |
 | GET | `locales/{lang}.json` | Anonymous | Embedded translation JSON; regional code falls back to base language. |
@@ -1526,6 +1526,7 @@ Use `bootstrap` to load your initial configuration, user documents, and availabl
 | `HasCustomTabs`, `HasPluginPages` | Whether a plugin with that exact name is loaded. |
 | `UserSettings` | `{Settings,Shortcuts,Bookmark,Elsewhere,HiddenContent}` typed documents. |
 | `ComponentScripts` | Ordered component-script path array, nullable on manifest failure. |
+| `ComponentGroups` | The `groups` array of `js/component-groups.json` (`{id,after,modules}` per group: the notes are left out, and `after` only where the file has one), null when the file is missing or invalid; the client then loads every component module together. See [Component groups](project-structure.md#component-groups). |
 | `Prefetched` | `{SpoilerBlurSeries,SeerrUserStatus,SeerrStatus,ActiveStreamSessions,TagStripRevision}`; standalone response shapes or null. `TagStripRevision` is the `StripRevision` a `tag-data` answer would carry, null when the Spoiler Guard state cannot be read. |
 
 A missing/unparseable claim returns `403`; an empty but parseable GUID passes the initial check. There is no target-user parameter or account-existence check. Missing configuration returns `503`.
@@ -1601,6 +1602,8 @@ Use these rules when loading or retaining JE scripts, translations, fonts, and m
 | **Dev Mode** | `false` | `DevMode`; switches script/bundle delivery to `no-store`; bundles rebuild per request. |
 
 Production scripts, CSS, component bundles/maps, and fonts use one-year immutable caching. Use a version/build cache key in resource URLs when retaining them. Embedded missing resources return `404`; unavailable bundle instance `503`, bundle-build failure `500`.
+
+`bundle.js` and `bundle.js.map` take an optional `g` query, a comma-separated list of component group ids such as `g=core,tags`. The response holds those groups in the groups file's order, `core` first, whatever order the list uses. An empty list, an unknown or repeated id, or more than 64 ids returns `404`. Without `g`, both routes serve every component module, as they did before groups existed. The client adds `v=<cache key>` to each request; the server does not read it.
 
 Locale JSON tries the requested code, then a base-language fallback such as `de-DE` → `de`, then returns `404`.
 

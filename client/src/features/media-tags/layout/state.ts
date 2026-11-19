@@ -54,6 +54,33 @@ export function childrenOf(element: Element): HTMLElement[] {
 export function cloneElement(element: HTMLElement): HTMLElement { const clone = element.cloneNode(true); if (!(clone instanceof HTMLElement))
     throw new Error('Expected an HTML tag'); return clone; }
 
+/**
+ * A card's sizes as the size observer and the fitting pass saw them (fit-measure.ts watchSize).
+ * `snapWidth` and `snapHeight` are the size the whole-pixel pass last measured the card at (snap.ts noteSnapSize;
+ * undefined: it never did); `boxWidth` and `boxHeight` the border box as last observed (snap.ts scaled).
+ */
+export interface FittedSize {
+    observed: number;
+    observedHeight: number;
+    fitted: number;
+    fittedHeight: number;
+    measured: { width: number; height: number } | null;
+    snapWidth?: number | undefined;
+    snapHeight?: number | undefined;
+    boxWidth?: number | undefined;
+    boxHeight?: number | undefined;
+}
+
+/** Counts of the idle pass's questions and of the whole-pixel pass (performance checks and tests). */
+export interface FlowCounters { probes: number; inspections: number }
+export interface SnapCounters { passes: number; cards: number; moved: number; deferred: number; passMs: number; held: number }
+
+/** A size that differs by less than this is the same size (CSS px; a layout unit is several times this on any screen). */
+export const SNAP_SAME_PX = 0.002;
+
+/** How long after the pointer leaves a card its host goes back to flow: past the genre names' 0.12s fade (live.ts). */
+export const REST_AFTER_MS = 200;
+
 export const STACK_INSET = 6;
 export const STACK_LIFT = '--je-stack-lift';
 export const INDICATOR_BEFORE = '--je-indicator-before';
@@ -100,6 +127,31 @@ export interface LayoutState {
     revealedCard: HTMLElement | null;
     moreTipSeq: number;
     reinitPending: Promise<void> | null;
+    // ── Resting flow and whole pixels (upstream abcaa16d: flow.ts, flow-idle.ts, live.ts, snap*.ts) ──
+    readonly fittedWidths: WeakMap<HTMLElement, FittedSize>;
+    /** Kind of slot → whether the browser lays it out in flow exactly as positioned. */
+    readonly flowAlike: Map<string, boolean>;
+    /** Kind of element → whether the page's CSS makes it a layer of its own. */
+    readonly flowVerdicts: Map<string, boolean>;
+    /** Goes up whenever what was learnt of the page's CSS is forgotten: elements inspected under an older number are inspected again. */
+    flowEpoch: number;
+    /** Cards holding a kind of slot the browser has not been asked about, cards another card's answer freed, cards to measure for whole pixels. */
+    readonly pendingAlike: Set<CardController>;
+    readonly pendingFreed: Set<CardController>;
+    readonly pendingSnap: Set<CardController>;
+    /** Cards that had no size when their layout was to be decided: decided when they get one. */
+    readonly unmeasured: WeakSet<CardController>;
+    /** Hosts due back in flow after the pointer left (live.ts restLater), and a live host found still hovered when it was due. */
+    readonly restTimers: WeakMap<HTMLElement, ReturnType<typeof setTimeout>>;
+    lingering: HTMLElement | null;
+    /** The host of the card the pointer last left, and when (performance.now()): its slots ease back for a moment. */
+    readonly lastLeft: { host: HTMLElement | null; at: number };
+    /** Hosts whose slots were fading when they were to be inspected: looked at when the pointer has left. */
+    readonly uninspected: WeakSet<HTMLElement>;
+    /** Layout pixels per CSS pixel: the grid boxes are snapped to. 0 until the browser has said (snap.ts watchScale). */
+    layoutScale: number;
+    readonly flowCounters: FlowCounters;
+    readonly snapCounters: SnapCounters;
 }
 
 /**
@@ -151,6 +203,21 @@ export function createLayoutState(): LayoutState {
         revealedCard: null,
         moreTipSeq: 0,
         reinitPending: null,
+        fittedWidths: new WeakMap(),
+        flowAlike: new Map(),
+        flowVerdicts: new Map(),
+        flowEpoch: 1,
+        pendingAlike: new Set(),
+        pendingFreed: new Set(),
+        pendingSnap: new Set(),
+        unmeasured: new WeakSet(),
+        restTimers: new WeakMap(),
+        lingering: null,
+        lastLeft: { host: null, at: 0 },
+        uninspected: new WeakSet(),
+        layoutScale: 0,
+        flowCounters: { probes: 0, inspections: 0 },
+        snapCounters: { passes: 0, cards: 0, moved: 0, deferred: 0, passMs: 0, held: 0 },
     };
 }
 
@@ -221,4 +288,43 @@ export interface LayoutFns {
     syncIndicatorGap: (ctrl: CardController, conf: LayoutSettings) => void;
     teardown: (ctrl: CardController) => void;
     unwatchSize: (host: HTMLElement) => void;
+    // ── Resting flow and whole pixels (upstream abcaa16d) ──
+    watchSize: (host: HTMLElement) => void;
+    edgeOf: (ctrl: CardController) => number;
+    forgetPageCss: () => void;
+    flowFor: (ctrl: CardController, conf: LayoutSettings, read?: boolean) => boolean | null;
+    syncFlow: (ctrl: CardController, conf: LayoutSettings) => void;
+    decideFlow: (ctrl: CardController, conf: LayoutSettings) => boolean | null;
+    markFlow: (ctrl: CardController, flow: boolean, measure?: boolean) => void;
+    layeredFlow: (ctrl: CardController, conf: LayoutSettings, read: boolean, fresh?: Set<string>) => boolean | null;
+    measurableKinds: (ctrl: CardController, conf: LayoutSettings) => Array<[HTMLElement, string]>;
+    awaitSize: (ctrl: CardController) => void;
+    awaitImages: (ctrl: CardController) => void;
+    imagesLoading: (slot: Element) => boolean;
+    queueReprobe: () => void;
+    inspectLater: (ctrl: CardController, hovered: boolean) => void;
+    queueFlow: (ctrl: CardController) => void;
+    queueIdle: () => void;
+    flushAlike: (cards?: CardController[]) => number;
+    snapSupported: () => boolean;
+    snapReady: () => boolean;
+    scheduleSnap: (ctrl: CardController, settle?: boolean) => void;
+    unsnap: (ctrl: CardController) => void;
+    snapAgain: (ctrl: CardController) => void;
+    snapLater: (ctrl: CardController) => void;
+    measureSnap: (cards?: CardController[]) => import('./snap').SnapPlan[] | null;
+    applySnap: (plans: import('./snap').SnapPlan[]) => void;
+    flushSnap: () => void;
+    watchFonts: () => void;
+    bandNudges: (slot: HTMLElement, origin: { x: number; y: number }, items: import('./snap').SnapItem[]) => Array<{ vx: number; left: number } | null>;
+    watchBand: (slot: HTMLElement) => void;
+    noteBandWrite: (slot: Element) => void;
+    bandHeld: (slot: Element) => boolean;
+    goLive: (host: HTMLElement | null) => boolean;
+    showNames: (host: HTMLElement) => void;
+    restLater: (card: Element) => void;
+    notAtRest: (host: HTMLElement) => boolean;
+    hidesOnHover: (host: HTMLElement | null) => boolean;
+    releaseScale: () => void;
+    releaseBands: () => void;
 }

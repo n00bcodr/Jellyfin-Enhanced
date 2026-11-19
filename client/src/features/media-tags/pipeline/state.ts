@@ -216,6 +216,8 @@ export interface PipelineFns {
     navigationRoute: () => string;
     needsLibraryFacts: () => boolean;
     peekItemFacts: (id: string) => JsonRecord | null;
+    itemFactsExpiry: (id: string) => number;
+    adoptIdentityObserver: (observer: MutationObserver) => void;
     peekSeasonFacts: (seriesId: string, season: number) => JsonRecord | null;
     persistDelta: (entries: EntryPairs, base: SnapshotBase, timestamp: number, servedAt: number, removed?: readonly string[]) => void;
     queuePersist: (work: () => Promise<void>) => void;

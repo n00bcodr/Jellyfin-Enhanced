@@ -13,12 +13,12 @@
 
   // client/generated-shared/stub/client/src/features/media-tags/host.ts
   var shared = /* @__PURE__ */ sharedModule("features/media-tags/host");
-  var export4 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
+  var export5 = /* @__PURE__ */ sharedExport(shared, "tagRuntimeHost");
 
   // client/generated-shared/stub/client/src/features/media-tags/pipeline/dto.ts
   var shared2 = /* @__PURE__ */ sharedModule("features/media-tags/pipeline/dto");
-  var export42 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
-  var export5 = /* @__PURE__ */ sharedExport(shared2, "memberRecord");
+  var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
+  var export52 = /* @__PURE__ */ sharedExport(shared2, "memberRecord");
   var export6 = /* @__PURE__ */ sharedExport(shared2, "memberText");
   var export7 = /* @__PURE__ */ sharedExport(shared2, "members");
   var export10 = /* @__PURE__ */ sharedExport(shared2, "record");
@@ -50,7 +50,7 @@
       if (!sourceItem) return [];
       const languages = /* @__PURE__ */ new Set();
       const processStreams = function(streams) {
-        export7(streams).map(export5).filter(function(s) {
+        export7(streams).map(export52).filter(function(s) {
           return s.Type === type && !(type === "Audio" ? JE.core.mediaLanguage.isSecondaryAudio(s) : s.IsForced === true);
         }).forEach(function(stream) {
           const langCode = stream.Language;
@@ -60,7 +60,7 @@
         });
       };
       export7(sourceItem.MediaSources).forEach(function(source) {
-        processStreams(export5(source).MediaStreams);
+        processStreams(export52(source).MediaStreams);
       });
       processStreams(sourceItem.MediaStreams);
       return normalizeLanguages(Array.from(languages, (fact) => JSON.parse(fact)));
@@ -82,7 +82,7 @@
         if (typeof entry === "string") {
           const code = entry.toLowerCase();
           obj = { name: displayName(code), code };
-        } else if (export42(entry)) {
+        } else if (export4(entry)) {
           const code = String(entry.code || entry.Code || "");
           const name = String(entry.name || entry.Name || "") || null;
           if (code) {
@@ -178,7 +178,7 @@
       const conf = readSettings();
       const hidden = JE.core.tagHidden;
       const labelOf = (entry) => {
-        const code = typeof entry === "string" ? entry : export42(entry) ? entry.code ?? entry.Code : null;
+        const code = typeof entry === "string" ? entry : export4(entry) ? entry.code ?? entry.Code : null;
         return code ? baseOf(String(code)) || null : null;
       };
       const shown = (list) => Array.isArray(list) && hidden?.any("language") ? list.filter((entry) => !hidden.hides("language", labelOf(entry))) : list;
@@ -311,6 +311,13 @@
                     outline-offset: -1px;
                     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
                 }
+                /* A dimmed flag or chip paints late (its opacity makes it a layer).
+                   The chips beside one stay positioned so they still paint after
+                   it, its dark ring under their edge, as when every chip had a
+                   transform; without one in the group no chip needs a layer. */
+                .${containerClass}:has(.${partialFlagClass}) .language-chip { position: relative; }
+                /* A browser without :has() drops that rule: every chip stays positioned there, as when each had a transform. */
+                @supports not selector(:has(*)) { .${containerClass} .language-chip { position: relative; } }
                 .layout-mobile .${flagClass} {
                     width: calc(clamp(20px, 5vw, 26px) * var(--je-tag-scale, 1));
                 }
@@ -399,7 +406,7 @@
   }
 
   // client/src/features/media-tags/types/language/languagetags-entry.ts
-  createLanguageTags(export4());
+  createLanguageTags(export5());
 })();
 })();
 //# sourceMappingURL=languagetags.js.map
