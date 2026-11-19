@@ -19,9 +19,10 @@ const card = n => `<div class="card" data-id="${ID(n)}" data-type="Movie"><div c
  * changes pixels where translucent things overlap, whatever the containers' positions: that is the
  * compositor's doing, and not what this pins.)
  */
-async function open(page, settings, css = '', sized = true) {
+async function open(page, settings, css = '', sized = true, standards = false) {
   if (sized) await page.setViewportSize({ width: 900, height: 420 });
-  await page.setContent(`<style>
+  // (`standards`: with a doctype, as Jellyfin's pages have. Without one :hover does not match here.)
+  await page.setContent(`${standards ? '<!doctype html>' : ''}<style>
     body { margin: 0; background: #223; font-family: sans-serif }
     .row { position: absolute; left: 20.796875px; top: 10.640625px; white-space: nowrap }
     .card { display: inline-block; width: 181.34375px; margin-right: 17.84375px; contain: content }
@@ -201,89 +202,220 @@ for (const [scale, name, settings] of [[1.25, 'Corners', {}], [1.25, 'Bands', { 
   });
 }
 
+// A theme that zooms the card under the pointer: distances read from a scaled card are not the layout's, so it
+// is measured when that is over. Not while the pointer moves about the card, and not on the card's way back,
+// when it is a hair larger than its own size and reads as not scaled.
+test('a card a theme zooms under the pointer is left alone while the pointer is about it, and is on its pixels once it is back', async ({ page }, info) => {
+  test.skip(info.project.name !== 'chromium', 'a pointer over a desktop page; nothing is nudged outside Chromium\'s family');
+  test.setTimeout(60000);
+  await open(page, {}, `.card:hover .cardBox { transform: scale(1.06); transition: transform .15s }
+    .probe { position: absolute; top: 45%; width: 26px; height: 26px; padding: 0; border: 0; opacity: 0; pointer-events: auto }`, true, true);
+  await page.evaluate(() => {
+    document.querySelectorAll('.cardScalable').forEach((box) => { for (let i = 0; i < 3; i++) { const button = document.createElement('button'); button.className = 'probe'; button.style.left = `${24 + i * 46}px`; box.appendChild(button); } });
+  });
+  await settled(page);
+  const stats = () => page.evaluate(() => JellyfinEnhanced.core.tagLayout.snapStats());
+  const card = page.locator('.card').first();
+  const at = async (locator) => { const box = await locator.boundingBox(); return [box.x + box.width / 2, box.y + box.height / 2]; };
+  // The pointer comes onto the card, the card grows, and a tag is drawn again on it meanwhile: it cannot be measured now.
+  await page.mouse.move(...(await at(card.locator('.probe').first())));
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    const el = document.createElement('div'); el.className = 'status-overlay-container'; el.innerHTML = '<div class="status-tag">Ended</div>';
+    JellyfinEnhanced.core.tagLayout.commitGroup(document.querySelector('.je-tag-host'), 'status', el);
+  });
+  await page.waitForTimeout(700);
+  const waiting = await stats();
+  expect(waiting.deferred, 'the zoomed card waits').toBeGreaterThan(0);
+  // The pointer goes from button to button on the card for a second and a half.
+  for (let i = 1; i <= 24; i++) { await page.mouse.move(...(await at(card.locator('.probe').nth(i % 3))), { steps: 2 }); await page.waitForTimeout(50); }
+  await page.waitForTimeout(400);
+  const about = await stats();
+  expect([about.passes, about.deferred], 'nothing measured while the pointer was about the card').toEqual([waiting.passes, waiting.deferred]);
+  // It leaves: the card goes back to its size, and is measured there.
+  await page.mouse.move(820, 380);
+  await page.waitForTimeout(900);
+  await settled(page);
+  expect((await stats()).passes).toBeGreaterThan(about.passes);
+  expect((await offGrid(page)).filter(c => c.off > 0.001), 'every container on its pixel once the card is back').toEqual([]);
+});
+
 // Bands' top band wraps whole groups. A group pushed from its right is that much narrower when the browser
 // breaks the band into lines, so a nudge could pull a group that only just wrapped back up onto the line
 // above: the band would change height, the nudge would come off, the group would go down again, and so on.
-test('Bands: a group that only just wraps onto the band\'s second line stays there, and the page comes to rest', async ({ page, browserName }) => {
-  test.setTimeout(60000);
-  await page.setViewportSize({ width: 1200, height: 900 });
-  const sheet = `<style>
+
+/** A page of Bands cards of given widths, with the real layout controller and stylesheet; each top band holds `groups`. */
+async function bandsPage(page, groups, { rtl = false } = {}) {
+  await page.setContent(`<!doctype html><html${rtl ? ' dir="rtl"' : ''}><style>
     body { margin: 0; background: #223; font-family: sans-serif }
     #cards { position: absolute; left: 10.3px; top: 10.7px; width: 1150px }
     .card { display: inline-block; margin: 0 6.3px 6.3px 0; contain: content }
     .cardBox { container-type: inline-size }
-    .cardScalable { position: relative; contain: layout style; height: 120px }
+    .cardScalable { position: relative; contain: layout style; height: 150px }
     .cardImageContainer { position: absolute; inset: 0; background: #456 }
     .je-tag-host { position: absolute !important; inset: 0; pointer-events: none }
-    .status-tag { display: inline-flex; padding: 2.3px 7.3px; border-radius: 999px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 11.3px; line-height: 1.3; white-space: nowrap }
-    </style><div id="cards"></div>`;
-  await page.setContent(sheet);
-  await page.evaluate(() => {
+    .status-tag, .plain-tag { display: inline-flex; padding: 2.3px 7.3px; border-radius: 999px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 11.3px; line-height: 1.3; white-space: nowrap }
+    </style><div id="cards"></div></html>`);
+  await page.evaluate((groups) => {
     window.JellyfinEnhanced = {
-      currentSettings: { ageRatingTagsEnabled: true, tagLayoutSettingsVersion: 1, tagLayout: 'bands',
-        tagLayouts: { bands: { groups: [{ group: 'status', slot: 'top' }, { group: 'ageRating', slot: 'top' }] } } },
+      currentSettings: { ageRatingTagsEnabled: true, tagLayoutSettingsVersion: 1, tagLayout: 'bands', tagLayouts: { bands: { groups: groups.map(group => ({ group, slot: 'top' })) } } },
       pluginConfig: { TagCacheServerMode: true }, t: k => k,
       session: { getUserId: () => 'a', getServerId: () => 's', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
       _cacheManager: { register() {}, markDirty() {} },
       tagPipeline: { renderers: {}, registerRenderer(name, renderer) { this.renderers[name] = renderer; }, getRenderer(name) { return this.renderers[name]; }, clearProcessed() {}, scheduleScan() {} },
     };
-  });
+  }, groups);
   for (const f of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/ageratingtags.js']) await page.addScriptTag({ path: path.join(root, f) });
   await page.evaluate(() => {
     const JE = JellyfinEnhanced;
     JE.initializeAgeRatingTags();
     for (const renderer of Object.values(JE.tagPipeline.renderers)) renderer.injectCss?.();
-    /** Cards of the given widths, each with a status badge and an age rating in its top band. */
-    window.cards = (widths) => {
+    const make = (cls, text) => { const el = document.createElement('div'); el.className = cls; el.innerHTML = `<div class="${cls.startsWith('status') ? 'status-tag' : 'plain-tag'}">${text}</div>`; return el; };
+    /** One more group in a card's top band (a group the layout was told of). */
+    window.addGroup = (host, group) => {
+      if (group === 'status') JE.core.tagLayout.commitGroup(host, 'status', make('status-overlay-container', 'Returning Series'));
+      else if (group === 'ageRating') { for (const renderer of Object.values(JE.tagPipeline.renderers)) if (renderer.isEnabled() && renderer.renderFromServerCache) renderer.renderFromServerCache(host, { Type: 'Series', OfficialRating: 'TV-MA' }, host.closest('.card').dataset.id); }
+      else if (group === 'quality') JE.core.tagLayout.commitGroup(host, 'quality', make('quality-overlay-container', '4K DV'));
+      else if (group === 'language') JE.core.tagLayout.commitGroup(host, 'language', make('language-overlay-container', 'EN FR'));
+      else if (group === 'custom') JE.core.tagLayout.commitGroup(host, 'custom', make('custom-overlay-container', 'Cut'));
+    };
+    /** Cards of the given widths, each with the given groups in its top band (a custom group is one that never was contained). */
+    window.cards = (widths, groups) => {
       const box = document.getElementById('cards');
       box.innerHTML = widths.map((w, i) => `<div class="card" style="width:${w}px" data-id="${String(i).padStart(32, '0')}" data-type="Series"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div></div>`).join('');
-      box.querySelectorAll('.je-tag-host').forEach((host) => {
-        const status = document.createElement('div');
-        status.className = 'status-overlay-container';
-        status.innerHTML = '<div class="status-tag">Returning Series</div>';
-        JE.core.tagLayout.commitGroup(host, 'status', status);
-        for (const renderer of Object.values(JE.tagPipeline.renderers)) if (renderer.isEnabled() && renderer.renderFromServerCache) renderer.renderFromServerCache(host, { Type: 'Series', OfficialRating: 'TV-MA' }, host.closest('.card').dataset.id);
-      });
+      box.querySelectorAll('.je-tag-host').forEach((host) => { for (const group of groups) window.addGroup(host, group); });
     };
-    /** How many lines each card's top band has, from its groups' tops. */
-    window.lines = () => [...document.querySelectorAll('.je-tag-slot[data-je-slot="top"]')].map((slot) => new Set([...slot.children].map((g) => Math.round(g.getBoundingClientRect().top))).size);
+    /** The line each item of each card's top band is on ("0011": two on the first line, two on the second). */
+    window.lines = () => [...document.querySelectorAll('.je-tag-slot[data-je-slot="top"]')].map((slot) => {
+      let line = 0, bottom = -1e9;
+      return [...slot.children].map((item) => {
+        const r = item.getBoundingClientRect();
+        if (!(r.height > 0)) return '-';
+        if (r.top >= bottom - 2) { if (bottom > -1e9) line++; bottom = r.bottom; } else bottom = Math.max(bottom, r.bottom);
+        return String(line);
+      }).join('');
+    });
+    /** How many cards have a contained container of their top band off its pixel, and how many have one moved across. */
+    window.bands = () => {
+      const scale = JE.core.tagLayout.snapStats().scale || 1;
+      let off = 0, across = 0;
+      for (const host of document.querySelectorAll('.je-tag-host')) {
+        const o = host.closest('.cardScalable').getBoundingClientRect();
+        const groups = [...host.querySelectorAll('.je-tag-slot[data-je-slot="top"] > [data-je-group]:not([data-je-group="custom"])')];
+        if (groups.some((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && [r.left - o.left, r.top - o.top].some(v => Math.abs(v * scale - Math.round(v * scale)) > 0.001); })) off++;
+        if (groups.some(el => el.style.getPropertyValue('--je-snap-x') || el.style.getPropertyValue('--je-band-left'))) across++;
+      }
+      return { off, across };
+    };
   });
-  const rest = async () => {
-    await page.waitForFunction(() => document.querySelectorAll('.je-tag-host').length === document.querySelectorAll('.je-tag-host[data-je-flow]').length && JellyfinEnhanced.core.tagLayout.snapStats().waiting === 0, null, { timeout: 10000 });
-    await page.evaluate(() => new Promise(r => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(r)), 400)));
-  };
+}
+
+/** Every pass of a Bands page has run and the frames after them are painted. */
+async function bandsRest(page) {
+  const idle = () => page.waitForFunction(() => { const L = JellyfinEnhanced.core.tagLayout; return document.querySelector('.je-tag-host') && L.snapStats().waiting === 0 && L.idleStats().waiting === 0; }, null, { timeout: 30000 });
+  await idle();
+  await page.evaluate(() => new Promise(r => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(r)), 500)));
+  await idle();
+}
+
+/** Watch a settled Bands page for a second and a half: a band that changes size, or a pass that runs, is a page that has not come to rest. */
+const bandsWatch = page => page.evaluate(() => new Promise((resolve) => {
+  let changes = -document.querySelectorAll('.je-tag-slot[data-je-slot="top"]').length;
+  const watch = new ResizeObserver((entries) => { changes += entries.length; });
+  document.querySelectorAll('.je-tag-slot[data-je-slot="top"]').forEach(slot => watch.observe(slot));
+  const L = JellyfinEnhanced.core.tagLayout;
+  const before = L.snapStats().passes;
+  setTimeout(() => { watch.disconnect(); resolve({ changes, passes: L.snapStats().passes - before, held: L.snapStats().held, lines: window.lines(), ...window.bands() }); }, 1500);
+}));
+
+test('Bands: a group that only just wraps onto the band\'s second line stays there, and the page comes to rest', async ({ page, browserName }) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 1200, height: 900 });
+  const groups = ['status', 'ageRating'];
+  await bandsPage(page, groups);
   // Without nudges first: the card width at which the age rating comes up beside the badge (chips scale with the
   // card, so it is found by laying cards out), then eighty cards from just under half a pixel short of it to a
   // quarter of a pixel past it, a hundredth of a pixel apart.
   await page.evaluate(() => { JellyfinEnhanced.core.tagLayout.wholePixels = false; });
   const coarse = Array.from({ length: 320 }, (_, k) => 140 + k * 0.25);
-  await page.evaluate((widths) => window.cards(widths), coarse);
-  await rest();
-  const turn = coarse[(await page.evaluate(() => window.lines())).lastIndexOf(2)];
+  await page.evaluate(([widths, groups]) => window.cards(widths, groups), [coarse, groups]);
+  await bandsRest(page);
+  const turn = coarse[(await page.evaluate(() => window.lines())).lastIndexOf('01')];
   expect(turn).toBeGreaterThan(141);
   expect(turn).toBeLessThan(219);
   const widths = Array.from({ length: 80 }, (_, k) => +(turn - 0.55 + k * 0.01).toFixed(3));
-  await page.evaluate((widths) => window.cards(widths), widths);
-  await rest();
+  await page.evaluate(([widths, groups]) => window.cards(widths, groups), [widths, groups]);
+  await bandsRest(page);
   const bare = await page.evaluate(() => window.lines());
-  expect(bare.filter(n => n === 2).length, 'cards whose age rating only just wraps').toBeGreaterThan(40);
-  expect(bare.filter(n => n === 1).length, 'and cards where it only just fits').toBeGreaterThan(0);
+  expect(bare.filter(l => l === '01').length, 'cards whose age rating only just wraps').toBeGreaterThan(40);
+  expect(bare.filter(l => l === '00').length, 'and cards where it only just fits').toBeGreaterThan(0);
   // With whole pixels on, every band has the lines it had, and nothing keeps being measured.
-  await page.evaluate((widths) => { JellyfinEnhanced.core.tagLayout.wholePixels = true; window.cards(widths); }, widths);
-  await rest();
-  const sizes = await page.evaluate(() => new Promise((resolve) => {
-    // Any band that changes size from here on is a band that has not come to rest.
-    let changes = -document.querySelectorAll('.je-tag-slot[data-je-slot="top"]').length;
-    const watch = new ResizeObserver((entries) => { changes += entries.length; });
-    document.querySelectorAll('.je-tag-slot[data-je-slot="top"]').forEach(slot => watch.observe(slot));
-    const before = JellyfinEnhanced.core.tagLayout.snapStats().passes;
-    setTimeout(() => { watch.disconnect(); resolve({ changes, passes: JellyfinEnhanced.core.tagLayout.snapStats().passes - before, lines: window.lines() }); }, 1500);
-  }));
-  expect(sizes.lines).toEqual(bare);
-  expect(sizes.changes).toBe(0);
-  expect(sizes.passes).toBe(0);
-  if (browserName === 'chromium') {
-    const nudged = await page.evaluate(() => document.querySelectorAll('.je-tag-host [style*="--je-snap"]').length);
-    expect(nudged).toBeGreaterThan(0);
-  }
+  await page.evaluate(([widths, groups]) => { JellyfinEnhanced.core.tagLayout.wholePixels = true; window.cards(widths, groups); }, [widths, groups]);
+  await bandsRest(page);
+  const rest = await bandsWatch(page);
+  expect(rest.lines).toEqual(bare);
+  expect(rest.changes).toBe(0);
+  expect(rest.passes).toBe(0);
+  // No band had to be left alone because its margins had changed its lines: the check that keeps a group on its line did it.
+  expect(rest.held).toBe(0);
+  // And it is not done by leaving every band near the turn alone: the cards far enough from it that no margin
+  // could bring the age rating up are moved across. (The rest keep their place: a band the group only just fits
+  // has no room to give either.)
+  if (browserName === 'chromium') expect(rest.across).toBeGreaterThan(8);
+});
+
+// The same over the whole range of widths, with more groups (so three and four lines, a line that holds a group
+// that never was contained, a band's first group alone on its line), on dense screens and from right to left.
+for (const [scale, groups, rtl] of [[1, ['status', 'ageRating', 'quality', 'language', 'custom'], false], [1.5, ['status', 'ageRating', 'quality', 'language', 'custom'], false], [1.25, ['status', 'ageRating', 'quality', 'custom'], true]]) {
+  test(`Bands with ${groups.length} groups at a device scale of ${scale}${rtl ? ', right to left' : ''}: no nudge moves a group to another line`, async ({ playwright }, info) => {
+    test.skip(info.project.name !== 'chromium', 'nothing is nudged outside Chromium\'s family; one browser of it is enough');
+    test.setTimeout(120000);
+    const browser = await playwright.chromium.launch({ ...info.project.use.launchOptions, args: [`--force-device-scale-factor=${scale}`, '--window-size=1200,900'] });
+    try {
+      const page = await (await browser.newContext({ viewport: null, deviceScaleFactor: undefined })).newPage();
+      await bandsPage(page, groups, { rtl });
+      const widths = Array.from({ length: 640 }, (_, k) => +(128 + k * 0.1771).toFixed(4));
+      await page.evaluate(([widths, groups]) => { JellyfinEnhanced.core.tagLayout.wholePixels = false; window.cards(widths, groups); }, [widths, groups]);
+      await bandsRest(page);
+      const bare = await page.evaluate(() => window.lines());
+      expect(new Set(bare).size, 'bands of two, three and more lines').toBeGreaterThan(2);
+      await page.evaluate(([widths, groups]) => { JellyfinEnhanced.core.tagLayout.wholePixels = true; window.cards(widths, groups); }, [widths, groups]);
+      await bandsRest(page);
+      const rest = await bandsWatch(page);
+      expect(rest.lines).toEqual(bare);
+      expect([rest.changes, rest.passes, rest.held]).toEqual([0, 0, 0]);
+      // Bands with no room to spare on a line stay as they are across; the rest are on their pixels.
+      expect(rest.off).toBeLessThan(widths.length / 5);
+      expect(rest.across).toBeGreaterThan(widths.length / 2);
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+// A tag drawn a moment after a pass gives its band another line. That is no doing of the band's margins: the
+// band is measured again like any band that changed, and ends on its pixels, as if it had been drawn whole.
+test('Bands: a group drawn just after the cards were measured leaves no band off its pixels', async ({ page, browserName }) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 1200, height: 900 });
+  const groups = ['status', 'ageRating', 'quality'];
+  await bandsPage(page, groups);
+  const widths = Array.from({ length: 40 }, (_, k) => +(150 + k * 0.53).toFixed(2));
+  // Drawn whole: what every card should end as.
+  await page.evaluate(([widths, groups]) => window.cards(widths, groups), [widths, groups]);
+  await bandsRest(page);
+  const whole = await page.evaluate(() => ({ lines: window.lines(), ...window.bands() }));
+  // Drawn without the quality group, which comes a tenth of a second after the pass that measured the cards.
+  await page.evaluate(([widths, groups]) => window.cards(widths, groups), [widths, groups.slice(0, 2)]);
+  const before = await page.evaluate(() => JellyfinEnhanced.core.tagLayout.snapStats().passes);
+  if (browserName === 'chromium') await page.waitForFunction((before) => JellyfinEnhanced.core.tagLayout.snapStats().passes > before && document.querySelector('.je-tag-host [style*="--je-snap"]'), before, { timeout: 15000 });
+  else await bandsRest(page);
+  await page.evaluate(() => new Promise(r => setTimeout(r, 100)));
+  await page.evaluate(() => { document.querySelectorAll('.je-tag-host').forEach(host => window.addGroup(host, 'quality')); });
+  await bandsRest(page);
+  const late = await bandsWatch(page);
+  expect(late.lines).toEqual(whole.lines);
+  expect(late.held).toBe(0);
+  expect([late.off, late.across]).toEqual([whole.off, whole.across]);
+  expect([late.changes, late.passes]).toEqual([0, 0]);
 });

@@ -405,6 +405,16 @@ test('a box that is moved moves the grid with it, by transform or by translate, 
   h.layout.removeGroup(h.host, 'status');
   h.settle();
   assert.deepEqual(h.snap('rating'), at('rating', 0.375, 0.25));
+  // A percentage is of the box's own size.
+  const boxes = h.window.Element.prototype.getBoundingClientRect;
+  h.window.Element.prototype.getBoundingClientRect = function () { return this === box ? { left: 0, top: 0, width: 150, height: 250 } : boxes.call(this); };
+  h.styled.of.set(box, { transform: 'none', translate: '0.5% 0.25%' });
+  h.add('status');
+  h.settle();
+  assert.deepEqual(h.snap('rating'), at('rating', 0.75, 0.625));
+  h.window.Element.prototype.getBoundingClientRect = boxes;
+  h.layout.removeGroup(h.host, 'status');
+  h.settle();
   // A scale or a rotation that changes nothing starts no grid; one that does starts its own, at the box's corner.
   h.styled.of.set(box, { transform: 'none', translate: 'none', scale: '1', rotate: '0deg' });
   h.add('status');
@@ -472,6 +482,44 @@ test('a scaled card is not measured: distances read under a scale are not the la
   const after = h.layout.snapStats().passes;
   cardEl.dispatchEvent(new h.window.Event('pointerleave'));
   assert.equal(quiet()[0], after);
+});
+
+test('a card on its way back from its hover size is measured when it has arrived, not when the pointer leaves', t => {
+  const timers = handTimers();
+  const h = setup(t, { globals: timers.globals });
+  h.show();
+  h.state.zoom = 1.05;
+  h.add('status');
+  h.settle();
+  assert.equal(h.layout.snapStats().deferred, 1);
+  const cardEl = h.document.querySelector('.card');
+  const passes = h.layout.snapStats().passes;
+  // The pointer leaves: the card starts back, and for the last frames of that it is a hair off its size, too little
+  // to tell from not scaled. The transition is still running, so nothing is measured.
+  let running = [{ playState: 'running', transitionProperty: 'transform' }];
+  cardEl.getAnimations = (options) => { assert.equal(options.subtree, true); return running; };
+  h.state.zoom = 1.002;
+  cardEl.dispatchEvent(new h.window.Event('pointerleave'));
+  timers.due(120);
+  h.settle();
+  assert.equal(h.layout.snapStats().passes, passes);
+  assert.deepEqual(h.snap('status'), ['', '']);
+  // A transition of something else (a colour) is no reason to wait, nor an animation that never ends.
+  running = [{ playState: 'running', transitionProperty: 'opacity' }, { playState: 'running', animationName: 'spin' }, { playState: 'finished', transitionProperty: 'transform' }];
+  h.state.zoom = 1;
+  cardEl.querySelector('.cardImageContainer').dispatchEvent(new h.window.Event('transitionend', { bubbles: true }));
+  timers.due(120);
+  h.settle();
+  assert.deepEqual(h.snap('status'), [px(nudge(120.7)), ''], 'measured at its own size');
+  // And with only those running, the pointer leaving is the end of it.
+  h.state.zoom = 1.05;
+  h.layout.removeGroup(h.host, 'ageRating');
+  h.settle();
+  h.state.zoom = 1;
+  cardEl.dispatchEvent(new h.window.Event('pointerleave'));
+  timers.due(120);
+  h.settle();
+  assert.deepEqual(h.snap('rating'), [px(nudge(154.15)), px(nudge(250.35))]);
 });
 
 test('a scaled card whose scale ends with a transition is measured when it ends, the pointer gone', t => {
@@ -724,12 +772,47 @@ test('Bands\' top band: a band whose own size its margins changed is left as it 
   const settled = passes();
   h.settle();
   assert.equal(passes(), settled, 'and nothing more is asked of it');
+  assert.equal(h.layout.snapStats().held, 1);
   // Much later the band changes size for a reason of its own (the window, an indicator): it is nudged as any band.
   h.clock.now += 60000;
   h.sized(top, h.room[0] + 1, h.room[1]);
   timers.due(120);
   h.settle();
   assert.deepEqual(h.band('ageRating'), nudged);
+});
+
+test('Bands\' top band: a line more because of what the band holds is no doing of its margins, however soon after them', async t => {
+  // A tag drawn late, or an image that arrived, right after a pass: the band is taller, and one of its groups is
+  // another size. It is measured again like any band that changed, not left as it is across.
+  const timers = handTimers();
+  const h = await bands(t, { status: 4717, ageRating: 1793, custom: 2822 }, timers);
+  h.draw();
+  h.grid();
+  h.settle();
+  const top = h.host.querySelector('.je-tag-slot[data-je-slot="top"]');
+  assert.notEqual(h.band('ageRating')[0], '');
+  // (Its first report, as the pass's frame is laid out.)
+  h.sized(top, h.room[0], h.room[1]);
+  h.clock.now += 100;
+  h.state.boxes.status = [0, 6.4, 4717 / 64, 38];
+  h.sized(top, h.room[0], h.room[1] + 18);
+  assert.deepEqual(h.band('ageRating'), ['', '', ''], 'the lengths come off for a band that changed, as always');
+  timers.due(120);
+  h.settle();
+  assert.equal(h.layout.snapStats().held, 0, 'not held');
+  assert.notEqual(h.band('ageRating')[0], '', 'and nudged across again');
+  // The same when that report is the band's first (it was not watched before this pass).
+  const g = await bands(t, { status: 4717, ageRating: 1793, custom: 2822 }, timers);
+  g.draw();
+  g.grid();
+  g.settle();
+  const band = g.host.querySelector('.je-tag-slot[data-je-slot="top"]');
+  g.clock.now += 100;
+  g.state.boxes.status = [0, 6.4, 4717 / 64, 38];
+  g.sized(band, g.room[0], g.room[1] + 18);
+  timers.due(120);
+  g.settle();
+  assert.equal(g.layout.snapStats().held, 0);
 });
 
 test('Bands\' top band: a first report that is not the pass\'s reading to the last unit holds nothing', async t => {

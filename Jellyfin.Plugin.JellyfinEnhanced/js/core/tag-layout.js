@@ -2668,23 +2668,23 @@
     /** @type {WeakMap<Element, number[]>} top band → the room inside its padding [width, height], as its observer last reported it */
     const bandSizes = new WeakMap();
     /**
-     * top band → the height inside its padding as the last pass measured it. (A measured box and an observer's
-     * report are not the same number to the last layout unit, so this is only held against a report for a
-     * whole line more or less: BAND_LINE_PX.)
-     * @type {WeakMap<Element, number>}
+     * top band → what the last pass found in it: the height inside its padding, and what it held (bandSignature).
+     * (A measured box and an observer's report are not the same number to the last layout unit, so the height
+     * is only held against a report for a whole line more or less: BAND_LINE_PX.)
+     * @type {WeakMap<Element, {height: number, held: string}>}
      */
     const bandRooms = new WeakMap();
     /** @type {WeakMap<Element, number>} top band → when its groups' margins across were last written or taken off (performance.now) */
     const bandWrites = new WeakMap();
     /** @type {WeakSet<Element>} top bands whose margins changed their own lines: left as they are across until they change size for another reason */
     const bandHeld = new WeakSet();
-    /** A band that gains or loses a line within this long of its margins being written did so because of them (ms). */
+    /** A band that gains or loses a line within this long of its margins being written, holding what it held, did so because of them (ms). */
     const BAND_OWN_MS = 1000;
     /** A band this much taller or shorter than the pass measured it has a line more or less (CSS px; a line is a chip's height at least). */
     const BAND_LINE_PX = 1;
     /** @type {WeakSet<HTMLElement>} hosts waiting for a state they cannot be measured in to end */
     const snapWaiting = new WeakSet();
-    const snapCounters = { passes: 0, cards: 0, moved: 0, deferred: 0, passMs: 0 };
+    const snapCounters = { passes: 0, cards: 0, moved: 0, deferred: 0, passMs: 0, held: 0 };
 
     /**
      * Whether containers are nudged here: an engine that paints a contained
@@ -2848,10 +2848,14 @@
             // A band must never gain or lose a line because of its nudges (bandNudges keeps a group from
             // changing lines). Should one do so all the same, it is left as it is across from then on:
             // measured again it would get the same margins, change lines again, and so on without end.
+            // The margins are to blame only where nothing else explains it: they were written a moment ago,
+            // and the band holds exactly what the pass measured, in the room it measured. A tag drawn late or
+            // an image that arrived changes what it holds, and is measured again like any other change.
             const wrote = bandWrites.get(slot);
-            const own = wrote !== undefined && performance.now() - wrote < BAND_OWN_MS;
+            const recent = wrote !== undefined && performance.now() - wrote < BAND_OWN_MS;
             const room = bandRooms.get(slot);
-            const lines = own && room !== undefined && Math.abs(height - room) >= BAND_LINE_PX;
+            const own = recent && room !== undefined && bandSignature(slot) === room.held;
+            const lines = own && Math.abs(height - /** @type {{height: number}} */ (room).height) >= BAND_LINE_PX;
             // The first report is the size the last pass measured in, unless its margins have changed the lines since.
             const changed = seen ? Math.abs(seen[0] - width) >= SNAP_SAME_PX || Math.abs(seen[1] - height) >= SNAP_SAME_PX : lines;
             if (!changed) continue;
@@ -2861,11 +2865,46 @@
                 bandHeld.delete(slot);
             } else if (lines) {
                 bandHeld.add(slot);
+                snapCounters.held++;
             }
             snapAgain(ctrl);
             // (snapAgain took the margins off: the size report that follows is this band's own too.)
             if (bandHeld.has(slot)) bandWrites.set(slot, performance.now());
         }
+    }
+
+    /**
+     * What a top band holds, for telling a change of its lines that its
+     * margins made from any other (reads only; where it is asked, the
+     * layout stands): the room across inside its padding, and the size of
+     * every item laid out in it, in layout units. Margins move items and
+     * change none of this.
+     * @param {HTMLElement} slot
+     * @returns {string}
+     */
+    function bandSignature(slot) {
+        try {
+            const style = getComputedStyle(slot);
+            const box = slot.getBoundingClientRect();
+            const pad = (/** @type {string} */ side) => parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
+            const rects = [];
+            for (const child of slot.children) {
+                const rect = child.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) rects.push(rect);
+            }
+            return bandHolds(box.width - pad('left') - pad('right'), rects);
+        } catch {
+            return '';
+        }
+    }
+
+    /**
+     * @param {number} room - The room across inside the band's padding, CSS px.
+     * @param {Array<{width: number, height: number}>} rects - The boxes of the items laid out in it, in order.
+     * @returns {string} bandSignature's text for them.
+     */
+    function bandHolds(room, rects) {
+        return `${toUnits(room)}:${rects.map((rect) => `${toUnits(rect.width)}x${toUnits(rect.height)}`).join(',')}`;
     }
 
     /** @type {WeakSet<Element>} top bands being watched */
@@ -2923,18 +2962,29 @@
         snapCounters.deferred++;
         /** @param {string} state */
         const inState = (state) => { try { return card.matches(state); } catch { return false; } };
+        /** Whether a transition of a transform is still running in the card: it is on its way back to its own size. */
+        const settling = () => {
+            try {
+                return card.getAnimations({ subtree: true }).some((animation) => animation.playState === 'running'
+                    && /^(?:transform|scale|translate|rotate|zoom)$/.test(/** @type {any} */ (animation).transitionProperty || ''));
+            } catch {
+                return false;
+            }
+        };
         /** @param {Event} event */
         const again = (event) => {
             // The listeners hear the card's descendants too (neither pointerleave nor the end of a transition is
             // the card's own alone). Only what ends the state counts: the pointer leaving the card itself, focus
             // going outside it, or a transition or animation finishing once neither is on it any more. A pointer
             // moving between the card's buttons, or the transition that brought the card to its hover size,
-            // must not have it measured.
+            // must not have it measured. Nor is it measured on its way back: the pointer has left, the card is
+            // still a hair larger than its own size, and that reads as not scaled (scaled). The end of that
+            // transition is what is waited for then.
             if (event.type === 'pointerleave') {
-                if (event.target !== card) return;
+                if (event.target !== card || settling()) return;
             } else if (event.type === 'focusout') {
                 const to = /** @type {FocusEvent} */ (event).relatedTarget;
-                if (to instanceof Node && card.contains(to)) return;
+                if ((to instanceof Node && card.contains(to)) || settling()) return;
             } else if (inState(':hover') || inState(':focus-within')) {
                 return;
             }
@@ -2975,8 +3025,8 @@
      */
     const gridFacts = new WeakMap();
 
-    /** A plain move as a computed `translate`: one or two lengths in px (a third of 0px allowed). */
-    const TRANSLATE_PX = /^(-?[\d.e-]+)px(?: (-?[\d.e-]+)px)?(?: 0px)?$/;
+    /** A plain move as a computed `translate`: one or two lengths in px or percentages of the element's own box (a third of 0px allowed). */
+    const TRANSLATE_PX = /^(-?[\d.e-]+)(px|%)(?: (-?[\d.e-]+)(px|%))?(?: 0px)?$/;
     /** A computed `scale` or `rotate` that changes nothing: it starts no grid (measured on Chromium 145). */
     const NO_SCALE = /^(?:none|1(?: 1){0,2})$/;
     const NO_ROTATE = /^(?:none|(?:.* )?0deg)$/;
@@ -2991,15 +3041,22 @@
             const transform = style.transform || 'none';
             const matrix = transform === 'none' ? null : MOVE_ONLY.exec(transform);
             // The properties of their own (translate, scale, rotate) are not part of the computed transform.
-            // (A translate in anything but px, a percentage or a calc(), does not say how far it moves: it
-            // is taken for a grid of its own.)
+            // (A translate the browser reports as a calc() does not say how far it moves: it is taken for a
+            // grid of its own, which is an approximation. A percentage is of the element's own box.)
             const translate = style.translate && style.translate !== 'none' ? style.translate : '';
             const shift = translate ? TRANSLATE_PX.exec(translate) : null;
             const turned = !NO_SCALE.test(style.scale || 'none') || !NO_ROTATE.test(style.rotate || 'none');
             const moves = (transform === 'none' || !!matrix) && (!translate || !!shift) && !turned;
             fact.starts = startsPixelGrid(style, moves);
             if (!fact.starts && (matrix || shift)) {
-                fact.move = [(matrix ? Number(matrix[1]) : 0) + (shift ? Number(shift[1]) : 0), (matrix ? Number(matrix[2]) : 0) + (shift ? Number(shift[2] || 0) : 0)];
+                let dx = 0;
+                let dy = 0;
+                if (shift) {
+                    const box = shift[2] === '%' || shift[4] === '%' ? el.getBoundingClientRect() : null;
+                    dx = Number(shift[1]) * (shift[2] === '%' && box ? box.width / 100 : 1);
+                    dy = Number(shift[3] || 0) * (shift[4] === '%' && box ? box.height / 100 : 1);
+                }
+                fact.move = [(matrix ? Number(matrix[1]) : 0) + dx, (matrix ? Number(matrix[2]) : 0) + dy];
             }
         } catch { /* no styles to read: it starts nothing */ }
         // How far an element is moved can change from one frame to the next (a row that slides, a transition): read each pass.
@@ -3083,8 +3140,8 @@
             gap = Math.floor((parseFloat(style.columnGap) || 0) * layoutScale * 64 + 1e-3);
             start = toUnits(box.left + pad('left') - origin.x);
             end = toUnits(box.right - pad('right') - origin.x);
-            // The height inside the band's padding as this pass found it: a report of another number of lines is held against it.
-            bandRooms.set(slot, box.height - pad('top') - pad('bottom'));
+            // What this pass found: a report of another number of lines, of a band that holds the same, is held against it.
+            bandRooms.set(slot, { height: box.height - pad('top') - pad('bottom'), held: bandHolds(box.width - pad('left') - pad('right'), items.map((item) => item.rect)) });
         } catch { return out; }
         /** @type {number[][]} */
         const lines = [];
@@ -3124,16 +3181,18 @@
         });
         // No group may change lines. The first group of a line came down because it is wider than what was left
         // of the line above; pushed from its right it is as much narrower for the line breaking as it moves
-        // right, and the margins of the line above can give room back. Where the two together come within a
-        // pixel of letting it up, both lines stay as they are: a group that came up would change the band's
-        // height, the nudges would come off for that, and it would go down again.
+        // right, and the margins of the line above can give room back. Where the two together come within an
+        // eighth of a pixel of letting it up, both lines stay as they are: a group that came up would change
+        // the band's height, the nudges would come off for that, and it would go down again. (The sums are
+        // exact in layout units; the slack is for a margin that comes out a unit off what was written.)
+        const slack = Math.max(4, Math.round(pixel / 8));
         for (let k = 0; k + 1 < plans.length; k++) {
             const above = plans[k];
             const below = plans[k + 1];
             if (!above.values && !below.values) continue;
             const room = above.free + (above.values ? above.gives : 0);
             const needs = below.head - (below.values ? Math.max(0, below.headNudge) : 0) + gap;
-            if (room + pixel >= needs) { above.values = null; below.values = null; }
+            if (room + slack >= needs) { above.values = null; below.values = null; }
         }
         plans.forEach((plan, k) => { if (plan.values) lines[k].forEach((i, j) => { out[i] = /** @type {Array<{vx: number, left: number}>} */ (plan.values)[j]; }); });
         return out;
