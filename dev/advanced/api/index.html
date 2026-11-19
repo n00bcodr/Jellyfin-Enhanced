@@ -6039,13 +6039,13 @@ filter's shape, or not offered on that page.</p>
 <td>GET</td>
 <td><code>bundle.js</code></td>
 <td>Anonymous</td>
-<td>Concatenated component JavaScript.</td>
+<td>Concatenated component JavaScript. Optional <code>g=&lt;group&gt;,&lt;group&gt;</code> serves only those component groups; without <code>g</code>, every component module.</td>
 </tr>
 <tr>
 <td>GET</td>
 <td><code>bundle.js.map</code></td>
 <td>Anonymous</td>
-<td>Component source map, JSON.</td>
+<td>Component source map, JSON. Takes the same optional <code>g</code>.</td>
 </tr>
 <tr>
 <td>GET</td>
@@ -6116,6 +6116,10 @@ filter's shape, or not offered on that page.</p>
 <tr>
 <td><code>ComponentScripts</code></td>
 <td>Ordered component-script path array, nullable on manifest failure.</td>
+</tr>
+<tr>
+<td><code>ComponentGroups</code></td>
+<td>The <code>groups</code> array of <code>js/component-groups.json</code> (<code>{id,after,note,modules}</code> per group), null or absent when the file is missing or invalid; the client then loads every component module together. See <a href="../project-structure/#component-groups">Component groups</a>.</td>
 </tr>
 <tr>
 <td><code>Prefetched</code></td>
@@ -6321,6 +6325,7 @@ filter's shape, or not offered on that page.</p>
 </tbody>
 </table>
 <p>Production scripts, CSS, component bundles/maps, and fonts use one-year immutable caching. Use a version/build cache key in resource URLs when retaining them. Embedded missing resources return <code>404</code>; unavailable bundle instance <code>503</code>, bundle-build failure <code>500</code>.</p>
+<p><code>bundle.js</code> and <code>bundle.js.map</code> take an optional <code>g</code> query, a comma-separated list of component group ids such as <code>g=core,tags</code>. The response holds those groups in the groups file's order, <code>core</code> first, whatever order the list uses. An empty list, an unknown or repeated id, or more than 64 ids returns <code>404</code>. Without <code>g</code>, both routes serve every component module, as they did before groups existed. The client adds <code>v=&lt;cache key&gt;</code> to each request; the server does not read it.</p>
 <p>Locale JSON tries the requested code, then a base-language fallback such as <code>de-DE</code> → <code>de</code>, then returns <code>404</code>.</p>
 <p>Font names are <code>materialsymbolsrounded-subset.woff2</code>, <code>materialsymbolsoutlined-subset.woff2</code>, <code>materialsymbolsrounded.woff2</code>, <code>materialsymbolsoutlined.woff2</code>. Unsupported/missing names return <code>404</code>.</p>
 <p>CDN <code>source</code> is one of <code>selfhst</code>, <code>jellyfish</code>, <code>dashboard-icons</code>, <code>zesty</code>, <code>jelly-helper</code>, <code>moonbase</code>, <code>flagcdn</code>, <code>flag-icons</code>, <code>ibb</code>, <code>locales</code>, <code>je-docs-img</code>, <code>je-css</code>, <code>icon-metadata</code>, <code>elsewhere-res</code>, <code>award-logos</code>, <code>mdblist-logos</code>, <code>mdblist-static</code>, <code>ddd-static</code>. It is a fixed-source mirror, rather than a generic URL proxy.</p>

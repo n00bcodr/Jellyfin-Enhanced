@@ -2033,6 +2033,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#component-groups" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Component groups
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2710,8 +2721,8 @@
 <h2 id="client-delivery-and-initialization">Client delivery and initialization<a class="headerlink" href="#client-delivery-and-initialization" title="Permanent link">&para;</a></h2>
 <p>This section follows the client from loader injection through initialization and user switches.</p>
 <p><code>Services/ScriptInjectionStartupFilter.cs</code> injects the loader into web responses. <code>GET /JellyfinEnhanced/script</code> serves <code>js/plugin.js</code>; it is separate from the component bundle. <code>JellyfinEnhanced.csproj</code> embeds <code>js/**</code>, and <code>GetScript</code> in <code>Controllers/JellyfinEnhancedController.cs</code> serves individual resources at <code>/JellyfinEnhanced/js/{path}</code>.</p>
-<p>The ordered module list lives in <code>js/component-scripts.json</code>: 192 component modules, with paths relative to <code>js/</code>. Entries starting with <code>//</code> are ordering notes.</p>
-<p><strong>Modules execute in manifest order.</strong> Place a module after every producer whose exports it reads at load time. A consumer loaded too early can capture <code>undefined</code>.</p>
+<p>The ordered module list lives in <code>js/component-scripts.json</code>: 195 component modules, with paths relative to <code>js/</code>. Entries starting with <code>//</code> are ordering notes. <code>js/component-groups.json</code> splits those modules into groups that load together; see <a href="#component-groups">Component groups</a>.</p>
+<p><strong>Modules execute in manifest order.</strong> Place a module after every producer whose exports it reads at load time. A consumer loaded too early can capture <code>undefined</code>. A page runs only the groups it needs, so a module also has to be in a group that loads with, or after, every group it reads from.</p>
 <p>The initialization stages and user-switch behavior are:</p>
 <table>
 <thead>
@@ -2731,11 +2742,19 @@
 </tr>
 <tr>
 <td>Bootstrap</td>
-<td>Authenticated <code>GET /JellyfinEnhanced/bootstrap</code> returns version, token user ID, public configuration, administrator-only private configuration, Custom Tabs / Plugin Pages presence flags, five user documents and the component list. Non-admin <code>PrivateConfig</code> is null. The loader falls back to individual endpoints if bootstrap fails.</td>
+<td>Authenticated <code>GET /JellyfinEnhanced/bootstrap</code> returns version, token user ID, public configuration, administrator-only private configuration, Custom Tabs / Plugin Pages presence flags, five user documents, the component list and the component groups. Non-admin <code>PrivateConfig</code> is null. The loader falls back to individual endpoints if bootstrap fails.</td>
 </tr>
 <tr>
 <td>Components</td>
-<td>After configuration is applied, production loads <code>GET /JellyfinEnhanced/bundle.js</code>; development mode and bundle failure use individual scripts.</td>
+<td>After configuration is applied, the loader works out which component groups the page needs and loads <code>core</code> plus those groups with one <code>GET /JellyfinEnhanced/bundle.js?g=…</code> request. Once those groups' features have started it asks again, with the settings <code>JE.loadSettings()</code> resolved and the address as it then is, and loads anything that adds as a second request; boot is complete (<code>JE.initialized</code>) after that. Development mode and bundle failure use individual scripts.</td>
+</tr>
+<tr>
+<td>Feature start-up</td>
+<td>The loader calls each loaded group's start-up functions (<code>JE.initializeX()</code> and similar), in a fixed order and under the same conditions as before groups existed, then sets <code>JE.initialized = true</code>. That flag means the groups this page needed at boot have loaded and started; groups loaded later start right after their modules run.</td>
+</tr>
+<tr>
+<td>Later loads</td>
+<td>After boot the loader loads further groups when the address changes, when a Home tab holding a JE page becomes active, when a video starts loading or playing, after a user switch, and when code calls a function a group provides (for example <code>JE.showEnhancedPanel()</code>).</td>
 </tr>
 <tr>
 <td>User switches</td>
@@ -2747,10 +2766,17 @@
 <p>Bootstrap's <code>Prefetched</code> block can carry <code>SpoilerBlurSeries</code>, <code>SeerrUserStatus</code>, <code>SeerrStatus</code>, <code>ActiveStreamSessions</code> and <code>TagStripRevision</code>. The first four reuse standalone response bodies under the same feature, access and cache gates. <code>TagStripRevision</code> is the Spoiler Guard tag strip revision that <code>tag-data</code> answers carry; the tag pipeline reads it before its first request. Seerr answers are included only when no upstream lookup is needed; sessions follow the active-streams access gate.</p>
 <p>Components consume a value once, shortly after bootstrap, through <code>JE.takePrefetched(name)</code>. Otherwise, they call their endpoint normally. Bootstrap does not fetch every feature's data.</p>
 <h3 id="bundle-and-development-mode">Bundle and development mode<a class="headerlink" href="#bundle-and-development-mode" title="Permanent link">&para;</a></h3>
-<p><code>Services/ClientScriptBundle.cs</code> builds the bundle on first use and caches it by the plugin's script cache key (version plus DLL timestamp). It wraps each manifest file in a function and publishes <code>window.__JE_BUNDLE_MODULES</code>.</p>
-<p>The index source map at <code>/JellyfinEnhanced/bundle.js.map</code> uses <code>sections</code> to preserve original filenames and line numbers in DevTools and stack traces. Bundle and map routes are anonymous; production responses use <code>public, max-age=31536000, immutable</code>.</p>
-<p>The loader waits for browser idle time, with a 100 ms timeout. It then executes functions in order, yielding between modules at an approximately 10 ms budget. This reduces interference with initial rendering; a synchronous module can still exceed the budget and occupy the main thread. A top-level exception is reported and skipped without re-running that module.</p>
-<p>If the bundle request fails or the bundle does not define a valid module array, the loader injects individual files with <code>script.async = false</code>. Downloads can overlap; execution follows manifest order.</p>
+<p><code>Services/ClientScriptBundle.cs</code> serves the component modules as one script. It wraps each manifest file in a function, so the loader can run the modules one at a time.</p>
+<ul>
+<li><code>GET /JellyfinEnhanced/bundle.js?g=core,tags</code> serves the named groups. The script has one statement per group, <code>window.__JE_BUNDLES["&lt;id&gt;"] = { total, modules: [...] }</code>, in the order of the groups file (<code>core</code> first), each group's modules in manifest order. An unknown, repeated or malformed group list returns <code>404</code>.</li>
+<li><code>GET /JellyfinEnhanced/bundle.js</code> without <code>g</code> serves the whole manifest as before: one array, <code>window.__JE_BUNDLE_MODULES</code>.</li>
+<li>Each group's part is built once per plugin script cache key (version plus DLL timestamp); a requested combination is assembled from those parts, and the most recent 24 combinations are kept.</li>
+</ul>
+<p>The index source map at <code>/JellyfinEnhanced/bundle.js.map</code> (with the same optional <code>g</code>) uses <code>sections</code> to preserve original filenames and line numbers in DevTools and stack traces. Bundle and map routes are anonymous; production responses use <code>public, max-age=31536000, immutable</code>, because the URL carries the cache key.</p>
+<p>At boot the loader waits for browser idle time, with a 100 ms timeout, and fetches at low priority. It then executes functions in order, yielding between modules at an approximately 10 ms budget. This reduces interference with initial rendering; a synchronous module can still exceed the budget and occupy the main thread. A group loaded later keeps the short slices but does not wait for idle time. A top-level exception is reported and skipped without re-running that module.</p>
+<p>Requests for groups run strictly in the order they were asked for, so a group that another one is <code>after</code> has always run first, even if its request was slower.</p>
+<p>If a bundle request fails, or the bundle does not define a group's modules (for example after a syntax error), the loader injects that group's files individually with <code>script.async = false</code>. Downloads can overlap; execution follows manifest order, so only a broken file fails. If none of those files arrive (for example offline), the loader forgets the group so the next trigger tries again.</p>
+<p>If no usable groups file is available (bootstrap carries no <code>ComponentGroups</code> and the embedded <code>js/component-groups.json</code> cannot be loaded, or the file is invalid), the loader treats every module as <code>core</code> and requests <code>bundle.js?v=…</code> without <code>g</code>, as it did before groups existed.</p>
 <p>Administrator setting, under <a href="../../open-in-jellyfin/?tab=admin&amp;card=developer-settings"><strong>Admin</strong> → <strong>Developer Settings</strong></a>:</p>
 <table>
 <thead>
@@ -2764,7 +2790,7 @@
 <tr>
 <td><strong>Dev Mode</strong></td>
 <td>Off (<code>DevMode=false</code>)</td>
-<td>Loads individual component scripts and serves script responses with <code>no-store</code>. Direct bundle requests also rebuild rather than using the process cache.</td>
+<td>Loads individual component scripts and serves script responses with <code>no-store</code>. Groups still load only when needed, but each group's files load one by one, in order, instead of as a bundle. Direct bundle requests also rebuild rather than using the process cache.</td>
 </tr>
 </tbody>
 </table>
@@ -2773,6 +2799,304 @@
 <p>Development mode still serves embedded resources. Rebuild the plugin and load the new assembly after editing JavaScript; it does not read loose source files from your checkout.</p>
 </div>
 <p><code>DisableScriptInjectionMiddleware=false</code> is a server configuration property without an admin-page control. It gates the request-time injection middleware. <code>BrandingAssetStartupFilter.cs</code> handles custom image assets separately from script injection.</p>
+<h3 id="component-groups">Component groups<a class="headerlink" href="#component-groups" title="Permanent link">&para;</a></h3>
+<p>A page runs only the client modules it needs. <code>js/component-groups.json</code> lists the groups; each has an <code>id</code>, a <code>note</code> saying what it holds and when it loads, its <code>modules</code> (manifest paths, listed in manifest order) and optionally <code>after</code>. Every manifest module that no group lists is in the implicit group <code>core</code>, which every page loads.</p>
+<ul>
+<li>A module belongs to one group. Inside a group, modules run in manifest order.</li>
+<li><code>after</code> names earlier groups in the file whose modules must have run first, because this group reads their exports while it loads or cannot work without them. Loading a group always loads its <code>after</code> groups too.</li>
+<li>Groups that load together run in the order of the file, <code>core</code> first.</li>
+<li>The server (<code>ClientScriptBundle.cs</code>) and the loader (<code>plugin.js</code>) check the file the same way: unique, well-formed ids, every module in the manifest and in one group only, and <code>after</code> naming only earlier groups.</li>
+</ul>
+<p><code>js/plugin.js</code> decides when each group loads:</p>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>What it holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FEATURE_GROUPS</code></td>
+<td>One entry per group except <code>core</code>: <code>needed(route)</code>, asked at boot and at each trigger below; <code>with()</code>, groups to load alongside it when the need depends on configuration; <code>exports</code>, JE functions that load the group when called before it has loaded.</td>
+</tr>
+<tr>
+<td><code>FEATURE_INITIALIZERS</code></td>
+<td>The start-up calls, as <code>[group, initializer, condition]</code>, in the order they have always run. At boot every entry of a loaded group runs in this order; a group loaded later runs its own entries right after its modules.</td>
+</tr>
+<tr>
+<td><code>FEATURE_PAGES</code></td>
+<td>JE's own pages: enabling flag, delivery settings, Home tab and placeholder, own address and Plugin Pages address.</td>
+</tr>
+</tbody>
+</table>
+<p>The loader asks every rule again, and loads whatever is missing in one request, at boot (once from the saved settings and again once the first groups' features have started, with the resolved settings), on every navigation (before the new view shows), when a Home tab holding a JE page's placeholder becomes active, when a <code>&lt;video&gt;</code> fires <code>loadstart</code>, <code>play</code> or <code>playing</code>, and after a user switch once the new user's data has loaded. A group stays loaded once it has loaded.</p>
+<p>For each function in a group's <code>exports</code>, the loader installs a stand-in until the group loads. Calling it loads the group and then makes the same call; the module replaces the stand-in when it runs. The stand-in returns a promise, so only calls whose result the caller does not use straight away get one.</p>
+<p>After a group loaded on demand starts, the loader adds and removes an empty hidden element on <code>&lt;body&gt;</code>, so features that wait for a change through the shared body observer see one on a page that has already settled.</p>
+<p><strong>JE pages.</strong> Hidden Content, Catch Up, Recommendations, Requests, Calendar, Activity, Leaving Soon and the Bookmarks library each load when their feature is enabled and one of these holds:</p>
+<ul>
+<li>The page is not delivered as a Home tab (neither JE's own Home tab nor Custom Tabs) and has its own address: Bookmarks, Hidden Content, Recommendations, Requests and Calendar. Such a page adds its own sidebar link and takes over its address as it starts, so it loads at boot.</li>
+<li>The address is the page's own (<code>#/bookmarks</code>, <code>#/hidden-content</code>, <code>#/recommendations</code>, <code>#/downloads</code>, <code>#/calendar</code>).</li>
+<li>The address is a Plugin Pages page that names it. A Plugin Pages address that names none of JE's pages loads them all.</li>
+<li>The address is Home with <code>jeTab=&lt;id&gt;</code> naming its tab. For Recommendations, a category address on Home (<code>jeCategory=</code>) also counts.</li>
+<li>The Home tab holding the page's placeholder is the active one.</li>
+</ul>
+<p>So that JE's own Home tabs are in the tab strip from the first Home render, the loader registers them itself as soon as <code>core</code> has run, with the same id, title, icon and placeholder the page's <code>*-custom-tab</code> module registers.</p>
+<p>The groups, in the order they run:</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>What it holds</th>
+<th>After</th>
+<th>Loads when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>core</code></td>
+<td>24 modules: navigation, session, lifecycle, the shared DOM observer, UI kit, API client, settings resolution (<code>enhanced/config.js</code>), helpers, header actions, native tabs, icons, the random button, keyboard shortcuts and menu entries (<code>enhanced/events.js</code>), theme detection, injected styles and the settings panel's entry points. Also small modules other code needs at once: media language, rating sources, Continue Watching / Next Up removal, subtitle presets, now playing, coloured ratings and the Home Screen Sections discovery handler.</td>
+<td></td>
+<td>Every page.</td>
+</tr>
+<tr>
+<td><code>tags</code></td>
+<td>Poster tags: shared renderer, layout, look rules, cache store and pipeline, the nine poster tag renderers, web tag styles, review ratings on posters, and the item menu's Media Tags row and editor.</td>
+<td></td>
+<td>At boot, when any poster tag type (quality, genre, rating, age rating, status, awards, custom, language or logo) is on for the user.</td>
+</tr>
+<tr>
+<td><code>tag-direct-play</code></td>
+<td>Status tags' direct-play warning.</td>
+<td><code>tags</code></td>
+<td>With the tags, when Status tags and their direct-play warning are on for the user.</td>
+</tr>
+<tr>
+<td><code>tag-poster-colours</code></td>
+<td>Poster colour sampling for the Poster tag style.</td>
+<td><code>tags</code></td>
+<td>With the tags, when web tag styles are active (<code>TagStyleWebActive</code>).</td>
+</tr>
+<tr>
+<td><code>tag-status-backdrop</code></td>
+<td>The blurred backdrop of status tags, painted as a picture under each tag.</td>
+<td><code>tags</code></td>
+<td>When the first status tag is drawn on a page (<code>tags/statustags.js</code> asks for it); never at boot.</td>
+</tr>
+<tr>
+<td><code>tag-people</code></td>
+<td>People tags on cast cards.</td>
+<td></td>
+<td>On an item's details page, when People tags are on for the user.</td>
+</tr>
+<tr>
+<td><code>removal-menu</code></td>
+<td>Maintainerr and removal-request rows in the item menu.</td>
+<td></td>
+<td>At boot, when the server offers Maintainerr actions or removal requests.</td>
+</tr>
+<tr>
+<td><code>spoiler-guard</code></td>
+<td>Spoiler Guard.</td>
+<td></td>
+<td>At boot, when Spoiler Guard is enabled. Never waits for a page, so it acts before content paints.</td>
+</tr>
+<tr>
+<td><code>details</code></td>
+<td>Details-page chips and buttons: media information, release dates and their page wiring.</td>
+<td></td>
+<td>On an item's details page.</td>
+</tr>
+<tr>
+<td><code>player</code></td>
+<td>Playback controls, OSD playback, auto-skip, subtitle sync, the OSD rating and the pause screen.</td>
+<td></td>
+<td>On the video page; when a <code>&lt;video&gt;</code> starts loading or playing on any page; or when a player shortcut function is called.</td>
+</tr>
+<tr>
+<td><code>player-badge</code></td>
+<td>The rating badge shown when playback starts.</td>
+<td></td>
+<td>At boot, when the badge is enabled, so it hears the first <code>playing</code> event.</td>
+</tr>
+<tr>
+<td><code>hidden-content</code></td>
+<td>Hidden Content filtering, buttons, dialogs and panel.</td>
+<td></td>
+<td>At boot, when Hidden Content is enabled. Never waits for a page, so it acts before content paints.</td>
+</tr>
+<tr>
+<td><code>hidden-content-page</code></td>
+<td>The Hidden Content management page and its tab.</td>
+<td><code>hidden-content</code></td>
+<td>JE page rule above; also with <code>settings</code> when Hidden Content is enabled.</td>
+</tr>
+<tr>
+<td><code>catchup</code></td>
+<td>The Catch Up page.</td>
+<td></td>
+<td>JE page rule above (no standalone delivery).</td>
+</tr>
+<tr>
+<td><code>settings</code></td>
+<td>The settings panel.</td>
+<td><code>tags</code>, <code>tag-direct-play</code>, <code>tag-poster-colours</code>, <code>tag-people</code></td>
+<td>When <code>JE.showEnhancedPanel()</code> is first called, and on the plugin's admin configuration page, whose Media Tags tab uses the panel's preview.</td>
+</tr>
+<tr>
+<td><code>bookmarks</code></td>
+<td>Bookmark store and the player's bookmark markers.</td>
+<td></td>
+<td>On the video page or once a video has started, when Bookmarks are enabled; also with <code>bookmarks-library</code>.</td>
+</tr>
+<tr>
+<td><code>bookmarks-library</code></td>
+<td>The Bookmarks library page.</td>
+<td><code>bookmarks</code></td>
+<td>JE page rule above.</td>
+</tr>
+<tr>
+<td><code>elsewhere</code></td>
+<td>Streaming providers on details pages.</td>
+<td></td>
+<td>On an item's details page, when Elsewhere is enabled.</td>
+</tr>
+<tr>
+<td><code>reviews</code></td>
+<td>Reviews on details pages.</td>
+<td></td>
+<td>On an item's details page, when any review source is enabled.</td>
+</tr>
+<tr>
+<td><code>awards</code></td>
+<td>Awards on details pages.</td>
+<td></td>
+<td>On an item's details page, when awards are shown.</td>
+</tr>
+<tr>
+<td><code>mdblist</code></td>
+<td>MDBList ratings on details pages.</td>
+<td></td>
+<td>On an item's details page, when MDBList ratings are enabled and shown on details pages.</td>
+</tr>
+<tr>
+<td><code>content-warnings</code></td>
+<td>Content warnings (Does the Dog Die).</td>
+<td></td>
+<td>On an item's details page, when content warnings are enabled.</td>
+</tr>
+<tr>
+<td><code>seerr-api</code></td>
+<td>Seerr API client, request manager and status helpers.</td>
+<td></td>
+<td>At boot, when Seerr is enabled. When Seerr search results are on, it also makes the one-time Seerr account check at boot.</td>
+</tr>
+<tr>
+<td><code>seerr</code></td>
+<td>Seerr search results, cards, request and More Info dialogs, details-page rows and links, issue reporting and discovery sections.</td>
+<td><code>seerr-api</code></td>
+<td>When Seerr is enabled, on search, details and list pages; or when <code>JE.jellyseerrMoreInfo.open</code> or <code>JE.jellyseerrIssueReporter.showReportModal</code> is called from elsewhere.</td>
+</tr>
+<tr>
+<td><code>recommendations</code></td>
+<td>The Recommendations page.</td>
+<td><code>seerr</code></td>
+<td>JE page rule above.</td>
+</tr>
+<tr>
+<td><code>arr-links</code></td>
+<td>Sonarr, Radarr and Bazarr links on details pages.</td>
+<td></td>
+<td>At boot, when *arr links are enabled and the user is an administrator.</td>
+</tr>
+<tr>
+<td><code>arr-tag-links</code></td>
+<td>*arr tags shown as links on details pages.</td>
+<td></td>
+<td>On an item's details page, when *arr tags are shown as links.</td>
+</tr>
+<tr>
+<td><code>requests-page</code></td>
+<td>The Requests / Downloads page.</td>
+<td></td>
+<td>JE page rule above.</td>
+</tr>
+<tr>
+<td><code>calendar-page</code></td>
+<td>The Calendar page.</td>
+<td></td>
+<td>JE page rule above.</td>
+</tr>
+<tr>
+<td><code>dashboard</code></td>
+<td>Coloured activity icons, plugin icons and links, plugin revision lists.</td>
+<td></td>
+<td>On dashboard and configuration pages (addresses starting with <code>dashboard</code>, <code>configurationpage</code> or <code>settings</code>).</td>
+</tr>
+<tr>
+<td><code>theme-selector</code></td>
+<td>The theme selector.</td>
+<td></td>
+<td>At boot, when enabled.</td>
+</tr>
+<tr>
+<td><code>active-streams</code></td>
+<td>The Active Streams header widget.</td>
+<td></td>
+<td>At boot, when enabled.</td>
+</tr>
+<tr>
+<td><code>activity-page</code></td>
+<td>The Activity page.</td>
+<td></td>
+<td>JE page rule above (no standalone delivery).</td>
+</tr>
+<tr>
+<td><code>leavingsoon-page</code></td>
+<td>The Leaving Soon page.</td>
+<td><code>removal-menu</code></td>
+<td>JE page rule above (no standalone delivery).</td>
+</tr>
+<tr>
+<td><code>letterboxd</code></td>
+<td>Letterboxd links on details pages.</td>
+<td></td>
+<td>On an item's details page, when Letterboxd links are enabled.</td>
+</tr>
+</tbody>
+</table>
+<p><code>JE.loader</code> (also <code>window.JellyfinEnhanced.loader</code>) lets features and automation work with the groups:</p>
+<table>
+<thead>
+<tr>
+<th>Member</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ensure(ids)</code></td>
+<td>Loads the groups (and their <code>after</code> groups) if needed. Resolves once they have run and started, after every batch asked for before them; it never rejects.</td>
+</tr>
+<tr>
+<td><code>needed()</code></td>
+<td>The groups the current page, configuration and user need.</td>
+</tr>
+<tr>
+<td><code>state()</code></td>
+<td>Each group asked for so far: <code>loading</code> or <code>ready</code>.</td>
+</tr>
+<tr>
+<td><code>settled()</code></td>
+<td>Resolves when nothing is loading.</td>
+</tr>
+<tr>
+<td><code>catalog()</code></td>
+<td>The rules above as data: groups and their exports, start-up calls and pages. Tests compare it with the groups file.</td>
+</tr>
+</tbody>
+</table>
+<p><code>JE.initialized</code> covers only the groups the page needed at boot. Code or automation that needs a feature which loads on demand should <code>await JE.loader.ensure(['&lt;group&gt;'])</code> or <code>JE.loader.settled()</code> instead of waiting for its <code>JE</code> property to appear.</p>
 <h2 id="file-structure">File Structure<a class="headerlink" href="#file-structure" title="Permanent link">&para;</a></h2>
 <p>Use the tree below to find the directory responsible for a feature. Detailed file indexes follow. The manifest is the authoritative list and order of component files. The repository also contains the three dedicated-loader scripts described above.</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Jellyfin.Plugin.JellyfinEnhanced/
@@ -2823,34 +3147,35 @@
 </span><span id="__span-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a>│   └── TagPresets/                   # Built-in Media Tags presets (embedded JSON)
 </span><span id="__span-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>└── js/
 </span><span id="__span-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>    ├── plugin.js
-</span><span id="__span-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>    ├── component-scripts.json
-</span><span id="__span-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>    ├── fonts/                        # Full and subset Material Symbols WOFF2 files
-</span><span id="__span-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>    ├── locales/                      # 33 bundled JSON files, including regional variants
-</span><span id="__span-0-52"><a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>    ├── core/                         # Shared browser primitives
-</span><span id="__span-0-53"><a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>    ├── enhanced/
-</span><span id="__span-0-54"><a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a>    │   ├── bookmarks/
-</span><span id="__span-0-55"><a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a>    │   ├── catchup/
-</span><span id="__span-0-56"><a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a>    │   ├── hiddencontent/
-</span><span id="__span-0-57"><a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a>    │   ├── homeremoval/
-</span><span id="__span-0-58"><a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a>    │   ├── itemdetails/
-</span><span id="__span-0-59"><a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a>    │   ├── player/
-</span><span id="__span-0-60"><a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a>    │   ├── admintags/              # Media Tags tab of the configuration page (admin, not in the bundle)
-</span><span id="__span-0-61"><a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a>    │   │   └── sections/
-</span><span id="__span-0-62"><a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a>    │   ├── settingspanel/
-</span><span id="__span-0-63"><a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a>    │   └── spoilerguard/
-</span><span id="__span-0-64"><a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a>    ├── jellyseerr/
-</span><span id="__span-0-65"><a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a>    │   ├── discovery/
-</span><span id="__span-0-66"><a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a>    │   ├── moreinfo/
-</span><span id="__span-0-67"><a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a>    │   ├── recommendations/
-</span><span id="__span-0-68"><a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a>    │   └── ui/
-</span><span id="__span-0-69"><a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a>    ├── arr/
-</span><span id="__span-0-70"><a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a>    │   ├── calendar/
-</span><span id="__span-0-71"><a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a>    │   └── requests/
-</span><span id="__span-0-72"><a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a>    ├── awards/
-</span><span id="__span-0-73"><a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a>    ├── tags/
-</span><span id="__span-0-74"><a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a>    ├── elsewhere/
-</span><span id="__span-0-75"><a id="__codelineno-0-75" name="__codelineno-0-75" href="#__codelineno-0-75"></a>    ├── extras/
-</span><span id="__span-0-76"><a id="__codelineno-0-76" name="__codelineno-0-76" href="#__codelineno-0-76"></a>    └── others/
+</span><span id="__span-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>    ├── component-scripts.json        # Ordered list of every component module
+</span><span id="__span-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>    ├── component-groups.json         # Which modules load together, and when (see Component groups)
+</span><span id="__span-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>    ├── fonts/                        # Full and subset Material Symbols WOFF2 files
+</span><span id="__span-0-52"><a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>    ├── locales/                      # 33 bundled JSON files, including regional variants
+</span><span id="__span-0-53"><a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>    ├── core/                         # Shared browser primitives
+</span><span id="__span-0-54"><a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a>    ├── enhanced/
+</span><span id="__span-0-55"><a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a>    │   ├── bookmarks/
+</span><span id="__span-0-56"><a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a>    │   ├── catchup/
+</span><span id="__span-0-57"><a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a>    │   ├── hiddencontent/
+</span><span id="__span-0-58"><a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a>    │   ├── homeremoval/
+</span><span id="__span-0-59"><a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a>    │   ├── itemdetails/
+</span><span id="__span-0-60"><a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a>    │   ├── player/
+</span><span id="__span-0-61"><a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a>    │   ├── admintags/              # Media Tags tab of the configuration page (admin, not in the bundle)
+</span><span id="__span-0-62"><a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a>    │   │   └── sections/
+</span><span id="__span-0-63"><a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a>    │   ├── settingspanel/
+</span><span id="__span-0-64"><a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a>    │   └── spoilerguard/
+</span><span id="__span-0-65"><a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a>    ├── jellyseerr/
+</span><span id="__span-0-66"><a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a>    │   ├── discovery/
+</span><span id="__span-0-67"><a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a>    │   ├── moreinfo/
+</span><span id="__span-0-68"><a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a>    │   ├── recommendations/
+</span><span id="__span-0-69"><a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a>    │   └── ui/
+</span><span id="__span-0-70"><a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a>    ├── arr/
+</span><span id="__span-0-71"><a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a>    │   ├── calendar/
+</span><span id="__span-0-72"><a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a>    │   └── requests/
+</span><span id="__span-0-73"><a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a>    ├── awards/
+</span><span id="__span-0-74"><a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a>    ├── tags/
+</span><span id="__span-0-75"><a id="__codelineno-0-75" name="__codelineno-0-75" href="#__codelineno-0-75"></a>    ├── elsewhere/
+</span><span id="__span-0-76"><a id="__codelineno-0-76" name="__codelineno-0-76" href="#__codelineno-0-76"></a>    ├── extras/
+</span><span id="__span-0-77"><a id="__codelineno-0-77" name="__codelineno-0-77" href="#__codelineno-0-77"></a>    └── others/
 </span></code></pre></div>
 <h3 id="build-targets-and-logging">Build targets and logging<a class="headerlink" href="#build-targets-and-logging" title="Permanent link">&para;</a></h3>
 <p><code>JellyfinEnhanced.csproj</code> uses the root namespace and assembly name <code>Jellyfin.Plugin.JellyfinEnhanced</code>. Directory organization does not always match C# namespaces: for example, services in <code>Services/SpoilerGuard/</code> and <code>Services/Identity/</code> use <code>Jellyfin.Plugin.JellyfinEnhanced.Services</code>. Check declarations rather than deriving namespaces from folders.</p>
@@ -3042,6 +3367,15 @@
 <p><code>jellyseerr/ui/ui-icons.js</code> and <code>jellyseerr/moreinfo/more-info-modal-data.js</code> seed their respective shared namespaces, which later modules read directly.</p>
 <p>Avoid hyphens in JavaScript directory segments under the current implicit embedded-resource naming (<code>settingspanel</code>, not <code>settings-panel</code>). Directory hyphens are rewritten in resource names, while the loaders look up paths by converting slashes to dots; file-name hyphens are supported. Supporting hyphenated directories requires resource names matching that lookup and verification of both bundle and individual-script delivery.</p>
 <p><a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/tests/frontend/bootstrap/bootstrap-manifest.test.mjs">bootstrap-manifest.test.mjs</a> checks manifest-order loading and the single-IIFE shape. Top-level directives or declarations outside that IIFE break the wrapping contract. These tests do not build a complete dependency graph; producer-before-consumer order remains your responsibility.</p>
+<p><a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/tests/frontend/bootstrap/bootstrap-groups.test.mjs">bootstrap-groups.test.mjs</a> checks the split into groups:</p>
+<ul>
+<li><code>js/component-groups.json</code> is well formed and lists modules in manifest order.</li>
+<li><code>FEATURE_GROUPS</code> and the groups file name the same groups, and every start-up call and page names a real group.</li>
+<li>Each start-up call and each function in <code>exports</code> is defined by a module of the group it is listed under.</li>
+<li>Each group, loaded with only the groups it is <code>after</code>, reads the same exports while loading as it does in the single bundle, with every feature on and with every feature off. A difference means a missing <code>after</code> or a module in the wrong group.</li>
+</ul>
+<p><a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/tests/frontend/bootstrap/bootstrap-loader-groups.test.mjs">bootstrap-loader-groups.test.mjs</a> runs the loader itself against simulated requests: what a boot asks for, loading on navigation, on a Home tab becoming active, on a video starting and through a stand-in function, the order batches run in, the file-by-file fallback, dev mode, a missing or invalid groups file, and a user switch.</p>
+<p><a href="https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/tests/frontend/bootstrap/bootstrap-bundle-budget.test.mjs">bootstrap-bundle-budget.test.mjs</a> keeps a Home load small. For three configurations (every feature on, the stock defaults, and the defaults with the poster tag types on) it checks the exact groups a Home load asks for and their module count and size against <code>scripts/bundle-budgets.json</code>, which also caps <code>core</code>, any single group other than <code>core</code>, <code>tags</code>, <code>seerr</code> and <code>settings</code>, and the every-feature-on load at 45% of the whole client. <code>node scripts/bundle-budgets.mjs</code> prints the current numbers.</p>
 <h2 id="component-breakdown">Component Breakdown<a class="headerlink" href="#component-breakdown" title="Permanent link">&para;</a></h2>
 <p>These indexes group client modules and relevant supporting server files by web feature area.</p>
 <h3 id="shared-browser-primitives-jscore">Shared browser primitives: <code>js/core/</code><a class="headerlink" href="#shared-browser-primitives-jscore" title="Permanent link">&para;</a></h3>
@@ -3083,7 +3417,7 @@
 </tr>
 <tr>
 <td><code>tag-layout.js</code></td>
-<td>Poster tag layouts (<code>JE.core.tagLayout</code>): resolves the user's layout, slots, group order, caps and label density (with the migration for settings saved before layouts), keeps one controller per card and presents each group's chips in slots, the caption outlet, the summary pill, quality dots and the hover scrim. <code>JE.reinitializeTagLayout()</code> re-presents every card; Status Tags supply translated compact labels through <code>data-je-compact</code>. <code>resolveLayout()</code> picks each card's look: lock, then first matching rule, then the default.</td>
+<td>Poster tag layouts (<code>JE.core.tagLayout</code>): resolves the user's layout, slots, group order, caps and label density (with the migration for settings saved before layouts), keeps one controller per card and presents each group's chips in slots, the caption outlet, the summary pill, quality dots and the hover scrim. <code>JE.reinitializeTagLayout()</code> re-presents every card; Status Tags supply translated compact labels through <code>data-je-compact</code>. <code>resolveLayout()</code> picks each card's look: lock, then first matching rule, then the default. It also decides which cards rest in flow (asked of the browser in idle time, never while a card is drawn) and, in Chromium-based browsers, moves each group container that used to be contained to the whole pixel it was painted from (<code>--je-snap-x</code> / <code>--je-snap-y</code>, measured in the same idle pass and again when a card's size changes).</td>
 </tr>
 <tr>
 <td><code>tag-look.js</code></td>
@@ -3412,6 +3746,10 @@
 <tr>
 <td><code>tag-direct-play.js</code></td>
 <td>The Status group's direct-play warning: jellyfin-web 12.1's browser device profile (ported; <code>tests/fixtures/direct-play-web-12.1-chromium.json</code> is the real client's, captured in Chromium) and the user's saved bitrate, <code>PlaybackInfo</code> lookups for on-screen cards in idle slices (two in flight, each aborted after 15 seconds), answers per item and profile hash for a day in memory and the tag cache store.</td>
+</tr>
+<tr>
+<td><code>status-tag-backdrop.js</code></td>
+<td>The blurred backdrop of status tags, painted once as a picture under each tag instead of <code>backdrop-filter</code> (the artwork under the tag, blurred the way Chromium's backdrop filter blurs it, in idle slices). A component group of its own: <code>statustags.js</code> asks for it when the first status tag is drawn, so a page without one never downloads it, and a tag shows with its plain pill until its picture is there.</td>
 </tr>
 </tbody>
 </table>

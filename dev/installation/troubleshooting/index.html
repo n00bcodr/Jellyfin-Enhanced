@@ -2634,7 +2634,7 @@
 <p>Check the script requests for a failed download or a response that contains the wrong kind of content.</p>
 <ol>
 <li>Filter <strong>Network</strong> requests by <code>JellyfinEnhanced</code>.</li>
-<li>Check the status, response type, and response body of the script request and <code>/JellyfinEnhanced/bundle.js?v=…</code>.</li>
+<li>Check the status, response type, and response body of the script request and the <code>/JellyfinEnhanced/bundle.js?g=…&amp;v=…</code> requests. JE makes one when the page loads and more later, as you open pages or features that need other scripts.</li>
 <li>Check browser messages for blocked scripts, browser extensions, content-security-policy errors, or failed assets.</li>
 </ol>
 <p>Administrator diagnostic setting, under <a href="../../open-in-jellyfin/?tab=admin&amp;card=developer-settings"><strong>Admin</strong> → <strong>Developer Settings</strong></a>:</p>
@@ -2658,7 +2658,7 @@
 <p>Leave <strong>Dev Mode</strong> off for normal use. If you change it for diagnosis, save and reload the client. After an update, start with a hard refresh. Use the targeted controls below if only scripts, translations, tags, or images remain out of date.</p>
 <details class="info">
 <summary>How it works</summary>
-<p>JE normally loads its scripts together from <code>/JellyfinEnhanced/bundle.js?v=…</code>. If that request fails, JE can try loading the scripts individually. If you see individual requests, check the console for the original failure and whether loading recovered. You do not need to sign in to request the bundle or its diagnostic source map at <code>/JellyfinEnhanced/bundle.js.map</code>.</p>
+<p>JE loads its scripts in groups, several at a time, from <code>/JellyfinEnhanced/bundle.js?g=…&amp;v=…</code>; <code>g</code> lists the groups in that request. It loads the groups a page needs when the page loads, and the rest only when you open a page or use a feature that needs them, so a failure can appear later in a session rather than at sign-in. If a request fails, JE tries loading that request's scripts individually. If you see individual requests, check the console for the original failure and whether loading recovered. You do not need to sign in to request the bundles or their diagnostic source map at <code>/JellyfinEnhanced/bundle.js.map</code>.</p>
 <p>A 404 suggests a missing route or proxy path problem. An HTML login page returned for a JavaScript request suggests proxy authentication or rewriting.</p>
 </details>
 <h3 id="background-tasks-are-separate">Background tasks are separate<a class="headerlink" href="#background-tasks-are-separate" title="Permanent link">&para;</a></h3>
