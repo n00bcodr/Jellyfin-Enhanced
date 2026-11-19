@@ -46,8 +46,9 @@
 // the picture would not be what the filter shows:
 //   - while the pointer is on the card with its tags on show, or focus is
 //     in it: Jellyfin's overlay lies between the artwork and the tags then;
-//   - until the page has been quiet for a few seconds (QUIET_MS): pictures
-//     are painted in idle time after a page has loaded, not while it does;
+//   - until no new card with a status tag has come for a few seconds
+//     (QUIET_MS): pictures are painted in idle time after a page has
+//     loaded, not while it does;
 //   - when it cannot be drawn faithfully: artwork still loading, hidden,
 //     filtered or faded by CSS, a chip of an earlier slot under the tag (a
 //     crowded card), a tag reaching outside the image or itself
@@ -124,8 +125,9 @@
         const HOLD_MS = 1000;
         const HOLD_MAX_MS = 30000;
         /**
-         * Pictures wait until no new status tag has been drawn for this long (ms): they are painted
-         * after a page has finished loading, not while it does.
+         * Pictures wait until no new card with a status tag has come for this long (ms): they are painted
+         * after a page has finished loading, not while it does. (A tag drawn again on a card already
+         * watched does not restart the wait: that is one card's work, not a page arriving.)
          */
         const QUIET_MS = 3000;
         /** What ends a passing state of a card (measureAgainLater). */
@@ -1178,9 +1180,9 @@
         /** Run a slice when the browser is idle (soon, at the latest). */
         function scheduleSlice() {
             if (sliceScheduled || !active) return;
-            // Pictures are painted once the page has been quiet. While status tags are still being drawn
-            // (a page loading, a row filling in) the live filter shows them, and the decoding and the pixel
-            // work would only compete with what the page is busy with.
+            // Pictures are painted once the page has been quiet. While cards with status tags are still
+            // arriving (a page loading, a row filling in) the live filter shows them, and the decoding and the
+            // pixel work would only compete with what the page is busy with.
             const wait = lastTracked + quietMs - performance.now();
             if (wait > 0) {
                 if (!quietTimer) {

@@ -122,12 +122,14 @@ function setup(t, { settings = {}, vendor = 'Google Inc.', ratio = 1, boxes = BO
   Object.defineProperty(h.window.HTMLImageElement.prototype, 'complete', { configurable: true, get() { return true; } });
   // Jellyfin's image box has layout and style containment: the pixel grid of what is inside starts at its corner.
   const styles = h.window.getComputedStyle;
-  const styled = { reads: 0 };
+  // (`styled.of`: what the page's CSS gives other elements, by element.)
+  const styled = { reads: 0, of: new Map([[root, { contain: 'layout style' }]]) };
   h.window.getComputedStyle = function (el, ...rest) {
     styled.reads++;
     const style = styles.call(this, el, ...rest);
-    if (el !== root) return style;
-    return new Proxy(style, { get: (target, key) => (key === 'contain' ? 'layout style' : typeof target[key] === 'function' ? target[key].bind(target) : target[key]) });
+    const given = styled.of.get(el);
+    if (!given) return style;
+    return new Proxy(style, { get: (target, key) => (key in given ? given[key] : typeof target[key] === 'function' ? target[key].bind(target) : target[key]) });
   };
 
   /** Run the frames queued so far, and the ones they queue (the after-paint and idle passes). */
@@ -379,6 +381,55 @@ test('what the styles say of the pixel grid is read once for each element, not o
   assert.equal(h.styled.reads, 0, 'the card was measured again from boxes alone');
 });
 
+test('a box that is moved moves the grid with it, by transform or by translate, and is read again on every pass', t => {
+  const h = setup(t);
+  // A theme takes the image box's containment away: the grid starts further up (here at the page's corner), and the
+  // card's box in between is moved by a fraction of a pixel.
+  const box = h.document.querySelector('.cardBox');
+  h.styled.of.set(h.root, {});
+  h.styled.of.set(box, { transform: 'matrix(1, 0, 0, 1, 0.25, 0.5)' });
+  h.show();
+  const at = (name, dx, dy) => [px(nudge(ROOT[0] + BOXES[name][0] - dx)), px(nudge(ROOT[1] + BOXES[name][1] - dy))];
+  assert.deepEqual(h.snap('rating'), at('rating', 0.25, 0.5));
+  // The move is another one by the next pass (a transition, a row that slides): it is not remembered.
+  h.styled.of.set(box, { transform: 'matrix(1, 0, 0, 1, 0.75, 0.125)' });
+  h.layout.removeGroup(h.host, 'ageRating');
+  h.settle();
+  assert.deepEqual(h.snap('rating'), at('rating', 0.75, 0.125));
+  // `translate` is not part of the computed transform, and moves the grid just the same; with a transform, both do.
+  h.styled.of.set(box, { transform: 'none', translate: '0.375px 0.625px' });
+  h.add('status');
+  h.settle();
+  assert.deepEqual(h.snap('rating'), at('rating', 0.375, 0.625));
+  h.styled.of.set(box, { transform: 'matrix(1, 0, 0, 1, 0, 0.25)', translate: '0.375px' });
+  h.layout.removeGroup(h.host, 'status');
+  h.settle();
+  assert.deepEqual(h.snap('rating'), at('rating', 0.375, 0.25));
+  // A scale or a rotation that changes nothing starts no grid; one that does starts its own, at the box's corner.
+  h.styled.of.set(box, { transform: 'none', translate: 'none', scale: '1', rotate: '0deg' });
+  h.add('status');
+  h.settle();
+  assert.deepEqual(h.snap('rating'), at('rating', 0, 0));
+  // (What an element that makes no move says is remembered: this pass read the box's styles, the next does not.)
+  h.styled.reads = 0;
+  h.layout.removeGroup(h.host, 'status');
+  h.settle();
+  assert.equal(h.styled.reads, 0);
+});
+
+test('a box with a scale or a rotation that is more than nothing starts a grid of its own', t => {
+  for (const given of [{ scale: '1.05' }, { scale: '1 1.2' }, { rotate: '0.5deg' }, { rotate: 'x 12deg' }]) {
+    const h = setup(t);
+    const box = h.document.querySelector('.cardBox');
+    h.styled.of.set(h.root, {});
+    h.styled.of.set(box, given);
+    const corner = h.window.Element.prototype.getBoundingClientRect;
+    h.window.Element.prototype.getBoundingClientRect = function () { return this === box ? { left: ROOT[0] - 0.4, top: ROOT[1] - 0.2, width: 10, height: 10 } : corner.call(this); };
+    h.show();
+    assert.deepEqual(h.snap('rating'), [px(nudge(BOXES.rating[0] + 0.4)), px(nudge(BOXES.rating[1] + 0.2))], JSON.stringify(given));
+  }
+});
+
 test('a scaled card is not measured: distances read under a scale are not the layout\'s. It is measured when that ends', t => {
   const timers = handTimers();
   const h = setup(t, { globals: timers.globals });
@@ -391,12 +442,63 @@ test('a scaled card is not measured: distances read under a scale are not the la
   assert.deepEqual(h.snap('rating'), before, 'left as it was');
   assert.deepEqual(h.snap('status'), ['', '']);
   assert.equal(h.layout.snapStats().deferred, 1);
+  // While the pointer is on the card, what happens inside it is not the end of that: the pointer leaving one of the
+  // card's buttons for another, focus moving between them, the transition that brought the card to its hover size.
+  const cardEl = h.document.querySelector('.card');
+  const inner = cardEl.querySelector('.cardImageContainer');
+  const button = h.document.createElement('button');
+  inner.appendChild(button);
+  const matches = cardEl.matches.bind(cardEl);
+  let hovered = true;
+  cardEl.matches = (selector) => (selector === ':hover' ? hovered : matches(selector));
+  const passes = h.layout.snapStats().passes;
+  const quiet = () => { timers.due(120); h.settle(); return [h.layout.snapStats().passes, h.layout.snapStats().deferred, h.layout.snapStats().waiting]; };
+  inner.dispatchEvent(new h.window.Event('pointerleave'));
+  assert.deepEqual(quiet(), [passes, 1, 0], 'the pointer left a descendant, not the card');
+  button.dispatchEvent(new h.window.FocusEvent('focusout', { bubbles: true, relatedTarget: inner }));
+  assert.deepEqual(quiet(), [passes, 1, 0], 'focus stayed in the card');
+  for (const type of ['transitionend', 'transitioncancel', 'animationend', 'animationcancel']) cardEl.dispatchEvent(new h.window.Event(type, { bubbles: true }));
+  inner.dispatchEvent(new h.window.Event('transitionend', { bubbles: true }));
+  assert.deepEqual(quiet(), [passes, 1, 0], 'a transition ended with the pointer still on the card');
+  // The pointer leaves the card itself, and the card is back at its own size.
+  hovered = false;
   h.state.zoom = 1;
-  h.document.querySelector('.card').dispatchEvent(new h.window.Event('pointerleave'));
+  cardEl.dispatchEvent(new h.window.Event('pointerleave'));
   timers.due(120);
   h.settle();
   assert.deepEqual(h.snap('status'), [px(nudge(120.7)), '']);
   assert.deepEqual(h.snap('rating'), before);
+  // Nothing is left listening on the card.
+  const after = h.layout.snapStats().passes;
+  cardEl.dispatchEvent(new h.window.Event('pointerleave'));
+  assert.equal(quiet()[0], after);
+});
+
+test('a scaled card whose scale ends with a transition is measured when it ends, the pointer gone', t => {
+  const timers = handTimers();
+  const h = setup(t, { globals: timers.globals });
+  h.show();
+  h.state.zoom = 1.05;
+  h.add('status');
+  h.settle();
+  assert.equal(h.layout.snapStats().deferred, 1);
+  // The pointer has left already (the card was measured mid-way back): the end of the transition is what is left to hear.
+  const cardEl = h.document.querySelector('.card');
+  h.state.zoom = 1;
+  cardEl.querySelector('.cardImageContainer').dispatchEvent(new h.window.Event('transitionend', { bubbles: true }));
+  timers.due(120);
+  h.settle();
+  assert.deepEqual(h.snap('status'), [px(nudge(120.7)), '']);
+  // Focus going outside the card ends it as well.
+  h.state.zoom = 1.05;
+  h.layout.removeGroup(h.host, 'ageRating');
+  h.settle();
+  assert.equal(h.layout.snapStats().deferred, 2);
+  h.state.zoom = 1;
+  cardEl.dispatchEvent(new h.window.FocusEvent('focusout', { bubbles: true, relatedTarget: h.document.body }));
+  timers.due(120);
+  h.settle();
+  assert.deepEqual(h.snap('rating'), [px(nudge(154.15)), px(nudge(250.35))]);
 });
 
 test('a container with no box is written nothing, and loses the nudge it had', async t => {
@@ -437,7 +539,27 @@ test('a card about to be fitted is un-nudged first, so the fitting pass reads th
   // The fitting pass starts by reading each card's height: what the containers carry at that moment is what it measures with.
   const seen = [];
   Object.defineProperty(h.window.HTMLElement.prototype, 'clientHeight', { configurable: true, get() { if (this === h.host) seen.push(nudged().length); return this === h.host ? h.state.host[1] : 0; } });
-  // A new size: the card is fitted again. The frame that queues the fit takes the nudges off.
+  // The window gets another height (a phone's address bar going away as the page scrolls): no card's tags depend on
+  // it, so no card is fitted again and none loses its nudges.
+  const passes = h.layout.snapStats().passes;
+  h.window.innerHeight += 56;
+  h.window.dispatchEvent(new h.window.Event('resize'));
+  h.settle();
+  timers.due(400);
+  h.settle();
+  assert.deepEqual(seen, [], 'no fit for a height-only resize');
+  assert.ok(nudged().length > 0, 'and the nudges stay on');
+  assert.equal(h.layout.snapStats().passes, passes, 'nothing measured again');
+  // Taller than wide now (a window turned, at the same width): orientation rules may apply, so cards are fitted.
+  h.window.innerHeight = h.window.innerWidth + 200;
+  h.window.dispatchEvent(new h.window.Event('resize'));
+  h.settle();
+  assert.ok(seen.length > 0, 'fitted when the orientation changes');
+  timers.due(120);
+  h.settle();
+  seen.length = 0;
+  // Another width: the card is fitted again. The frame that queues the fit takes the nudges off.
+  h.window.innerWidth += 120;
   h.window.dispatchEvent(new h.window.Event('resize'));
   h.settle();
   assert.ok(seen.length > 0, 'the card was fitted');
@@ -492,6 +614,11 @@ async function bands(t, widths, timers) {
     return bandLine(groups.map(el => widths[el.dataset.jeGroup]), margins, room).map(x => start + x);
   };
   h.state.xOf = group => (group.parentElement.dataset.jeSlot === 'top' ? h.lie()[line().indexOf(group)] / 64 : null);
+  // The room inside the band's padding (6px each side, 6px above and 16px below), as a pass measures it.
+  h.room = [HOST[0] - 0.296875 - 12, HOST[1] - 12 - 22];
+  // The page's clock, by hand.
+  h.clock = { now: 1000 };
+  h.window.performance.now = () => h.clock.now;
   h.state.boxes = { ...BOXES };
   for (const [name, width] of Object.entries(widths)) h.state.boxes[name] = [0, 6.4, width / 64, 20];
   h.line = line;
@@ -559,13 +686,78 @@ test('Bands\' top band: lengths do not follow a card that changes size, so they 
   const top = h.host.querySelector('.je-tag-slot[data-je-slot="top"]');
   assert.equal(h.watching(top).length, 1, 'the band\'s own box is watched: its padding follows Jellyfin\'s indicators');
   // The first report is the room the pass measured in.
-  h.sized(top, 180, 40);
+  h.sized(top, h.room[0], h.room[1]);
   assert.deepEqual(h.band('custom'), before);
-  // An indicator arrives: the band has less room inside its padding.
-  h.sized(top, 150, 40);
+  // Some time later an indicator arrives: the band has less room inside its padding.
+  h.clock.now += 5000;
+  h.sized(top, h.room[0] - 30, h.room[1]);
   assert.deepEqual(h.band('status'), ['', '', ''], 'before the frame that reports it is painted');
   assert.deepEqual(h.band('custom'), ['', '', '']);
   timers.due(120);
   h.settle();
   assert.deepEqual(h.band('custom'), before, 'and measured again once the size has held');
+});
+
+test('Bands\' top band: a band whose own size its margins changed is left as it is across, until it changes size for another reason', async t => {
+  const timers = handTimers();
+  const h = await bands(t, { status: 4717, ageRating: 1793, custom: 2822 }, timers);
+  h.draw();
+  h.grid();
+  h.settle();
+  const top = h.host.querySelector('.je-tag-slot[data-je-slot="top"]');
+  const nudged = h.band('ageRating');
+  assert.notEqual(nudged[0], '');
+  const passes = () => h.layout.snapStats().passes;
+  // The frame after the margins were written the band is another height than the pass measured: a group changed
+  // lines because of them. (Its first report: there is no earlier one to hold it against, only the pass's own reading.)
+  h.clock.now += 30;
+  h.sized(top, h.room[0], h.room[1] - 18);
+  assert.deepEqual(h.band('ageRating'), ['', '', ''], 'the margins come off at once');
+  // ... and the band is its old height again, which is its own doing too.
+  h.clock.now += 30;
+  h.sized(top, h.room[0], h.room[1]);
+  timers.due(120);
+  h.settle();
+  assert.deepEqual(h.band('status'), ['', '', px(nudge(6.4))], 'measured again, it takes no margin across: only up and down');
+  assert.deepEqual(h.band('ageRating'), ['', '', px(nudge(6.4))]);
+  assert.deepEqual(h.band('custom'), ['', '', '']);
+  const settled = passes();
+  h.settle();
+  assert.equal(passes(), settled, 'and nothing more is asked of it');
+  // Much later the band changes size for a reason of its own (the window, an indicator): it is nudged as any band.
+  h.clock.now += 60000;
+  h.sized(top, h.room[0] + 1, h.room[1]);
+  timers.due(120);
+  h.settle();
+  assert.deepEqual(h.band('ageRating'), nudged);
+});
+
+test('Bands\' top band: a first report that is not the pass\'s reading to the last unit holds nothing', async t => {
+  // On a screen of 1.25 or 1.5 device pixels to a CSS pixel an observer reports a size in 64ths of a CSS pixel,
+  // and a measured box is a little off that: a fraction of a pixel is not a line.
+  const timers = handTimers();
+  const h = await bands(t, { status: 4717, ageRating: 1793, custom: 2822 }, timers);
+  h.draw();
+  h.grid();
+  h.settle();
+  const top = h.host.querySelector('.je-tag-slot[data-je-slot="top"]');
+  const nudged = h.band('ageRating');
+  assert.notEqual(nudged[0], '');
+  const passes = h.layout.snapStats().passes;
+  h.clock.now += 10;
+  h.sized(top, h.room[0] - 0.0104, h.room[1] + 0.0104);
+  timers.due(120);
+  h.settle();
+  assert.deepEqual(h.band('ageRating'), nudged, 'the margins stay');
+  assert.equal(h.layout.snapStats().passes, passes, 'and nothing is measured again');
+  // The next report is held against that one: the same size is no change, another size is.
+  h.clock.now += 10;
+  h.sized(top, h.room[0] - 0.0104, h.room[1] + 0.0104);
+  assert.deepEqual(h.band('ageRating'), nudged);
+  h.clock.now += 5000;
+  h.sized(top, h.room[0] - 0.5, h.room[1] + 0.0104);
+  assert.deepEqual(h.band('ageRating'), ['', '', ''], 'lengths come off for a band of another width');
+  timers.due(120);
+  h.settle();
+  assert.notEqual(h.band('ageRating')[0], '', 'and it is nudged again, not held');
 });

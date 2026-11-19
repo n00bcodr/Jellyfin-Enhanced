@@ -19,8 +19,8 @@ const card = n => `<div class="card" data-id="${ID(n)}" data-type="Movie"><div c
  * changes pixels where translucent things overlap, whatever the containers' positions: that is the
  * compositor's doing, and not what this pins.)
  */
-async function open(page, settings) {
-  await page.setViewportSize({ width: 900, height: 420 });
+async function open(page, settings, css = '', sized = true) {
+  if (sized) await page.setViewportSize({ width: 900, height: 420 });
   await page.setContent(`<style>
     body { margin: 0; background: #223; font-family: sans-serif }
     .row { position: absolute; left: 20.796875px; top: 10.640625px; white-space: nowrap }
@@ -35,6 +35,7 @@ async function open(page, settings) {
     .je-msym-outlined { font-size: 0 !important }
     .status-tag { display: inline-flex; padding: 2.3px 7.3px; border-radius: 999px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 11.3px; line-height: 1.3 }
     .custom-tag { display: inline-flex; padding: 2px 6.6px; border-radius: 4px; background: rgba(30, 60, 90, .8); color: #fff; font-size: 10.7px }
+    ${css}
     </style><div class="row">${[1, 2, 3].map(card).join('')}</div>`);
   await page.evaluate((settings) => {
     window.JellyfinEnhanced = {
@@ -133,3 +134,156 @@ for (const [name, settings] of [['Corners', {}], ['Corners, Tight edge and large
     }
   });
 }
+
+// The pixel grid a card's containers are snapped to starts at the nearest box that starts one (Jellyfin's image
+// box does). Where a theme takes that box's containment away, the grid starts further up, and a box in between
+// that is moved by a fraction of a pixel moves the grid with it: by `transform`, or by `translate`, which is not
+// part of the computed transform. A `scale` or `rotate` that changes nothing starts no grid of its own.
+// (At one device pixel to a CSS pixel only. Under an emulated ratio a box moved by a fraction is rastered through
+// one more transform when it is contained, and a handful of anti-aliased pixels in a million come out a level
+// apart wherever a plain box is put: 9 here with the nudge, 44,000 without it.)
+for (const [name, css] of [
+  ['transform: translate()', '.cardBox { transform: translate(0.296875px, 0.703125px) }'],
+  ['translate', '.cardBox { translate: 0.296875px 0.703125px }'],
+  ['translate and transform together', '.cardBox { translate: 0.296875px 0.203125px; transform: translateY(0.5px) }'],
+  ['scale: 1', '.cardBox { scale: 1 }'],
+  ['rotate: 0deg', '.cardBox { rotate: 0deg }'],
+]) {
+  test(`a card whose pixel grid starts above a box moved by ${name} paints the pixels it painted contained`, async ({ page }, info) => {
+    test.skip(info.project.name !== 'chromium', 'pixel for pixel at a device scale of 1; nothing is nudged outside Chromium\'s family');
+    test.setTimeout(60000);
+    // (The moved box itself sits a fraction of a pixel into the card, so a grid started at it is not the card's.)
+    await open(page, {}, `.cardScalable { contain: none } .cardBox { margin: 0.390625px 0 0 0.296875px } ${css}`);
+    const now = await shot(page);
+    await contained(page, true);
+    const was = await shot(page);
+    await info.attach('now.png', { body: now, contentType: 'image/png' });
+    await info.attach('contained.png', { body: was, contentType: 'image/png' });
+    expect(now.equals(was), 'the same pixels as with contained containers').toBe(true);
+    await contained(page, false);
+    expect((await shot(page)).equals(was), 'and the nudge is what makes it so').toBe(false);
+  });
+}
+
+// A screen of more than one device pixel to a CSS pixel (and a zoomed page) lays out and snaps in device pixels:
+// the grid is finer than a CSS pixel, and a nudge is a fraction of a device pixel. A device scale the test
+// runner emulates does not do that (it snaps in CSS pixels, which the mobile project covers), so these launch a
+// browser with a real one.
+for (const [scale, name, settings] of [[1.25, 'Corners', {}], [1.25, 'Bands', { tagLayout: 'bands' }], [1.5, 'Bands', { tagLayout: 'bands' }], [1.5, 'Caption', { tagLayout: 'caption' }],
+  [2, 'Corners, Tight edge and larger tags', { tagEdgeSpacing: 'tight', tagScale: 'larger' }]]) {
+  test(`${name} at a real device scale of ${scale}: containers lie on whole device pixels and paint what they painted contained`, async ({ playwright }, info) => {
+    test.skip(info.project.name !== 'chromium', 'one browser of Chromium\'s family is enough');
+    test.setTimeout(90000);
+    const browser = await playwright.chromium.launch({ ...info.project.use.launchOptions, args: [`--force-device-scale-factor=${scale}`, '--window-size=900,420'] });
+    try {
+      // (No viewport and no ratio of the runner's: either would be an emulated one.)
+      const page = await (await browser.newContext({ viewport: null, deviceScaleFactor: undefined })).newPage();
+      await open(page, settings, '', false);
+      expect(await page.evaluate(() => JellyfinEnhanced.core.tagLayout.snapStats().scale)).toBe(scale);
+      const nudges = await page.evaluate(() => [...document.querySelectorAll('.je-tag-host [data-je-group]')].flatMap(el => ['--je-snap-x', '--je-snap-y'].map(name => parseFloat(el.style.getPropertyValue(name)) || 0)).filter(Boolean));
+      expect(nudges.length).toBeGreaterThan(0);
+      // Each is a whole number of layout units (64ths of a device pixel), and at most half a device pixel.
+      for (const value of nudges) {
+        expect(Math.abs(value * scale * 64 - Math.round(value * scale * 64))).toBeLessThan(1e-6);
+        expect(Math.abs(value * scale)).toBeLessThanOrEqual(0.5);
+      }
+      expect((await offGrid(page)).filter(c => c.off > 0.001)).toEqual([]);
+      const now = await shot(page);
+      await contained(page, true);
+      expect((await offGrid(page)).filter(c => c.off > 0.001).length, 'the cards do sit between device pixels').toBeGreaterThan(0);
+      const was = await shot(page);
+      await info.attach('now.png', { body: now, contentType: 'image/png' });
+      await info.attach('contained.png', { body: was, contentType: 'image/png' });
+      expect(now.equals(was), 'the same pixels as with contained containers').toBe(true);
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+// Bands' top band wraps whole groups. A group pushed from its right is that much narrower when the browser
+// breaks the band into lines, so a nudge could pull a group that only just wrapped back up onto the line
+// above: the band would change height, the nudge would come off, the group would go down again, and so on.
+test('Bands: a group that only just wraps onto the band\'s second line stays there, and the page comes to rest', async ({ page, browserName }) => {
+  test.setTimeout(60000);
+  await page.setViewportSize({ width: 1200, height: 900 });
+  const sheet = `<style>
+    body { margin: 0; background: #223; font-family: sans-serif }
+    #cards { position: absolute; left: 10.3px; top: 10.7px; width: 1150px }
+    .card { display: inline-block; margin: 0 6.3px 6.3px 0; contain: content }
+    .cardBox { container-type: inline-size }
+    .cardScalable { position: relative; contain: layout style; height: 120px }
+    .cardImageContainer { position: absolute; inset: 0; background: #456 }
+    .je-tag-host { position: absolute !important; inset: 0; pointer-events: none }
+    .status-tag { display: inline-flex; padding: 2.3px 7.3px; border-radius: 999px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 11.3px; line-height: 1.3; white-space: nowrap }
+    </style><div id="cards"></div>`;
+  await page.setContent(sheet);
+  await page.evaluate(() => {
+    window.JellyfinEnhanced = {
+      currentSettings: { ageRatingTagsEnabled: true, tagLayoutSettingsVersion: 1, tagLayout: 'bands',
+        tagLayouts: { bands: { groups: [{ group: 'status', slot: 'top' }, { group: 'ageRating', slot: 'top' }] } } },
+      pluginConfig: { TagCacheServerMode: true }, t: k => k,
+      session: { getUserId: () => 'a', getServerId: () => 's', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
+      _cacheManager: { register() {}, markDirty() {} },
+      tagPipeline: { renderers: {}, registerRenderer(name, renderer) { this.renderers[name] = renderer; }, getRenderer(name) { return this.renderers[name]; }, clearProcessed() {}, scheduleScan() {} },
+    };
+  });
+  for (const f of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/ageratingtags.js']) await page.addScriptTag({ path: path.join(root, f) });
+  await page.evaluate(() => {
+    const JE = JellyfinEnhanced;
+    JE.initializeAgeRatingTags();
+    for (const renderer of Object.values(JE.tagPipeline.renderers)) renderer.injectCss?.();
+    /** Cards of the given widths, each with a status badge and an age rating in its top band. */
+    window.cards = (widths) => {
+      const box = document.getElementById('cards');
+      box.innerHTML = widths.map((w, i) => `<div class="card" style="width:${w}px" data-id="${String(i).padStart(32, '0')}" data-type="Series"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div></div>`).join('');
+      box.querySelectorAll('.je-tag-host').forEach((host) => {
+        const status = document.createElement('div');
+        status.className = 'status-overlay-container';
+        status.innerHTML = '<div class="status-tag">Returning Series</div>';
+        JE.core.tagLayout.commitGroup(host, 'status', status);
+        for (const renderer of Object.values(JE.tagPipeline.renderers)) if (renderer.isEnabled() && renderer.renderFromServerCache) renderer.renderFromServerCache(host, { Type: 'Series', OfficialRating: 'TV-MA' }, host.closest('.card').dataset.id);
+      });
+    };
+    /** How many lines each card's top band has, from its groups' tops. */
+    window.lines = () => [...document.querySelectorAll('.je-tag-slot[data-je-slot="top"]')].map((slot) => new Set([...slot.children].map((g) => Math.round(g.getBoundingClientRect().top))).size);
+  });
+  const rest = async () => {
+    await page.waitForFunction(() => document.querySelectorAll('.je-tag-host').length === document.querySelectorAll('.je-tag-host[data-je-flow]').length && JellyfinEnhanced.core.tagLayout.snapStats().waiting === 0, null, { timeout: 10000 });
+    await page.evaluate(() => new Promise(r => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(r)), 400)));
+  };
+  // Without nudges first: the card width at which the age rating comes up beside the badge (chips scale with the
+  // card, so it is found by laying cards out), then eighty cards from just under half a pixel short of it to a
+  // quarter of a pixel past it, a hundredth of a pixel apart.
+  await page.evaluate(() => { JellyfinEnhanced.core.tagLayout.wholePixels = false; });
+  const coarse = Array.from({ length: 320 }, (_, k) => 140 + k * 0.25);
+  await page.evaluate((widths) => window.cards(widths), coarse);
+  await rest();
+  const turn = coarse[(await page.evaluate(() => window.lines())).lastIndexOf(2)];
+  expect(turn).toBeGreaterThan(141);
+  expect(turn).toBeLessThan(219);
+  const widths = Array.from({ length: 80 }, (_, k) => +(turn - 0.55 + k * 0.01).toFixed(3));
+  await page.evaluate((widths) => window.cards(widths), widths);
+  await rest();
+  const bare = await page.evaluate(() => window.lines());
+  expect(bare.filter(n => n === 2).length, 'cards whose age rating only just wraps').toBeGreaterThan(40);
+  expect(bare.filter(n => n === 1).length, 'and cards where it only just fits').toBeGreaterThan(0);
+  // With whole pixels on, every band has the lines it had, and nothing keeps being measured.
+  await page.evaluate((widths) => { JellyfinEnhanced.core.tagLayout.wholePixels = true; window.cards(widths); }, widths);
+  await rest();
+  const sizes = await page.evaluate(() => new Promise((resolve) => {
+    // Any band that changes size from here on is a band that has not come to rest.
+    let changes = -document.querySelectorAll('.je-tag-slot[data-je-slot="top"]').length;
+    const watch = new ResizeObserver((entries) => { changes += entries.length; });
+    document.querySelectorAll('.je-tag-slot[data-je-slot="top"]').forEach(slot => watch.observe(slot));
+    const before = JellyfinEnhanced.core.tagLayout.snapStats().passes;
+    setTimeout(() => { watch.disconnect(); resolve({ changes, passes: JellyfinEnhanced.core.tagLayout.snapStats().passes - before, lines: window.lines() }); }, 1500);
+  }));
+  expect(sizes.lines).toEqual(bare);
+  expect(sizes.changes).toBe(0);
+  expect(sizes.passes).toBe(0);
+  if (browserName === 'chromium') {
+    const nudged = await page.evaluate(() => document.querySelectorAll('.je-tag-host [style*="--je-snap"]').length);
+    expect(nudged).toBeGreaterThan(0);
+  }
+});
