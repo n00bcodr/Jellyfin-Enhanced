@@ -34,6 +34,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     public class ReclaimerrReviewRequest
     {
         [JsonPropertyName("note")] public string? Note { get; set; }
+        /// <summary>Approve only: <c>default</c> (Reclaimerr's grace period, none unless set), <c>now</c>, or <c>date</c> (needs <c>date</c>).</summary>
+        [JsonPropertyName("when")] public string? When { get; set; }
+        [JsonPropertyName("date")] public DateTimeOffset? Date { get; set; }
     }
 
     /// <summary>Body of the Reclaimerr item actions.</summary>
@@ -157,7 +160,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (config == null || !config.LeavingSoonPageEnabled || !ReclaimerrActions.Enabled(config)) return NotFound();
             try
             {
-                await _reclaimerr.ReviewRequestAsync(requestId, approve, body?.Note, CurrentUserName(), config, token).ConfigureAwait(false);
+                var timing = body?.When?.ToLowerInvariant() switch
+                {
+                    "now" => ReclaimerrActions.ApprovalTiming.Now,
+                    "date" => ReclaimerrActions.ApprovalTiming.OnDate,
+                    _ => ReclaimerrActions.ApprovalTiming.GracePeriod,
+                };
+                await _reclaimerr.ReviewRequestAsync(requestId, approve, body?.Note, CurrentUserName(), config, token, timing, body?.Date).ConfigureAwait(false);
                 return Ok(new { id = requestId, approved = approve });
             }
             catch (MaintainerrActions.ActionException ex)

@@ -39,7 +39,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [property: JsonPropertyName("versionSize")] long? VersionSize,
         [property: JsonPropertyName("adminNotes")] string? AdminNotes,
         [property: JsonPropertyName("executionError")] string? ExecutionError,
-        [property: JsonPropertyName("deferred")] bool Deferred);
+        [property: JsonPropertyName("deferred")] bool Deferred,
+        [property: JsonPropertyName("scheduledAt")] string? ScheduledAt,
+        [property: JsonPropertyName("scheduleState")] string? ScheduleState);
 
     /// <summary>
     /// Backend of the Leaving soon page: what is leaving (the facts of whichever removal tool is on) for the items the
@@ -138,6 +140,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             IReadOnlyList<LeavingSoonRequestDto> requests = Array.Empty<LeavingSoonRequestDto>();
             IReadOnlyList<LeavingSoonRequestDto> mine = Array.Empty<LeavingSoonRequestDto>();
             var requestsUnavailable = false;
+            var canSchedule = false;
+            int? graceDays = null;
             if (reclaimerr && ReclaimerrActions.Enabled(config))
             {
                 // Both lists are read at once under one short budget: a slow Reclaimerr leaves them short instead of holding the page,
@@ -148,6 +152,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     try { return await DescribeAsync(await _reclaimerr.RequestsAsync(config!, user.Username, mine: !pending, budget.Token).ConfigureAwait(false), config!, user, budget.Token).ConfigureAwait(false); }
                     catch (OperationCanceledException) when (!token.IsCancellationRequested) { requestsUnavailable = true; return Array.Empty<LeavingSoonRequestDto>(); }
+                }
+
+                // Whether an approval can be given a day (only asked of administrators, who are the ones who approve).
+                if (admin)
+                {
+                    try
+                    {
+                        canSchedule = await _reclaimerr.SchedulingSupportedAsync(config!, budget.Token).ConfigureAwait(false);
+                        // The delay an approval gets when no day is named, so the page can say what "Reclaimerr's grace period" means.
+                        if (canSchedule) graceDays = await _reclaimerr.GracePeriodDaysAsync(config!, budget.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (!token.IsCancellationRequested) { canSchedule = false; }
                 }
 
                 var pendingTask = admin ? Load(true) : Task.FromResult<IReadOnlyList<LeavingSoonRequestDto>>(Array.Empty<LeavingSoonRequestDto>());
@@ -166,6 +182,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 requests,
                 mine,
                 requestsUnavailable,
+                canSchedule,
+                graceDays,
             });
         }
 
@@ -202,9 +220,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var (person, note) = ParseReason(r.Reason);
                 // Filed straight in Reclaimerr (no "Requested by NAME from Jellyfin" text): a Jellyfin user of the same name is the person.
-                var jellyfinUser = person != null ? _userManager.GetUserByName(person) : (string.IsNullOrWhiteSpace(r.RequestedBy) ? null : _userManager.GetUserByName(r.RequestedBy));
+                var jellyfinUser = person != null ? _userManager.GetUserByName(person) : null;
+                if (person == null && !string.IsNullOrWhiteSpace(r.RequestedBy))
+                {
+                    jellyfinUser = _userManager.GetUserByName(r.RequestedBy);
+                    // Reclaimerr may know them as, say, ATM_user: the mapping, or the account Reclaimerr linked to their Jellyfin login, says who that is.
+                    if (jellyfinUser == null && await SafeJellyfinNameAsync(config, r.RequestedBy, token).ConfigureAwait(false) is { } named) jellyfinUser = _userManager.GetUserByName(named);
+                }
+
                 list.Add(new LeavingSoonRequestDto(r.Id, r.Title, r.Year, r.MediaType, r.Status, r.CreatedAt, r.RequestedBy, note, jellyfinUser?.Username ?? person, jellyfinUser?.Id.ToString("N"), itemId, r.PosterPath,
-                    r.Scope, r.SeasonNumber, r.EpisodeNumber, r.VersionResolution, r.VersionSize, r.AdminNotes, r.ExecutionError, r.Deferred));
+                    r.Scope, r.SeasonNumber, r.EpisodeNumber, r.VersionResolution, r.VersionSize, r.AdminNotes, r.ExecutionError, r.Deferred, r.ScheduledAt, r.ScheduleState));
             }
 
             return list;
@@ -253,6 +278,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 return null;
             }
+        }
+
+        private async Task<string?> SafeJellyfinNameAsync(Configuration.PluginConfiguration config, string reclaimerrUser, CancellationToken token)
+        {
+            try { return await _reclaimerr.JellyfinNameOfAsync(config, reclaimerrUser, token).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested) { return null; }
         }
 
         private async Task<string?> SafeTmdbAsync(Configuration.PluginConfiguration config, string mediaType, int mediaId, CancellationToken token)

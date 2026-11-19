@@ -10649,6 +10649,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/TagStyles.cs"
     },
     {
+      "literal": "/openapi.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrActions.cs"
+    },
+    {
       "literal": "spoilerblur.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerBlurImageFilter.cs"
     },
@@ -10982,7 +10986,7 @@
     "files": 502,
     "routes": 224,
     "configuration_properties": 788,
-    "storage_references": 90,
+    "storage_references": 91,
     "scheduled_tasks": 17,
     "locales": 33
   }
