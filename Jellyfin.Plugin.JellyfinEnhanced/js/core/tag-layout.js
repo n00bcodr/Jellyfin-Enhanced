@@ -2122,6 +2122,35 @@
     let flowSeen = 0;
     /** The idle pass runs at the latest this long after it was asked for (ms). */
     const FLOW_IDLE_TIMEOUT_MS = 2000;
+    /**
+     * The idle pass works through its cards in slices: each takes about this
+     * much script time (ms), then gives the thread back, and the next runs
+     * in a later idle period. A page of cards decided and measured in one go
+     * was one long task, and the frame that then laid all of them out again
+     * (in flow, on their pixels) another; a slice's frame costs about twice
+     * the slice, so both stay well under a long task on any device.
+     */
+    const IDLE_SLICE_MS = 12;
+    /** A slice takes this many cards at least, whatever is left of the idle period, and no more than the most. */
+    const IDLE_SLICE_MIN_CARDS = 2;
+    const IDLE_SLICE_MAX_CARDS = 48;
+    /**
+     * What a card that is only measured again, or only marked, counts for
+     * beside one whose resting layout is decided: it reads a few boxes of a
+     * layout that stands, where the other is asked about, marked, nudged
+     * and laid out again by the frame that follows.
+     */
+    const IDLE_LIGHT_CARD = 0.25;
+    /** A slice that is not the first runs at the latest this long after the one before it (ms). */
+    const IDLE_NEXT_TIMEOUT_MS = 500;
+    /** What a card costs a slice on this device (ms), learnt from the slices that ran; the first assumes this. */
+    let idleMsPerCard = 1.5;
+    /**
+     * Cards another card's answer has freed for flow (flushAlike): marked in
+     * the slices that follow, a slice's worth at a time like any card.
+     * @type {Set<CardController>}
+     */
+    const pendingFreed = new Set();
 
     /**
      * Have a card's resting layout decided in idle time (flushAlike): what
@@ -2135,33 +2164,99 @@
         scheduleAlike();
     }
 
-    /** Run the idle pass when the browser is next idle. */
-    function scheduleAlike() {
+    /**
+     * Run the idle pass when the browser is next idle.
+     * @param {boolean} [next] - For the slice after one that just ran: it need not wait as long.
+     */
+    function scheduleAlike(next = false) {
         if (alikeScheduled) return;
         alikeScheduled = true;
         flowSeen = flowQueued;
-        if (typeof requestIdleCallback === 'function') requestIdleCallback(() => flushIdle(), { timeout: FLOW_IDLE_TIMEOUT_MS });
-        else setTimeout(flushIdle, 200);
+        if (typeof requestIdleCallback === 'function') requestIdleCallback((deadline) => flushIdle(deadline), { timeout: next ? IDLE_NEXT_TIMEOUT_MS : FLOW_IDLE_TIMEOUT_MS });
+        else setTimeout(flushIdle, next ? 16 : 200);
+    }
+
+    /**
+     * How many cards the next slice of the idle pass takes: what fits in
+     * the slice's time at what a card has cost so far, and in what the idle
+     * period has left.
+     * @param {IdleDeadline} [deadline] - The idle period's (none where there is no requestIdleCallback).
+     * @returns {number}
+     */
+    function idleSliceCards(deadline) {
+        let room = IDLE_SLICE_MS;
+        try {
+            // Run because it had waited too long, not because the browser is idle: half a slice.
+            if (deadline && deadline.didTimeout) room = IDLE_SLICE_MS / 2;
+            else if (deadline && typeof deadline.timeRemaining === 'function') room = Math.min(IDLE_SLICE_MS, deadline.timeRemaining());
+        } catch { /* a deadline that cannot be read: a whole slice */ }
+        return Math.max(IDLE_SLICE_MIN_CARDS, Math.min(IDLE_SLICE_MAX_CARDS, Math.floor(room / Math.max(idleMsPerCard, 0.05))));
     }
 
     /**
      * The idle pass. Nothing is read from the page while cards are being
      * drawn; here, once a whole idle period has passed with no card queued,
-     * every queued card's resting layout is decided (flushAlike) and its
+     * the queued cards' resting layout is decided (flushAlike) and their
      * group containers are moved onto whole pixels (measureSnap,
-     * applySnap): one layout for both, and one paint.
+     * applySnap): one layout for both, and one paint. It takes a slice of
+     * the cards at a time (idleSliceCards) and leaves the rest to the idle
+     * periods that follow, so neither the pass nor the frame after it is a
+     * long task. A slice writes to its own cards only, and each card is
+     * laid out by itself (Jellyfin's image box is contained), so no slice
+     * undoes a layout an earlier one paid for.
+     * @param {IdleDeadline} [deadline]
      */
-    function flushIdle() {
+    function flushIdle(deadline) {
         alikeScheduled = false;
         if (flowQueued !== flowSeen) { scheduleAlike(); return; }
+        const started = performance.now();
+        const snapping = pendingSnap.size > 0 && snapReady();
+        const room = idleSliceCards(deadline);
+        // The cards waiting to be measured in the order they came (one queued again to be checked in flow comes
+        // after every card that has not had its turn), then those waiting for their resting layout alone, then
+        // those an answer has freed.
+        /** @type {CardController[]} */
+        const measuring = [];
+        /** @type {CardController[]} */
+        const deciding = [];
+        /** @type {CardController[]} */
+        const freed = [];
+        let taken = 0;
+        if (snapping) {
+            for (const ctrl of pendingSnap) {
+                if (taken >= room) break;
+                measuring.push(ctrl);
+                if (pendingAlike.has(ctrl)) { deciding.push(ctrl); taken += 1; } else taken += IDLE_LIGHT_CARD;
+            }
+        }
+        for (const ctrl of pendingAlike) {
+            if (taken >= room) break;
+            if (snapping && pendingSnap.has(ctrl)) continue;
+            deciding.push(ctrl);
+            taken += 1;
+        }
+        for (const ctrl of pendingFreed) {
+            if (taken >= room) break;
+            freed.push(ctrl);
+            taken += IDLE_LIGHT_CARD;
+        }
+        for (const ctrl of measuring) pendingSnap.delete(ctrl);
+        for (const ctrl of deciding) { pendingAlike.delete(ctrl); pendingFreed.delete(ctrl); }
+        for (const ctrl of freed) pendingFreed.delete(ctrl);
         // Measured first, while the layout the last frame made still stands, and written with the marks below,
         // so the browser lays the cards out once for both. A card whose layout the marks change lies where it
         // lay to within what the comparison allows, which is more than a layout unit: it is queued again
         // (markFlow) and checked in a later idle period, when the reading is free.
-        const plans = pendingSnap.size ? measureSnap() : null;
-        flushAlike();
+        const plans = measuring.length ? measureSnap(measuring) : null;
+        flushAlike(deciding);
+        // Cards an earlier slice's answers freed: nothing of theirs is read, their kinds are known.
+        for (const ctrl of freed) {
+            if (!ctrl.host.isConnected || controllers.get(ctrl.host) !== ctrl || !ctrl.layout || ctrl.host.dataset.jeFlow === '1') continue;
+            if (decideFlow(ctrl, resolveLayout(ctrl)) === true) markFlow(ctrl, true, true);
+        }
         if (plans) applySnap(plans);
-        if (pendingSnap.size && layoutScale) scheduleSnapPass();
+        if (taken > 0) idleMsPerCard = idleMsPerCard * 0.5 + ((performance.now() - started) / taken) * 0.5;
+        if (pendingAlike.size || pendingFreed.size || (pendingSnap.size && snapReady())) scheduleAlike(true);
     }
 
     /**
@@ -2236,10 +2331,11 @@
      * is read, one card of each kind of slot not answered yet is measured
      * both ways, the styles of kinds of element not seen yet are read, and
      * every queued card is marked for flow or left positioned.
+     * @param {CardController[]} [cards] - The cards of this slice, already taken off the queue (default: every queued card).
      */
-    function flushAlike() {
-        const list = Array.from(pendingAlike).filter((c) => c.host.isConnected && controllers.get(c.host) === c && c.layout);
-        pendingAlike.clear();
+    function flushAlike(cards) {
+        if (!cards) { cards = Array.from(pendingAlike); pendingAlike.clear(); }
+        const list = cards.filter((c) => c.host.isConnected && controllers.get(c.host) === c && c.layout);
         /** @type {Array<{host: HTMLElement, slots: Array<[HTMLElement, string]>, ctrl: CardController|null, conf: TagLayoutSettings}>} */
         const probes = [];
         const claimed = new Set();
@@ -2268,13 +2364,13 @@
             // Still not known (an image of the card is loading): it stays as it is and is decided when that settles.
             if (flow !== null) markFlow(ctrl, flow, true);
         }
-        // The answers reach every card they free, not only the ones that asked.
+        // The answers reach every card they free, not only the ones that asked: those take their turn in the
+        // slices that follow (flushIdle), like any card.
         if (!probes.length) return;
         for (const el of document.querySelectorAll('.je-tag-host:not([data-je-flow])')) {
             const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
-            if (!ctrl || !ctrl.layout || pendingAlike.has(ctrl)) continue;
-            const flow = decideFlow(ctrl, resolveLayout(ctrl));
-            if (flow === true) markFlow(ctrl, true, true);
+            if (!ctrl || !ctrl.layout || pendingAlike.has(ctrl) || pendingFreed.has(ctrl)) continue;
+            if (decideFlow(ctrl, resolveLayout(ctrl)) === true) pendingFreed.add(ctrl);
         }
     }
 
@@ -2605,7 +2701,9 @@
             } catch { snapSupport = false; }
             // Registered so that they are not inherited: writing one on a container restyles the container, not
             // every chip inside it. As any value ('*'), not as a length: a registered length is kept to six
-            // decimals, which is coarser than a layout unit on a dense screen.
+            // decimals, which is coarser than a layout unit on a dense screen. (plugin.js registers them as the
+            // page starts, when that restyles nothing: registering one restyles every element of the page.
+            // This is for a page that came by another loader.)
             if (snapSupport) {
                 for (const [, name] of SNAP_PROPERTIES) {
                     try { CSS.registerProperty({ name, syntax: '*', inherits: false }); } catch { /* registered already, or not registrable: it is inherited then, which draws the same */ }
@@ -2655,6 +2753,19 @@
             scaleObserver = null;
             snapSupport = false;
         }
+    }
+
+    /**
+     * Whether cards can be measured now: whole pixels are done here, and
+     * the browser has said which grid it snaps to. (Where they are not done
+     * nothing waits; while the grid is not known the cards wait, and the
+     * pass runs when the browser has said.)
+     * @returns {boolean}
+     */
+    function snapReady() {
+        if (!snapSupported()) { pendingSnap.clear(); return false; }
+        if (!layoutScale) { watchScale(); return false; }
+        return true;
     }
 
     /**
@@ -3034,15 +3145,14 @@
      * The whole-pixel pass, reads: for every queued card, how far each of
      * its containers is from the pixel it was painted from when it was
      * contained.
+     * @param {CardController[]} [cards] - The cards of this slice, already taken off the queue (default: every queued card).
      * @returns {SnapPlan[]|null} The nudges to write (applySnap); null when nothing could be measured yet.
      */
-    function measureSnap() {
-        if (!snapSupported()) { pendingSnap.clear(); return null; }
-        // The grid is not known yet: the pass runs when the browser has said.
-        if (!layoutScale) { watchScale(); return null; }
+    function measureSnap(cards) {
+        if (!snapReady()) return null;
+        if (!cards) { cards = Array.from(pendingSnap); pendingSnap.clear(); }
         const started = performance.now();
-        const list = Array.from(pendingSnap).filter((c) => c.host.isConnected && controllers.get(c.host) === c && c.layout);
-        pendingSnap.clear();
+        const list = cards.filter((c) => c.host.isConnected && controllers.get(c.host) === c && c.layout);
         /** @type {SnapPlan[]} */
         const plans = [];
         const memo = new Map();
@@ -3171,6 +3281,7 @@
         ctrl.kinds = '';
         ctrl.flowKinds = '';
         pendingAlike.delete(ctrl);
+        pendingFreed.delete(ctrl);
         pendingSnap.delete(ctrl);
     }
 
@@ -5135,6 +5246,8 @@
         flushSnap,
         /** @returns {{passes: number, cards: number, moved: number, deferred: number, passMs: number, scale: number, waiting: number}} Counts of the whole-pixel pass and the time its reads took (performance checks). */
         snapStats: () => ({ ...snapCounters, scale: layoutScale, waiting: pendingSnap.size }),
+        /** @returns {{waiting: number, msPerCard: number}} What the idle pass still has to do, and what a card costs a slice (performance checks). */
+        idleStats: () => ({ waiting: pendingAlike.size + pendingFreed.size + pendingSnap.size, msPerCard: idleMsPerCard }),
         normalizeGroup,
         readEdge,
         normalizeSettings,

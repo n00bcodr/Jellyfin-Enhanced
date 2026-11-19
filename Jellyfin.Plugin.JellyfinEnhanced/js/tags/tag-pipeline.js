@@ -1629,6 +1629,7 @@
      * @param {{el: HTMLElement, itemId: string, itemType: string|null, reuse: number}} card
      * @param {object|undefined} serverEntry
      * @param {HTMLElement[]} hosts
+     * @returns {boolean} Whether there was anything to draw it from (the server entry, or a local cache).
      */
     function renderCard(card, serverEntry, hosts) {
         const { el, itemId, itemType } = card;
@@ -1657,15 +1658,17 @@
                 }
             }
             hosts.push(renderTarget);
-            return; // Fully rendered from server cache, skip queue
+            return true; // Fully rendered from server cache, skip queue
         }
 
         // Fall back to localStorage/hot cache, then batch fetch for misses
         let allCacheHits = true;
+        let anyCacheHit = false;
         for (const [, renderer] of renderers) {
             if (!renderer.isEnabled()) continue;
             if (renderer.renderFromCache) {
-                if (!renderer.renderFromCache(renderTarget, itemId)) allCacheHits = false;
+                if (renderer.renderFromCache(renderTarget, itemId)) anyCacheHit = true;
+                else allCacheHits = false;
             } else {
                 allCacheHits = false;
             }
@@ -1675,6 +1678,7 @@
         if (!allCacheHits || awaiting) {
             requestQueue.push({ el, renderTarget, itemId, itemType, cardId, awaiting, reuse: card.reuse });
         }
+        return anyCacheHit;
     }
 
     /**
@@ -1726,6 +1730,7 @@
         function renderChunk(chunk, entries) {
             const started = performance.now();
             const hosts = [];
+            let drawn = 0;
             for (const card of chunk) {
                 // Gone since classification (page changed): release it in case
                 // it comes back, exactly like a card skipped before marking.
@@ -1736,11 +1741,14 @@
                 // Reused for another item while its entry was looked up: it was
                 // released then, and the next scan renders the new item.
                 if (!stillShows(card)) continue;
-                renderCard(card, entries.get(card.itemId), hosts);
+                if (renderCard(card, entries.get(card.itemId), hosts)) drawn++;
             }
             // One coalesced layout pass for the slice instead of one per card.
             JE.core.tagRenderer.applyCornerStacking(hosts);
-            recordRenderCost(performance.now() - started, chunk.length);
+            // What a card costs is learnt from cards that were drawn. A slice with nothing to draw from (the
+            // first load, before the server's tag data has come) takes next to no time: counted, it made
+            // the cost look like nothing, and the slice that then drew the page's cards took forty of them.
+            if (drawn) recordRenderCost(performance.now() - started, drawn);
             continueScan();
         }
 

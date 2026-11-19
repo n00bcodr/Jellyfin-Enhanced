@@ -25,8 +25,8 @@
   "measured": {
     "manifest": {
       "modules": 196,
-      "rawBytes": 5303966,
-      "gzipBytes": 1263539
+      "rawBytes": 5310922,
+      "gzipBytes": 1265345
     },
     "scenarios": {
       "allFeaturesOn": {
@@ -42,8 +42,8 @@
           "active-streams"
         ],
         "modules": 71,
-        "rawBytes": 1970651,
-        "gzipBytes": 494658
+        "rawBytes": 1977607,
+        "gzipBytes": 496640
       },
       "defaults": {
         "groups": [
@@ -63,8 +63,8 @@
           "bookmarks-library"
         ],
         "modules": 52,
-        "rawBytes": 1660794,
-        "gzipBytes": 421352
+        "rawBytes": 1667750,
+        "gzipBytes": 423332
       }
     },
     "coreRawBytes": 477752,
@@ -72,7 +72,7 @@
       "id": "player",
       "rawBytes": 262195
     },
-    "allFeaturesOnShareOfManifestRaw": 0.3715
+    "allFeaturesOnShareOfManifestRaw": 0.3724
   },
   "history": [
     {

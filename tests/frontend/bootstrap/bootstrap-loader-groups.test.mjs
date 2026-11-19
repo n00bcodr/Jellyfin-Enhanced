@@ -614,6 +614,31 @@ test('window.JE names the plugin once the component scripts have run whenever Bo
   assert.equal(small.window.JE, small.window.JellyfinEnhanced);
 });
 
+test('the tag layout\'s custom properties are registered as the loader starts, in Chromium\'s family only', t => {
+  // Registering a property restyles every element of the page: it is done while the page is still empty, not when
+  // the first card is drawn. The names are the layout controller's own.
+  const names = [...readFileSync(resolve(jsRoot, 'core/tag-layout.js'), 'utf8').match(/const SNAP_PROPERTIES = (\[\[.*?\]\]);/)[1].matchAll(/'(--je-[a-z-]+)'/g)].map(match => match[1]);
+  assert.deepEqual(names, ['--je-snap-x', '--je-snap-y', '--je-band-left']);
+  const load = (vendor, registerProperty) => {
+    const registered = [];
+    const h = createHarness({ html: '<script plugin="Jellyfin Enhanced" version="1.2.3-build123"></script>',
+      globals: { CSS: { registerProperty: registerProperty || (definition => { registered.push(definition); }) } }, apiClient: { getCurrentUserId: () => null, ajax: async () => ({}) } });
+    t.after(() => h.close());
+    Object.defineProperty(h.window.navigator, 'vendor', { configurable: true, value: vendor });
+    h.load('plugin.js');
+    return { h, registered };
+  };
+  const chromium = load('Google Inc.');
+  assert.deepEqual(plain(chromium.registered), names.map(name => ({ name, syntax: '*', inherits: false })));
+  assert.deepEqual(load('Apple Computer, Inc.').registered, [], 'nothing in WebKit');
+  assert.deepEqual(load('').registered, [], 'nothing in Firefox');
+  // One that is registered already (another copy of the loader ran) stops neither the others nor the loader.
+  const seen = [];
+  const again = load('Google Inc.', definition => { seen.push(definition.name); if (definition.name === '--je-snap-x') throw new Error('registered already'); });
+  assert.deepEqual(seen, names);
+  assert.equal(typeof again.h.window.JellyfinEnhanced.cdn.url, 'function', 'the loader ran on');
+});
+
 test('the status-tag backdrop painter is its own group: no boot and no page change loads it, a direct request loads it alone', async t => {
   const manifest = manifestModules();
   const groups = rawGroups();

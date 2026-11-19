@@ -760,6 +760,64 @@ test('a card that cannot be measured stays positioned until one of its kind can'
   assert.deepEqual([hidden.dataset.jeFlow, shown.dataset.jeFlow], ['1', '1'], 'the answer the shown card brought frees the hidden one too');
 });
 
+/** A page of cards whose idle periods the test hands out one at a time, on a clock it moves by hand. */
+function idlePage(t, cards, { readMs = 0 } = {}) {
+  const idles = [];
+  const ids = Array.from({ length: cards }, (_, i) => i.toString(16).padStart(32, 'c'));
+  const h = setup(t, { html: ids.map(id => card(id)).join(''), globals: { requestIdleCallback: fn => { idles.push(fn); return idles.length; } } });
+  const clock = { now: 1000 };
+  h.window.performance.now = () => clock.now;
+  // Every box read takes `readMs` of the clock: a device where the pass is slow.
+  if (readMs) { const read = h.window.Element.prototype.getBoundingClientRect; h.window.Element.prototype.getBoundingClientRect = function () { clock.now += readMs; return read.call(this); }; }
+  const hosts = hostsOf(h);
+  for (const host of hosts) renderInto(h, host);
+  h.settle();
+  const inFlow = () => hosts.filter(host => host.dataset.jeFlow === '1').length;
+  /** One idle period with `left` ms to go (or one the pass waited too long for). */
+  const idle = (left, late = false) => { const fn = idles.shift(); if (fn) fn({ timeRemaining: () => left, didTimeout: late }); h.settle(); return inFlow(); };
+  return { h, hosts, idles, clock, idle, inFlow };
+}
+
+test('the idle pass takes a slice of the cards at a time, and leaves the rest to the idle periods that follow', t => {
+  const { h, idles, idle, inFlow } = idlePage(t, 30);
+  assert.equal(inFlow(), 0, 'nothing is decided while the cards are drawn');
+  assert.equal(idles.length, 1, 'one idle pass is asked for, however many cards');
+  // Cards came after the pass was asked for: it waits for an idle period in which none did.
+  assert.equal(idle(50), 0);
+  // Then a slice: what fits in 12 ms at the 1.5 ms a card is assumed to cost.
+  assert.equal(idle(50), 8);
+  assert.equal(idles.length, 1, 'the rest waits for another idle period');
+  // That slice took no time on this clock, so a card looks half as dear, and the next slice takes twice as many.
+  assert.equal(idle(50), 24);
+  assert.equal(idle(50), 30);
+  assert.equal(idles.length, 0, 'and nothing more is asked for once every card has had its turn');
+  assert.equal(h.layout.idleStats().waiting, 0);
+});
+
+test('a slice fits what the idle period has left, and takes two cards at least', t => {
+  const { idle, idles } = idlePage(t, 12);
+  idle(50);
+  // 3 ms left: two cards at 1.5 ms each.
+  assert.equal(idle(3), 2);
+  // Hardly any time left: still two, so the pass always ends.
+  assert.equal(idle(0.2), 4);
+  // Run because it had waited too long, not because the browser is idle: half a slice (6 ms; a card now looks to cost 0.375 ms).
+  assert.equal(idle(0, true), 12);
+  assert.equal(idles.length, 0);
+});
+
+test('on a device where a card is dear, slices stay small', t => {
+  // Every box read takes 20 ms: the first slice (assumed 1.5 ms a card) overruns, and what it cost is what the next ones go by.
+  const { idle, idles, inFlow } = idlePage(t, 12, { readMs: 20 });
+  idle(50);
+  const first = idle(50);
+  assert.equal(first, 8);
+  const second = idle(50) - first;
+  assert.equal(second, 2, 'the least a slice takes');
+  for (let i = 0; i < 6 && idles.length; i++) idle(50);
+  assert.equal(inFlow(), 12, 'every card still gets its turn');
+});
+
 test('a quality or language group the page no longer clips keeps its card positioned', t => {
   const h = setup(t);
   // (Longhands: jsdom does not expand the overflow shorthand.)

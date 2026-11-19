@@ -154,6 +154,20 @@
 
     const JE = window.JellyfinEnhanced; // Alias for internal use
 
+    // The tag layout moves group containers onto whole pixels through custom properties that are registered
+    // as not inherited (core/tag-layout.js, snapSupported). Registering a property has the browser work out
+    // the style of every element again, so it is done here, while the page is still empty, and costs nothing;
+    // done when the first card was drawn it was a whole page restyled in that frame. Chromium's family only,
+    // as there: the others get no nudges. (The names are core/tag-layout.js's SNAP_PROPERTIES, which
+    // registers any that this did not.)
+    try {
+        if (navigator.vendor === 'Google Inc.' && typeof CSS !== 'undefined' && typeof CSS.registerProperty === 'function') {
+            for (const name of ['--je-snap-x', '--je-snap-y', '--je-band-left']) {
+                try { CSS.registerProperty({ name, syntax: '*', inherits: false }); } catch { /* registered already */ }
+            }
+        }
+    } catch { /* no CSS object model to register with */ }
+
     /**
      * Converts PascalCase object keys to camelCase recursively.
      * @param {object} obj - The object to convert.
