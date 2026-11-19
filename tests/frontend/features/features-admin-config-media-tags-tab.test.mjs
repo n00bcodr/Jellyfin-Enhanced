@@ -458,3 +458,29 @@ test('a tab that cannot be drawn says so, and its message and button name the sa
   await h.until();
   assert.equal(h.root.querySelector('[role="alert"]'), null, 'Retry draws the tab');
 });
+
+test('the tab\'s confirmations use the page\'s own dialog, not Jellyfin\'s, which builds the page again when it closes', async (t) => {
+  const h = boot(t);
+  const asked = [];
+  let answer = false;
+  h.window.JEAdmin.confirm = async (text, title) => { asked.push(title); return answer; };
+  h.window.Dashboard.confirm = () => assert.fail('Jellyfin\'s dialog adds a history entry and goes back when it closes');
+  await h.settle();
+  h.tabButton('media-tags').click();
+  await h.until(() => h.root.querySelector('#jeTaApplyAll'), 'the Overview drew');
+  const resets = () => h.calls.filter((c) => c.kind === 'post' && c.path.endsWith('/reset-all-users-settings')).length;
+  // Cancel: nothing is applied.
+  h.root.querySelector('#jeTaApplyAll').click();
+  await h.settle(40);
+  assert.deepEqual(asked, ['Apply defaults to all users']);
+  assert.equal(resets(), 0);
+  // Confirmed: the defaults go to every user.
+  answer = true;
+  h.root.querySelector('#jeTaApplyAll').click();
+  await h.until(() => resets() === 1, 'the defaults were applied');
+  // The other confirmations in the tab ask the same way.
+  answer = false;
+  h.root.querySelector('[data-ov="rebuild"]').click();
+  await h.settle(40);
+  assert.deepEqual(asked, ['Apply defaults to all users', 'Apply defaults to all users', 'Rebuild the server tag cache?']);
+});
