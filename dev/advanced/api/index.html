@@ -5521,13 +5521,13 @@ filter's shape, or not offered on that page.</p>
 <td>GET</td>
 <td><code>leaving-soon/list</code></td>
 <td>Signed-in user</td>
-<td>No body → <code>{provider, admin, canRequest, actions, items[], requests[], mine[]}</code>: what the removal tool that is on will remove (each item has <code>versionOnly: true</code> when only one version of a movie is scheduled and the others stay), soonest first (undated last), limited to the items the caller can see and to 500. An item is <code>{id, name, detail, type, year, deleteAt}</code>. <code>requests</code> is every pending Reclaimerr deletion request (administrators only), <code>mine</code> the caller's own requests (Reclaimerr, acting as the user). <code>404</code> while the Leaving Soon page is off or no removal tool is set up</td>
+<td>No body → <code>{provider, admin, canRequest, canSchedule, actions, items[], requests[], mine[]}</code>: what the removal tool that is on will remove (each item has <code>versionOnly: true</code> when only one version of a movie is scheduled and the others stay), soonest first (undated last), limited to the items the caller can see and to 500. An item is <code>{id, name, detail, type, year, deleteAt}</code>. <code>canSchedule</code> says whether an approval can be given a day (administrators, with a Reclaimerr that can schedule). <code>requests</code> is every pending Reclaimerr deletion request (administrators only), plus approved ones whose deletion failed, is blocked or is held back by playback, <code>mine</code> the caller's own requests (Reclaimerr, acting as the user). <code>404</code> while the Leaving Soon page is off or no removal tool is set up</td>
 </tr>
 <tr>
 <td>POST</td>
 <td><code>reclaimerr/requests/{requestId}/approve</code></td>
 <td>Administrator</td>
-<td><code>{note?}</code> → <code>{id, approved: true}</code>. Approves a pending Reclaimerr deletion request as the administrator who clicked (the service account is the fallback). <code>404</code> without Reclaimerr, <code>400</code>/<code>502</code> with Reclaimerr's reason</td>
+<td><code>{note?, when?, date?}</code> → <code>{id, approved: true}</code>. Approves a pending Reclaimerr deletion request as the administrator who clicked (the service account is the fallback). <code>when</code> is <code>default</code> (Reclaimerr's grace period, none unless set; the same as omitting it), <code>now</code>, or <code>date</code> (deletes on <code>date</code>, an ISO 8601 moment in the future within 3650 days). <code>now</code> and <code>date</code> need a Reclaimerr that can schedule approvals: otherwise it would delete at once, so they answer <code>400</code> and nothing is approved. <code>404</code> without Reclaimerr, <code>400</code>/<code>502</code> with Reclaimerr's reason</td>
 </tr>
 <tr>
 <td>POST</td>
