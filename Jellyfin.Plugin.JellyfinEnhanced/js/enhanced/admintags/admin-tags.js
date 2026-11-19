@@ -1635,7 +1635,7 @@
          */
         async function confirmAction(text, title) {
             const mark = sessionMark();
-            const ok = options.confirm ? await options.confirm(text, title) : await askConfirm(text, title);
+            const ok = options.confirm ? await options.confirm(text, title) : await askOnPage(text, title);
             return !!ok && !disposed && sameSession(mark);
         }
 
@@ -1772,6 +1772,23 @@
         }
         openTab(start.tab || 'overview', { group: start.group });
         return ctx;
+    }
+
+    /**
+     * Ask from inside the tab: with the configuration page's own dialog (JEAdmin.confirm), which its other
+     * confirmations use too, and the dashboard's only when that page script is missing. Jellyfin's dialog adds a
+     * history entry and goes back when it closes, and the router then builds the configuration page a second time:
+     * a copy without the page's sidebar whose Media Tags tab never loads.
+     * @param {string} text
+     * @param {string} title
+     * @returns {Promise<boolean>}
+     */
+    function askOnPage(text, title) {
+        const admin = /** @type {{confirm?: (text: string, title: string) => Promise<boolean>}|undefined} */ (/** @type {any} */ (window).JEAdmin);
+        if (admin && typeof admin.confirm === 'function') {
+            try { return Promise.resolve(admin.confirm(text, title)).then((ok) => !!ok, () => false); } catch { /* fall through */ }
+        }
+        return askConfirm(text, title);
     }
 
     /**
