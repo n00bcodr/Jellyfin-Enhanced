@@ -42,7 +42,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <param name="timeout">The request timeout.</param>
         /// <param name="onRedirect">Told where a 3xx pointed (the caller logs the host once).</param>
         /// <param name="token">The caller's cancellation.</param>
-        internal static async Task<JsonDocument> SendAsync(IHttpClientFactory http, PluginConfiguration config, HttpMethod method, string url, string? body, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token, string? cookie = null, Action<string>? onSetCookie = null, (string Name, string Value)? asUser = null)
+        /// <param name="asUser">Reclaimerr only: send this user header instead of the token (its trusted-proxy sign-in).</param>
+        internal static async Task<JsonDocument> SendAsync(IHttpClientFactory http, PluginConfiguration config, HttpMethod method, string url, string? body, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token, (string Name, string Value)? asUser = null)
         {
             if (!await Helpers.ArrUrlGuard.IsAllowedUrlAsync(url, token).ConfigureAwait(false)) throw new UnauthorizedAccessException();
             using var limit = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -52,7 +53,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             using var request = new HttpRequestMessage(method, target);
             request.Headers.Accept.ParseAdd("application/json");
             if (asUser is { } who) request.Headers.TryAddWithoutValidation(who.Name, who.Value);
-            else if (cookie != null) { if (cookie.Length > 0) request.Headers.TryAddWithoutValidation("Cookie", cookie); }
             else if (LeavingSoonService.UsesReclaimerr(config))
             {
                 var bearer = (config.ReclaimerrToken ?? string.Empty).Trim();
@@ -65,15 +65,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             if (body != null) request.Content = new StringContent(body, Encoding.UTF8, new MediaTypeHeaderValue("application/json"));
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, limit.Token).ConfigureAwait(false);
-            if (onSetCookie != null && response.Headers.TryGetValues("Set-Cookie", out var cookies))
-            {
-                foreach (var line in cookies)
-                {
-                    var pair = line.Split(';', 2)[0].Trim();
-                    if (pair.StartsWith("access_token=", StringComparison.Ordinal)) onSetCookie(pair);
-                }
-            }
-
             if ((int)response.StatusCode is >= 300 and < 400)
             {
                 onRedirect?.Invoke(target, response.Headers.Location);
@@ -121,6 +112,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal static string Describe(Exception ex) => ex switch
         {
             MaintainerrException m => m.Reason ?? ("HTTP " + m.Status.ToString(CultureInfo.InvariantCulture)),
+            ReclaimerrApi.VersionException v => v.Message,
             HttpRequestException { StatusCode: { } code } => "HTTP " + ((int)code).ToString(CultureInfo.InvariantCulture),
             HttpRequestException => "not reachable",
             TaskCanceledException or TimeoutException => "timed out",

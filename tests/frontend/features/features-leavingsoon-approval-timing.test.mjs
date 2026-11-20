@@ -34,24 +34,24 @@ const request = { id: 7, title: '12th Fail', year: 2023, mediaType: 'movie', req
 const base = (extra = {}) => ({ provider: 'reclaimerr', admin: true, canRequest: true, actions: true, items: [], requests: [request], mine: [], ...extra });
 const approveBody = (h) => h.calls.find((c) => c.path === 'reclaimerr/requests/7/approve').body;
 
-test('without scheduling support the approve step is unchanged: no choice of when, the body carries no timing', async t => {
-  const h = setup(t, base({ canSchedule: false }));
+test('approving always offers when to delete: Reclaimerr 0.6.15 and newer schedule approvals', async t => {
+  const h = setup(t, base());
   h.JE.leavingSoonPage.renderForCustomTab(h.$('#host'));
   await h.settle();
   h.$('.je-ls-icon-btn.approve').click();
-  assert.equal(h.$('.je-ls-reqactions select'), null, 'an older Reclaimerr would delete at once whatever day was picked');
-  assert.equal(h.$('.je-ls-btn.danger').textContent, 'leavingsoon_delete_now');
+  assert.deepEqual(Array.from(h.$$('.je-ls-reqactions select option')).map((o) => o.value), ['default', 'now', 'date']);
+  assert.equal(h.$('.je-ls-btn.danger').textContent, 'leavingsoon_approve');
   h.$('.je-ls-btn.danger').click();
   await h.settle();
-  assert.deepEqual(approveBody(h), {});
+  assert.deepEqual(approveBody(h), { when: 'default' });
 });
 
-test('with scheduling support an approval is sent with the grace period, now, or a chosen day', async t => {
+test('an approval is sent with the grace period, now, or a chosen day', async t => {
   for (const [when, expected, warning] of [
     ['default', { when: 'default' }, 'leavingsoon_confirm_grace'],
     ['now', { when: 'now' }, 'leavingsoon_confirm_delete'],
   ]) {
-    const h = setup(t, base({ canSchedule: true }));
+    const h = setup(t, base());
     h.JE.leavingSoonPage.renderForCustomTab(h.$('#host'));
     await h.settle();
     h.$('.je-ls-icon-btn.approve').click();
@@ -69,7 +69,7 @@ test('with scheduling support an approval is sent with the grace period, now, or
 });
 
 test('a chosen day is sent as that moment in UTC, shown in the warning, and a day that is not in the future cannot be approved', async t => {
-  const h = setup(t, base({ canSchedule: true }));
+  const h = setup(t, base());
   h.JE.leavingSoonPage.renderForCustomTab(h.$('#host'));
   await h.settle();
   h.$('.je-ls-icon-btn.approve').click();
@@ -98,7 +98,6 @@ test('a chosen day is sent as that moment in UTC, shown in the warning, and a da
 test('an approved request shows the day it is deleted, and a schedule that failed or is blocked shows as failed', async t => {
   const approved = { ...request, status: 'approved', scheduledAt: '2026-12-10T08:00:00' };
   const h = setup(t, base({
-    canSchedule: true,
     requests: [
       { ...approved, id: 1 },
       { ...approved, id: 2, scheduleState: 'blocked', executionError: 'a person is watching' },
@@ -119,11 +118,46 @@ test('the grace period is named in the choice and the warning when Reclaimerr sa
     [0, 'leavingsoon_when_default', /^leavingsoon_confirm_delete$/],
     [undefined, 'leavingsoon_when_default', /^leavingsoon_confirm_grace$/],
   ]) {
-    const h = setup(t, base({ canSchedule: true, graceDays }));
+    const h = setup(t, base({ graceDays }));
     h.JE.leavingSoonPage.renderForCustomTab(h.$('#host'));
     await h.settle();
     h.$('.je-ls-icon-btn.approve').click();
     assert.equal(h.$('.je-ls-reqactions select option[value="default"]').textContent, label);
     assert.match(h.$('.je-ls-warn').textContent, warning);
   }
+});
+
+test('a review carries the Reclaimerr the list came from, and the grace period only when it was shown', async t => {
+  const h = setup(t, base({ graceDays: 14, source: 'abc123' }));
+  h.JE.leavingSoonPage.renderForCustomTab(h.$('#host'));
+  await h.settle();
+  h.$('.je-ls-icon-btn.approve').click();
+  h.$('.je-ls-btn.danger').click();
+  await h.settle();
+  assert.deepEqual(approveBody(h), { when: 'default', graceDays: 14, source: 'abc123' });
+
+  const now = setup(t, base({ graceDays: 14, source: 'abc123' }));
+  now.JE.leavingSoonPage.renderForCustomTab(now.$('#host'));
+  await now.settle();
+  now.$('.je-ls-icon-btn.approve').click();
+  now.choose(now.$('.je-ls-reqactions select'), 'now');
+  now.$('.je-ls-btn.danger').click();
+  await now.settle();
+  assert.deepEqual(approveBody(now), { when: 'now', source: 'abc123' });
+});
+
+test('the requester sees the administrator\'s note without the Jellyfin attribution, and nothing when that is all there is', async t => {
+  const h = setup(t, base({
+    admin: false,
+    requests: [],
+    mine: [
+      { ...request, id: 1, status: 'approved', adminNotes: 'Leaving after the holidays (Approved by Jake in Jellyfin)' },
+      { ...request, id: 2, status: 'denied', adminNotes: 'Denied by Jake in Jellyfin' },
+      { ...request, id: 3, status: 'denied', adminNotes: 'We still watch this' },
+    ],
+  }));
+  h.JE.leavingSoonPage.renderForCustomTab(h.$('#host'));
+  await h.settle();
+  const notes = h.$$('.je-ls-reqcard').map((c) => Array.from(c.querySelectorAll('.je-ls-note')).map((n) => n.textContent));
+  assert.deepEqual(notes, [['Leaving after the holidays'], [], ['We still watch this']]);
 });

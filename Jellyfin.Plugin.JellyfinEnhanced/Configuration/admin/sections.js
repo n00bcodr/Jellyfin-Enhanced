@@ -1263,43 +1263,37 @@ JEAdmin.define({
     'arr-reclaimerr': {
         title: 'Reclaimerr', iconImg: 'selfhst/svg/reclaimerr.svg',
         items: [
-            { type: 'note', html: 'Reclaimerr decides which items leave your library, like Maintainerr. Jellyfin Enhanced reads its cleanup candidates and scheduled deletions for the <strong>Leaving soon</strong> tag and home row. Administrators can <strong>mark, keep and postpone</strong> from an item\'s &#8942; menu (pick an exact day), and any signed-in user can <strong>request a removal</strong>, which lands in Reclaimerr as a deletion request for an administrator to approve. The shared options are in the <strong>Leaving soon</strong> card.' },
+            { type: 'note', html: 'Reclaimerr decides which items leave your library, like Maintainerr. Needs <strong>Reclaimerr 0.6.15 or newer</strong> (development builds such as <code>0.6.15-dev.1</code> count). Jellyfin Enhanced reads what Reclaimerr will remove (cleanup candidates, scheduled deletions and approved requests waiting for their day) for the <strong>Leaving soon</strong> tag, page and home row. Administrators can <strong>mark, keep and postpone</strong> from an item\'s &#8942; menu and approve or deny removal requests on the Leaving soon page, and users can <strong>request a removal</strong>. The shared options are in the <strong>Leaving soon</strong> card.' },
             { id: 'ReclaimerrEnabled', prop: 'ReclaimerrEnabled', type: 'toggle', default: false, label: 'Use Reclaimerr',
               desc: 'Turning this on turns Maintainerr off (and the other way round). Its settings below are kept either way.' },
             { id: 'ReclaimerrUrl', prop: 'ReclaimerrUrl', type: 'text', label: 'Reclaimerr URL', placeholder: 'http://reclaimerr:8000', showIf: 'ReclaimerrEnabled',
-              desc: 'The address this server reaches Reclaimerr at (<code>http://</code> or <code>https://</code>, no credentials or query). Redirects are not followed.' },
+              desc: 'Where this server reaches Reclaimerr: <code>http://</code> or <code>https://</code>, with no credentials, query or redirect.' },
             { id: 'ReclaimerrApiKey', prop: 'ReclaimerrToken', type: 'text', label: 'Reclaimerr API token', showIf: 'ReclaimerrEnabled',
               toConfig: (v) => String(v || '').trim(), fromConfig: (v) => v || '',
-              desc: 'Create it in Reclaimerr under <em>Settings &gt; Integrations</em> with the candidates (manage), protections (manage), media (read) and system (read) scopes. Used for reading and for Keep and Postpone.' },
-            { id: 'ReclaimerrActAsUser', prop: 'ReclaimerrActAsUser', type: 'toggle', default: true, label: 'Act as the Jellyfin user', showIf: 'ReclaimerrEnabled',
-              desc: 'Requests and schedules carry the name of the Jellyfin user who made them (<strong>Request removal</strong>, <strong>Mark for removal</strong>, cancelling or moving a scheduled deletion), through Reclaimerr\'s trusted-proxy sign-in. Turn on <code>FORWARD_AUTH_ENABLED</code> in Reclaimerr with this server\'s address in <code>FORWARD_AUTH_TRUSTED_PROXIES</code>, and the user needs a Reclaimerr account: when they sign in to Reclaimerr with their Jellyfin login (media sign-in), Reclaimerr creates one (for example <code>sam_user</code>) and links it to them, and the plugin finds it through that link, so nothing has to be created or mapped by hand. Where that does not work, the service account below is used instead.' },
-            { id: 'ReclaimerrUserHeader', prop: 'ReclaimerrUserHeader', type: 'text', default: 'Remote-User', label: 'User header', showIf: 'ReclaimerrActAsUser',
+              desc: 'Create it in Reclaimerr under <em>Settings &gt; Integrations</em> with manage access to <strong>candidates</strong>, <strong>scheduled deletions</strong>, <strong>delete requests</strong> and <strong>users</strong>, and read access to <strong>media</strong>.' },
+            { id: 'ReclaimerrUserRequests', prop: 'ReclaimerrUserRequests', type: 'toggle', default: false, label: 'Let users request removals', showIf: 'ReclaimerrEnabled',
+              desc: 'Adds <strong>Request removal</strong> to the &#8942; menu (needs <strong>Mark, keep and postpone from the item menu</strong> on), filed as the user\'s linked Reclaimerr account. In Reclaimerr, set <code>FORWARD_AUTH_ENABLED=true</code> and add this server\'s IP to <code>FORWARD_AUTH_TRUSTED_PROXIES</code>. Anything that reaches Reclaimerr from that IP can sign in as any Reclaimerr user, so use one only this server uses.' },
+            { id: 'ReclaimerrUserHeader', prop: 'ReclaimerrUserHeader', type: 'text', default: 'Remote-User', label: 'User header', showIf: 'ReclaimerrUserRequests',
               toConfig: (v) => String(v || '').trim() || 'Remote-User',
               desc: 'The header Reclaimerr reads the user from: its <code>FORWARD_AUTH_USER_HEADER</code> (default <code>Remote-User</code>).' },
-            { id: 'ReclaimerrUserMap', prop: 'ReclaimerrUserMap', type: 'textarea', rows: 3, placeholder: 'sam = samuel', label: 'Jellyfin user to Reclaimerr user', showIf: 'ReclaimerrActAsUser',
-              toConfig: (v) => String(v || '').trim(),
-              desc: 'Normally empty: the plugin finds each user\'s Reclaimerr account through the link Reclaimerr made when they signed in with Jellyfin (needs the service account to read it), else by the same name. List a user here only to point them at a different Reclaimerr account: one <code>Jellyfin name = Reclaimerr name</code> per line. This wins over the link.' },
-            { id: 'ReclaimerrUsername', prop: 'ReclaimerrUsername', type: 'text', label: 'Service account username (fallback)', showIf: 'ReclaimerrEnabled',
-              toConfig: (v) => String(v || '').trim(),
-              desc: 'A dedicated Reclaimerr admin account, <strong>the fallback</strong> when the plugin cannot act as the user (Reclaimerr\'s trusted-proxy sign-in is off, or the user has no Reclaimerr account), and what reads scheduled deletions. Without acting as the user it is needed for <strong>Mark for removal</strong> and <strong>Request removal</strong>. Use <strong>Create service account</strong> below to make one (it asks for a Reclaimerr administrator\'s name, and a password only if their trusted sign-in is not available). Reading candidates, Keep and Postpone work with the token alone.' },
-            { id: 'ReclaimerrPassword', prop: 'ReclaimerrPassword', type: 'text', label: 'Service account password (only for local login)', showIf: 'ReclaimerrEnabled',
-              toConfig: (v) => String(v || ''), fromConfig: (v) => v || '',
-              desc: 'Optional. With <strong>Act as the Jellyfin user</strong> on and Reclaimerr\'s trusted-proxy sign-in working, the service account signs in by name alone, so this can stay empty (and Reclaimerr\'s local login can be switched off). It is used only when that does not work.' },
-            { type: 'custom', showIf: 'ReclaimerrEnabled', html: '<div class="inputContainer jea-row"><button type="button" id="reclaimerrCreateAccountBtn" class="jea-btn">Create service account</button>'
-                + '<div id="reclaimerrCreateAccountLine" class="jea-hint">Asks for a Reclaimerr administrator\'s name once (and a password only if their trusted sign-in is not available; not stored), creates a <code>jellyfin-enhanced</code> admin account with a random password and saves it here. Save the Reclaimerr URL first.</div></div>',
-              init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireCreateAccount() },
-            { type: 'group', title: 'Create Reclaimerr accounts for Jellyfin users', open: true, showIf: 'ReclaimerrEnabled', items: [
-                { type: 'note', html: 'Creates a Reclaimerr account for every Jellyfin user who has none, so each person\'s requests carry their own name and they can see them under <strong>My requests</strong>. They sign in through the trusted-proxy sign-in, so there is no password to know. Needs the service account above. Existing accounts are left as they are. Names shorter than 5 characters get <code>_user</code> added (Reclaimerr\'s minimum), and other characters become <code>_</code>.' },
+            { type: 'group', title: 'Import Jellyfin users into Reclaimerr', open: true, showIf: 'ReclaimerrEnabled', items: [
+                { type: 'note', html: 'Creates and links a Reclaimerr account for each Jellyfin user without one. Users Reclaimerr matches to an existing account are listed for you to confirm in Reclaimerr.' },
                 { type: 'custom', html: '<div class="inputContainer">'
                     + '<div><strong>What the new accounts may do</strong></div>'
                     + '<div id="reclaimerrNewPerms" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
-                    + [['request', 'Request removals'], ['auto_approve', 'Auto-approve'], ['manage_requests', 'Manage requests'], ['manage_protection', 'Manage protection'], ['manage_reclaim', 'Manage reclaim']].map(([v, l]) => '<label><input type="checkbox" value="' + v + '"> ' + l + '</label>').join('') + '</div>'
+                    + [['request', 'Request removals'], ['auto_approve', 'Auto-approve'], ['manage_requests', 'Manage requests'], ['manage_protection', 'Manage protection'], ['manage_reclaim', 'Manage reclaim']].map(([v, l]) => '<label><input type="checkbox" id="reclaimerrNewPerm-' + v + '" value="' + v + '"> ' + l + '</label>').join('') + '</div>'
                     + '<div><strong>Reclaimerr pages they can open</strong></div>'
                     + '<div id="reclaimerrNewPages" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
-                    + ['requests', 'candidates', 'settings', 'dashboard', 'movies', 'series', 'protected', 'duplicates', 'calendar', 'storage', 'history'].map((v) => '<label><input type="checkbox" value="' + v + '"> ' + v.charAt(0).toUpperCase() + v.slice(1) + '</label>').join('') + '</div>'
-                    + '<div class="jea-row"><button type="button" id="reclaimerrCreateUsersBtn" class="jea-btn">Create accounts for all Jellyfin users</button></div>'
-                    + '<div id="reclaimerrCreateUsersLine" class="jea-hint"></div></div>',
-                  init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireCreateUsers() }
+                    + ['requests', 'candidates', 'settings', 'dashboard', 'movies', 'series', 'protected', 'duplicates', 'calendar', 'storage', 'history'].map((v) => '<label><input type="checkbox" id="reclaimerrNewPage-' + v + '" value="' + v + '"> ' + v.charAt(0).toUpperCase() + v.slice(1) + '</label>').join('') + '</div>'
+                    + '<div class="jea-row"><button type="button" id="reclaimerrImportUsersBtn" class="jea-btn">Import Jellyfin users</button></div>'
+                    + '<div id="reclaimerrImportUsersLine" class="jea-hint"></div></div>',
+                  init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireImportUsers() }
+            ] },
+            { type: 'group', title: 'User audit', open: false, showIf: 'ReclaimerrEnabled', items: [
+                { type: 'note', html: 'Checks each Jellyfin user\'s linked Reclaimerr account and, with requests on, whether they can request removals. Also lists token scopes that are missing. Save the Reclaimerr settings first.' },
+                { type: 'custom', html: '<div class="inputContainer"><div class="jea-row"><button type="button" id="reclaimerrAuditBtn" class="jea-btn">Run Audit</button></div>'
+                    + '<div id="reclaimerrAuditResult" style="display:none;margin-top:1em"></div></div>',
+                  init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireUserAudit() }
             ] }
         ]
     },
@@ -1413,60 +1407,33 @@ JEAdmin.maintainerr = (function () {
         if (typeof api.onStatus === 'function') api.onStatus(last);
     }
 
-    /** Create service account: one administrator login, used once, makes the plugin's own Reclaimerr account. */
-    function wireCreateAccount() {
-        const button = el('reclaimerrCreateAccountBtn');
+    /** Import this server's users into Reclaimerr (its own import, through the token), with the ticked permissions and pages for new accounts. */
+    function wireImportUsers() {
+        const button = el('reclaimerrImportUsersBtn');
         if (!button || button._wired) return;
         button._wired = true;
-        button.addEventListener('click', async () => {
-            const line = el('reclaimerrCreateAccountLine');
-            const adminUsername = window.prompt('Reclaimerr administrator username (used once, not stored):');
-            if (!adminUsername) return;
-            // Empty is fine: the plugin then acts as that administrator by name (trusted-proxy sign-in), no password needed.
-            const adminPassword = window.prompt('Password for ' + adminUsername + ' (leave empty to sign in by name through Reclaimerr\'s trusted-proxy sign-in; used once, never stored):') || '';
-            button.disabled = true;
-            try {
-                const answer = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/service-account'), data: JSON.stringify({ adminUsername, adminPassword }), contentType: 'application/json', dataType: 'json' });
-                const user = el('ReclaimerrUsername');
-                if (user) user.value = answer.username;
-                // The page's Save writes this field back, so it must hold the new password or Save would wipe it.
-                const pass = el('ReclaimerrPassword');
-                if (pass && answer.password) pass.value = answer.password;
-                if (line) line.textContent = 'Created and saved: ' + answer.username + '.';
-            } catch (err) {
-                let reason = null;
-                try { reason = typeof err?.json === 'function' ? (await err.json())?.error : null; } catch (e) { /* no body */ }
-                if (line) line.textContent = 'Could not create it: ' + (reason || err?.status || err?.message || 'request failed');
-            } finally { button.disabled = false; }
-        });
-    }
-
-    /** Create a Reclaimerr account for every Jellyfin user that has none, with the ticked permissions and pages. */
-    function wireCreateUsers() {
-        const button = el('reclaimerrCreateUsersBtn');
-        if (!button || button._wired) return;
-        button._wired = true;
-        // Set in script rather than markup so nothing else on the page can change the starting ticks.
+        // Set in script rather than markup so nothing else on the page can change the starting ticks. Each box has an id, so its copy
+        // in the Services tab is a mirrored field: ticks made there reach these boxes, which the import reads. Both start the same.
         const start = { reclaimerrNewPerms: ['request'], reclaimerrNewPages: ['requests', 'candidates', 'settings'] };
-        for (const [id, on] of Object.entries(start)) for (const box of document.querySelectorAll('#' + id + ' input')) box.checked = on.includes(box.value);
+        for (const [id, on] of Object.entries(start)) for (const box of document.querySelectorAll('#' + id + ' input, #' + id + '--mirror input')) box.checked = on.includes(box.value);
         const ticked = (id) => Array.from(document.querySelectorAll('#' + id + ' input:checked')).map((i) => i.value);
         button.addEventListener('click', async () => {
-            const line = el('reclaimerrCreateUsersLine');
+            const line = el('reclaimerrImportUsersLine');
             const pages = ticked('reclaimerrNewPages');
             if (!pages.length) { if (line) line.textContent = 'Pick at least one page.'; return; }
-            if (!window.confirm('Create a Reclaimerr account for every Jellyfin user who has none?')) return;
+            if (!window.confirm('Create and link a Reclaimerr account for every Jellyfin user who has none?')) return;
             button.disabled = true;
+            if (line) line.textContent = 'Importing\u2026';
             try {
-                const answer = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/create-users'), data: JSON.stringify({ permissions: ticked('reclaimerrNewPerms'), pages }), contentType: 'application/json', dataType: 'json' });
-                // The page's Save writes the user map back, so it must hold the new lines or Save would drop them.
-                const map = el('ReclaimerrUserMap');
-                if (map && typeof answer.userMap === 'string') map.value = answer.userMap;
-                const skipped = answer.skipped || [];
-                if (line) line.textContent = 'Created ' + answer.created.length + ', already had an account: ' + answer.existing + (skipped.length ? ', not created: ' + skipped.join('; ') : '') + '.';
+                const answer = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/import-users'), data: JSON.stringify({ permissions: ticked('reclaimerrNewPerms'), pages }), contentType: 'application/json', dataType: 'json' });
+                const parts = ['Created ' + (answer.created || []).length, 'already linked ' + (answer.alreadyLinked || 0)];
+                if ((answer.needsReview || []).length) parts.push('to confirm in Reclaimerr: ' + answer.needsReview.join(', '));
+                if ((answer.skipped || []).length) parts.push('not imported: ' + answer.skipped.join('; '));
+                if (line) line.textContent = parts.join(', ') + '.';
             } catch (err) {
                 let reason = null;
                 try { reason = typeof err?.json === 'function' ? (await err.json())?.error : null; } catch (e) { /* no body */ }
-                if (line) line.textContent = 'Could not create the accounts: ' + (reason || err?.status || err?.message || 'request failed');
+                if (line) line.textContent = 'Could not import the users: ' + (reason || err?.status || err?.message || 'request failed');
             } finally { button.disabled = false; }
         });
     }
@@ -1490,6 +1457,99 @@ JEAdmin.maintainerr = (function () {
         });
         setTimeout(() => load(false), 0);
     }
-    const api = { wire, wireCreateAccount, wireCreateUsers, load, status: () => last, onStatus: null };
+    /**
+     * Reclaimerr user audit: the token's missing scopes and setup problems first, then a card for each user with issues (in the
+     * Seerr permission audit's style), users the sign-in check never reached, and the users with none folded away. Built with
+     * textContent only: names and reasons come from Jellyfin and Reclaimerr. Drawn into the card and into its Services-tab copy
+     * alike: the copy only follows a plain-text box, and this one holds elements.
+     */
+    function wireUserAudit() {
+        const button = el('reclaimerrAuditBtn');
+        if (!button || button._wired) return;
+        button._wired = true;
+        const node = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+        const icon = (name) => { const i = node('i', 'material-icons', name); i.setAttribute('aria-hidden', 'true'); return i; };
+        const chip = (kind, iconName, text) => { const c = node('span', 'je-audit-chip je-audit-chip-' + kind); c.append(icon(iconName), document.createTextNode(text)); return c; };
+        const boxes = () => [el('reclaimerrAuditResult'), el('reclaimerrAuditResult--mirror')].filter(Boolean);
+        const label = (u) => u.jellyfinUsername + (u.reclaimerrUsername ? ' \u2192 ' + u.reclaimerrUsername : '');
+        const names = (title, list) => {
+            const details = node('details', 'je-audit-ok-section');
+            details.append(node('summary', null, title));
+            const ul = node('ul', 'je-audit-ok-names');
+            for (const u of list) ul.append(node('li', null, label(u)));
+            details.append(ul);
+            return details;
+        };
+        function paint(out, data) {
+            const users = data.users || [];
+            const setup = data.issues || [];
+            const flagged = users.filter((u) => (u.issues || []).length > 0);
+            const unchecked = users.filter((u) => !(u.issues || []).length && u.checked === false);
+            const ok = users.filter((u) => !(u.issues || []).length && u.checked !== false);
+            const clean = !setup.length && !flagged.length && !unchecked.length;
+            const summary = node('div', 'je-audit-summary');
+            summary.append(node('div', 'je-audit-summary-title', clean
+                ? 'All ' + ok.length + ' user(s) are set up.' + (data.version ? ' Reclaimerr ' + data.version + '.' : '')
+                : 'Audit complete' + (data.version ? ' (Reclaimerr ' + data.version + ')' : '') + ', review the items below.'));
+            if (!clean) {
+                const chips = node('div', 'je-audit-summary-chips');
+                if (setup.length) chips.append(chip('warn', 'settings', setup.length + ' setup'));
+                if (flagged.length) chips.append(chip('warn', 'warning', flagged.length + ' with issues'));
+                if (unchecked.length) chips.append(chip('unlinked', 'help', unchecked.length + ' not checked'));
+                if (ok.length) chips.append(chip('ok', 'check_circle', ok.length + ' OK'));
+                summary.append(chips);
+            }
+            out.append(summary);
+            const cards = node('div', 'je-audit-cards');
+            if (setup.length) {
+                const card = node('div', 'je-audit-card je-audit-card-warn');
+                const head = node('div', 'je-audit-card-header');
+                const who = node('span', 'je-audit-card-user'); who.append(icon('settings'), document.createTextNode('Setup'));
+                head.append(who);
+                const list = node('ul', 'je-audit-card-issues');
+                for (const issue of setup) list.append(node('li', null, issue));
+                card.append(head, list);
+                cards.append(card);
+            }
+            for (const u of flagged) {
+                const card = node('div', 'je-audit-card ' + (u.linked ? 'je-audit-card-warn' : 'je-audit-card-unlinked'));
+                const head = node('div', 'je-audit-card-header');
+                const who = node('span', 'je-audit-card-user');
+                who.append(icon(u.linked ? 'person' : 'person_off'), document.createTextNode(label(u)));
+                head.append(who, u.linked ? chip('warn', 'warning', 'Needs attention') : chip('unlinked', 'link_off', 'Not linked'));
+                const list = node('ul', 'je-audit-card-issues');
+                for (const issue of u.issues) list.append(node('li', null, issue));
+                card.append(head, list);
+                cards.append(card);
+            }
+            if (cards.childNodes.length) out.append(cards);
+            // Not reached by the sign-in check (see Setup): neither a problem nor known to be fine.
+            if (unchecked.length) out.append(names('Show ' + unchecked.length + ' user(s) not checked (see Setup)', unchecked));
+            if (ok.length && !clean) out.append(names('Show ' + ok.length + ' user(s) with no issues', ok));
+        }
+        button.addEventListener('click', async () => {
+            if (!boxes().length) return;
+            button.disabled = true;
+            button.textContent = 'Running\u2026';
+            for (const out of boxes()) { out.style.display = 'none'; out.textContent = ''; }
+            let data = null, failure = null;
+            try {
+                data = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/user-audit'), dataType: 'json' });
+            } catch (err) {
+                let reason = null;
+                try { reason = typeof err?.json === 'function' ? (await err.json())?.error : null; } catch (e) { /* no body */ }
+                failure = 'Audit failed: ' + (reason || err?.status || err?.message || 'request failed');
+            }
+            for (const out of boxes()) {
+                out.textContent = '';
+                if (data) paint(out, data); else out.append(node('div', 'je-audit-error', failure));
+                out.style.display = 'block';
+            }
+            button.disabled = false;
+            button.textContent = 'Run Audit';
+        });
+    }
+
+    const api = { wire, wireImportUsers, wireUserAudit, load, status: () => last, onStatus: null };
     return api;
 })();

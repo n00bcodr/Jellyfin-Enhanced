@@ -19,6 +19,8 @@
     /** @type {HTMLElement|null} */
     let mounted = null;
     let filter = 'all';
+    /** Which Reclaimerr the drawn requests came from (the list's `source`); every review sends it back. */
+    let requestSource = null;
     /** Until when the refresh icon spins (the list is redrawn, so the new button carries the animation). */
     let spinUntil = 0;
 
@@ -164,7 +166,7 @@
     async function review(id, approve, button, note, timing) {
         button.disabled = true;
         try {
-            await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? 'approve' : 'deny'}`), data: JSON.stringify({ ...(note ? { note } : {}), ...(timing || {}) }), contentType: 'application/json', dataType: 'json' });
+            await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? 'approve' : 'deny'}`), data: JSON.stringify({ ...(note ? { note } : {}), ...(timing || {}), ...(requestSource ? { source: requestSource } : {}) }), contentType: 'application/json', dataType: 'json' });
             JE.toast?.(esc(t(approve ? 'leavingsoon_approved' : 'leavingsoon_denied')));
             refresh();
         } catch (err) {
@@ -280,6 +282,16 @@
         return scope ? t('leavingsoon_confirm_delete_scope', { scope }) : t('leavingsoon_confirm_delete');
     }
 
+    /**
+     * The administrator's note as the requester reads it: reviews from Jellyfin end with "(Approved by NAME in Jellyfin)", which is for
+     * Reclaimerr's record, so only that part is dropped (a note that is nothing else shows nothing).
+     * @param {string|null|undefined} notes Reclaimerr's admin_notes.
+     * @returns {string} The note to show, or ''.
+     */
+    function adminNote(notes) {
+        return String(notes || '').replace(/\s*\(?(?:Approved|Denied) by [^()]+ in Jellyfin\)?\s*$/, '').trim();
+    }
+
     /** @returns {{text: string, level: string}} The state chip of a request. */
     function requestChip(r) {
         if (r.executionError || r.scheduleState === 'failed' || r.scheduleState === 'blocked') return { text: t('leavingsoon_status_failed'), level: 'urgent' };
@@ -290,10 +302,10 @@
     /**
      * A deletion request as a card in the Requests page's layout: poster (opens the item), title, state, what it would delete
      * (a season, an episode or one version, when not the whole title), who asked (their Jellyfin name and avatar), their note,
-     * why a deletion failed, and for administrators the Approve and Deny buttons. Approving deletes from the library at once
-     * (Reclaimerr acts on approval), so it asks first, names the scope and takes an optional note.
+     * why a deletion failed, and for administrators the Approve and Deny buttons. Approving asks first: when to delete (Reclaimerr's
+     * grace period, now, or a day), the scope, and an optional note.
      */
-    function requestCard(r, admin, canSchedule, graceDays) {
+    function requestCard(r, admin, graceDays) {
         const el = document.createElement('div');
         el.className = 'je-ls-card je-ls-reqcard';
         const when = r.createdAt ? relativeDate(r.createdAt) : '';
@@ -311,9 +323,10 @@
             + (person ? `<span class="je-ls-avatar" aria-hidden="true">${esc(person.charAt(0).toUpperCase())}${r.jellyfinUserId ? `<img alt="" src="${esc(ApiClient.getUrl(`Users/${r.jellyfinUserId}/Images/Primary`, { maxHeight: 48, quality: 90 }))}"/>` : ''}</span><span>${esc(t('leavingsoon_requested_by', { name: person }))}</span>` : '')
             + `</div>`
             + (when ? `<div class="je-ls-sub">${esc(when)}</div>` : '')
-            + (r.scheduledAt && r.status === 'approved' && !Number.isNaN(utcDate(r.scheduledAt).getTime()) ? `<div class="je-ls-sub">${esc(t('leavingsoon_leaves_on', { date: shortDate(utcDate(r.scheduledAt)) }))}</div>` : '')
+            // A cancelled (Keep) or finished schedule keeps its old day in Reclaimerr's answer: it no longer says when the title leaves.
+            + (r.scheduledAt && r.status === 'approved' && r.scheduleState !== 'canceled' && r.scheduleState !== 'completed' && !Number.isNaN(utcDate(r.scheduledAt).getTime()) ? `<div class="je-ls-sub">${esc(t('leavingsoon_leaves_on', { date: shortDate(utcDate(r.scheduledAt)) }))}</div>` : '')
             + (r.note ? `<div class="je-ls-sub je-ls-note">${esc(r.note)}</div>` : '')
-            + (!admin && r.adminNotes && !/ in Jellyfin\)?$/.test(r.adminNotes) ? `<div class="je-ls-sub je-ls-note">${esc(r.adminNotes)}</div>` : '')
+            + (!admin && adminNote(r.adminNotes) ? `<div class="je-ls-sub je-ls-note">${esc(adminNote(r.adminNotes))}</div>` : '')
             + (r.executionError ? `<div class="je-ls-err">${esc(r.executionError)}</div>` : '')
             + (admin && pending ? `<div class="je-ls-reqactions"></div>` : '') + `</div>`;
         for (const img of el.querySelectorAll('img')) img.addEventListener('error', () => img.remove());
@@ -328,8 +341,8 @@
                 no.addEventListener('click', () => review(r.id, false, no));
                 actions.append(ok, no);
             };
-            // Approving removes it from the library (now, after Reclaimerr's grace period, or on a day when this Reclaimerr can schedule):
-            // one more click, with the words (scope-aware), the choice of when, and an optional note.
+            // Approving removes it from the library (after Reclaimerr's grace period, now, or on a day): one more click, with the
+            // words (scope-aware), the choice of when, and an optional note.
             const showConfirm = () => {
                 actions.textContent = '';
                 const warn = document.createElement('div');
@@ -341,50 +354,49 @@
                 const row = document.createElement('div');
                 row.className = 'je-ls-confirm';
                 const yes = document.createElement('button');
-                yes.type = 'button'; yes.className = 'je-ls-btn danger'; yes.textContent = t(canSchedule ? 'leavingsoon_approve' : 'leavingsoon_delete_now');
+                yes.type = 'button'; yes.className = 'je-ls-btn danger'; yes.textContent = t('leavingsoon_approve');
                 const cancel = document.createElement('button');
                 cancel.type = 'button'; cancel.className = 'je-ls-btn'; cancel.textContent = t('maintainerr_cancel');
                 const parts = [warn];
-                let when = null, day = null;
-                if (canSchedule) {
-                    when = document.createElement('select');
-                    when.className = 'je-ls-note-input';
-                    when.setAttribute('aria-label', t('reclaimerr_schedule_title'));
-                    for (const [value, label] of [['default', graceDays > 0 ? t('leavingsoon_when_default_days', { days: graceDays }) : t('leavingsoon_when_default')], ['now', t('leavingsoon_delete_now')], ['date', t('leavingsoon_when_date')]]) {
-                        const option = document.createElement('option');
-                        option.value = value; option.textContent = label;
-                        when.appendChild(option);
-                    }
-                    day = document.createElement('input');
-                    day.type = 'datetime-local'; day.className = 'je-ls-note-input'; day.hidden = true;
-                    day.min = localInput(new Date(Date.now() + 60000));
-                    day.value = localInput(new Date(Date.now() + 7 * DAY_MS));
-                    day.setAttribute('aria-label', t('leavingsoon_when_date'));
-                    const sync = () => {
-                        day.hidden = when.value !== 'date';
-                        const picked = new Date(day.value);
-                        const valid = when.value !== 'date' || (day.value !== '' && !Number.isNaN(picked.getTime()) && picked.getTime() > Date.now());
-                        yes.disabled = !valid;
-                        warn.textContent = when.value === 'now' ? confirmText(r)
-                            : when.value === 'date' ? (valid ? t('leavingsoon_confirm_on', { date: shortDate(picked) }) : '')
-                            : graceDays === 0 ? confirmText(r)
-                            : graceDays > 0 ? t('leavingsoon_confirm_on', { date: shortDate(new Date(Date.now() + graceDays * DAY_MS)) })
-                            : t('leavingsoon_confirm_grace');
-                    };
-                    when.addEventListener('change', sync);
-                    day.addEventListener('input', sync);
-                    parts.push(when, day);
-                    sync();
+                const when = document.createElement('select');
+                when.className = 'je-ls-note-input';
+                when.setAttribute('aria-label', t('reclaimerr_schedule_title'));
+                for (const [value, label] of [['default', graceDays > 0 ? t('leavingsoon_when_default_days', { days: graceDays }) : t('leavingsoon_when_default')], ['now', t('leavingsoon_delete_now')], ['date', t('leavingsoon_when_date')]]) {
+                    const option = document.createElement('option');
+                    option.value = value; option.textContent = label;
+                    when.appendChild(option);
                 }
+                const day = document.createElement('input');
+                day.type = 'datetime-local'; day.className = 'je-ls-note-input'; day.hidden = true;
+                day.min = localInput(new Date(Date.now() + 60000));
+                day.value = localInput(new Date(Date.now() + 7 * DAY_MS));
+                day.setAttribute('aria-label', t('leavingsoon_when_date'));
+                const sync = () => {
+                    day.hidden = when.value !== 'date';
+                    const picked = new Date(day.value);
+                    const valid = when.value !== 'date' || (day.value !== '' && !Number.isNaN(picked.getTime()) && picked.getTime() > Date.now());
+                    yes.disabled = !valid;
+                    warn.textContent = when.value === 'now' ? confirmText(r)
+                        : when.value === 'date' ? (valid ? t('leavingsoon_confirm_on', { date: shortDate(picked) }) : '')
+                        : graceDays === 0 ? confirmText(r)
+                        : graceDays > 0 ? t('leavingsoon_confirm_on', { date: shortDate(new Date(Date.now() + graceDays * DAY_MS)) })
+                        : t('leavingsoon_confirm_grace');
+                };
+                when.addEventListener('change', sync);
+                day.addEventListener('input', sync);
+                parts.push(when, day);
+                sync();
 
                 yes.addEventListener('click', () => {
-                    const timing = !when ? null : when.value === 'date' ? { when: 'date', date: new Date(day.value).toISOString() } : { when: when.value };
+                    // The grace period this confirm promised goes along: the server refuses when Reclaimerr's setting changed since.
+                    const timing = when.value === 'date' ? { when: 'date', date: new Date(day.value).toISOString() }
+                        : when.value === 'default' && Number.isInteger(graceDays) ? { when: 'default', graceDays } : { when: when.value };
                     review(r.id, true, yes, note.value.trim(), timing);
                 });
                 cancel.addEventListener('click', showChoice);
                 row.append(yes, cancel);
                 actions.append(...parts, note, row);
-                if (when) paintPopups(when, day);
+                paintPopups(when, day);
             };
             showChoice();
         }
@@ -393,6 +405,7 @@
 
     function draw(host, data) {
         host.textContent = '';
+        requestSource = data.source || null;
         const root = document.createElement('div');
         root.className = 'je-ls';
         const items = data.items || [];
@@ -420,14 +433,17 @@
         }
         const pending = data.requests || [];
         if (data.requestsUnavailable) {
-            const note = document.createElement('div'); note.className = 'je-ls-notice'; note.textContent = t('leavingsoon_requests_unavailable');
+            // Administrators get Reclaimerr's reason instead of the refresh advice (a scope the token lacks is not fixed by refreshing);
+            // the server sends it to them only.
+            const note = document.createElement('div'); note.className = 'je-ls-notice';
+            note.textContent = data.admin && data.requestsError ? t('leavingsoon_requests_unavailable_reason', { reason: data.requestsError }) : t('leavingsoon_requests_unavailable');
             root.appendChild(note);
         }
         if (data.admin && pending.length) {
             const sec = document.createElement('div'); sec.className = 'je-ls-section';
             sec.innerHTML = `<h3><span class="material-icons" aria-hidden="true">inbox</span>${esc(t('leavingsoon_requests_title', { count: pending.length }))}</h3>`;
             const grid = document.createElement('div'); grid.className = 'je-ls-grid';
-            for (const r of pending) grid.appendChild(requestCard(r, true, !!data.canSchedule, Number.isInteger(data.graceDays) ? data.graceDays : null));
+            for (const r of pending) grid.appendChild(requestCard(r, true, Number.isInteger(data.graceDays) ? data.graceDays : null));
             sec.appendChild(grid);
             root.appendChild(sec);
         }

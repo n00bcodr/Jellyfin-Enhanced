@@ -75,7 +75,7 @@ test('an empty list says nothing is leaving, and a page that is off registers no
 
 test('an administrator gets Keep and the date change on each card, and approves or denies pending requests', async t => {
   const h = setup(t, list({
-    admin: true, actions: true,
+    admin: true, actions: true, graceDays: 0,
     requests: [{ id: 7, title: '12th Fail', year: 2023, mediaType: 'movie', requestedBy: 'sam_user', note: 'Not my taste', jellyfinUser: 'Sam', jellyfinUserId: 'd'.repeat(32), itemId: 'e'.repeat(32), posterPath: '/p.jpg', status: 'pending', createdAt: '2026-11-16T10:00:00Z' }],
   }));
   h.JE.removalMenu = { act: (...args) => { h.acted = args; }, postpone: (...args) => { h.postponed = args; } };
@@ -107,7 +107,7 @@ test('an administrator gets Keep and the date change on each card, and approves 
   assert.equal(approve.title, 'leavingsoon_approve');
   assert.equal(approve.textContent.trim(), 'check', 'an icon, not text');
 
-  // Approving deletes now, so it asks first: nothing is sent until "Delete now".
+  // Approving deletes (now, with no grace period set in Reclaimerr), so it asks first: nothing is sent until "Approve".
   approve.click();
   await h.settle();
   assert.equal(h.calls.some(c => c.path.startsWith('reclaimerr/requests')), false, 'no request yet');
@@ -118,7 +118,7 @@ test('an administrator gets Keep and the date change on each card, and approves 
   row.querySelector('.je-ls-icon-btn.approve').click();
   row.querySelector('.je-ls-btn.danger').click();
   await h.settle();
-  assert.deepEqual(h.calls.find(c => c.path.startsWith('reclaimerr/requests')), { type: 'POST', path: 'reclaimerr/requests/7/approve', body: {} });
+  assert.deepEqual(h.calls.find(c => c.path.startsWith('reclaimerr/requests')), { type: 'POST', path: 'reclaimerr/requests/7/approve', body: { when: 'default', graceDays: 0 } });
 
   // Deny keeps the title, so it needs no confirmation.
   const again = setup(t, list({ admin: true, actions: true, requests: [{ id: 8, title: 'Crash', year: 2004, mediaType: 'movie', requestedBy: 'x', status: 'pending' }] }));
