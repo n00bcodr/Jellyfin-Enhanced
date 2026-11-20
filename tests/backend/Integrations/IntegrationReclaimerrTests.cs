@@ -679,7 +679,7 @@ public sealed class IntegrationReclaimerrTests : IDisposable
     [Fact]
     public async Task The_audit_names_missing_scopes_and_each_users_link_and_request_problems()
     {
-        var ok = Guid.NewGuid(); var unlinked = Guid.NewGuid(); var off = Guid.NewGuid(); var twice = Guid.NewGuid(); var noPerm = Guid.NewGuid(); var admin = Guid.NewGuid();
+        var ok = Guid.NewGuid(); var unlinked = Guid.NewGuid(); var off = Guid.NewGuid(); var twice = Guid.NewGuid(); var noPerm = Guid.NewGuid(); var admin = Guid.NewGuid(); var loneAdmin = Guid.NewGuid();
         using var server = new Reclaimerr();
         server.Answer("GET /api/v1", "{\"api_version\":\"v1\",\"resources\":{},\"granted_scopes\":[\"candidates:manage\",\"media:read\",\"users:read\"]}");
         server.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("ok_user", ok, true), ("off_user", off, false), ("twice_a", twice, true), ("twice_b", twice, true), ("noperm_user", noPerm, true), ("boss", admin, true)));
@@ -690,7 +690,7 @@ public sealed class IntegrationReclaimerrTests : IDisposable
             _ => (401, "{\"detail\":\"Not authenticated\"}"),
         };
         var (actions, _) = Setup(server);
-        var users = new List<(Guid, string, bool)> { (ok, "Ok", false), (unlinked, "Nobody", false), (off, "Off", false), (twice, "Twice", false), (noPerm, "NoPerm", false), (admin, "Boss", true) };
+        var users = new List<(Guid, string, bool)> { (ok, "Ok", false), (unlinked, "Nobody", false), (off, "Off", false), (twice, "Twice", false), (noPerm, "NoPerm", false), (admin, "Boss", true), (loneAdmin, "LoneAdmin", true) };
         var result = await actions.AuditUsersAsync(Config, users, CancellationToken.None);
 
         Assert.Equal("0.6.15", result.Version);
@@ -703,6 +703,9 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.Contains("several active Reclaimerr accounts", Assert.Single(Issues("Twice")));
         Assert.Contains("lacks the Request permission", Assert.Single(Issues("NoPerm")));
         Assert.Empty(Issues("Boss"));
+        // Administrators mark rather than request: even with no linked account, nothing about them is an issue.
+        Assert.Empty(Issues("LoneAdmin"));
+        Assert.All(result.Users, u => Assert.True(u.Checked));
         Assert.Equal("ok_user", result.Users.Single(u => u.JellyfinUsername == "Ok").ReclaimerrUsername);
         // Read-only: nothing but GETs, the sign-in check sent as the user without the token, and an administrator's sign-in never tried.
         Assert.All(server.Seen, s => Assert.Equal("GET", s.Method));
@@ -754,6 +757,8 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         var result = await actions.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false), (b, "B", false) }, CancellationToken.None);
         Assert.Contains("FORWARD_AUTH_ENABLED", Assert.Single(result.Issues));
         Assert.Single(server.Seen, s => s.Path == "/api/account/me");
+        // Neither user is known to be able to request: both are marked not checked, not counted as fine.
+        Assert.All(result.Users, u => Assert.False(u.Checked));
 
         // With requests off, nobody's sign-in is tried: only links matter.
         using var quiet = new Reclaimerr();

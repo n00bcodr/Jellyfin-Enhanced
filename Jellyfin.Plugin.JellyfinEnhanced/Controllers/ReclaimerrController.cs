@@ -206,10 +206,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        /// <summary>What the import and the audit say while Reclaimerr is not set up (they do not need the item-menu actions).</summary>
+        private const string SetUpFirst = "Turn on Use Reclaimerr and save its URL and API token first.";
+
         /// <summary>
         /// Audit every Jellyfin user against Reclaimerr, read-only: the linked account, and with removal requests on whether Reclaimerr's
         /// trusted-proxy sign-in accepts it and whether it may request; plus the token scopes the integration uses that the token lacks.
-        /// Administrators only. Answers <c>{version, requestsEnabled, issues[], users[]}</c>.
+        /// Administrators only. Answers <c>{version, requestsEnabled, issues[], users[]}</c>, or <c>400</c> while Reclaimerr is not set up.
         /// </summary>
         [HttpGet("user-audit")]
         [Authorize]
@@ -218,7 +221,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             if (!IsAdmin()) return Forbid();
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !ReclaimerrActions.Enabled(config)) return NotFound();
+            if (config == null || !LeavingSoonService.UsesReclaimerr(config) || !LeavingSoonService.ApiConfigured(config)) return BadRequest(new { error = SetUpFirst });
             try
             {
                 var users = UserManager.GetAllUsers().Select(u => (u.Id, u.Username, u.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator))).ToList();
@@ -246,7 +249,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             if (!IsAdmin()) return Forbid();
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !ReclaimerrActions.Enabled(config)) return NotFound();
+            if (config == null || !LeavingSoonService.UsesReclaimerr(config) || !LeavingSoonService.ApiConfigured(config)) return BadRequest(new { error = SetUpFirst });
             try
             {
                 var users = UserManager.GetAllUsers().ToDictionary(u => u.Id, u => u.Username);

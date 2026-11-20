@@ -433,9 +433,10 @@
         }
         const pending = data.requests || [];
         if (data.requestsUnavailable) {
-            // Administrators also get Reclaimerr's reason (for example a scope the token lacks); it is only sent to them.
+            // Administrators get Reclaimerr's reason instead of the refresh advice (a scope the token lacks is not fixed by refreshing);
+            // the server sends it to them only.
             const note = document.createElement('div'); note.className = 'je-ls-notice';
-            note.textContent = t('leavingsoon_requests_unavailable') + (data.admin && data.requestsError ? ` (${data.requestsError})` : '');
+            note.textContent = data.admin && data.requestsError ? t('leavingsoon_requests_unavailable_reason', { reason: data.requestsError }) : t('leavingsoon_requests_unavailable');
             root.appendChild(note);
         }
         if (data.admin && pending.length) {

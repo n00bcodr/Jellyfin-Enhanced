@@ -574,14 +574,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("users:manage", "users:read", "Request removal, Import Jellyfin users and this audit cannot read Reclaimerr's accounts", "Import Jellyfin users is refused"),
         };
 
-        /// <summary>One Jellyfin user in the audit: the Reclaimerr account linked to them (null when none) and what stops them.</summary>
+        /// <summary>
+        /// One Jellyfin user in the audit: the Reclaimerr account linked to them (null when none), what stops them, and whether everything
+        /// that applies to them was checked (false when the sign-in check was cut short for everyone; see the setup issues).
+        /// </summary>
         public sealed record AuditUser(
             [property: JsonPropertyName("jellyfinUsername")] string JellyfinUsername,
             [property: JsonPropertyName("jellyfinUserId")] string JellyfinUserId,
             [property: JsonPropertyName("admin")] bool Admin,
             [property: JsonPropertyName("linked")] bool Linked,
             [property: JsonPropertyName("reclaimerrUsername")] string? ReclaimerrUsername,
-            [property: JsonPropertyName("issues")] List<string> Issues);
+            [property: JsonPropertyName("issues")] List<string> Issues,
+            [property: JsonPropertyName("checked")] bool Checked = true);
 
         /// <summary>The audit: the version Reclaimerr reports, problems with the setup as a whole (token scopes, the trusted-proxy sign-in), and each user.</summary>
         public sealed record AuditResult(
@@ -593,7 +597,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// Check every Jellyfin user against Reclaimerr, read-only: whether a Reclaimerr account is linked to them (and only one, and active),
         /// and, with removal requests on, whether Reclaimerr's trusted-proxy sign-in accepts that account (<c>GET /api/account/me</c> as them,
-        /// which writes nothing) and whether it may request. Administrators mark instead of requesting, so only their link is checked. Also
+        /// which writes nothing) and whether it may request. Administrators mark instead of requesting, so nothing about them is an issue. Also
         /// reports the token scopes the integration uses that the token lacks. A sign-in refused for everyone (the feature off, this server
         /// not trusted) is said once, and the remaining users are not tried.
         /// </summary>
@@ -643,7 +647,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var linked = mine.Select(a => a.Username).Distinct(StringComparer.Ordinal).ToList();
                 var active = mine.Where(a => a.Active).Select(a => a.Username).Distinct(StringComparer.Ordinal).ToList();
                 string? account = active.Count == 1 ? active[0] : linked.Count == 1 ? linked[0] : null;
-                if (linked.Count == 0)
+                var done = true;
+                if (admin)
+                {
+                    // Administrators mark, keep and approve with the token: their link is shown, never an issue.
+                }
+                else if (linked.Count == 0)
                 {
                     issues.Add("No Reclaimerr account is linked to this user: run Import Jellyfin users, or have them sign in to Reclaimerr with Jellyfin once.");
                 }
@@ -655,7 +664,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     issues.Add($"The linked Reclaimerr account {string.Join(", ", linked)} is disabled.");
                 }
-                else if (requests && !admin && refused == null && silent == null)
+                else if (requests && (refused != null || silent != null))
+                {
+                    done = false;
+                }
+                else if (requests)
                 {
                     try
                     {
@@ -668,11 +681,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401)
                     {
                         refused = account;
+                        done = false;
                     }
                     catch (OperationCanceledException) when (!token.IsCancellationRequested)
                     {
                         // Reclaimerr stopped answering: waiting out the timeout for every other user would hold the page for minutes.
                         silent = account;
+                        done = false;
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
@@ -680,7 +695,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
-                result.Users.Add(new AuditUser(name, id.ToString("N"), admin, linked.Count > 0, account, issues));
+                result.Users.Add(new AuditUser(name, id.ToString("N"), admin, linked.Count > 0, account, issues, done));
             }
 
             if (silent != null)

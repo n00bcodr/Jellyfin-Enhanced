@@ -85,7 +85,7 @@ test('an administrator is told why the requests could not be read; anyone else o
   const admin = setup(t, { ...base, requestsUnavailable: true, requestsError: reason });
   admin.JE.leavingSoonPage.renderForCustomTab(admin.$('#host'));
   await admin.settle();
-  assert.equal(admin.$('.je-ls-notice').textContent, `leavingsoon_requests_unavailable (${reason})`);
+  assert.equal(admin.$('.je-ls-notice').textContent, `leavingsoon_requests_unavailable_reason:${reason}`, 'the reason, not the refresh advice');
   const viewer = setup(t, { ...base, admin: false, requestsUnavailable: true, requestsError: reason });
   viewer.JE.leavingSoonPage.renderForCustomTab(viewer.$('#host'));
   await viewer.settle();

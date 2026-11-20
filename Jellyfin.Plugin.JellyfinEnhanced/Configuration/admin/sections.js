@@ -1458,8 +1458,9 @@ JEAdmin.maintainerr = (function () {
     }
     /**
      * Reclaimerr user audit: the token's missing scopes and setup problems first, then a card for each user with issues (in the
-     * Seerr permission audit's style), and the users with none folded away. Built with textContent only: names and reasons come
-     * from Jellyfin and Reclaimerr.
+     * Seerr permission audit's style), users the sign-in check never reached, and the users with none folded away. Built with
+     * textContent only: names and reasons come from Jellyfin and Reclaimerr. Drawn into the card and into its Services-tab copy
+     * alike: the copy only follows a plain-text box, and this one holds elements.
      */
     function wireUserAudit() {
         const button = el('reclaimerrAuditBtn');
@@ -1468,71 +1469,83 @@ JEAdmin.maintainerr = (function () {
         const node = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
         const icon = (name) => { const i = node('i', 'material-icons', name); i.setAttribute('aria-hidden', 'true'); return i; };
         const chip = (kind, iconName, text) => { const c = node('span', 'je-audit-chip je-audit-chip-' + kind); c.append(icon(iconName), document.createTextNode(text)); return c; };
+        const boxes = () => [el('reclaimerrAuditResult'), el('reclaimerrAuditResult--mirror')].filter(Boolean);
+        const label = (u) => u.jellyfinUsername + (u.reclaimerrUsername ? ' \u2192 ' + u.reclaimerrUsername : '');
+        const names = (title, list) => {
+            const details = node('details', 'je-audit-ok-section');
+            details.append(node('summary', null, title));
+            const ul = node('ul', 'je-audit-ok-names');
+            for (const u of list) ul.append(node('li', null, label(u)));
+            details.append(ul);
+            return details;
+        };
+        function paint(out, data) {
+            const users = data.users || [];
+            const setup = data.issues || [];
+            const flagged = users.filter((u) => (u.issues || []).length > 0);
+            const unchecked = users.filter((u) => !(u.issues || []).length && u.checked === false);
+            const ok = users.filter((u) => !(u.issues || []).length && u.checked !== false);
+            const clean = !setup.length && !flagged.length && !unchecked.length;
+            const summary = node('div', 'je-audit-summary');
+            summary.append(node('div', 'je-audit-summary-title', clean
+                ? 'All ' + ok.length + ' user(s) are set up.' + (data.version ? ' Reclaimerr ' + data.version + '.' : '')
+                : 'Audit complete' + (data.version ? ' (Reclaimerr ' + data.version + ')' : '') + ', review the items below.'));
+            if (!clean) {
+                const chips = node('div', 'je-audit-summary-chips');
+                if (setup.length) chips.append(chip('warn', 'settings', setup.length + ' setup'));
+                if (flagged.length) chips.append(chip('warn', 'warning', flagged.length + ' with issues'));
+                if (unchecked.length) chips.append(chip('unlinked', 'help', unchecked.length + ' not checked'));
+                if (ok.length) chips.append(chip('ok', 'check_circle', ok.length + ' OK'));
+                summary.append(chips);
+            }
+            out.append(summary);
+            const cards = node('div', 'je-audit-cards');
+            if (setup.length) {
+                const card = node('div', 'je-audit-card je-audit-card-warn');
+                const head = node('div', 'je-audit-card-header');
+                const who = node('span', 'je-audit-card-user'); who.append(icon('settings'), document.createTextNode('Setup'));
+                head.append(who);
+                const list = node('ul', 'je-audit-card-issues');
+                for (const issue of setup) list.append(node('li', null, issue));
+                card.append(head, list);
+                cards.append(card);
+            }
+            for (const u of flagged) {
+                const card = node('div', 'je-audit-card ' + (u.linked ? 'je-audit-card-warn' : 'je-audit-card-unlinked'));
+                const head = node('div', 'je-audit-card-header');
+                const who = node('span', 'je-audit-card-user');
+                who.append(icon(u.linked ? 'person' : 'person_off'), document.createTextNode(label(u)));
+                head.append(who, u.linked ? chip('warn', 'warning', 'Needs attention') : chip('unlinked', 'link_off', 'Not linked'));
+                const list = node('ul', 'je-audit-card-issues');
+                for (const issue of u.issues) list.append(node('li', null, issue));
+                card.append(head, list);
+                cards.append(card);
+            }
+            if (cards.childNodes.length) out.append(cards);
+            // Not reached by the sign-in check (see Setup): neither a problem nor known to be fine.
+            if (unchecked.length) out.append(names('Show ' + unchecked.length + ' user(s) not checked (see Setup)', unchecked));
+            if (ok.length && !clean) out.append(names('Show ' + ok.length + ' user(s) with no issues', ok));
+        }
         button.addEventListener('click', async () => {
-            const out = el('reclaimerrAuditResult');
-            if (!out) return;
+            if (!boxes().length) return;
             button.disabled = true;
             button.textContent = 'Running\u2026';
-            out.style.display = 'none';
-            out.textContent = '';
+            for (const out of boxes()) { out.style.display = 'none'; out.textContent = ''; }
+            let data = null, failure = null;
             try {
-                const data = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/user-audit'), dataType: 'json' });
-                const users = data.users || [];
-                const flagged = users.filter((u) => (u.issues || []).length > 0);
-                const ok = users.filter((u) => !(u.issues || []).length);
-                const summary = node('div', 'je-audit-summary');
-                const setup = data.issues || [];
-                summary.append(node('div', 'je-audit-summary-title', !setup.length && !flagged.length
-                    ? 'All ' + ok.length + ' user(s) are set up.' + (data.version ? ' Reclaimerr ' + data.version + '.' : '')
-                    : 'Audit complete' + (data.version ? ' (Reclaimerr ' + data.version + ')' : '') + ', review the items below.'));
-                if (setup.length || flagged.length) {
-                    const chips = node('div', 'je-audit-summary-chips');
-                    if (setup.length) chips.append(chip('warn', 'settings', setup.length + ' setup'));
-                    if (flagged.length) chips.append(chip('warn', 'warning', flagged.length + ' with issues'));
-                    if (ok.length) chips.append(chip('ok', 'check_circle', ok.length + ' OK'));
-                    summary.append(chips);
-                }
-                out.append(summary);
-                const cards = node('div', 'je-audit-cards');
-                if (setup.length) {
-                    const card = node('div', 'je-audit-card je-audit-card-warn');
-                    const head = node('div', 'je-audit-card-header');
-                    const who = node('span', 'je-audit-card-user'); who.append(icon('settings'), document.createTextNode('Setup'));
-                    head.append(who);
-                    const list = node('ul', 'je-audit-card-issues');
-                    for (const issue of setup) list.append(node('li', null, issue));
-                    card.append(head, list);
-                    cards.append(card);
-                }
-                for (const u of flagged) {
-                    const card = node('div', 'je-audit-card ' + (u.linked ? 'je-audit-card-warn' : 'je-audit-card-unlinked'));
-                    const head = node('div', 'je-audit-card-header');
-                    const who = node('span', 'je-audit-card-user');
-                    who.append(icon(u.linked ? 'person' : 'person_off'), document.createTextNode(u.jellyfinUsername + (u.reclaimerrUsername ? ' \u2192 ' + u.reclaimerrUsername : '')));
-                    head.append(who, u.linked ? chip('warn', 'warning', 'Needs attention') : chip('unlinked', 'link_off', 'Not linked'));
-                    const list = node('ul', 'je-audit-card-issues');
-                    for (const issue of u.issues) list.append(node('li', null, issue));
-                    card.append(head, list);
-                    cards.append(card);
-                }
-                if (cards.childNodes.length) out.append(cards);
-                if (ok.length && (setup.length || flagged.length)) {
-                    const details = node('details', 'je-audit-ok-section');
-                    details.append(node('summary', null, 'Show ' + ok.length + ' user(s) with no issues'));
-                    const names = node('ul', 'je-audit-ok-names');
-                    for (const u of ok) names.append(node('li', null, u.jellyfinUsername + (u.reclaimerrUsername ? ' \u2192 ' + u.reclaimerrUsername : '')));
-                    details.append(names);
-                    out.append(details);
-                }
+                data = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/user-audit'), dataType: 'json' });
             } catch (err) {
                 let reason = null;
                 try { reason = typeof err?.json === 'function' ? (await err.json())?.error : null; } catch (e) { /* no body */ }
-                out.append(node('div', 'je-audit-error', 'Audit failed: ' + (reason || err?.status || err?.message || 'request failed')));
-            } finally {
-                out.style.display = 'block';
-                button.disabled = false;
-                button.textContent = 'Run Audit';
+                failure = 'Audit failed: ' + (reason || err?.status || err?.message || 'request failed');
             }
+            for (const out of boxes()) {
+                out.textContent = '';
+                if (data) paint(out, data); else out.append(node('div', 'je-audit-error', failure));
+                out.style.display = 'block';
+            }
+            button.disabled = false;
+            button.textContent = 'Run Audit';
         });
     }
 
