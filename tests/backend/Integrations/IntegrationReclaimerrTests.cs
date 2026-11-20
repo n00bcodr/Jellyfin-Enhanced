@@ -142,6 +142,12 @@ public sealed class IntegrationReclaimerrTests : IDisposable
     [Theory]
     [InlineData("0.6.15", 0, 6, 15)]
     [InlineData("0.6.15-dev.1", 0, 6, 15)]
+    [InlineData("v0.6.15-dev.1", 0, 6, 15)]
+    [InlineData("0.6.15-dev1", 0, 6, 15)]
+    [InlineData("0.6.15dev1", 0, 6, 15)]
+    [InlineData("0.6.15.dev1", 0, 6, 15)]
+    [InlineData("0.6.16-dev", 0, 6, 16)]
+    [InlineData(" V0.6.15 ", 0, 6, 15)]
     [InlineData("v0.7.0+abc", 0, 7, 0)]
     [InlineData("1.2", 1, 2, 0)]
     public void A_version_is_read_with_its_pre_release_counting_as_that_release(string text, int major, int minor, int patch)
@@ -153,6 +159,7 @@ public sealed class IntegrationReclaimerrTests : IDisposable
     [InlineData("latest")]
     [InlineData("0.6.x")]
     [InlineData("1")]
+    [InlineData("dev-0.6.15")]
     public void Text_that_is_not_a_version_is_not_one(string? text) => Assert.Null(ReclaimerrApi.ParseVersion(text));
 
     [Fact]
@@ -167,15 +174,33 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.All(server.Seen, s => Assert.Equal("/openapi.json", s.Path));
     }
 
-    [Fact]
-    public async Task A_development_build_of_0_6_15_is_accepted()
+    [Theory]
+    [InlineData("0.6.15-dev.1")]
+    [InlineData("v0.6.15-dev.1")]
+    [InlineData("0.6.15-dev1")]
+    [InlineData("0.6.16-dev")]
+    [InlineData("0.7.0")]
+    public async Task Development_builds_of_0_6_15_and_anything_newer_are_accepted(string version)
     {
-        using var server = new Reclaimerr { Version = "0.6.15-dev.1" };
+        using var server = new Reclaimerr { Version = version };
         server.Answer("GET /api/v1/leaving-soon?per_page=200&page=1", Page());
         var (_, leaving) = Setup(server);
         await leaving.RefreshAsync(Config, true, CancellationToken.None);
         Assert.Null(leaving.Status(Config).LastError);
         Assert.Contains(server.Seen, s => s.Path.StartsWith("/api/v1/leaving-soon") && s.Bearer == "Bearer rcl_token");
+    }
+
+    [Theory]
+    [InlineData("0.6.14-dev.3", "Reclaimerr 0.6.14-dev.3 is too old; Jellyfin Enhanced needs 0.6.15 or newer")]
+    [InlineData("0.6.14", "Reclaimerr 0.6.14 is too old; Jellyfin Enhanced needs 0.6.15 or newer")]
+    [InlineData("unknown", "Reclaimerr did not say which version it is; Jellyfin Enhanced needs 0.6.15 or newer")]
+    public async Task A_development_build_of_an_older_release_is_too_old_and_named_as_Reclaimerr_reports_it(string version, string error)
+    {
+        using var server = new Reclaimerr { Version = version };
+        var (_, leaving) = Setup(server);
+        await leaving.RefreshAsync(Config, true, CancellationToken.None);
+        Assert.Equal(error, leaving.Status(Config).LastError);
+        Assert.All(server.Seen, s => Assert.Equal("/openapi.json", s.Path));
     }
 
     [Fact]

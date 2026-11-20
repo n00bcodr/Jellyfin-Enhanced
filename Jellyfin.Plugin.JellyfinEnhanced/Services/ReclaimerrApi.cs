@@ -29,7 +29,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Largest page Reclaimerr's lists give.</summary>
         internal const int PageSize = 200;
 
-        private static readonly ConcurrentDictionary<string, (DateTimeOffset At, Version? Found)> Versions = new(StringComparer.Ordinal);
+        private static readonly ConcurrentDictionary<string, (DateTimeOffset At, Version? Found, string? Reported)> Versions = new(StringComparer.Ordinal);
+
+        /// <summary>The release a version names: an optional <c>v</c>, major.minor(.patch), then anything that is not another number (a pre-release or build tag).</summary>
+        private static readonly System.Text.RegularExpressions.Regex VersionPattern = new(@"^\s*[vV]?(\d{1,9})\.(\d{1,9})(?:\.(\d{1,9})(?!\d)|(?![.\d]))", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         private static readonly TimeSpan SupportedTtl = TimeSpan.FromMinutes(10);
         private static readonly TimeSpan UnsupportedTtl = TimeSpan.FromMinutes(1);
 
@@ -44,24 +47,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             => config != null && config.ReclaimerrActAsUser && !string.IsNullOrWhiteSpace(config.ReclaimerrUserHeader);
 
         /// <summary>
-        /// <c>0.6.15</c>, <c>0.6.15-dev.1</c> or <c>v0.6.15+build</c> as 0.6.15, or null when the text is not a version. A pre-release
-        /// counts as its version: Reclaimerr's development builds of a release already carry its endpoints.
+        /// The release a version text names, or null when it names none. A development build counts as the release it leads up to,
+        /// because Reclaimerr's development builds of a release already carry its endpoints: <c>0.6.15</c>, <c>v0.6.15</c>,
+        /// <c>0.6.15-dev.1</c>, <c>0.6.15-dev1</c>, <c>0.6.15dev1</c> and <c>0.6.15.dev1</c> are all 0.6.15, and <c>0.6.16-dev</c> is 0.6.16.
         /// </summary>
         internal static Version? ParseVersion(string? text)
         {
             if (string.IsNullOrWhiteSpace(text)) return null;
-            var core = text.Trim().TrimStart('v', 'V');
-            var cut = core.IndexOfAny(new[] { '-', '+', ' ' });
-            if (cut >= 0) core = core[..cut];
-            var parts = core.Split('.');
-            if (parts.Length is < 2 or > 3) return null;
-            var numbers = new int[3];
-            for (var i = 0; i < parts.Length; i++)
-            {
-                if (!int.TryParse(parts[i], NumberStyles.None, CultureInfo.InvariantCulture, out numbers[i])) return null;
-            }
-
-            return new Version(numbers[0], numbers[1], numbers[2]);
+            var match = VersionPattern.Match(text);
+            if (!match.Success) return null;
+            static int Part(System.Text.RegularExpressions.Group g) => g.Success ? int.Parse(g.Value, NumberStyles.None, CultureInfo.InvariantCulture) : 0;
+            return new Version(Part(match.Groups[1]), Part(match.Groups[2]), Part(match.Groups[3]));
         }
 
         /// <summary>Forget what is known about a Reclaimerr's version (tests, or after a changed address).</summary>
@@ -79,18 +75,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (Versions.TryGetValue(key, out var known) && Now() - known.At < (Supported(known.Found) ? SupportedTtl : UnsupportedTtl))
             {
                 if (Supported(known.Found)) return;
-                throw new VersionException(known.Found);
+                throw new VersionException(known.Reported);
             }
 
-            Version? found = null;
+            string? reported = null;
             using (var doc = await MaintainerrHttp.SendAsync(http, config, HttpMethod.Get, key + "/openapi.json", null, timeout, onRedirect, token).ConfigureAwait(false))
             {
                 if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("info", out var info) && info.ValueKind == JsonValueKind.Object
-                    && info.TryGetProperty("version", out var version) && version.ValueKind == JsonValueKind.String) found = ParseVersion(version.GetString());
+                    && info.TryGetProperty("version", out var version) && version.ValueKind == JsonValueKind.String) reported = version.GetString()?.Trim();
             }
 
-            Versions[key] = (Now(), found);
-            if (!Supported(found)) throw new VersionException(found);
+            var found = ParseVersion(reported);
+            Versions[key] = (Now(), found, reported);
+            if (!Supported(found)) throw new VersionException(reported);
         }
 
         private static bool Supported(Version? found) => found != null && found >= MinimumVersion;
@@ -151,10 +148,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>This Reclaimerr is older than <see cref="MinimumVersionText"/> (or does not say which it is).</summary>
         internal sealed class VersionException : Exception
         {
-            public VersionException(Version? found)
-                : base(found == null
+            /// <param name="reported">The version text Reclaimerr gave (clipped), or null when it gave none.</param>
+            public VersionException(string? reported)
+                : base(string.IsNullOrWhiteSpace(reported) || ParseVersion(reported) == null
                     ? $"Reclaimerr did not say which version it is; Jellyfin Enhanced needs {MinimumVersionText} or newer"
-                    : $"Reclaimerr {found.ToString(3)} is too old; Jellyfin Enhanced needs {MinimumVersionText} or newer")
+                    : $"Reclaimerr {(reported.Length <= 40 ? reported : reported[..40])} is too old; Jellyfin Enhanced needs {MinimumVersionText} or newer")
             {
             }
         }
