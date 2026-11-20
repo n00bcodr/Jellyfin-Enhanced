@@ -20,13 +20,10 @@
 .je-mt-day:hover,.je-mt-day:focus-visible{background:color-mix(in srgb,var(--je-mt-accent) 38%,transparent)}
 .je-mt-primary{background:var(--je-mt-accent);border-color:transparent;color:var(--je-mt-on-accent,#fff);font-weight:600;padding:9px 16px}
 .je-mt-primary:hover,.je-mt-primary:focus-visible{filter:brightness(1.12);background:var(--je-mt-accent)}
-.je-mt-ghost{background:none;border-color:transparent;opacity:.8}
 .je-mt-custom{display:flex;align-items:flex-end;gap:10px}
 .je-mt-custom label{display:flex;flex-direction:column;gap:5px;flex:1}
 .je-mt-label,.je-mt-datelabel{font-size:.8em;opacity:.7;text-transform:uppercase;letter-spacing:.04em}
 .je-mt-input,.je-mt-date{background:rgba(0,0,0,.28);color:inherit;border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:9px 11px;font:inherit;width:100%;box-sizing:border-box;color-scheme:dark}
 .je-mt-input:focus,.je-mt-date:focus{border-color:var(--je-mt-accent);outline:none}
 .je-mt-preview{min-height:1.4em;margin:-4px 0 12px;text-align:center;font-size:.9em;color:var(--je-mt-accent);font-weight:600}
-.je-mt-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px}
-.je-mt-reset .material-icons{font-size:20px}
 @media (max-width:420px){.je-mt-quick{grid-template-columns:repeat(2,1fr)}}

@@ -16,9 +16,10 @@ import CSS from './maintainerr-item-menu.css';
 //
 // Mark and Keep apply at once and show a toast with Undo (which runs the
 // opposite call; Reclaimerr's Keep has none); there is no confirm dialog.
-// Postpone opens a small chooser (a few day counts, a custom count, or a
-// timer reset; Reclaimerr also an exact day, and Mark opens the same chooser
-// to schedule). Marking from the detail page's ⋮ also sends the version
+// Postpone opens a small chooser (a few day counts or a custom count;
+// Reclaimerr also an exact day, and Mark opens the same chooser to
+// schedule), closed by its close button or Escape (upstream fc9b58ea dropped
+// its Reset timer and Cancel buttons). Marking from the detail page's ⋮ also sends the version
 // picked on that page (its .selectSource), so the server can tell a 4K
 // copy's collection from a 1080p one's (upstream 06837783); a card's menu
 // sends none. A done action tells the Leaving soon page to reload
@@ -295,9 +296,9 @@ export function createMaintainerrMenu(JE: TagRuntimeBridge): MaintainerrMenuPart
     }
 
     /**
-     * The day chooser: a few day counts, a custom count, or a timer reset; with Reclaimerr also an exact day, and with
-     * mode 'mark' it schedules a removal (Reclaimerr: the same chooser, with a date and no reset). The tool's logo, the
-     * day it leaves now, and a preview of the day a choice sets.
+     * The day chooser: a few day counts or a custom count; with Reclaimerr also an exact day, and with mode 'mark' it
+     * schedules a removal (Reclaimerr: the same chooser, with a date). The tool's logo, the day it leaves now, and a
+     * preview of the day a choice sets; no footer (upstream fc9b58ea): the close button or Escape closes it.
      */
     function postpone(itemId: string, state: MaintainerrItemState, opener: HTMLElement | null, mode: 'postpone' | 'mark' = 'postpone', mediaSourceId?: string): void {
         document.getElementById('je-mt-dialog')?.remove();
@@ -320,8 +321,7 @@ export function createMaintainerrMenu(JE: TagRuntimeBridge): MaintainerrMenuPart
             + '<div class="je-mt-section"><div class="je-mt-quick"></div></div>'
             + `<div class="je-mt-section"><div class="je-mt-custom"><label><span class="je-mt-label"></span><input type="number" min="1" max="${MAX_DAYS}" step="1" inputmode="numeric" class="je-mt-input" /></label><button type="button" class="je-mt-button je-mt-primary je-mt-apply"></button></div></div>`
             + (exact ? '<div class="je-mt-section"><div class="je-mt-custom"><label><span class="je-mt-datelabel"></span><input type="date" class="je-mt-date" /></label><button type="button" class="je-mt-button je-mt-primary je-mt-applydate"></button></div></div>' : '')
-            + '<div class="je-mt-preview" aria-live="polite"></div>'
-            + '<div class="je-mt-footer"><button type="button" class="je-mt-button je-mt-reset"></button><button type="button" class="je-mt-button je-mt-ghost je-mt-cancel"></button></div>';
+            + '<div class="je-mt-preview" aria-live="polite"></div>';
         const setText = (selector: string, value: string): void => { const el = dialog.querySelector(selector); if (el) el.textContent = value; };
         const logo = dialog.querySelector<HTMLImageElement>('.je-mt-logo');
         if (logo) {
@@ -343,13 +343,6 @@ export function createMaintainerrMenu(JE: TagRuntimeBridge): MaintainerrMenuPart
                 if (text) dialog.style.setProperty('--je-mt-on-accent', text);
             }
         } catch { /* default accent */ }
-        const resetEl = dialog.querySelector('.je-mt-reset');
-        if (resetEl) {
-            resetEl.innerHTML = '<i class="material-icons" aria-hidden="true">restart_alt</i><span></span>';
-            const label = resetEl.querySelector('span');
-            if (label) label.textContent = JE.t('maintainerr_reset_timer');
-        }
-        setText('.je-mt-cancel', JE.t('maintainerr_cancel'));
         const quick = dialog.querySelector<HTMLElement>('.je-mt-quick');
         const input = dialog.querySelector<HTMLInputElement>('.je-mt-input');
         const shortDate = (ms: number): string => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
@@ -418,9 +411,6 @@ export function createMaintainerrMenu(JE: TagRuntimeBridge): MaintainerrMenuPart
             dialog.querySelector('.je-mt-applydate')?.addEventListener('click', () => { if (dateInput.value) runDate(dateInput.value); else dateInput.focus(); });
             dateInput.addEventListener('input', () => { const iso = dayToIso(dateInput.value); preview(iso ? new Date(iso).getTime() : null); });
         }
-        const resetButton = dialog.querySelector('.je-mt-reset');
-        if (mode === 'mark') resetButton?.remove(); else resetButton?.addEventListener('click', () => run(null));
-        dialog.querySelector('.je-mt-cancel')?.addEventListener('click', close);
         dialog.querySelector('.je-mt-x')?.addEventListener('click', close);
         backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
         document.addEventListener('keydown', onKey, true);

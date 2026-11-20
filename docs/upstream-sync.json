@@ -3345,6 +3345,158 @@
       ],
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p98-*",
       "notes": "Re-implemented in the admin configuration page (client/src/admin/config). (1) Analytics icons: the engine (engine/index.ts) keeps the reported properties markAnalytics was given and draws the icons again on every refresh (applyAnalytics, upstream's), so a card drawn or filled after the list arrived still gets them; load.ts tries a failed GET usage/fields once more two seconds later, as upstream. Differences: the retry runs on the page lifecycle's timer, so it is dropped when the page goes away (upstream: a bare setTimeout); an answer that is not a list is an answer, not a failure, and is not retried (upstream's new Set({}) throws and so retries an object, not null); markAnalytics keeps its typed list argument (upstream also takes null to re-apply only, which nothing calls). (2) Sidebar: engine/shell.ts gains syncTree, called from refresh after syncShowIf as upstream: a group link (.jea-nav-sub) is hidden while its group sits inside a false showIf condition (.jea-dep-hidden) or after the main toggle of a card that is off (.jea-off and .jea-sub), with the same rule; the link's group is kept in a WeakMap instead of upstream's _group expando. On a default lab the Maintenance Mode card's Messages and Action links and the Spoiler Guard card's three group links are hidden while their switches are off. (3) Settings search (page/search.ts): 300 ms after the last keystroke (was 150) and only from 3 characters (was 2), with the hint 'Type 3+ characters to search', as upstream; the comment above the minimum is rewritten to say why. Two-character names such as 'tv' or '4k' no longer start a search, which is upstream's choice. (4) jeAdmin.css: upstream's hunk applied as is (the .jea-nav-leaf[hidden] rule the sidebar change needs, the card margin in search mode, and the New badge wrapping under 600 px). Tests (failed first): tests/frontend/admin/config/admin-config-sidebar-search.test.mjs (4 tests: group links follow a main toggle; group links follow a showIf condition while the card's other links stay; the search starts at 3 characters, 300 ms after the last keystroke; the stylesheet rules) and two in admin-config-address.test.mjs (a failed read is tried once more and its answer draws the icons, never a third read; the kept list draws a lost icon again on the card's next change). The Media Tags tab tests that type into the settings search waited 150 ms plus a margin for the debounce; they now wait SEARCH_DEBOUNCE (300) plus the same margins, assertions unchanged (with the old waits 'searching and clearing the search leaves the Media Tags tab as it was' would find no search mode)."
+    },
+    {
+      "sha": "fc9b58eab1a20bd95db01fbfaf76ebe638b217f8",
+      "date": "2026-11-20T21:14:26Z",
+      "subject": "fix(leavingsoon): drop Cancel and Reset timer from the removal date dialog, remove unused locale key",
+      "class": "fix",
+      "features": [
+        "media-tags",
+        "platform"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 34,
+        "insertions": 1,
+        "deletions": 43
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/ (33 files)",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/maintainerr-item-menu.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "ff36d925f4a9e17826d5d669c32709f34317f9a4"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p99-*",
+      "notes": "Re-implemented in client/src/features/media-tags/editor/maintainerr-item-menu.ts (the removal date dialog, shipped in tags/tag-item-menu.js here): the footer row with Reset timer (count from today) and Cancel is gone for every mode and tool (Maintainerr postpone, Reclaimerr change date and schedule), so the dialog ends with the preview line and is closed by its close button (x), Escape or a click on the backdrop, as upstream. The footer, reset and ghost rules leave maintainerr-item-menu.css, and upstream's locale hunks applied as is (maintainerr_reset_timer removed from all 33 locales; maintainerr_cancel stays, the Leaving soon page uses it). Same as upstream, the dialog's internal run() keeps its no-days branch (postpone without days, toast maintainerr_reset), which nothing in the dialog reaches any more; the server's postpone-without-days answer is unchanged. Differences: none in behaviour. docs/enhanced/tags-status.md drops Reset timer from the item-menu table and the Reclaimerr item-menu line (upstream's copy of that page still names it); docs/images/tags/maintainerr-postpone.webp, the same file as upstream's and already older than the dialog's logo and close button, still shows the removed row and was not re-shot. Tests: a new test in tests/frontend/features/media-tags/features-maintainerr-menu.test.mjs (no Reset timer, Cancel or footer for Maintainerr and Reclaimerr, the preview ends the dialog, the close button and Escape close it with no request; failed first), and the two tests that pressed Reset and Cancel now close with the close button and expect no reset. Lab: the Postpone dialog of a listed movie on the pre-port build, upstream's build of fc9b58ea and the port."
+    },
+    {
+      "sha": "65161c5299a33cd211f4dd12583b86c35f382340",
+      "date": "2026-11-20T21:26:10Z",
+      "subject": "fix(i18n): add the 72 missing leavingsoon and discovery filter strings to every locale",
+      "class": "translation",
+      "features": [
+        "platform"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 32,
+        "insertions": 2336,
+        "deletions": 32
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/ (32 files)"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "ca2aa651d21e23f2c49752cb75d55576a8463515"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p100-*",
+      "notes": "Applied as is (git show 65161c52 | git apply --3way, clean): the 32 locale files under Jellyfin.Plugin.JellyfinEnhanced/js/locales other than en.json are byte for byte upstream's at 65161c52. Each gains 72 keys (2,304 values), translated rather than Weblate's English prefill (209 of the values equal the English text, mostly in en-GB and en-US): 15 leavingsoon_* strings of the Leaving soon page (the scope, removal-date and approval lines) and 57 discovery_filter* strings of the Seerr discovery filters, Undo and rules. No key changes or goes; every value keeps the {placeholders} of this tree's en.json. 71 of the keys are in this tree's en.json. One, leavingsoon_requests_unavailable_reason, is the administrator's reason line of upstream da3d9ee9 (row 97, deferred for a contract review): this tree's en.json and code gain it when that port lands, and until then the 32 translations are unused, as row 46's elsewhere_settings_seerr_region was. The server reads no leavingsoon_* or discovery_* key for poster captions (StatusRules reads leaving_*), so no resolver version moves. The assembly embeds the locales packed: +30,771 bytes, covered by the run's chore(budget) commit."
+    },
+    {
+      "sha": "961b67bd186a87fd97b85844e61390e328fec3fc",
+      "date": "2026-11-20T21:31:48Z",
+      "subject": "chore(i18n): drop four obsolete discovery filter keys from every locale (Weblate sync)",
+      "class": "translation",
+      "features": [
+        "platform"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 32,
+        "insertions": 0,
+        "deletions": 128
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/ (32 files)"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "f80746d2887846bbae09a7f0072ecbb9be489c8e"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p101-*",
+      "notes": "Applied as is (git show 961b67bd | git apply --3way, clean): the 32 locale files under Jellyfin.Plugin.JellyfinEnhanced/js/locales other than en.json are byte for byte upstream's at 961b67bd. Each loses four keys, discovery_filter_rule_none, discovery_filter_rule_all, discovery_filter_rule_any and discovery_filter_score_hint: none is in en.json here or upstream, and nothing in client/src or tests reads them, so nothing a user reads changes. No key is added or changed; the server reads no discovery_* key."
+    },
+    {
+      "sha": "26b6238368d60bbe02b167893c742cccc654d270",
+      "date": "2026-11-20T21:31:49Z",
+      "subject": "test(leavingsoon): the removal date dialog no longer has Reset timer or Cancel",
+      "class": "test",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 7,
+        "deletions": 9
+      },
+      "paths": [
+        "tests/frontend/features/features-maintainerr-menu.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "ff36d925f4a9e17826d5d669c32709f34317f9a4"
+      ],
+      "with": "fc9b58eab1a20bd95db01fbfaf76ebe638b217f8",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p99-*",
+      "notes": "Upstream's own test update for fc9b58ea (row 99), published 17 minutes after it. The same test changes were made here in the rewrite commit of fc9b58ea, before this commit existed, in tests/frontend/features/media-tags/features-maintainerr-menu.test.mjs: the Postpone test no longer presses Reset timer or Cancel and closes the dialog with Escape and the close button, sending nothing (upstream's name for it, '... day buttons, custom count post accordingly', is '... day buttons and custom count post accordingly' here), and the Reclaimerr Postpone test expects no timer reset. In addition, a new test pins the absence of Reset timer, Cancel and the footer for Maintainerr and Reclaimerr in both Postpone and Mark. That commit carries only fc9b58ea's Upstream: trailer, because it predates this entry, so rewriteCommits names it by hand."
+    },
+    {
+      "sha": "728bba151c644129ee080a54011b94f1ffe5c416",
+      "date": "2026-11-20T21:34:44Z",
+      "subject": "test(admin): wait for the search debounce instead of a fixed 250 ms",
+      "class": "test",
+      "features": [
+        "admin",
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 1,
+        "deletions": 2
+      },
+      "paths": [
+        "tests/frontend/features/features-admin-config-media-tags-tab.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "5afcc38a932c1099db092073044ed4b935aefe57"
+      ],
+      "with": "1952fa31e9767d334b57c2a64b17eb92299457de",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p103.tests.txt",
+      "notes": "Upstream's follow-up to 1952fa31 (row 98, its settings search now waits 300 ms): the Media Tags tab test 'searching and clearing the search leaves the Media Tags tab as it was' (here tests/frontend/features/media-tags/admin/features-admin-config-media-tags-tab.test.mjs) no longer sleeps a fixed time before it checks for search mode; it waits until the form is in search mode with the file's own until helper (polls every 5 ms, about one second at most), as upstream. Row 98's port had already raised this wait to SEARCH_DEBOUNCE + 100 ms, so the test passed before too; the change takes the fixed delay out, which a loaded machine could outrun. The file's other fixed waits after typing are left as they are, as upstream leaves its own. The test and its file (25 tests) pass."
+    },
+    {
+      "sha": "3e83f00994af7ece49fd94e1974b7a16d1a3f6bf",
+      "date": "2026-11-20T21:37:30Z",
+      "subject": "fix(reclaimerr): drop a redundant string cast flagged by CodeQL",
+      "class": "fix",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 1,
+        "deletions": 1
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrActions.cs"
+      ],
+      "status": "already-present",
+      "rewriteCommits": [],
+      "evidence": "Features/MediaTags/Services/ReclaimerrActions.cs, ApproveRequestAsync: the approval body's scheduled_at is `day`, a string? assigned from Iso(CheckedDate(...)) with no cast, and the Now timing leaves it null; git grep 'scheduled_at = (string?)' finds nothing in this tree. The line upstream changed is in its token-API version of the approval (TokenAsync, /api/v1/delete-requests), which arrives with the deferred row 97 (da3d9ee9): that port should take upstream's line as it is after 3e83f009, without the cast."
     }
   ]
 }

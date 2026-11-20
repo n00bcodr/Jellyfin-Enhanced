@@ -1,7 +1,7 @@
 {
   "description": "Budget for what the plugin assembly, Jellyfin.Plugin.JellyfinEnhanced.dll, embeds (client assets, pages, tag assets). embeddedBytes: the summed length of its manifest resources as embedded (a packed one at its packed length). The DLL is these plus about 3.1 MB of code. The budget counts the resources, not the DLL file, because gate T runs with coverage and the file on disk is then the instrumented copy (0.65 MB longer); the resources are the same bytes either way. Checked by tests/backend/Api/PackedResourcesTests.cs (gate T). It is a ratchet: lowering the limit needs no reason; a history entry that raises it must give one. `limits` is always the last history entry's.",
   "limits": {
-    "embeddedBytes": 12341503
+    "embeddedBytes": 12368769
   },
   "history": [
     {
@@ -103,6 +103,17 @@
         "embeddedBytes": 12341503
       },
       "reason": "Raised by exactly what the port adds, so the headroom left before it stays as it was: the painter's script, twin and maps (tags/status-tag-backdrop.js), the larger tag layout, tag and loader scripts with their twins and maps (core/tag-layout.js, tags/*, plugin.js with the component-group loader), js/component-groups.json, and shared-module copies in scripts of groups that load without the provider. Measured with PackedResourcesTests: 12,072,376 bytes on 6d5dfdc5 (unchanged on 1651839c, the base), 12,337,755 with the port (+265,379)."
+    },
+    {
+      "date": "2026-11-21",
+      "change": "upstream sync: ports of upstream fc9b58ea with 26b62383, 65161c52 and 961b67bd, branch sync/auto-20261121-0520",
+      "measured": {
+        "embeddedBytes": 12366843
+      },
+      "limits": {
+        "embeddedBytes": 12368769
+      },
+      "reason": "Raised by exactly what the ports add, so the headroom left before them stays as it was (1,926 bytes). Measured with PackedResourcesTests with the limit set to 1: 12,339,577 bytes on 0616ffa8 (the base); 12,338,123 on ab87736e (-1,454: fc9b58ea drops the removal date dialog's footer from tags/tag-item-menu.js, its minified twin and maps, and one string from every locale; 26b62383 is tests only); 12,368,894 with 65161c52 (ca2aa651, +30,771: 72 translated Leaving soon and discovery filter strings in each of the 32 locales, packed); 12,366,843 on 90e39853 (-2,051: 961b67bd drops four unused discovery filter strings from every locale). +27,266 in all."
     }
   ]
 }

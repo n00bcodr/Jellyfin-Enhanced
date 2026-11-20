@@ -473,8 +473,7 @@ test('searching and clearing the search leaves the Media Tags tab as it was', as
   const input = h.document.getElementById('settingsSearchInput');
   input.value = 'rating';
   input.dispatchEvent(new h.window.Event('input', { bubbles: true }));
-  await sleep(SEARCH_DEBOUNCE + 100);
-  assert.ok(h.form.classList.contains('je-search-mode'));
+  await h.until(() => h.form.classList.contains('je-search-mode'), 'the search debounce ran');
   input.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await h.settle();
   assert.equal(h.form.classList.contains('je-search-mode'), false);

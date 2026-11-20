@@ -102,7 +102,7 @@ test('an administrator gets Mark for removal on an unlisted movie, before Share;
   assert.ok(h.toasts().some(text => text.startsWith('maintainerr_kept')));
 });
 
-test('a listed item gets Keep and Postpone; Postpone opens a chooser whose day buttons, custom count and reset post accordingly', async t => {
+test('a listed item gets Keep and Postpone; Postpone opens a chooser whose day buttons and custom count post accordingly', async t => {
   const soon = Date.now() + 5 * 86400000 + 3600000;
   const h = setup(t, { html: card(SERIES, 'Series'), states: { [SERIES]: { Marked: true, DeleteAt: soon, CollectionId: 2 } } });
   await h.open(SERIES);
@@ -132,17 +132,13 @@ test('a listed item gets Keep and Postpone; Postpone opens a chooser whose day b
   await h.settle();
   assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'postpone', body: { itemId: SERIES, days: 45 } });
 
-  // Reset sends no days; Escape and Cancel close without a request.
-  h.JE.removalMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
-  h.click(h.$('.je-mt-reset'));
-  await h.settle();
-  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'postpone', body: { itemId: SERIES } });
+  // Escape and the close button close without a request (upstream fc9b58ea dropped Reset timer and Cancel).
   const before = h.requests.length;
   h.JE.removalMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
   h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.equal(h.$('.je-mt-dialog'), null);
   h.JE.removalMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
-  h.click(h.$('.je-mt-cancel'));
+  h.click(h.$('.je-mt-x'));
   assert.equal(h.$('.je-mt-dialog'), null);
   assert.equal(h.requests.length, before);
 
@@ -152,6 +148,38 @@ test('a listed item gets Keep and Postpone; Postpone opens a chooser whose day b
   await h.settle();
   assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'unmark', body: { itemId: SERIES } });
   assert.ok(h.toasts().at(-1).startsWith('maintainerr_kept'));
+});
+
+test('the removal date dialog has no Reset timer and no Cancel (upstream fc9b58ea): the close button and Escape close it, sending nothing', async t => {
+  const soon = Date.now() + 5 * 86400000 + 3600000;
+  for (const provider of ['maintainerr', 'reclaimerr']) {
+    const h = setup(t, { provider, html: card(SERIES, 'Series'), states: { [SERIES]: { Marked: true, DeleteAt: soon, CollectionId: 2 } } });
+    await h.open(SERIES);
+    h.click(h.$('[data-id="je-maintainerr-postpone"]'));
+    await h.settle();
+    const before = h.requests.length;
+    const dialog = h.$('.je-mt-dialog');
+    assert.ok(dialog, `${provider}: the chooser opened`);
+    assert.equal(dialog.querySelector('.je-mt-reset'), null, `${provider}: no Reset timer`);
+    assert.equal(dialog.querySelector('.je-mt-cancel'), null, `${provider}: no Cancel`);
+    assert.equal(dialog.querySelector('.je-mt-footer'), null, `${provider}: no footer row under the preview`);
+    assert.ok(!dialog.textContent.includes('maintainerr_reset_timer') && !dialog.textContent.includes('maintainerr_cancel'), dialog.textContent);
+    assert.equal(dialog.lastElementChild.className, 'je-mt-preview', `${provider}: the preview line ends the dialog`);
+    h.click(dialog.querySelector('.je-mt-x'));
+    assert.equal(h.$('.je-mt-dialog'), null, `${provider}: the close button closes it`);
+    h.JE.removalMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
+    h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(h.$('.je-mt-dialog'), null, `${provider}: Escape closes it`);
+    if (provider === 'reclaimerr') {
+      h.JE.removalMenu.postpone(MOVIE, { Marked: false }, null, 'mark');
+      const schedule = h.$('.je-mt-dialog');
+      assert.equal(schedule.querySelector('.je-mt-cancel'), null, 'the schedule chooser has no Cancel either');
+      assert.equal(schedule.querySelector('.je-mt-footer'), null);
+      h.click(schedule.querySelector('.je-mt-x'));
+      assert.equal(h.$('.je-mt-dialog'), null);
+    }
+    assert.equal(h.requests.length, before, `${provider}: closing sends nothing`);
+  }
 });
 
 const VERSION_4K = '44444444444444444444444444444444';
@@ -353,7 +381,7 @@ test('with Reclaimerr, Postpone can send an exact date, and Keep offers no Undo'
   h.click(h.$('[data-id="je-maintainerr-postpone"]'));
   await h.settle();
   const dialog = h.$('.je-mt-dialog');
-  assert.ok(dialog.querySelector('.je-mt-reset'), 'a timer reset stays for postpone');
+  assert.equal(dialog.querySelector('.je-mt-reset'), null, 'no timer reset for postpone either (upstream fc9b58ea)');
   const date = dialog.querySelector('.je-mt-date');
   assert.ok(date.min > new Date().toISOString().slice(0, 10), 'a cleanup candidate only moves later than its deadline');
   date.value = '2031-06-01';

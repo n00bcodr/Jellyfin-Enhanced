@@ -119,7 +119,7 @@ With **Mark, keep and postpone from the item menu** on (and a Maintainerr URL), 
 |---|---|---|
 | Not in Maintainerr | **Mark for removal** | The item is added to Maintainerr's manual collection for its library, at once, and a toast with **Undo** follows (Undo removes it again). There is no confirm dialog |
 | In Maintainerr | **Keep (cancel removal)** | The item is removed from its Maintainerr collection; the toast's **Undo** marks it again |
-| In Maintainerr | **Postpone removal** | A small chooser: **+7**, **+14**, **+30** or **+90 days**, a custom count (1–3650), or **Reset timer** (count the collection's days from today) |
+| In Maintainerr | **Postpone removal** | A small chooser: **+7**, **+14**, **+30** or **+90 days**, or a custom count (1–3650); its close button or Escape leaves without a change |
 
 ![The ⋮ menu of a movie Maintainerr does not list: Mark for removal](../images/tags/maintainerr-menu-unmarked.webp) ![Marking applies at once, with an Undo](../images/tags/maintainerr-toast.webp)
 
@@ -152,7 +152,7 @@ With **Leaving soon home row** on (and a Maintainerr URL), the plugin registers 
 What it reads and does:
 
 - **Leaving soon facts.** The cleanup candidates whose automatic deletion is scheduled, eligible or postponed (disabled and canceled ones are not leaving), and, with the service account, the manual deletions scheduled for a whole title or for one movie file. The date is the postponed-until day when there is one, else the end of the review period or the scheduled day. A season or episode on its own does not mark a series. Titles are matched to Jellyfin items by TMDB id, and a scheduled movie file marks only the library item that holds that file.
-- **Item menu (administrators).** **Mark for removal** opens a chooser with **+7, +14, +30, +90 days** and an exact-day picker (30 days is only the default) and schedules a manual deletion of the whole title. **Keep** protects the candidate (or cancels the scheduled deletion). **Postpone removal** takes a day count, an exact day, or **Reset timer** for a candidate.
+- **Item menu (administrators).** **Mark for removal** opens a chooser with **+7, +14, +30, +90 days** and an exact-day picker (30 days is only the default) and schedules a manual deletion of the whole title. **Keep** protects the candidate (or cancels the scheduled deletion). **Postpone removal** takes a day count or an exact day for a candidate.
 - **Request removal (everyone signed in).** A user who can see a movie or series and is not an administrator gets **Request removal** in the ⋮ menu. It files a Reclaimerr deletion request as that user (or as the service account when acting as the user is not possible), with "Requested by <user> from Jellyfin" as the reason; an administrator approves or denies it in Reclaimerr or on the Leaving Soon page. **Approving deletes immediately** by default (Reclaimerr acts on approval); with a Reclaimerr that can schedule approvals, the administrator can instead keep Reclaimerr's grace period or pick a day. Asking again while a request is waiting does not file a second one: the user is told it is already waiting.
 
 #### Acting as the user: Reclaimerr side
