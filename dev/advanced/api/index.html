@@ -5521,31 +5521,31 @@ filter's shape, or not offered on that page.</p>
 <td>GET</td>
 <td><code>leaving-soon/list</code></td>
 <td>Signed-in user</td>
-<td>No body → <code>{provider, admin, canRequest, canSchedule, actions, items[], requests[], mine[]}</code>: what the removal tool that is on will remove (each item has <code>versionOnly: true</code> when only one version of a movie is scheduled and the others stay), soonest first (undated last), limited to the items the caller can see and to 500. An item is <code>{id, name, detail, type, year, deleteAt}</code>. <code>canSchedule</code> says whether an approval can be given a day (administrators, with a Reclaimerr that can schedule). <code>requests</code> is every pending Reclaimerr deletion request (administrators only), plus approved ones whose deletion failed, is blocked or is held back by playback, <code>mine</code> the caller's own requests (Reclaimerr, acting as the user). <code>404</code> while the Leaving Soon page is off or no removal tool is set up</td>
+<td>No body → <code>{provider, admin, canRequest, actions, items[], requests[], mine[], requestsUnavailable, requestsError, graceDays, source}</code>: what the removal tool that is on will remove (each item has <code>versionOnly: true</code> when only one version of a movie is scheduled and the others stay), soonest first (undated last), limited to the items the caller can open (their library included) and to 500. An item is <code>{id, name, detail, type, year, deleteAt, versionOnly, size}</code>; with Reclaimerr, <code>size</code> is what Reclaimerr says leaving frees (only that copy for one version), else the library's file sizes. <code>requests</code> is every pending Reclaimerr deletion request (administrators only), plus approved ones whose deletion failed, is blocked or is held back by playback; <code>mine</code> is the caller's own requests of any state (those whose Reclaimerr requester is linked to the caller's Jellyfin user), while <strong>Let users request removals</strong> is on. The request lists are read at most every 30 seconds, shared by all callers, and read again after a review or request from Jellyfin. Each request names the Jellyfin item and person by the ids Reclaimerr gives. <code>requestsUnavailable</code> is true when they could not be read (a slow Reclaimerr, or a token without the delete requests scope); <code>requestsError</code> (administrators only) is why, in Reclaimerr's words. <code>graceDays</code> (administrators) is the delay Reclaimerr gives an approval that names no day. <code>source</code> (administrators only) names the Reclaimerr the requests came from; a review sends it back. <code>404</code> while the Leaving Soon page is off or no removal tool is set up</td>
 </tr>
 <tr>
 <td>POST</td>
 <td><code>reclaimerr/requests/{requestId}/approve</code></td>
 <td>Administrator</td>
-<td><code>{note?, when?, date?}</code> → <code>{id, approved: true}</code>. Approves a pending Reclaimerr deletion request as the administrator who clicked (the service account is the fallback). <code>when</code> is <code>default</code> (Reclaimerr's grace period, none unless set; the same as omitting it), <code>now</code>, or <code>date</code> (deletes on <code>date</code>, an ISO 8601 moment in the future within 3650 days). <code>now</code> and <code>date</code> need a Reclaimerr that can schedule approvals: otherwise it would delete at once, so they answer <code>400</code> and nothing is approved. <code>404</code> without Reclaimerr, <code>400</code>/<code>502</code> with Reclaimerr's reason</td>
+<td><code>{note?, when?, date?, graceDays?, source?}</code> → <code>{id, approved: true}</code>. Approves a pending Reclaimerr deletion request through the token (<code>POST /api/v1/delete-requests/{id}/approve</code>); Reclaimerr records the token as the reviewer, so the note ends with "(Approved by NAME in Jellyfin)". <code>when</code> is <code>default</code> (Reclaimerr's grace period, none unless set; the same as omitting it), <code>now</code>, or <code>date</code> (deletes on <code>date</code>, an ISO 8601 moment in the future within 3650 days). With <code>default</code>, <code>graceDays</code> is the period the administrator was shown: Reclaimerr's current setting is read first and nothing is approved (<code>400</code>) when it differs or cannot be read. <code>source</code> is the list's <code>source</code>: <code>409</code> when the Reclaimerr address changed since. <code>404</code> without Reclaimerr, <code>400</code>/<code>502</code> with Reclaimerr's reason</td>
 </tr>
 <tr>
 <td>POST</td>
 <td><code>reclaimerr/requests/{requestId}/deny</code></td>
 <td>Administrator</td>
-<td><code>{note?}</code> → <code>{id, approved: false}</code>. Denies it, otherwise as above</td>
+<td><code>{note?, source?}</code> → <code>{id, approved: false}</code>. Denies it, otherwise as above</td>
 </tr>
 <tr>
 <td>POST</td>
-<td><code>reclaimerr/service-account</code></td>
+<td><code>reclaimerr/import-users</code></td>
 <td>Administrator</td>
-<td><code>{adminUsername, adminPassword}</code> → <code>{username}</code>. Reclaimerr only: signs in once as that Reclaimerr administrator (the login is used for this call only and never stored), creates the <code>jellyfin-enhanced</code> admin account with a random password and saves its login in the configuration (used for Mark for removal, Request removal and scheduled deletions). <code>400</code> without a saved Reclaimerr URL or login, <code>502</code> when Reclaimerr refused (for example the account exists).</td>
+<td><code>{permissions?, pages?}</code> → <code>{created, alreadyLinked, needsReview, skipped}</code> (Jellyfin user names). Reclaimerr only: runs Reclaimerr's own import (<code>/api/v1/users/import-from-media-server</code>, the token's users scope) on the Reclaimerr media server whose users are this server's users, so every Jellyfin user without a Reclaimerr account gets one (User role, the permissions <code>request</code>, <code>auto_approve</code>, <code>manage_requests</code>, <code>manage_protection</code>, <code>manage_reclaim</code> and pages given, at least one page; <code>400</code> otherwise) linked to them. Users already linked are counted in <code>alreadyLinked</code>; users Reclaimerr matches to an existing account are left for an administrator to confirm in Reclaimerr (<code>needsReview</code>); the rest that were not imported are in <code>skipped</code> with Reclaimerr's reason. <code>400</code> when Reclaimerr is not on with a URL and token (the item-menu actions need not be on), or has no Jellyfin server with this server's users</td>
 </tr>
 <tr>
-<td>POST</td>
-<td><code>reclaimerr/create-users</code></td>
+<td>GET</td>
+<td><code>reclaimerr/user-audit</code></td>
 <td>Administrator</td>
-<td><code>{permissions?, pages?}</code> → <code>{created, existing, skipped, userMap}</code>. Reclaimerr only: through the service account, creates a Reclaimerr account (User role, random password, signed in by name) for every Jellyfin user who has none, with the permissions (<code>request</code>, <code>auto_approve</code>, <code>manage_requests</code>, <code>manage_protection</code>, <code>manage_reclaim</code>) and pages given (at least one; <code>400</code> otherwise), and adds each to the Jellyfin-to-Reclaimerr user map. A user who is mapped, linked or has an account of the same name is left alone (<code>existing</code>); names under 5 characters get <code>_user</code> added and other characters become <code>_</code>; users that could not be created are listed in <code>skipped</code></td>
+<td>No body → <code>{version, requestsEnabled, issues[], users[]}</code>. Reclaimerr only, read-only. <code>issues</code> lists setup problems: each token scope the integration uses that the token lacks, with what goes without it (from <code>GET /api/v1</code>), and a trusted-proxy sign-in Reclaimerr refuses or a Reclaimerr that stops answering (each said once, then no other user is tried). Each user is <code>{jellyfinUsername, jellyfinUserId, admin, linked, reclaimerrUsername, issues[], checked}</code>: no linked Reclaimerr account, several active ones, a disabled one, and, with <strong>Let users request removals</strong> on, a missing Request permission (checked with <code>GET /api/account/me</code> sent as that account through the trusted-proxy sign-in, which writes nothing). Administrators mark rather than request, so nothing about them is an issue. <code>checked</code> is false for a user the sign-in check did not reach. <code>400</code> <code>{error}</code> while Reclaimerr is not on with a URL and token (the item-menu actions need not be on), <code>502</code> with Reclaimerr's reason when it could not be read</td>
 </tr>
 <tr>
 <td>GET</td>
@@ -5557,7 +5557,7 @@ filter's shape, or not offered on that page.</p>
 <td>POST</td>
 <td><code>reclaimerr/mark</code></td>
 <td>Administrator</td>
-<td><code>{itemId, date?, mediaSourceId?}</code> → the state above after the change. Schedules a manual deletion for <code>date</code> (ISO 8601, in the future and within 3650 days; 30 days ahead without it). A movie kept in several versions is scheduled by the picked version only; when Reclaimerr cannot confirm which version that is, nothing is scheduled and the answer is <code>400</code>.</td>
+<td><code>{itemId, date?, mediaSourceId?}</code> → the state above after the change. Schedules a manual deletion for <code>date</code> (ISO 8601, in the future and within 3650 days; 30 days ahead without it). A movie is scheduled by the version picked (else the item's own) when Reclaimerr holds it, matched by media source id or, when Reclaimerr's versions come from another main server, by file path; the whole movie only when Jellyfin and Reclaimerr each hold exactly one copy. A copy Reclaimerr does not hold, or several Reclaimerr titles with the item's TMDB id and none provably this item, schedules nothing and answers <code>400</code>.</td>
 </tr>
 <tr>
 <td>POST</td>
@@ -5575,7 +5575,7 @@ filter's shape, or not offered on that page.</p>
 <td>POST</td>
 <td><code>reclaimerr/request</code></td>
 <td>Signed-in user</td>
-<td><code>{itemId, reason?}</code> → the state. With the service account set, files a Reclaimerr deletion request for an administrator to approve (the Jellyfin user is named in the request's reason). <code>AlreadyRequested</code> (<code>mine</code> or <code>other</code>) when one is already waiting. <code>404</code> when requests are off, <code>400</code> for an item the caller cannot see or that is already marked.</td>
+<td><code>{itemId, reason?}</code> → the state. Files a Reclaimerr deletion request for an administrator to approve, as the caller's own Reclaimerr account (the active one linked to their Jellyfin user, read at that moment), through Reclaimerr's trusted-proxy sign-in: the token cannot file a request for someone else. <code>AlreadyRequested</code> (<code>mine</code> or <code>other</code>) when a request for the whole title is already waiting. <code>404</code> when requests are off; <code>400</code> for an item the caller cannot open or that is already marked, when the caller has no linked Reclaimerr account, when Reclaimerr refuses the sign-in (<code>401</code>) or the account lacks the Request permission (<code>403</code>); <code>502</code> with Reclaimerr's reason for any other failure.</td>
 </tr>
 <tr>
 <td>POST</td>
