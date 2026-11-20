@@ -422,7 +422,7 @@
         // One ⋮ press, one item menu: a later sheet never gets rows for this item.
         context = null;
         const admin = await isAdmin();
-        // Anyone signed in may ask for a removal (Reclaimerr with a service account); the rest is administrators only.
+        // Anyone signed in may ask for a removal (Reclaimerr, as their linked account); the rest is administrators only.
         if (!admin && JE.pluginConfig?.RemovalRequestsAvailable !== true) return;
         /** @type {ItemState|null} */
         let state = null;

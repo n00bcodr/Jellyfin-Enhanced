@@ -275,11 +275,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             throw Unsure();
         }
 
-        /// <summary>How many copies Jellyfin holds of a movie (itself and its alternate versions), or null when it cannot tell (a hidden alternate).</summary>
+        /// <summary>
+        /// How many copies Jellyfin holds of a movie, or null when it cannot tell (a hidden alternate): its media sources (what Reclaimerr
+        /// syncs versions from, and what Jellyfin itself counts on both targets), or the alternate versions stored on the item, whichever
+        /// is more. More is the safe side: it only ever demands a matching copy where a lower count would schedule the whole movie.
+        /// </summary>
         private static int? JellyfinCopies(BaseItem item)
         {
             if (item is not MediaBrowser.Controller.Entities.Video video || !string.IsNullOrEmpty(video.PrimaryVersionId?.ToString())) return null;
-            return 1 + (video.LinkedAlternateVersions?.Length ?? 0) + (video.LocalAlternateVersions?.Length ?? 0);
+            var stored = 1 + (video.LinkedAlternateVersions?.Length ?? 0) + (video.LocalAlternateVersions?.Length ?? 0);
+            int sources;
+            try { sources = video.GetMediaSources(false).Count; }
+            catch { sources = 0; }
+            return Math.Max(stored, sources);
         }
 
         private static MaintainerrActions.ActionException Unsure() => new("Could not tell which version of this movie Reclaimerr holds, so nothing was scheduled. Try again, or schedule it in Reclaimerr.");

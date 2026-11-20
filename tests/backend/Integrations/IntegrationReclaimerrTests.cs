@@ -214,7 +214,8 @@ public sealed class IntegrationReclaimerrTests : IDisposable
     {
         var film = Add(new Movie { Name = "Whole" });
         var merged = Add(new Movie { Name = "Merged" });
-        var uhd = Add(new Video { Name = "Merged 4K" });
+        // Jellyfin makes an alternate version with its primary's type, so a Movie.
+        var uhd = Add(new Movie { Name = "Merged 4K" });
         AlternateOf(uhd, merged);
         var show = Add(new Series { Name = "Show" });
         var season = Add(new Season { Name = "Season 1" });
@@ -251,7 +252,11 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         // A season alone does not mark anything, and ids of another server or of Plex mark nothing here.
         Assert.Null(leaving.Get(season.Id, Config));
         Assert.Null(leaving.Get(elsewhere, Config));
-        Assert.Equal(6, leaving.MaintainerrItems(Config).Count);
+        // The lists show the merged movie once, by its card; the alternate keeps its fact for its own badge.
+        var listed = leaving.MaintainerrItems(Config).Select(m => m.ItemId).ToList();
+        Assert.Equal(5, listed.Count);
+        Assert.Contains(merged.Id, listed);
+        Assert.DoesNotContain(uhd.Id, listed);
         Assert.Null(leaving.SizeOf(scheduled.Id, Config));
     }
 

@@ -826,24 +826,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// Maintainerr's members as of the last read (item id and delete time), for the home row:
-        /// the facts anyone who can see the item may see. Empty while no Maintainerr URL is set.
+        /// The removal tool's members as of the last read (item id and delete time), for the lists (the Leaving soon page, the home row,
+        /// the item list route): the facts anyone who can see the item may see. Empty while no tool is set up. With Reclaimerr, a hidden
+        /// alternate version of a merged movie is left out: Reclaimerr names that copy's own item, and its primary (the movie card) is
+        /// always marked with it, so listing both would show the movie twice. The alternate keeps its fact for its own badge.
         /// </summary>
         public IReadOnlyList<(Guid ItemId, long? DeleteAt)> MaintainerrItems(PluginConfiguration? config)
         {
             if (config == null || !ApiConfigured(config)) return Array.Empty<(Guid, long?)>();
             var signature = Signature(config);
+            List<(Guid, long?)> list;
             lock (_sync)
             {
                 if (_snapshot.Signature != signature) return Array.Empty<(Guid, long?)>();
-                var list = new List<(Guid, long?)>(_snapshot.Api.Count);
+                list = new List<(Guid, long?)>(_snapshot.Api.Count);
                 foreach (var pair in _snapshot.Api)
                 {
                     if (Guid.TryParseExact(pair.Key, "N", out var id)) list.Add((id, pair.Value));
                 }
-
-                return list;
             }
+
+            return UsesReclaimerr(config) ? list.Where(m => PrimaryVersionOf(m.Item1) == null).ToList() : list;
         }
 
         /// <summary>Whether only one version of the item's title is leaving (a scheduled deletion of one movie file) as of the last read.</summary>
