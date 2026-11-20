@@ -168,7 +168,7 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         using var server = new Reclaimerr { Version = "0.6.1" };
         var (actions, leaving) = Setup(server);
         await leaving.RefreshAsync(Config, true, CancellationToken.None);
-        Assert.Equal("Reclaimerr 0.6.1 is too old; Jellyfin Enhanced needs 0.6.15 or newer", leaving.Status(Config).LastError);
+        Assert.Equal("This Reclaimerr is older than 0.6.15 (it reports 0.6.1); Jellyfin Enhanced needs 0.6.15 or newer", leaving.Status(Config).LastError);
         var ex = await Assert.ThrowsAsync<ReclaimerrApi.VersionException>(() => actions.ReviewRequestAsync(7, false, null, "admin", Config, CancellationToken.None));
         Assert.Contains("0.6.15", ex.Message);
         Assert.All(server.Seen, s => Assert.Equal("/openapi.json", s.Path));
@@ -191,8 +191,8 @@ public sealed class IntegrationReclaimerrTests : IDisposable
     }
 
     [Theory]
-    [InlineData("0.6.14-dev.3", "Reclaimerr 0.6.14-dev.3 is too old; Jellyfin Enhanced needs 0.6.15 or newer")]
-    [InlineData("0.6.14", "Reclaimerr 0.6.14 is too old; Jellyfin Enhanced needs 0.6.15 or newer")]
+    [InlineData("0.6.14-dev.3", "This Reclaimerr is older than 0.6.15 (it reports 0.6.14-dev.3); Jellyfin Enhanced needs 0.6.15 or newer")]
+    [InlineData("0.6.14", "This Reclaimerr is older than 0.6.15 (it reports 0.6.14); Jellyfin Enhanced needs 0.6.15 or newer")]
     [InlineData("unknown", "Reclaimerr did not say which version it is; Jellyfin Enhanced needs 0.6.15 or newer")]
     public async Task A_development_build_of_an_older_release_is_too_old_and_named_as_Reclaimerr_reports_it(string version, string error)
     {

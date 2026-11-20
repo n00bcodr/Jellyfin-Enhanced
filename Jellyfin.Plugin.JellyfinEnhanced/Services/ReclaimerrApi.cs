@@ -152,7 +152,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public VersionException(string? reported)
                 : base(string.IsNullOrWhiteSpace(reported) || ParseVersion(reported) == null
                     ? $"Reclaimerr did not say which version it is; Jellyfin Enhanced needs {MinimumVersionText} or newer"
-                    : $"Reclaimerr {(reported.Length <= 40 ? reported : reported[..40])} is too old; Jellyfin Enhanced needs {MinimumVersionText} or newer")
+                    : $"This Reclaimerr is older than {MinimumVersionText} (it reports {(reported.Length <= 40 ? reported : reported[..40])}); Jellyfin Enhanced needs {MinimumVersionText} or newer")
             {
             }
         }
