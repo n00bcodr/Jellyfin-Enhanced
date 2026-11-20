@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Jelölve eltávolításra · {days} nap múlva távozik",
     "maintainerr_reset": "Eltávolítási időzítő visszaállítva",
     "maintainerr_failed": "Az eltávolítási művelet sikertelen: {error}",
-    "maintainerr_reset_timer": "Időzítő visszaállítása (számlálás mától)",
     "maintainerr_postpone_hint": "{days} nap múlva távozik.",
     "maintainerr_kept": "Megtartva: az eltávolítás visszavonva",
     "maintainerr_postpone_apply": "Halasztás",

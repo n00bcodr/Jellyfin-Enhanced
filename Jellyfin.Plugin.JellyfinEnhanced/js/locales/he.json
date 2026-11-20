@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "סומן להסרה · יוסר בעוד {days} ימ׳",
     "maintainerr_reset": "טיימר ההסרה אופס",
     "maintainerr_failed": "פעולת ההסרה נכשלה: {error}",
-    "maintainerr_reset_timer": "אפס טיימר (ספירה מהיום)",
     "maintainerr_postpone_hint": "יוסר בעוד {days} ימ׳.",
     "maintainerr_kept": "נשמר: ההסרה בוטלה",
     "maintainerr_postpone_apply": "דחה",

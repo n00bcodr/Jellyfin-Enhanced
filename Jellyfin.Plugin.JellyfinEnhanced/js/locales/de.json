@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Zum Entfernen markiert · wird in {days} T. entfernt",
     "maintainerr_reset": "Entfernungs-Timer zurückgesetzt",
     "maintainerr_failed": "Entfernungsaktion fehlgeschlagen: {error}",
-    "maintainerr_reset_timer": "Timer zurücksetzen (ab heute zählen)",
     "maintainerr_postpone_hint": "Wird in {days} T. entfernt.",
     "maintainerr_kept": "Behalten: Entfernung abgebrochen",
     "maintainerr_postpone_apply": "Verschieben",

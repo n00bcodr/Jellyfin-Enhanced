@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "제거 대상으로 표시됨 · {days}일 후 제거",
     "maintainerr_reset": "제거 타이머가 초기화되었습니다",
     "maintainerr_failed": "제거 작업 실패: {error}",
-    "maintainerr_reset_timer": "타이머 초기화 (오늘부터 다시 계산)",
     "maintainerr_postpone_hint": "{days}일 후 제거됩니다.",
     "maintainerr_kept": "유지됨: 제거가 취소되었습니다",
     "maintainerr_postpone_apply": "연기",

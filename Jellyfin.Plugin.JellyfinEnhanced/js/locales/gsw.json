@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Zum Entferne markiert · goht i {days}d",
     "maintainerr_reset": "Entfernig-Timer zrucksetzt",
     "maintainerr_failed": "D Entfernig het nöd klappet: {error}",
-    "maintainerr_reset_timer": "Timer zrucksetze (vo hüt aa zelle)",
     "maintainerr_postpone_hint": "Goht i {days}d.",
     "maintainerr_kept": "Behalte: Entfernig abbroche",
     "maintainerr_postpone_apply": "Verschiebe",

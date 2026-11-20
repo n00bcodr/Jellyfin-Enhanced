@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Маркирано за премахване · остава {days}д",
     "maintainerr_reset": "Таймерът за премахване е нулиран",
     "maintainerr_failed": "Действието по премахване не успя: {error}",
-    "maintainerr_reset_timer": "Нулиране на таймера (броене от днес)",
     "maintainerr_postpone_hint": "Остава {days}д.",
     "maintainerr_kept": "Запазено: премахването е отменено",
     "maintainerr_postpone_apply": "Отлагане",

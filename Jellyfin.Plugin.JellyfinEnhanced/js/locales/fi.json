@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Merkitty poistettavaksi · poistuu {days} pv päästä",
     "maintainerr_reset": "Poiston ajastin nollattu",
     "maintainerr_failed": "Poistotoiminto epäonnistui: {error}",
-    "maintainerr_reset_timer": "Nollaa ajastin (laske tästä päivästä)",
     "maintainerr_postpone_hint": "Poistuu {days} pv päästä.",
     "maintainerr_kept": "Säilytetään: poisto peruttu",
     "maintainerr_postpone_apply": "Lykkää",

@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Merket for fjerning · fjernes om {days} d",
     "maintainerr_reset": "Fjerningstimer nullstilt",
     "maintainerr_failed": "Fjerningen mislyktes: {error}",
-    "maintainerr_reset_timer": "Nullstill timer (tell fra i dag)",
     "maintainerr_postpone_hint": "Fjernes om {days} d.",
     "maintainerr_kept": "Beholdt: fjerning avbrutt",
     "maintainerr_postpone_apply": "Utsett",

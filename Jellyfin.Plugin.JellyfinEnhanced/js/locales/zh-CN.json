@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "已标记为移除 · {days} 天后移除",
     "maintainerr_reset": "移除计时已重置",
     "maintainerr_failed": "移除操作失败：{error}",
-    "maintainerr_reset_timer": "重置计时（从今天开始计算）",
     "maintainerr_postpone_hint": "{days} 天后移除。",
     "maintainerr_kept": "已保留：移除已取消",
     "maintainerr_postpone_apply": "延后",

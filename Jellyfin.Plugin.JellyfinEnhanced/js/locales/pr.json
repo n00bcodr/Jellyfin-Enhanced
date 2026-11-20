@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Marked fer walkin' th' plank · leaves in {days}d",
     "maintainerr_reset": "Plank timer reset",
     "maintainerr_failed": "Th' plank action failed, arr: {error}",
-    "maintainerr_reset_timer": "Reset timer (count from today, arr)",
     "maintainerr_postpone_hint": "Leaves in {days}d.",
     "maintainerr_kept": "Kept: plank called off",
     "maintainerr_postpone_apply": "Postpone",

@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Marcado para eliminar · sale en {days} d",
     "maintainerr_reset": "Temporizador de eliminación reiniciado",
     "maintainerr_failed": "Falló la acción de eliminación: {error}",
-    "maintainerr_reset_timer": "Reiniciar temporizador (contar desde hoy)",
     "maintainerr_postpone_hint": "Sale en {days} d.",
     "maintainerr_kept": "Conservado: eliminación cancelada",
     "maintainerr_postpone_apply": "Aplazar",

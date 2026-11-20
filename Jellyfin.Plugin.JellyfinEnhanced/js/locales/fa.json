@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "برای حذف علامت‌گذاری شد · {days} روز دیگر حذف می‌شود",
     "maintainerr_reset": "تایمر حذف بازنشانی شد",
     "maintainerr_failed": "عملیات حذف ناموفق بود: {error}",
-    "maintainerr_reset_timer": "بازنشانی تایمر (شمارش از امروز)",
     "maintainerr_postpone_hint": "{days} روز دیگر حذف می‌شود.",
     "maintainerr_kept": "نگه داشته شد: حذف لغو شد",
     "maintainerr_postpone_apply": "به تعویق انداختن",

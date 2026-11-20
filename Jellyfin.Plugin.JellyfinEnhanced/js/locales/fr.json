@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Marqué pour suppression · part dans {days} j",
     "maintainerr_reset": "Minuteur de suppression réinitialisé",
     "maintainerr_failed": "L'action de suppression a échoué : {error}",
-    "maintainerr_reset_timer": "Réinitialiser le minuteur (à compter d'aujourd'hui)",
     "maintainerr_postpone_hint": "Part dans {days} j.",
     "maintainerr_kept": "Conservé : suppression annulée",
     "maintainerr_postpone_apply": "Reporter",

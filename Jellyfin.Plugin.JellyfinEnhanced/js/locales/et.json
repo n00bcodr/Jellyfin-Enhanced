@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Märgitud eemaldamiseks · lahkub {days} p pärast",
     "maintainerr_reset": "Eemaldamise taimer lähtestati",
     "maintainerr_failed": "Eemaldamine ebaõnnestus: {error}",
-    "maintainerr_reset_timer": "Lähtesta taimer (loe tänasest)",
     "maintainerr_postpone_hint": "Lahkub {days} p pärast.",
     "maintainerr_kept": "Jäetud alles: eemaldamine tühistati",
     "maintainerr_postpone_apply": "Lükka edasi",

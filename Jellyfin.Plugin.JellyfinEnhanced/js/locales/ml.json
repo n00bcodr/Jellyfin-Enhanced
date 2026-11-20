@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "നീക്കം ചെയ്യാനായി അടയാളപ്പെടുത്തി · {days} ദിവസത്തിനുള്ളിൽ പോകും",
     "maintainerr_reset": "നീക്കം ടൈമർ പുനഃസജ്ജമാക്കി",
     "maintainerr_failed": "നീക്കം ചെയ്യൽ പരാജയപ്പെട്ടു: {error}",
-    "maintainerr_reset_timer": "ടൈമർ പുനഃസജ്ജമാക്കുക (ഇന്ന് മുതൽ എണ്ണുക)",
     "maintainerr_postpone_hint": "{days} ദിവസത്തിനുള്ളിൽ പോകും.",
     "maintainerr_kept": "നിലനിർത്തി: നീക്കം റദ്ദാക്കി",
     "maintainerr_postpone_apply": "മാറ്റിവയ്ക്കുക",

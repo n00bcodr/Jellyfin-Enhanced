@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Marcat per eliminar · surt d'aquí {days} d",
     "maintainerr_reset": "S'ha restablert el temporitzador d'eliminació",
     "maintainerr_failed": "Ha fallat l'acció d'eliminació: {error}",
-    "maintainerr_reset_timer": "Restableix el temporitzador (compta des d'avui)",
     "maintainerr_postpone_hint": "Surt d'aquí {days} d.",
     "maintainerr_kept": "Conservat: s'ha cancel·lat l'eliminació",
     "maintainerr_postpone_apply": "Ajorna",

@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Marcado para remoção · sai em {days}d",
     "maintainerr_reset": "Temporizador de remoção reposto",
     "maintainerr_failed": "A ação de remoção falhou: {error}",
-    "maintainerr_reset_timer": "Repor temporizador (contar a partir de hoje)",
     "maintainerr_postpone_hint": "Sai em {days}d.",
     "maintainerr_kept": "Mantido: remoção cancelada",
     "maintainerr_postpone_apply": "Adiar",

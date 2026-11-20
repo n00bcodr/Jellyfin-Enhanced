@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Отмечено на удаление · уйдёт через {days} д",
     "maintainerr_reset": "Таймер удаления сброшен",
     "maintainerr_failed": "Не удалось выполнить удаление: {error}",
-    "maintainerr_reset_timer": "Сбросить таймер (отсчёт от сегодня)",
     "maintainerr_postpone_hint": "Уйдёт через {days} д.",
     "maintainerr_kept": "Оставлено: удаление отменено",
     "maintainerr_postpone_apply": "Отложить",

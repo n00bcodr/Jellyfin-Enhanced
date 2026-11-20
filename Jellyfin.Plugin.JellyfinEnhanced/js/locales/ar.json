@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "تم التحديد للإزالة · تُزال خلال {days} ي",
     "maintainerr_reset": "أُعيد ضبط مؤقت الإزالة",
     "maintainerr_failed": "فشل إجراء الإزالة: {error}",
-    "maintainerr_reset_timer": "إعادة ضبط المؤقت (العد من اليوم)",
     "maintainerr_postpone_hint": "تُزال خلال {days} ي.",
     "maintainerr_kept": "تم الإبقاء: أُلغيت الإزالة",
     "maintainerr_postpone_apply": "تأجيل",

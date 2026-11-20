@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Oznaczono do usunięcia · zniknie za {days} dn.",
     "maintainerr_reset": "Zresetowano licznik usunięcia",
     "maintainerr_failed": "Nie udało się usunąć: {error}",
-    "maintainerr_reset_timer": "Zresetuj licznik (od dzisiaj)",
     "maintainerr_postpone_hint": "Zniknie za {days} dn.",
     "maintainerr_kept": "Zachowano: usunięcie anulowane",
     "maintainerr_postpone_apply": "Odłóż",

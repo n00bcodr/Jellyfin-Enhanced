@@ -286,7 +286,7 @@
             + `<div class="je-mt-section"><div class="je-mt-custom"><label><span class="je-mt-label"></span><input type="number" min="1" max="${MAX_DAYS}" step="1" inputmode="numeric" class="je-mt-input" /></label><button type="button" class="je-mt-button je-mt-primary je-mt-apply"></button></div></div>`
             + (exactDates() ? `<div class="je-mt-section"><div class="je-mt-custom"><label><span class="je-mt-datelabel"></span><input type="date" class="je-mt-date" /></label><button type="button" class="je-mt-button je-mt-primary je-mt-applydate"></button></div></div>` : '')
             + `<div class="je-mt-preview" aria-live="polite"></div>`
-            + `<div class="je-mt-footer"><button type="button" class="je-mt-button je-mt-reset"></button><button type="button" class="je-mt-button je-mt-ghost je-mt-cancel"></button></div>`;
+;
         const text = (/** @type {string} */ sel, /** @type {string} */ value) => { const el = dialog.querySelector(sel); if (el) el.textContent = value; };
         const logo = /** @type {HTMLImageElement|null} */ (dialog.querySelector('.je-mt-logo'));
         if (logo) { try { logo.src = JE.cdn.selfhst(`svg/${tool}.svg`); } catch { logo.remove(); } logo.title = tool === 'reclaimerr' ? 'Reclaimerr' : 'Maintainerr'; }
@@ -314,9 +314,6 @@
                 }
             }
         } catch { /* default accent */ }
-        const resetEl = dialog.querySelector('.je-mt-reset');
-        if (resetEl) { resetEl.innerHTML = '<i class="material-icons" aria-hidden="true">restart_alt</i><span></span>'; const label = resetEl.querySelector('span'); if (label) label.textContent = JE.t('maintainerr_reset_timer'); }
-        text('.je-mt-cancel', JE.t('maintainerr_cancel'));
         const quick = /** @type {HTMLElement} */ (dialog.querySelector('.je-mt-quick'));
         const shortDate = (/** @type {number} */ ms) => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
         // The day it leaves now, or today for a removal not yet scheduled: what a day count is added to.
@@ -381,9 +378,6 @@
             dialog.querySelector('.je-mt-applydate')?.addEventListener('click', () => { if (dateInput.value) runDate(dateInput.value); else dateInput.focus(); });
             dateInput.addEventListener('input', () => { const iso = dayToIso(dateInput.value); preview(iso ? new Date(iso).getTime() : null); });
         }
-        const resetButton = dialog.querySelector('.je-mt-reset');
-        if (mode === 'mark') resetButton?.remove(); else resetButton?.addEventListener('click', () => run(null));
-        dialog.querySelector('.je-mt-cancel')?.addEventListener('click', close);
         dialog.querySelector('.je-mt-x')?.addEventListener('click', close);
         backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
         const onKey = (/** @type {KeyboardEvent} */ e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
@@ -487,15 +481,12 @@
 .je-mt-day:hover,.je-mt-day:focus-visible{background:color-mix(in srgb,var(--je-mt-accent) 38%,transparent)}
 .je-mt-primary{background:var(--je-mt-accent);border-color:transparent;color:var(--je-mt-on-accent,#fff);font-weight:600;padding:9px 16px}
 .je-mt-primary:hover,.je-mt-primary:focus-visible{filter:brightness(1.12);background:var(--je-mt-accent)}
-.je-mt-ghost{background:none;border-color:transparent;opacity:.8}
 .je-mt-custom{display:flex;align-items:flex-end;gap:10px}
 .je-mt-custom label{display:flex;flex-direction:column;gap:5px;flex:1}
 .je-mt-label,.je-mt-datelabel{font-size:.8em;opacity:.7;text-transform:uppercase;letter-spacing:.04em}
 .je-mt-input,.je-mt-date{background:rgba(0,0,0,.28);color:inherit;border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:9px 11px;font:inherit;width:100%;box-sizing:border-box;color-scheme:dark}
 .je-mt-input:focus,.je-mt-date:focus{border-color:var(--je-mt-accent);outline:none}
 .je-mt-preview{min-height:1.4em;margin:-4px 0 12px;text-align:center;font-size:.9em;color:var(--je-mt-accent);font-weight:600}
-.je-mt-footer{display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px}
-.je-mt-reset .material-icons{font-size:20px}
 @media (max-width:420px){.je-mt-quick{grid-template-columns:repeat(2,1fr)}}
 `;
 

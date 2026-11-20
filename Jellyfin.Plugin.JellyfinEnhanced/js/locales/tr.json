@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Kaldırılmak üzere işaretlendi · {days}g içinde ayrılacak",
     "maintainerr_reset": "Kaldırma sayacı sıfırlandı",
     "maintainerr_failed": "Kaldırma işlemi başarısız oldu: {error}",
-    "maintainerr_reset_timer": "Sayacı sıfırla (bugünden say)",
     "maintainerr_postpone_hint": "{days}g içinde ayrılacak.",
     "maintainerr_kept": "Tutuldu: kaldırma iptal edildi",
     "maintainerr_postpone_apply": "Ertele",

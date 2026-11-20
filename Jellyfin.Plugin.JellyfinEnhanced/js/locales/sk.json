@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Označené na odstránenie · odíde o {days} d",
     "maintainerr_reset": "Časovač odstránenia obnovený",
     "maintainerr_failed": "Akcia odstránenia zlyhala: {error}",
-    "maintainerr_reset_timer": "Obnoviť časovač (počítať od dnes)",
     "maintainerr_postpone_hint": "Odíde o {days} d.",
     "maintainerr_kept": "Ponechané: odstránenie zrušené",
     "maintainerr_postpone_apply": "Odložiť",

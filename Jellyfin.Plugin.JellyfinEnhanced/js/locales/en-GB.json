@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Marked for removal · leaves in {days}d",
     "maintainerr_reset": "Removal timer reset",
     "maintainerr_failed": "Maintainerr: {error}",
-    "maintainerr_reset_timer": "Reset timer (count from today)",
     "maintainerr_postpone_hint": "Leaves in {days}d.",
     "maintainerr_kept": "Kept: removal cancelled",
     "maintainerr_postpone_apply": "Postpone",

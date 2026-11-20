@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Marcado para remoção · sai em {days}d",
     "maintainerr_reset": "Contador de remoção reiniciado",
     "maintainerr_failed": "A ação de remoção falhou: {error}",
-    "maintainerr_reset_timer": "Reiniciar contador (contar a partir de hoje)",
     "maintainerr_postpone_hint": "Sai em {days}d.",
     "maintainerr_kept": "Mantido: remoção cancelada",
     "maintainerr_postpone_apply": "Adiar",

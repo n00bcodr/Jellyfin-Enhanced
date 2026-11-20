@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Gemarkeerd voor verwijdering · verdwijnt over {days}d",
     "maintainerr_reset": "Verwijderingstimer gereset",
     "maintainerr_failed": "Verwijderactie mislukt: {error}",
-    "maintainerr_reset_timer": "Timer resetten (vanaf vandaag tellen)",
     "maintainerr_postpone_hint": "Verdwijnt over {days}d.",
     "maintainerr_kept": "Behouden: verwijdering geannuleerd",
     "maintainerr_postpone_apply": "Uitstellen",

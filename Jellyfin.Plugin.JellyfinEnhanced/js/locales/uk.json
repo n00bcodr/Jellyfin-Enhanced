@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Позначено для видалення · залишиться {days} дн.",
     "maintainerr_reset": "Таймер видалення скинуто",
     "maintainerr_failed": "Не вдалося виконати видалення: {error}",
-    "maintainerr_reset_timer": "Скинути таймер (відлік від сьогодні)",
     "maintainerr_postpone_hint": "Залишиться {days} дн.",
     "maintainerr_kept": "Залишено: видалення скасовано",
     "maintainerr_postpone_apply": "Відкласти",

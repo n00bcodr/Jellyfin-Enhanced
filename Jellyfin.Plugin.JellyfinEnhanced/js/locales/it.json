@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Segnato per la rimozione · esce tra {days}g",
     "maintainerr_reset": "Timer di rimozione reimpostato",
     "maintainerr_failed": "Azione di rimozione non riuscita: {error}",
-    "maintainerr_reset_timer": "Reimposta timer (conteggio da oggi)",
     "maintainerr_postpone_hint": "Esce tra {days}g.",
     "maintainerr_kept": "Mantenuto: rimozione annullata",
     "maintainerr_postpone_apply": "Rinvia",

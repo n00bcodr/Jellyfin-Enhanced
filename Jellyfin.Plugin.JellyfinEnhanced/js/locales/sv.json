@@ -1448,7 +1448,6 @@
     "maintainerr_marked_days": "Markerad för borttagning · tas bort om {days} d",
     "maintainerr_reset": "Borttagningstimern återställd",
     "maintainerr_failed": "Borttagningen misslyckades: {error}",
-    "maintainerr_reset_timer": "Återställ timer (räkna från idag)",
     "maintainerr_postpone_hint": "Tas bort om {days} d.",
     "maintainerr_kept": "Behållen: borttagningen avbröts",
     "maintainerr_postpone_apply": "Skjut upp",
