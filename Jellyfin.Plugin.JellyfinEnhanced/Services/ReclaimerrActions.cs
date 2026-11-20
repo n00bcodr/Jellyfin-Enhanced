@@ -561,14 +561,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return map;
         }
 
-        /// <summary>The token scopes the integration uses, each with what goes without it (a manage scope grants its read scope).</summary>
-        internal static readonly (string Scope, string Needs)[] RequiredScopes =
+        /// <summary>
+        /// The token scopes the integration uses: each with its read scope (a manage scope grants it; null when there is none), what
+        /// goes without either, and what goes with the read scope alone.
+        /// </summary>
+        internal static readonly (string Scope, string? Read, string Without, string ReadOnly)[] RequiredScopes =
         {
-            ("candidates:manage", "Leaving soon cannot read cleanup candidates, and Keep and Postpone cannot act on them"),
-            ("scheduled_deletions:manage", "Mark for removal, and Keep and Postpone on a scheduled deletion, are refused"),
-            ("delete_requests:manage", "removal requests cannot be listed, approved or denied"),
-            ("media:read", "Mark for removal and Request removal cannot find the title"),
-            ("users:manage", "Import Jellyfin users is refused (users read alone lets requests and this audit find accounts)"),
+            ("candidates:manage", "candidates:read", "Leaving soon cannot read Reclaimerr, and Keep and Postpone cannot act on cleanup candidates", "Keep and Postpone cannot act on cleanup candidates"),
+            ("scheduled_deletions:manage", "scheduled_deletions:read", "Mark for removal, and Keep and Postpone on a scheduled deletion, are refused", "Mark for removal, and Keep and Postpone on a scheduled deletion, are refused"),
+            ("delete_requests:manage", "delete_requests:read", "removal requests cannot be listed, approved or denied", "removal requests cannot be approved or denied"),
+            ("media:read", null, "Mark for removal and Request removal cannot find the title", string.Empty),
+            ("users:manage", "users:read", "Request removal, Import Jellyfin users and this audit cannot read Reclaimerr's accounts", "Import Jellyfin users is refused"),
         };
 
         /// <summary>One Jellyfin user in the audit: the Reclaimerr account linked to them (null when none) and what stops them.</summary>
@@ -611,9 +614,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
-                foreach (var (scope, needs) in RequiredScopes)
+                foreach (var (scope, read, without, readOnly) in RequiredScopes)
                 {
-                    if (!granted.Contains(scope)) result.Issues.Add($"The API token lacks {scope}: {needs}.");
+                    if (granted.Contains(scope)) continue;
+                    result.Issues.Add($"The API token lacks {scope}: {(read != null && granted.Contains(read) ? readOnly : without)}.");
                 }
             }
 
@@ -630,6 +634,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             string? refused = null;
+            string? silent = null;
             foreach (var (id, name, admin) in jellyfinUsers.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase))
             {
                 var issues = new List<string>();
@@ -650,7 +655,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     issues.Add($"The linked Reclaimerr account {string.Join(", ", linked)} is disabled.");
                 }
-                else if (requests && !admin && refused == null)
+                else if (requests && !admin && refused == null && silent == null)
                 {
                     try
                     {
@@ -664,13 +669,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         refused = account;
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
+                    catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                    {
+                        // Reclaimerr stopped answering: waiting out the timeout for every other user would hold the page for minutes.
+                        silent = account;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         issues.Add($"Could not check the Reclaimerr account {account} ({MaintainerrHttp.Describe(ex)}).");
                     }
                 }
 
                 result.Users.Add(new AuditUser(name, id.ToString("N"), admin, linked.Count > 0, account, issues));
+            }
+
+            if (silent != null)
+            {
+                result.Issues.Insert(0, $"Reclaimerr did not answer when checking {silent}, so the remaining users' sign-in and permissions were not checked. Run the audit again.");
             }
 
             if (refused != null)

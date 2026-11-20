@@ -711,6 +711,38 @@ public sealed class IntegrationReclaimerrTests : IDisposable
     }
 
     [Fact]
+    public async Task A_token_with_only_the_read_scopes_is_told_what_the_manage_scopes_add_not_that_reading_fails()
+    {
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1", "{\"granted_scopes\":[\"candidates:read\",\"delete_requests:read\",\"media:read\",\"users:read\"]}");
+        server.Answer("GET /api/v1/users?limit=1000&offset=0", "[]");
+        var (actions, _) = Setup(server, requests: false);
+        var issues = (await actions.AuditUsersAsync(Config, new List<(Guid, string, bool)>(), CancellationToken.None)).Issues;
+        Assert.Equal(new[]
+        {
+            "The API token lacks candidates:manage: Keep and Postpone cannot act on cleanup candidates.",
+            "The API token lacks scheduled_deletions:manage: Mark for removal, and Keep and Postpone on a scheduled deletion, are refused.",
+            "The API token lacks delete_requests:manage: removal requests cannot be approved or denied.",
+            "The API token lacks users:manage: Import Jellyfin users is refused.",
+        }, issues);
+    }
+
+    [Fact]
+    public async Task A_Reclaimerr_that_stops_answering_mid_audit_is_said_once_instead_of_timing_out_per_user()
+    {
+        var a = Guid.NewGuid(); var b = Guid.NewGuid();
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1", "{\"granted_scopes\":[\"candidates:manage\",\"scheduled_deletions:manage\",\"delete_requests:manage\",\"media:read\",\"users:manage\"]}");
+        server.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("a_user", a, true), ("b_user", b, true)));
+        server.Routes["GET /api/account/me"] = _ => { Thread.Sleep(1500); return (200, "{\"role\":\"user\",\"permissions\":[\"request\"]}"); };
+        var (actions, _) = Setup(server);
+        actions.Timeout = TimeSpan.FromMilliseconds(500);
+        var result = await actions.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false), (b, "B", false) }, CancellationToken.None);
+        Assert.Contains("did not answer", Assert.Single(result.Issues));
+        Assert.Single(server.Seen, s => s.Path == "/api/account/me");
+    }
+
+    [Fact]
     public async Task A_trusted_proxy_sign_in_refused_for_everyone_is_said_once_and_not_retried_per_user()
     {
         var a = Guid.NewGuid(); var b = Guid.NewGuid();

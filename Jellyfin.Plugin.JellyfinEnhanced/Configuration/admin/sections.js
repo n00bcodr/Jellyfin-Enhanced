@@ -1483,7 +1483,7 @@ JEAdmin.maintainerr = (function () {
                 const summary = node('div', 'je-audit-summary');
                 const setup = data.issues || [];
                 summary.append(node('div', 'je-audit-summary-title', !setup.length && !flagged.length
-                    ? 'All ' + ok.length + ' user(s) are set up' + (data.requestsEnabled ? ' to request removals.' : '.') + (data.version ? ' Reclaimerr ' + data.version + '.' : '')
+                    ? 'All ' + ok.length + ' user(s) are set up.' + (data.version ? ' Reclaimerr ' + data.version + '.' : '')
                     : 'Audit complete' + (data.version ? ' (Reclaimerr ' + data.version + ')' : '') + ', review the items below.'));
                 if (setup.length || flagged.length) {
                     const chips = node('div', 'je-audit-summary-chips');
