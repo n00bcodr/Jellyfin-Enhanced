@@ -529,6 +529,11 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         await actions.ReviewRequestAsync(1, false, null, "jake", Config, CancellationToken.None);
         await actions.RequestsAsync(Config, Guid.NewGuid(), mine: false, CancellationToken.None);
         Assert.Equal(2, Reads());
+        // A review Reclaimerr refuses (already reviewed there) forgets the list too: the card it showed may be stale.
+        server.Answer("POST /api/v1/delete-requests/1/deny", "{\"detail\":\"Request is not pending\"}", 400);
+        await Assert.ThrowsAsync<MaintainerrHttp.MaintainerrException>(() => actions.ReviewRequestAsync(1, false, null, "jake", Config, CancellationToken.None));
+        await actions.RequestsAsync(Config, Guid.NewGuid(), mine: false, CancellationToken.None);
+        Assert.Equal(3, Reads());
     }
 
     [Fact]
