@@ -208,6 +208,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 throw new MaintainerrActions.ActionException($"The Reclaimerr account {who} may not request removals (it needs the Request permission).");
             }
 
+            ForgetLists();
             _logger.Info($"[Reclaimerr] {userName} ({who}) requested the removal of '{item.Name}'.");
             return (State(item, config), null);
         }
@@ -332,12 +333,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return (all, null);
         }
 
-        /// <summary>Every entry of a request list, saying in the log when there were more than <see cref="AllPages"/> pages.</summary>
+        private readonly Dictionary<string, (DateTimeOffset At, List<JsonElement> Items)> _lists = new(StringComparer.Ordinal);
+        private static readonly TimeSpan ListTtl = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// Every entry of a request list, saying in the log when there were more than <see cref="AllPages"/> pages. Kept for 30 seconds and
+        /// shared by every caller, so users reloading the Leaving soon page do not each read Reclaimerr's whole list; anything the plugin
+        /// changes in Reclaimerr forgets it (<see cref="ForgetLists"/>). A failed read is not kept.
+        /// </summary>
         private async Task<List<JsonElement>> ListAllAsync(PluginConfiguration config, string path, CancellationToken token)
         {
+            var key = ReclaimerrApi.BaseUrl(config) + "\n" + path;
+            lock (_lists)
+            {
+                if (_lists.TryGetValue(key, out var kept) && Now() - kept.At < ListTtl) return kept.Items;
+            }
+
             var (items, complete) = await ReclaimerrApi.ListPagesAsync(_http, config, path, AllPages, Timeout, null, token).ConfigureAwait(false);
             if (!complete) _logger.Warning($"[Reclaimerr] More than {AllPages * ReclaimerrApi.PageSize} deletion requests; only the newest are shown.");
+            lock (_lists) _lists[key] = (Now(), items);
             return items;
+        }
+
+        /// <summary>Forget the kept request lists: a request was filed, reviewed or rescheduled from here.</summary>
+        private void ForgetLists()
+        {
+            lock (_lists) _lists.Clear();
         }
 
         /// <summary>Reclaimerr's deletion requests (<c>DeleteRequestResponse</c>) as rows, those <paramref name="keep"/> accepts.</summary>
@@ -412,6 +433,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 : timing == ApprovalTiming.Now ? new { admin_notes = text, scheduled_at = (string?)null }
                 : new { admin_notes = text, scheduled_at = (string?)Iso(CheckedDate(at ?? throw new MaintainerrActions.ActionException("Pick the day to delete it."))) };
             using (await TokenAsync(config, HttpMethod.Post, $"/api/v1/delete-requests/{requestId}/{(approve ? "approve" : "deny")}", body, token).ConfigureAwait(false)) { }
+            ForgetLists();
             _logger.Info($"[Reclaimerr] {actingUser ?? "An administrator"} {(approve ? "approved" : "denied")} deletion request {requestId}{(approve && timing == ApprovalTiming.OnDate ? $" for {at:yyyy-MM-dd}" : string.Empty)}.");
             // An approval on a day (or after a grace period) puts the title on the Leaving soon list and its tags: read that now, like Mark, Keep and Postpone do.
             if (approve) await RefreshAfterAsync(config, token).ConfigureAwait(false);
@@ -799,6 +821,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>The Leaving soon facts are read again now (the answer needs them); stamping the tag cache happens in the background.</summary>
         private async Task RefreshAfterAsync(PluginConfiguration config, CancellationToken token)
         {
+            ForgetLists();
             try { await _leaving.RefreshAsync(config, force: true, token).ConfigureAwait(false); }
             catch (Exception ex) when (ex is not OperationCanceledException) { _logger.Warning($"[Reclaimerr] The refresh after an action failed: {ex.Message}"); }
             _cache.QueueLeavingPublish();

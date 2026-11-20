@@ -515,6 +515,23 @@ public sealed class IntegrationReclaimerrTests : IDisposable
     }
 
     [Fact]
+    public async Task Request_lists_are_read_once_for_every_caller_until_a_review_changes_them()
+    {
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1/delete-requests?status=pending&per_page=200&page=1", Page(Request(1, "pending", Guid.NewGuid(), null)));
+        server.Answer("GET /api/v1/delete-requests?status=approved&per_page=200&page=1", Page());
+        server.Answer("GET /api/v1/leaving-soon?per_page=200&page=1", Page());
+        var (actions, _) = Setup(server);
+        int Reads() => server.Seen.Count(s => s.Path.StartsWith("/api/v1/delete-requests?status=pending"));
+        await actions.RequestsAsync(Config, Guid.NewGuid(), mine: false, CancellationToken.None);
+        await actions.RequestsAsync(Config, Guid.NewGuid(), mine: false, CancellationToken.None);
+        Assert.Equal(1, Reads());
+        await actions.ReviewRequestAsync(1, false, null, "jake", Config, CancellationToken.None);
+        await actions.RequestsAsync(Config, Guid.NewGuid(), mine: false, CancellationToken.None);
+        Assert.Equal(2, Reads());
+    }
+
+    [Fact]
     public async Task Waiting_requests_stay_when_only_the_approved_list_fails()
     {
         using var server = new Reclaimerr();

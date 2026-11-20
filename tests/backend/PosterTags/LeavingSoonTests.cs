@@ -156,6 +156,21 @@ public sealed class LeavingSoonTests : IDisposable
     }
 
     [Fact]
+    public void The_Reclaimerr_user_header_must_be_a_header_name_or_the_stored_one_is_kept()
+    {
+        var stored = new PluginConfiguration { ReclaimerrUserHeader = "X-Remote-User" };
+        var bad = new PluginConfiguration { ReclaimerrUserHeader = "Remote User\r\nX: y" };
+        Assert.NotEmpty(LeavingSoonService.NormalizeSource(bad, stored));
+        Assert.Equal("X-Remote-User", bad.ReclaimerrUserHeader);
+        var good = new PluginConfiguration { ReclaimerrUserHeader = "  Remote-User  " };
+        Assert.Empty(LeavingSoonService.NormalizeSource(good, stored));
+        Assert.Equal("Remote-User", good.ReclaimerrUserHeader);
+        var empty = new PluginConfiguration { ReclaimerrUserHeader = "" };
+        LeavingSoonService.NormalizeSource(empty, stored);
+        Assert.Equal("Remote-User", empty.ReclaimerrUserHeader);
+    }
+
+    [Fact]
     public void Maintainerr_and_Reclaimerr_are_never_both_on_and_either_can_be_off()
     {
         var stored = new PluginConfiguration { LeavingSoonMaintainerrEnabled = true, ReclaimerrEnabled = false };

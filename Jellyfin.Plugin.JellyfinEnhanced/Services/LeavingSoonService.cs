@@ -99,7 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// URL guard never checked.
         /// </summary>
         public static IHttpClientBuilder AddHttpClient(IServiceCollection services)
-            => services.AddHttpClient(ClientName).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+            => services.AddHttpClient(ClientName).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
 
         /// <summary>Whether Reclaimerr is the chosen provider (the only other choice is Maintainerr).</summary>
         public static bool UsesReclaimerr(PluginConfiguration? config)
@@ -193,6 +193,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var reclaimerr = (incoming.ReclaimerrUrl ?? string.Empty).Trim();
             if (reclaimerr.Length == 0 || IsMaintainerrUrl(reclaimerr)) incoming.ReclaimerrUrl = reclaimerr;
             else { incoming.ReclaimerrUrl = current?.ReclaimerrUrl ?? string.Empty; problems.Add("Reclaimerr URL is not an http(s) address without credentials, query or fragment"); }
+
+            // The trusted-proxy header's name: an HTTP token (letters, digits and !#$%&'*+.^_`|~-), else the stored one.
+            var header = (incoming.ReclaimerrUserHeader ?? string.Empty).Trim();
+            if (header.Length == 0) incoming.ReclaimerrUserHeader = "Remote-User";
+            else if (header.Length <= 64 && header.All(c => char.IsAsciiLetterOrDigit(c) || "!#$%&'*+.^_`|~-".Contains(c))) incoming.ReclaimerrUserHeader = header;
+            else { incoming.ReclaimerrUserHeader = current?.ReclaimerrUserHeader is { Length: > 0 } kept ? kept : "Remote-User"; problems.Add("Reclaimerr user header is not a valid HTTP header name"); }
 
             var token = (incoming.ReclaimerrToken ?? string.Empty).Trim();
             if (token.Length <= 256 && token.All(c => c > ' ' && c < '\u007f')) incoming.ReclaimerrToken = token;

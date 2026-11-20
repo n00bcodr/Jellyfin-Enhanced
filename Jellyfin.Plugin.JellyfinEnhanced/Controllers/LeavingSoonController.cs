@@ -172,7 +172,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var graceTask = admin ? Grace() : Task.FromResult<int?>(null);
                 var pendingTask = admin ? Load(true) : Task.FromResult<IReadOnlyList<LeavingSoonRequestDto>>(Array.Empty<LeavingSoonRequestDto>());
-                var mineTask = Load(false);
+                // A user's own requests go with Request removal: while requests are off there is no list of them to read.
+                var mineTask = ReclaimerrActions.RequestsEnabled(config) ? Load(false) : Task.FromResult<IReadOnlyList<LeavingSoonRequestDto>>(Array.Empty<LeavingSoonRequestDto>());
                 requests = await pendingTask.ConfigureAwait(false);
                 mine = await mineTask.ConfigureAwait(false);
                 graceDays = await graceTask.ConfigureAwait(false);
@@ -192,7 +193,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 requestsError = admin ? requestsError : null,
                 graceDays,
                 // Which Reclaimerr the requests came from: a review sends it back, so a card read from one is never approved at another.
-                source = reclaimerr ? ReclaimerrApi.SourceId(config!) : null,
+                // Administrators only (they are the ones who review): it is a digest of the address, which nobody else needs.
+                source = reclaimerr && admin ? ReclaimerrApi.SourceId(config!) : null,
             });
         }
 

@@ -1272,7 +1272,7 @@ JEAdmin.define({
               toConfig: (v) => String(v || '').trim(), fromConfig: (v) => v || '',
               desc: 'Create it in Reclaimerr under <em>Settings &gt; Integrations</em> with manage access to <strong>candidates</strong>, <strong>scheduled deletions</strong>, <strong>delete requests</strong> and <strong>users</strong>, and read access to <strong>media</strong>.' },
             { id: 'ReclaimerrUserRequests', prop: 'ReclaimerrUserRequests', type: 'toggle', default: false, label: 'Let users request removals', showIf: 'ReclaimerrEnabled',
-              desc: 'Adds <strong>Request removal</strong> to the &#8942; menu (needs <strong>Mark, keep and postpone from the item menu</strong> on), filed as the user\'s linked Reclaimerr account. In Reclaimerr, set <code>FORWARD_AUTH_ENABLED=true</code> and add this server\'s IP to <code>FORWARD_AUTH_TRUSTED_PROXIES</code>.' },
+              desc: 'Adds <strong>Request removal</strong> to the &#8942; menu (needs <strong>Mark, keep and postpone from the item menu</strong> on), filed as the user\'s linked Reclaimerr account. In Reclaimerr, set <code>FORWARD_AUTH_ENABLED=true</code> and add this server\'s IP to <code>FORWARD_AUTH_TRUSTED_PROXIES</code>. Anything that reaches Reclaimerr from that IP can sign in as any Reclaimerr user, so use one only this server uses.' },
             { id: 'ReclaimerrUserHeader', prop: 'ReclaimerrUserHeader', type: 'text', default: 'Remote-User', label: 'User header', showIf: 'ReclaimerrUserRequests',
               toConfig: (v) => String(v || '').trim() || 'Remote-User',
               desc: 'The header Reclaimerr reads the user from: its <code>FORWARD_AUTH_USER_HEADER</code> (default <code>Remote-User</code>).' },
