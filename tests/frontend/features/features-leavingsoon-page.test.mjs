@@ -118,7 +118,7 @@ test('an administrator gets Keep and the date change on each card, and approves 
   row.querySelector('.je-ls-icon-btn.approve').click();
   row.querySelector('.je-ls-btn.danger').click();
   await h.settle();
-  assert.deepEqual(h.calls.find(c => c.path.startsWith('reclaimerr/requests')), { type: 'POST', path: 'reclaimerr/requests/7/approve', body: { when: 'default' } });
+  assert.deepEqual(h.calls.find(c => c.path.startsWith('reclaimerr/requests')), { type: 'POST', path: 'reclaimerr/requests/7/approve', body: { when: 'default', graceDays: 0 } });
 
   // Deny keeps the title, so it needs no confirmation.
   const again = setup(t, list({ admin: true, actions: true, requests: [{ id: 8, title: 'Crash', year: 2004, mediaType: 'movie', requestedBy: 'x', status: 'pending' }] }));

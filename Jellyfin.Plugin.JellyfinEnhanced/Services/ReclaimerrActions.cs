@@ -62,10 +62,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public const int MarkDays = 30;
         public const int MaxPostponeDays = 3650;
 
-        /// <summary>Most pages of requests read for a list that only needs the newest (the caller's own, approved ones that failed).</summary>
-        private const int RecentPages = 5;
-
-        /// <summary>Most pages of pending requests read (all of them, in practice).</summary>
+        /// <summary>Most pages of a request list read (all of them, in practice).</summary>
         private const int AllPages = 50;
 
         private readonly IHttpClientFactory _http;
@@ -216,24 +213,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// "mine" when this user already has a pending deletion request for the title, "other" when someone else does,
-        /// null when none (or it could not be read: the request is then tried and Reclaimerr's own answer is shown).
+        /// "mine" when this user already has a pending deletion request for the whole title, "other" when someone else does,
+        /// null when none (a request for one season, episode or version is another target), or when it could not be read or
+        /// timed out: the request is then tried and Reclaimerr's own answer is shown.
         /// </summary>
         private async Task<string?> PendingRequestAsync(int mediaId, string type, Guid userId, PluginConfiguration config, CancellationToken token)
         {
             try
             {
                 string? found = null;
-                foreach (var r in Parse(await ReclaimerrApi.ListAsync(_http, config, "/api/v1/delete-requests?status=pending", AllPages, Timeout, null, token).ConfigureAwait(false), null))
+                foreach (var r in Parse(await ListAllAsync(config, "/api/v1/delete-requests?status=pending", token).ConfigureAwait(false), null))
                 {
-                    if (r.MediaId != mediaId || r.MediaType != type || r.Status != "pending") continue;
+                    if (r.MediaId != mediaId || r.MediaType != type || r.Status != "pending" || r.Scope is not ("movie" or "series")) continue;
                     if (r.RequesterIds?.Contains(userId) == true) return "mine";
                     found = "other";
                 }
 
                 return found;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
             {
                 _logger.Warning($"[Reclaimerr] Could not read the pending requests ({MaintainerrHttp.Describe(ex)}).");
                 return null;
@@ -241,24 +239,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// Reclaimerr's id of the movie file this action is about, or null for the whole movie. Null only when Reclaimerr holds
-        /// fewer than two versions; otherwise it is the version whose media source id is the one picked on the item page (or,
-        /// when none was picked, this item's own), and when none is, it throws: sending no version would schedule every copy,
-        /// and another version would delete the wrong one.
+        /// Reclaimerr's id of the movie file this action is about, or null for the whole movie. The copy is the one picked on the item
+        /// page (else this item's own) and must be one Reclaimerr holds: its media source id, or, when Reclaimerr's versions come from
+        /// another main media server, its file path. The whole movie is scheduled only when both sides hold exactly one copy. Anything
+        /// else throws, because sending no version would schedule every copy and another version would delete the wrong one (a 4K
+        /// copy Reclaimerr has not synced must not take its 1080p with it).
         /// </summary>
         private static int? VersionId(BaseItem item, string? mediaSourceId, JsonElement movie)
         {
             if (!movie.TryGetProperty("versions", out var versions) || versions.ValueKind != JsonValueKind.Array) throw Unsure();
-            if (versions.GetArrayLength() < 2) return null;
-            var wanted = MaintainerrActions.FindVersion(item, mediaSourceId)?.Id ?? (string.IsNullOrWhiteSpace(mediaSourceId) ? item.Id.ToString("N") : mediaSourceId);
-            if (!Guid.TryParse(wanted, out var id) || id == Guid.Empty) throw Unsure();
-            foreach (var v in versions.EnumerateArray())
+            var held = versions.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.Object && v.TryGetProperty("id", out var i) && i.TryGetInt32(out _)).ToList();
+            var source = MaintainerrActions.FindVersion(item, mediaSourceId);
+            var picked = string.IsNullOrWhiteSpace(mediaSourceId) ? null : mediaSourceId;
+            var wanted = source?.Id ?? picked ?? item.Id.ToString("N");
+            var path = source?.Path ?? (picked == null ? item.Path : null);
+            int? match = null;
+            if (Guid.TryParse(wanted, out var id) && id != Guid.Empty)
             {
-                if (v.ValueKind == JsonValueKind.Object && v.TryGetProperty("id", out var vid) && vid.TryGetInt32(out var n)
-                    && v.TryGetProperty("service_media_id", out var sm) && sm.ValueKind == JsonValueKind.String && Guid.TryParse(sm.GetString(), out var smId) && smId == id) return n;
+                foreach (var v in held)
+                {
+                    if (v.TryGetProperty("service_media_id", out var sm) && sm.ValueKind == JsonValueKind.String && Guid.TryParse(sm.GetString(), out var smId) && smId == id) { match = v.GetProperty("id").GetInt32(); break; }
+                }
             }
 
+            if (match == null && !string.IsNullOrWhiteSpace(path))
+            {
+                var byPath = held.Where(v => v.TryGetProperty("path", out var p) && p.ValueKind == JsonValueKind.String && string.Equals(p.GetString(), path, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (byPath.Count == 1) match = byPath[0].GetProperty("id").GetInt32();
+            }
+
+            var copies = JellyfinCopies(item);
+            if (match is { } found) return held.Count == 1 && copies == 1 ? null : found;
+            // One copy here and one in Reclaimerr (its ids from another server): the same file, so the whole movie.
+            if (held.Count == 1 && copies == 1) return null;
             throw Unsure();
+        }
+
+        /// <summary>How many copies Jellyfin holds of a movie (itself and its alternate versions), or null when it cannot tell (a hidden alternate).</summary>
+        private static int? JellyfinCopies(BaseItem item)
+        {
+            if (item is not MediaBrowser.Controller.Entities.Video video || !string.IsNullOrEmpty(video.PrimaryVersionId?.ToString())) return null;
+            return 1 + (video.LinkedAlternateVersions?.Length ?? 0) + (video.LocalAlternateVersions?.Length ?? 0);
         }
 
         private static MaintainerrActions.ActionException Unsure() => new("Could not tell which version of this movie Reclaimerr holds, so nothing was scheduled. Try again, or schedule it in Reclaimerr.");
@@ -266,29 +287,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// Deletion requests: every pending one plus the approved ones whose deletion failed or is held back (administrators), or the
         /// caller's own of any state (<paramref name="mine"/>, the requests whose requester is linked to <paramref name="userId"/>).
-        /// Null when they could not be read.
+        /// Null when they could not be read. The approved ones are extra: when only they fail, the pending ones still come back.
         /// </summary>
         public async Task<IReadOnlyList<ReclaimerrRequestRow>?> RequestsAsync(PluginConfiguration config, Guid userId, bool mine, CancellationToken token)
         {
+            List<ReclaimerrRequestRow> all;
             try
             {
                 if (mine)
                 {
                     if (userId == Guid.Empty) return Array.Empty<ReclaimerrRequestRow>();
-                    return Parse(await ReclaimerrApi.ListAsync(_http, config, "/api/v1/delete-requests", RecentPages, Timeout, null, token).ConfigureAwait(false), r => r.RequesterIds?.Contains(userId) == true);
+                    return Parse(await ListAllAsync(config, "/api/v1/delete-requests", token).ConfigureAwait(false), r => r.RequesterIds?.Contains(userId) == true);
                 }
 
-                var all = Parse(await ReclaimerrApi.ListAsync(_http, config, "/api/v1/delete-requests?status=pending", AllPages, Timeout, null, token).ConfigureAwait(false), null);
-                // Approved requests whose deletion failed or is held back by playback would otherwise vanish from the page: keep them in view.
-                all.AddRange(Parse(await ReclaimerrApi.ListAsync(_http, config, "/api/v1/delete-requests?status=approved", RecentPages, Timeout, null, token).ConfigureAwait(false),
-                    r => !string.IsNullOrEmpty(r.ExecutionError) || r.Deferred || r.ScheduleState is "failed" or "blocked"));
-                return all;
+                all = Parse(await ListAllAsync(config, "/api/v1/delete-requests?status=pending", token).ConfigureAwait(false), null);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.Warning($"[Reclaimerr] Could not read the deletion requests ({MaintainerrHttp.Describe(ex)}).");
                 return null;
             }
+
+            try
+            {
+                // Approved requests whose deletion failed or is held back by playback would otherwise vanish from the page: keep them in view.
+                all.AddRange(Parse(await ListAllAsync(config, "/api/v1/delete-requests?status=approved", token).ConfigureAwait(false),
+                    r => !string.IsNullOrEmpty(r.ExecutionError) || r.Deferred || r.ScheduleState is "failed" or "blocked"));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
+            {
+                _logger.Warning($"[Reclaimerr] Could not read the approved deletion requests ({MaintainerrHttp.Describe(ex)}); showing the waiting ones.");
+            }
+
+            return all;
+        }
+
+        /// <summary>Every entry of a request list, saying in the log when there were more than <see cref="AllPages"/> pages.</summary>
+        private async Task<List<JsonElement>> ListAllAsync(PluginConfiguration config, string path, CancellationToken token)
+        {
+            var (items, complete) = await ReclaimerrApi.ListPagesAsync(_http, config, path, AllPages, Timeout, null, token).ConfigureAwait(false);
+            if (!complete) _logger.Warning($"[Reclaimerr] More than {AllPages * ReclaimerrApi.PageSize} deletion requests; only the newest are shown.");
+            return items;
         }
 
         /// <summary>Reclaimerr's deletion requests (<c>DeleteRequestResponse</c>) as rows, those <paramref name="keep"/> accepts.</summary>
@@ -317,43 +356,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>When an approved request is deleted: with Reclaimerr's own grace period (its setting; none by default), right away, or on a day.</summary>
         public enum ApprovalTiming { GracePeriod, Now, OnDate }
 
-        private (DateTimeOffset At, int? Days)? _grace;
-
         /// <summary>
         /// The grace period (days) Reclaimerr applies to an approval that names no day (its Settings, General: Approved Deletion
-        /// Requests; 0 when none). Kept for a minute; null when it cannot be read.
+        /// Requests; 0 when none), read now (never kept: it may change, or the address may). Null when it cannot be read.
         /// </summary>
         public async Task<int?> GracePeriodDaysAsync(PluginConfiguration config, CancellationToken token)
         {
-            lock (_sync)
-            {
-                if (_grace is { } known && Now() - known.At < TimeSpan.FromMinutes(1)) return known.Days;
-            }
-
-            int? days = null;
             try
             {
                 using var doc = await TokenAsync(config, HttpMethod.Get, "/api/v1/delete-requests/approval-options", null, token).ConfigureAwait(false);
-                if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("delete_request_grace_period_days", out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) && n >= 0) days = n;
+                return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("delete_request_grace_period_days", out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) && n >= 0 ? n : null;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.Warning($"[Reclaimerr] Could not read the deletion request grace period ({MaintainerrHttp.Describe(ex)}).");
                 return null;
             }
-
-            lock (_sync) _grace = (Now(), days);
-            return days;
         }
 
         /// <summary>
         /// Approve or deny a pending deletion request. Reclaimerr records the token as the reviewer, so the administrator who clicked is
         /// named in the note. Approving follows <paramref name="timing"/>: <see cref="ApprovalTiming.GracePeriod"/> (Reclaimerr's delay,
         /// none by default, so the same as now), <see cref="ApprovalTiming.Now"/>, or <see cref="ApprovalTiming.OnDate"/> on <paramref name="at"/>.
+        /// With <paramref name="shownGraceDays"/> (what the administrator was told the grace period is), the grace period is read again first and
+        /// nothing is approved when it differs or cannot be read: a period that became 0 would delete at once instead of on the day shown.
         /// </summary>
-        public async Task ReviewRequestAsync(int requestId, bool approve, string? note, string? actingUser, PluginConfiguration config, CancellationToken token, ApprovalTiming timing = ApprovalTiming.GracePeriod, DateTimeOffset? at = null)
+        public async Task ReviewRequestAsync(int requestId, bool approve, string? note, string? actingUser, PluginConfiguration config, CancellationToken token, ApprovalTiming timing = ApprovalTiming.GracePeriod, DateTimeOffset? at = null, int? shownGraceDays = null)
         {
             if (requestId <= 0) throw new MaintainerrActions.ActionException("Unknown request.");
+            if (approve && timing == ApprovalTiming.GracePeriod && shownGraceDays is { } shown)
+            {
+                var now = await GracePeriodDaysAsync(config, token).ConfigureAwait(false);
+                if (now == null) throw new MaintainerrActions.ActionException("Could not check Reclaimerr's grace period, so nothing was approved. Try again.");
+                if (now != shown) throw new MaintainerrActions.ActionException($"Reclaimerr's grace period is now {now} day(s), not {shown}, so nothing was approved. Look again before approving.");
+            }
             var text = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
             if (!string.IsNullOrWhiteSpace(actingUser))
             {
@@ -413,17 +449,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             (int Server, List<JsonElement> Rows)? best = null;
             var bestOverlap = 0;
+            var failed = new List<string>();
             foreach (var server in servers)
             {
-                using var preview = await TokenAsync(config, HttpMethod.Post, "/api/v1/users/import-from-media-server?preview=true", Access(server), token).ConfigureAwait(false);
-                var rows = ImportRows(preview.RootElement);
-                var overlap = rows.Count(r => RowUser(r) is { } u && jellyfinUsers.ContainsKey(u));
-                if (overlap > bestOverlap) (best, bestOverlap) = ((server, rows), overlap);
+                // Another Jellyfin server Reclaimerr knows may be down: that only matters when this one is not found.
+                try
+                {
+                    using var preview = await TokenAsync(config, HttpMethod.Post, "/api/v1/users/import-from-media-server?preview=true", Access(server), token).ConfigureAwait(false);
+                    var rows = ImportRows(preview.RootElement);
+                    var overlap = rows.Count(r => RowUser(r) is { } u && jellyfinUsers.ContainsKey(u));
+                    if (overlap > bestOverlap) (best, bestOverlap) = ((server, rows), overlap);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
+                {
+                    failed.Add(MaintainerrHttp.Describe(ex));
+                }
             }
 
-            if (best is not { } chosen) throw new MaintainerrActions.ActionException("Reclaimerr has no Jellyfin server with this server's users. Add this server in Reclaimerr (Settings, Media servers) first.");
+            if (best is not { } chosen)
+            {
+                throw new MaintainerrActions.ActionException(failed.Count == 0
+                    ? "Reclaimerr has no Jellyfin server with this server's users. Add this server in Reclaimerr (Settings, Media servers) first."
+                    : $"Reclaimerr could not list the users of {failed.Count} of its Jellyfin servers ({string.Join("; ", failed.Distinct())}), and none it could list is this one.");
+            }
 
-            var linked = await ReadIdentitiesAsync(config, token).ConfigureAwait(false);
+            var linked = await ReadIdentitiesAsync(config, includeInactive: true, token).ConfigureAwait(false);
             var result = new ImportResult(new(), 0, new(), new());
             var alreadyLinked = 0;
             var selection = new List<string>();
@@ -465,7 +515,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            lock (_sync) _identities = null;
             _logger.Info($"[Reclaimerr] Imported {result.Created.Count} Jellyfin user(s) into Reclaimerr ({alreadyLinked} already linked, {result.NeedsReview.Count} to review in Reclaimerr, {result.Skipped.Count} not imported).");
             return result with { AlreadyLinked = alreadyLinked };
         }
@@ -478,28 +527,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static Guid? RowUser(JsonElement row)
             => row.TryGetProperty("source_user_id", out var id) && id.ValueKind == JsonValueKind.String && Guid.TryParse(id.GetString(), out var g) && g != Guid.Empty ? g : null;
 
-        private (DateTimeOffset At, Dictionary<Guid, string> ByJellyfinId)? _identities;
-        private static readonly TimeSpan IdentityTtl = TimeSpan.FromMinutes(5);
-
         /// <summary>
         /// The username of the active Reclaimerr account linked to the Jellyfin user <paramref name="userId"/> (Reclaimerr links one when the
-        /// person is imported, or signs in to Reclaimerr with their Jellyfin login), or null when none is. The links are read with the token
-        /// and kept for five minutes (read again, at most once a minute, for a user who has none yet).
+        /// person is imported, or signs in to Reclaimerr with their Jellyfin login), or null when none is. Read now with the token, never
+        /// kept: the name is about to be sent as a sign-in, so an unlinked account, a disabled one or another Reclaimerr's must not be used.
         /// </summary>
         internal async Task<string?> ReclaimerrUserAsync(PluginConfiguration config, Guid userId, CancellationToken token)
-        {
-            if (userId == Guid.Empty) return null;
-            (DateTimeOffset At, Dictionary<Guid, string> ByJellyfinId)? cached;
-            lock (_sync) cached = _identities;
-            if (cached is { } c && Now() - c.At < IdentityTtl && c.ByJellyfinId.TryGetValue(userId, out var hit)) return hit;
-            if (cached is { } known && Now() - known.At < TimeSpan.FromMinutes(1)) return null;
-            var fresh = await ReadIdentitiesAsync(config, token).ConfigureAwait(false);
-            lock (_sync) _identities = (Now(), fresh);
-            return fresh.TryGetValue(userId, out var found) ? found : null;
-        }
+            => userId == Guid.Empty ? null : (await ReadIdentitiesAsync(config, includeInactive: false, token).ConfigureAwait(false)).TryGetValue(userId, out var name) ? name : null;
 
-        /// <summary>Jellyfin user id to the username of the active Reclaimerr account linked to it (<c>/api/v1/users</c>, its <c>media_identities</c>).</summary>
-        private async Task<Dictionary<Guid, string>> ReadIdentitiesAsync(PluginConfiguration config, CancellationToken token)
+        /// <summary>
+        /// Jellyfin user id to the username of the Reclaimerr account linked to it (<c>/api/v1/users</c>, its <c>media_identities</c>), active
+        /// accounts only unless <paramref name="includeInactive"/>. A Jellyfin id linked to two accounts (the same server added twice) is left out.
+        /// </summary>
+        private async Task<Dictionary<Guid, string>> ReadIdentitiesAsync(PluginConfiguration config, bool includeInactive, CancellationToken token)
         {
             const int limit = 1000;
             var map = new Dictionary<Guid, string>();
@@ -511,11 +551,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 foreach (var u in doc.RootElement.EnumerateArray())
                 {
                     if (u.ValueKind != JsonValueKind.Object || !u.TryGetProperty("username", out var name) || name.ValueKind != JsonValueKind.String || name.GetString() is not { Length: > 0 } username) continue;
-                    if (u.TryGetProperty("is_active", out var active) && active.ValueKind == JsonValueKind.False) continue;
+                    if (!includeInactive && !(u.TryGetProperty("is_active", out var active) && active.ValueKind == JsonValueKind.True)) continue;
                     if (!u.TryGetProperty("media_identities", out var identities)) continue;
                     foreach (var id in ReclaimerrApi.JellyfinIds(identities, "source_user_id"))
                     {
-                        // One Jellyfin id linked to two accounts (the same server added twice): ambiguous, so nobody is picked.
                         if (map.TryGetValue(id, out var previous) && !string.Equals(previous, username, StringComparison.Ordinal)) clashes.Add(id);
                         map[id] = username;
                     }
@@ -544,27 +583,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// Reclaimerr's own id for the title (with its answer, for a movie's versions), by its TMDB id. When several of Reclaimerr's movies
-        /// share that id, the one holding this item's file (by media server id) wins.
+        /// Reclaimerr's own id for the title (with its answer, for a movie's versions), by its TMDB id. When several of Reclaimerr's titles
+        /// share that id, the movie holding this item (by media server id) is the one; with none of them provably this item, it refuses.
         /// </summary>
         private async Task<(int Id, JsonElement Media)> ResolveMediaAsync(BaseItem item, string type, PluginConfiguration config, CancellationToken token)
         {
             var tmdb = item.GetProviderId(MetadataProvider.Tmdb);
             if (string.IsNullOrWhiteSpace(tmdb)) throw new MaintainerrActions.ActionException("This item has no TMDB id, so Reclaimerr cannot match it.");
             using var doc = await TokenAsync(config, HttpMethod.Get, $"/api/v1/{(type == "movie" ? "movies" : "series")}?tmdb_id={Uri.EscapeDataString(tmdb)}&per_page=5", null, token).ConfigureAwait(false);
-            (int, JsonElement)? first = null;
+            var found = new List<(int, JsonElement)>();
             if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
             {
                 foreach (var m in items.EnumerateArray())
                 {
                     if (m.ValueKind != JsonValueKind.Object || !m.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.Number || !id.TryGetInt32(out var n)) continue;
-                    first ??= (n, m.Clone());
+                    found.Add((n, m.Clone()));
                     if (m.TryGetProperty("versions", out var versions) && versions.ValueKind == JsonValueKind.Array
                         && versions.EnumerateArray().Any(v => v.ValueKind == JsonValueKind.Object && v.TryGetProperty("service_item_id", out var si) && si.ValueKind == JsonValueKind.String && Guid.TryParse(si.GetString(), out var g) && g == item.Id)) return (n, m.Clone());
                 }
             }
 
-            return first ?? throw new MaintainerrActions.ActionException("Reclaimerr does not have this title (run its Sync Media first).");
+            return found.Count switch
+            {
+                0 => throw new MaintainerrActions.ActionException("Reclaimerr does not have this title (run its Sync Media first)."),
+                1 => found[0],
+                _ => throw new MaintainerrActions.ActionException("Reclaimerr has more than one title with this TMDB id and none is provably this one, so nothing was sent. Act on it in Reclaimerr."),
+            };
         }
 
         private Task<JsonDocument> TokenAsync(PluginConfiguration config, HttpMethod method, string path, object? body, CancellationToken token)

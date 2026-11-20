@@ -63,7 +63,7 @@ test('a request says what it would delete, approving names that scope and carrie
   cards[0].querySelector('input[type="text"].je-ls-note-input').value = '  gone in a week  ';
   cards[0].querySelector('.je-ls-btn.danger').click();
   await h.settle();
-  assert.deepEqual(h.calls.find(c => c.path === 'reclaimerr/requests/1/approve').body, { note: 'gone in a week', when: 'default' });
+  assert.deepEqual(h.calls.find(c => c.path === 'reclaimerr/requests/1/approve').body, { note: 'gone in a week', when: 'default', graceDays: 0 }, 'the grace period the confirm promised goes along');
 
   cards[2].querySelector('.je-ls-icon-btn.approve').click();
   assert.equal(cards[2].querySelector('.je-ls-warn').textContent, 'leavingsoon_confirm_delete_scope:leavingsoon_scope_version · 2160p · 3.0 GB');

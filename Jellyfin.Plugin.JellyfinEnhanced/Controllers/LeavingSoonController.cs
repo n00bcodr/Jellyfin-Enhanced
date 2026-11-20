@@ -128,8 +128,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             foreach (var (id, deleteAt) in _leaving.MaintainerrItems(config)
                 .OrderBy(m => m.DeleteAt ?? long.MaxValue))
             {
+                // Standalone: the library the item is in must be one the user may open, not only its rating (as the item list route does).
                 var item = _libraryManager.GetItemById(id);
-                if (item == null || !item.IsVisible(user)) continue;
+                if (item == null || !item.IsVisibleStandalone(user)) continue;
                 var versionOnly = _leaving.IsVersionOnly(id, config);
                 // What leaving frees: the removal tool's own figure (Reclaimerr's, which alone knows which copy goes), else the library's.
                 var size = _leaving.SizeOf(id, config);
@@ -161,17 +162,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
 
                 // The delay an approval gets when no day is named, so the page can say what "Reclaimerr's grace period" means
-                // (only asked of administrators, who are the ones who approve).
-                if (admin)
+                // (only asked of administrators, who are the ones who approve). Read alongside the lists, never ahead of them.
+                async Task<int?> Grace()
                 {
-                    try { graceDays = await _reclaimerr.GracePeriodDaysAsync(config!, budget.Token).ConfigureAwait(false); }
-                    catch (OperationCanceledException) when (!token.IsCancellationRequested) { graceDays = null; }
+                    try { return await _reclaimerr.GracePeriodDaysAsync(config!, budget.Token).ConfigureAwait(false); }
+                    catch (OperationCanceledException) when (!token.IsCancellationRequested) { return null; }
                 }
 
+                var graceTask = admin ? Grace() : Task.FromResult<int?>(null);
                 var pendingTask = admin ? Load(true) : Task.FromResult<IReadOnlyList<LeavingSoonRequestDto>>(Array.Empty<LeavingSoonRequestDto>());
                 var mineTask = Load(false);
                 requests = await pendingTask.ConfigureAwait(false);
                 mine = await mineTask.ConfigureAwait(false);
+                graceDays = await graceTask.ConfigureAwait(false);
             }
 
             return Ok(new
@@ -185,20 +188,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 mine,
                 requestsUnavailable,
                 graceDays,
+                // Which Reclaimerr the requests came from: a review sends it back, so a card read from one is never approved at another.
+                source = reclaimerr ? ReclaimerrApi.SourceId(config!) : null,
             });
         }
 
         /// <summary>
         /// Requests with the Jellyfin title and person they are about, both by the ids Reclaimerr gives: the first item it names that the
-        /// viewer can see (none: the card does not link), and the Jellyfin user the requester's Reclaimerr account is linked to (none: the
-        /// card shows the Reclaimerr name).
+        /// viewer can open (its library included; none: the card neither links nor shows the item's own poster), and the Jellyfin user the
+        /// requester's Reclaimerr account is linked to (none: the card shows the Reclaimerr name).
         /// </summary>
         private IReadOnlyList<LeavingSoonRequestDto> Describe(IReadOnlyList<ReclaimerrRequestRow> rows, Jellyfin.Database.Implementations.Entities.User viewer)
         {
             var list = new List<LeavingSoonRequestDto>(rows.Count);
             foreach (var r in rows)
             {
-                var itemId = (r.ItemIds ?? Array.Empty<Guid>()).Select(id => _libraryManager.GetItemById(id)).FirstOrDefault(i => i != null && i.IsVisible(viewer))?.Id.ToString("N");
+                var itemId = (r.ItemIds ?? Array.Empty<Guid>()).Select(id => _libraryManager.GetItemById(id)).FirstOrDefault(i => i != null && i.IsVisibleStandalone(viewer))?.Id.ToString("N");
                 var person = (r.RequesterIds ?? Array.Empty<Guid>()).Select(id => _userManager.GetUserById(id)).FirstOrDefault(u => u != null);
                 list.Add(new LeavingSoonRequestDto(r.Id, r.Title, r.Year, r.MediaType, r.Status, r.CreatedAt, r.RequestedBy, string.IsNullOrWhiteSpace(r.Reason) ? null : r.Reason.Trim(), person?.Username, person?.Id.ToString("N"), itemId, r.PosterPath,
                     r.Scope, r.SeasonNumber, r.EpisodeNumber, r.VersionResolution, r.VersionSize, r.AdminNotes, r.ExecutionError, r.Deferred, r.ScheduledAt, r.ScheduleState));

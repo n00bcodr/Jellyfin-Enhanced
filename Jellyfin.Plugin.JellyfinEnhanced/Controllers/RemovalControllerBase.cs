@@ -42,13 +42,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch { return null; }
         }
 
+        /// <summary>Whether the signed-in user may open the item: its rating and tags, and the library it is in (standalone visibility).</summary>
         protected bool CanSee(BaseItem item)
         {
             try
             {
                 var id = UserHelper.GetCurrentUserId(User);
                 var user = id.HasValue && id.Value != Guid.Empty ? UserManager.GetUserById(id.Value) : null;
-                return user != null && item.IsVisible(user);
+                return user != null && item.IsVisibleStandalone(user);
             }
             catch { return false; }
         }

@@ -19,6 +19,8 @@
     /** @type {HTMLElement|null} */
     let mounted = null;
     let filter = 'all';
+    /** Which Reclaimerr the drawn requests came from (the list's `source`); every review sends it back. */
+    let requestSource = null;
     /** Until when the refresh icon spins (the list is redrawn, so the new button carries the animation). */
     let spinUntil = 0;
 
@@ -164,7 +166,7 @@
     async function review(id, approve, button, note, timing) {
         button.disabled = true;
         try {
-            await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? 'approve' : 'deny'}`), data: JSON.stringify({ ...(note ? { note } : {}), ...(timing || {}) }), contentType: 'application/json', dataType: 'json' });
+            await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? 'approve' : 'deny'}`), data: JSON.stringify({ ...(note ? { note } : {}), ...(timing || {}), ...(requestSource ? { source: requestSource } : {}) }), contentType: 'application/json', dataType: 'json' });
             JE.toast?.(esc(t(approve ? 'leavingsoon_approved' : 'leavingsoon_denied')));
             refresh();
         } catch (err) {
@@ -280,6 +282,16 @@
         return scope ? t('leavingsoon_confirm_delete_scope', { scope }) : t('leavingsoon_confirm_delete');
     }
 
+    /**
+     * The administrator's note as the requester reads it: reviews from Jellyfin end with "(Approved by NAME in Jellyfin)", which is for
+     * Reclaimerr's record, so only that part is dropped (a note that is nothing else shows nothing).
+     * @param {string|null|undefined} notes Reclaimerr's admin_notes.
+     * @returns {string} The note to show, or ''.
+     */
+    function adminNote(notes) {
+        return String(notes || '').replace(/\s*\(?(?:Approved|Denied) by [^()]+ in Jellyfin\)?\s*$/, '').trim();
+    }
+
     /** @returns {{text: string, level: string}} The state chip of a request. */
     function requestChip(r) {
         if (r.executionError || r.scheduleState === 'failed' || r.scheduleState === 'blocked') return { text: t('leavingsoon_status_failed'), level: 'urgent' };
@@ -314,7 +326,7 @@
             // A cancelled (Keep) or finished schedule keeps its old day in Reclaimerr's answer: it no longer says when the title leaves.
             + (r.scheduledAt && r.status === 'approved' && r.scheduleState !== 'canceled' && r.scheduleState !== 'completed' && !Number.isNaN(utcDate(r.scheduledAt).getTime()) ? `<div class="je-ls-sub">${esc(t('leavingsoon_leaves_on', { date: shortDate(utcDate(r.scheduledAt)) }))}</div>` : '')
             + (r.note ? `<div class="je-ls-sub je-ls-note">${esc(r.note)}</div>` : '')
-            + (!admin && r.adminNotes && !/ in Jellyfin\)?$/.test(r.adminNotes) ? `<div class="je-ls-sub je-ls-note">${esc(r.adminNotes)}</div>` : '')
+            + (!admin && adminNote(r.adminNotes) ? `<div class="je-ls-sub je-ls-note">${esc(adminNote(r.adminNotes))}</div>` : '')
             + (r.executionError ? `<div class="je-ls-err">${esc(r.executionError)}</div>` : '')
             + (admin && pending ? `<div class="je-ls-reqactions"></div>` : '') + `</div>`;
         for (const img of el.querySelectorAll('img')) img.addEventListener('error', () => img.remove());
@@ -376,7 +388,9 @@
                 sync();
 
                 yes.addEventListener('click', () => {
-                    const timing = when.value === 'date' ? { when: 'date', date: new Date(day.value).toISOString() } : { when: when.value };
+                    // The grace period this confirm promised goes along: the server refuses when Reclaimerr's setting changed since.
+                    const timing = when.value === 'date' ? { when: 'date', date: new Date(day.value).toISOString() }
+                        : when.value === 'default' && Number.isInteger(graceDays) ? { when: 'default', graceDays } : { when: when.value };
                     review(r.id, true, yes, note.value.trim(), timing);
                 });
                 cancel.addEventListener('click', showChoice);
@@ -391,6 +405,7 @@
 
     function draw(host, data) {
         host.textContent = '';
+        requestSource = data.source || null;
         const root = document.createElement('div');
         root.className = 'je-ls';
         const items = data.items || [];

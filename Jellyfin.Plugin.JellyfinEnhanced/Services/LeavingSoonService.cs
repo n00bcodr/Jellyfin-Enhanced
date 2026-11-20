@@ -389,10 +389,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         error = Describe(ex);
                         // Never log the request: the URL may carry a token-bearing path and the key is in a header.
                         _logger.Warning($"[LeavingSoon] {(UsesReclaimerr(config) ? "Reclaimerr" : "Maintainerr")} refresh failed ({error}); keeping the previous answer.");
-                        next.Api = sameSource ? before.Api : new Dictionary<string, long?>();
-                        next.ApiCollections = sameSource ? before.ApiCollections : new Dictionary<string, int>(StringComparer.Ordinal);
-                        next.ApiVersions = sameSource ? before.ApiVersions : new List<string>();
-                        next.ApiSizes = sameSource ? before.ApiSizes : new Dictionary<string, long>(StringComparer.Ordinal);
+                        // A Reclaimerr found too old (a downgrade) drops its facts: nothing more is read from it or done in it, so its
+                        // badges and owner ids would only go stale. Any other failure keeps the last answer.
+                        var keep = sameSource && ex is not ReclaimerrApi.VersionException;
+                        next.Api = keep ? before.Api : new Dictionary<string, long?>();
+                        next.ApiCollections = keep ? before.ApiCollections : new Dictionary<string, int>(StringComparer.Ordinal);
+                        next.ApiVersions = keep ? before.ApiVersions : new List<string>();
+                        next.ApiSizes = keep ? before.ApiSizes : new Dictionary<string, long>(StringComparer.Ordinal);
                     }
                 }
 
@@ -531,8 +534,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private async Task<(Dictionary<string, long?> Items, Dictionary<string, int> Collections, HashSet<string> Versions, Dictionary<string, long> Sizes)> FetchReclaimerrAsync(PluginConfiguration config, CancellationToken token)
         {
-            var entries = await ReclaimerrApi.ListAsync(_http, config, "/api/v1/leaving-soon", ReclaimerrMaxPages, Timeout, LogRedirect, token).ConfigureAwait(false);
-            var members = ParseReclaimerrLeaving(entries, Now(), out var unmatched);
+            var (entries, complete) = await ReclaimerrApi.ListPagesAsync(_http, config, "/api/v1/leaving-soon", ReclaimerrMaxPages, Timeout, LogRedirect, token).ConfigureAwait(false);
+            if (!complete) _logger.Warning($"[LeavingSoon] Reclaimerr lists more than {ReclaimerrMaxPages * ReclaimerrApi.PageSize} leaving entries; only the soonest are read.");
+            var members = ParseReclaimerrLeaving(entries, Now(), out var unmatched, out var outOfRange);
+            if (outOfRange > 0) _logger.Warning($"[LeavingSoon] Skipped {outOfRange} of Reclaimerr's leaving entries with a date more than ten years away.");
             // Ids of items this server does not have (another media server Reclaimerr knows) name nothing here.
             members = members.Where(m => m.ItemId is { } id && _library?.GetItemById(id) != null).ToList();
             if (unmatched > 0) _logger.Debug($"[LeavingSoon] {unmatched} of Reclaimerr's leaving entries name no Jellyfin item.");
@@ -554,12 +559,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// version's own item, its media source). Whole movies and series and single movie versions only: a season or episode on its own
         /// does not mark its series. A candidate is listed by its id, a scheduled deletion (manual or an approved request's) by its id
         /// negated. Candidates count while their timer is scheduled, eligible or postponed, schedules while scheduled or running (a
-        /// blocked or failed one waits for an administrator). <paramref name="unmatched"/> counts entries that name no Jellyfin item.
+        /// blocked or failed one waits for an administrator). <paramref name="unmatched"/> counts entries that name no Jellyfin item, and
+        /// <paramref name="outOfRange"/> those skipped for a date more than ten years away (one such entry must not stop the rest).
         /// </summary>
-        internal static IReadOnlyList<MaintainerrMember> ParseReclaimerrLeaving(IEnumerable<JsonElement> entries, DateTimeOffset now, out int unmatched)
+        internal static IReadOnlyList<MaintainerrMember> ParseReclaimerrLeaving(IEnumerable<JsonElement> entries, DateTimeOffset now, out int unmatched, out int outOfRange)
         {
             var members = new List<MaintainerrMember>();
             unmatched = 0;
+            outOfRange = 0;
             foreach (var e in entries)
             {
                 if (e.ValueKind != JsonValueKind.Object) continue;
@@ -583,7 +590,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 else continue;
 
                 if (!e.TryGetProperty("delete_at", out var when) || !TryReadDate(when, out var date)) continue;
-                if (Math.Abs(date.ToUnixTimeMilliseconds() - now.ToUnixTimeMilliseconds()) > MaxDateDistanceMs) throw new DateRangeException();
+                if (Math.Abs(date.ToUnixTimeMilliseconds() - now.ToUnixTimeMilliseconds()) > MaxDateDistanceMs) { outOfRange++; continue; }
                 long? size = e.TryGetProperty("size_bytes", out var bytes) && bytes.ValueKind == JsonValueKind.Number && bytes.TryGetInt64(out var b) && b >= 0 ? b : null;
                 var ids = new List<Guid>();
                 if (e.TryGetProperty("media_server_items", out var items))

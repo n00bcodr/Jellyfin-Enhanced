@@ -126,3 +126,38 @@ test('the grace period is named in the choice and the warning when Reclaimerr sa
     assert.match(h.$('.je-ls-warn').textContent, warning);
   }
 });
+
+test('a review carries the Reclaimerr the list came from, and the grace period only when it was shown', async t => {
+  const h = setup(t, base({ graceDays: 14, source: 'abc123' }));
+  h.JE.leavingSoonPage.renderForCustomTab(h.$('#host'));
+  await h.settle();
+  h.$('.je-ls-icon-btn.approve').click();
+  h.$('.je-ls-btn.danger').click();
+  await h.settle();
+  assert.deepEqual(approveBody(h), { when: 'default', graceDays: 14, source: 'abc123' });
+
+  const now = setup(t, base({ graceDays: 14, source: 'abc123' }));
+  now.JE.leavingSoonPage.renderForCustomTab(now.$('#host'));
+  await now.settle();
+  now.$('.je-ls-icon-btn.approve').click();
+  now.choose(now.$('.je-ls-reqactions select'), 'now');
+  now.$('.je-ls-btn.danger').click();
+  await now.settle();
+  assert.deepEqual(approveBody(now), { when: 'now', source: 'abc123' });
+});
+
+test('the requester sees the administrator\'s note without the Jellyfin attribution, and nothing when that is all there is', async t => {
+  const h = setup(t, base({
+    admin: false,
+    requests: [],
+    mine: [
+      { ...request, id: 1, status: 'approved', adminNotes: 'Leaving after the holidays (Approved by Jake in Jellyfin)' },
+      { ...request, id: 2, status: 'denied', adminNotes: 'Denied by Jake in Jellyfin' },
+      { ...request, id: 3, status: 'denied', adminNotes: 'We still watch this' },
+    ],
+  }));
+  h.JE.leavingSoonPage.renderForCustomTab(h.$('#host'));
+  await h.settle();
+  const notes = h.$$('.je-ls-reqcard').map((c) => Array.from(c.querySelectorAll('.je-ls-note')).map((n) => n.textContent));
+  assert.deepEqual(notes, [['Leaving after the holidays'], [], ['We still watch this']]);
+});

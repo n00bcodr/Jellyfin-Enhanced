@@ -1271,9 +1271,9 @@ JEAdmin.define({
             { id: 'ReclaimerrApiKey', prop: 'ReclaimerrToken', type: 'text', label: 'Reclaimerr API token', showIf: 'ReclaimerrEnabled',
               toConfig: (v) => String(v || '').trim(), fromConfig: (v) => v || '',
               desc: 'Create it in Reclaimerr under <em>Settings &gt; Integrations</em> with the <strong>candidates</strong>, <strong>scheduled deletions</strong>, <strong>delete requests</strong> and <strong>users</strong> (manage) and <strong>media</strong> (read) scopes. Everything the plugin reads and does in Reclaimerr goes through it.' },
-            { id: 'ReclaimerrActAsUser', prop: 'ReclaimerrActAsUser', type: 'toggle', default: false, label: 'Let users request removals', showIf: 'ReclaimerrEnabled',
+            { id: 'ReclaimerrUserRequests', prop: 'ReclaimerrUserRequests', type: 'toggle', default: false, label: 'Let users request removals', showIf: 'ReclaimerrEnabled',
               desc: 'Adds <strong>Request removal</strong> to the &#8942; menu for users who are not administrators. Reclaimerr only takes a request from the person themself, so the plugin files it as their own Reclaimerr account (the one linked to their Jellyfin account: use <strong>Import Jellyfin users</strong> below, or they sign in to Reclaimerr with Jellyfin once) through Reclaimerr\'s trusted-proxy sign-in. Set <code>FORWARD_AUTH_ENABLED=true</code> in Reclaimerr with this server\'s address in <code>FORWARD_AUTH_TRUSTED_PROXIES</code>.' },
-            { id: 'ReclaimerrUserHeader', prop: 'ReclaimerrUserHeader', type: 'text', default: 'Remote-User', label: 'User header', showIf: 'ReclaimerrActAsUser',
+            { id: 'ReclaimerrUserHeader', prop: 'ReclaimerrUserHeader', type: 'text', default: 'Remote-User', label: 'User header', showIf: 'ReclaimerrUserRequests',
               toConfig: (v) => String(v || '').trim() || 'Remote-User',
               desc: 'The header Reclaimerr reads the user from: its <code>FORWARD_AUTH_USER_HEADER</code> (default <code>Remote-User</code>).' },
             { type: 'group', title: 'Import Jellyfin users into Reclaimerr', open: true, showIf: 'ReclaimerrEnabled', items: [

@@ -5762,7 +5762,7 @@
     },
     {
       "class": "PluginConfiguration",
-      "name": "ReclaimerrActAsUser",
+      "name": "ReclaimerrUserRequests",
       "type": "bool",
       "initializer": "false",
       "constructor_assignment": null,

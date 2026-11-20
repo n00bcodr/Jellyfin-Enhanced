@@ -31,8 +31,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static readonly ConcurrentDictionary<string, (DateTimeOffset At, Version? Found, string? Reported)> Versions = new(StringComparer.Ordinal);
 
-        /// <summary>The release a version names: an optional <c>v</c>, major.minor(.patch), then anything that is not another number (a pre-release or build tag).</summary>
-        private static readonly System.Text.RegularExpressions.Regex VersionPattern = new(@"^\s*[vV]?(\d{1,9})\.(\d{1,9})(?:\.(\d{1,9})(?!\d)|(?![.\d]))", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        /// <summary>
+        /// A whole version text: an optional <c>v</c>, major.minor.patch with an optional pre-release tag (<c>-dev.1</c>, <c>-dev1</c>,
+        /// <c>dev1</c>, <c>.dev1</c>, <c>-rc.2</c>) and build tag (<c>+abc</c>), or major.minor with an optional <c>-</c> tag. Nothing may follow.
+        /// </summary>
+        private static readonly System.Text.RegularExpressions.Regex VersionPattern = new(@"^\s*[vV]?(\d{1,9})\.(\d{1,9})(?:\.(\d{1,9})(?:-[0-9A-Za-z][0-9A-Za-z.-]*|\.?[A-Za-z][0-9A-Za-z.-]*)?|(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)(?:\+[0-9A-Za-z.-]+)?\s*$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         private static readonly TimeSpan SupportedTtl = TimeSpan.FromMinutes(10);
         private static readonly TimeSpan UnsupportedTtl = TimeSpan.FromMinutes(1);
 
@@ -44,10 +47,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Whether users can file removal requests: as themselves, through Reclaimerr's trusted-proxy sign-in.</summary>
         internal static bool RequestsAsUser(PluginConfiguration? config)
-            => config != null && config.ReclaimerrActAsUser && !string.IsNullOrWhiteSpace(config.ReclaimerrUserHeader);
+            => config != null && config.ReclaimerrUserRequests && !string.IsNullOrWhiteSpace(config.ReclaimerrUserHeader);
 
         /// <summary>
-        /// The release a version text names, or null when it names none. A development build counts as the release it leads up to,
+        /// The release a version text names, or null when the whole text is not a version. A development build counts as the release it leads up to,
         /// because Reclaimerr's development builds of a release already carry its endpoints: <c>0.6.15</c>, <c>v0.6.15</c>,
         /// <c>0.6.15-dev.1</c>, <c>0.6.15-dev1</c>, <c>0.6.15dev1</c> and <c>0.6.15.dev1</c> are all 0.6.15, and <c>0.6.16-dev</c> is 0.6.16.
         /// </summary>
@@ -101,9 +104,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Every entry of a paged token-API list (<c>{items, total_pages}</c>), <see cref="PageSize"/> at a time, at most
-        /// <paramref name="maxPages"/> pages. An answer that is not such a list throws.
+        /// <paramref name="maxPages"/> pages, and whether that was all of it. An answer that is not such a list throws.
         /// </summary>
-        internal static async Task<List<JsonElement>> ListAsync(IHttpClientFactory http, PluginConfiguration config, string path, int maxPages, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token)
+        internal static async Task<(List<JsonElement> Items, bool Complete)> ListPagesAsync(IHttpClientFactory http, PluginConfiguration config, string path, int maxPages, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token)
         {
             var all = new List<JsonElement>();
             var join = path.Contains('?', StringComparison.Ordinal) ? '&' : '?';
@@ -114,11 +117,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) throw new FormatException("Not a Reclaimerr list.");
                 foreach (var item in items.EnumerateArray()) all.Add(item.Clone());
                 var pages = root.TryGetProperty("total_pages", out var total) && total.TryGetInt32(out var count) ? count : page;
-                if (items.GetArrayLength() == 0 || page >= pages) break;
+                if (items.GetArrayLength() == 0 || page >= pages) return (all, true);
             }
 
-            return all;
+            return (all, false);
         }
+
+        /// <summary>A short fingerprint of the Reclaimerr in use (its address), so an answer read from one is never acted on at another.</summary>
+        internal static string SourceId(PluginConfiguration config)
+            => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(BaseUrl(config).ToLowerInvariant())))[..16].ToLowerInvariant();
 
         /// <summary>
         /// One request to Reclaimerr as <paramref name="reclaimerrUser"/> through its trusted-proxy sign-in: no bearer token, only

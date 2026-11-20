@@ -984,8 +984,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// Let users request removals: a request is filed as the Jellyfin user's own Reclaimerr account (the one linked to
         /// them, found by their Jellyfin user id) through Reclaimerr's trusted-proxy sign-in (<c>FORWARD_AUTH_*</c>, the header
         /// below, from an address it trusts), because Reclaimerr's token API cannot file a request for someone else.
+        /// A new name, off by default: the earlier "act as the user" switch defaulted on while requests also needed a service
+        /// account, so its saved value is no opt-in to this.
         /// </summary>
-        public bool ReclaimerrActAsUser { get; set; } = false;
+        public bool ReclaimerrUserRequests { get; set; } = false;
         /// <summary>The header Reclaimerr reads the user name from (its <c>FORWARD_AUTH_USER_HEADER</c>, default <c>Remote-User</c>).</summary>
         public string ReclaimerrUserHeader { get; set; } = "Remote-User";
         /// <summary>Existing Jellyfin collection names (one per line or comma separated) whose members count as leaving.</summary>

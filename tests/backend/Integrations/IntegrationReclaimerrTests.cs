@@ -103,7 +103,7 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         config.LeavingSoonMaintainerrActions = true;
         config.ReclaimerrUrl = server.Url;
         config.ReclaimerrToken = "rcl_token";
-        config.ReclaimerrActAsUser = requests;
+        config.ReclaimerrUserRequests = requests;
         config.ReclaimerrUserHeader = "Remote-User";
         var services = new ServiceCollection();
         LeavingSoonService.AddHttpClient(services);
@@ -148,6 +148,9 @@ public sealed class IntegrationReclaimerrTests : IDisposable
     [InlineData("0.6.15.dev1", 0, 6, 15)]
     [InlineData("0.6.16-dev", 0, 6, 16)]
     [InlineData(" V0.6.15 ", 0, 6, 15)]
+    [InlineData("0.6.15-rc.1", 0, 6, 15)]
+    [InlineData("0.6.15-dev.1+build.7", 0, 6, 15)]
+    [InlineData("1.2-dev", 1, 2, 0)]
     [InlineData("v0.7.0+abc", 0, 7, 0)]
     [InlineData("1.2", 1, 2, 0)]
     public void A_version_is_read_with_its_pre_release_counting_as_that_release(string text, int major, int minor, int patch)
@@ -160,6 +163,9 @@ public sealed class IntegrationReclaimerrTests : IDisposable
     [InlineData("0.6.x")]
     [InlineData("1")]
     [InlineData("dev-0.6.15")]
+    [InlineData("0.6.15 unrelated text")]
+    [InlineData("0.6.15.3")]
+    [InlineData("0.6.15-")]
     public void Text_that_is_not_a_version_is_not_one(string? text) => Assert.Null(ReclaimerrApi.ParseVersion(text));
 
     [Fact]
@@ -250,6 +256,22 @@ public sealed class IntegrationReclaimerrTests : IDisposable
     }
 
     [Fact]
+    public async Task A_Reclaimerr_found_too_old_later_drops_its_facts_instead_of_keeping_stale_badges()
+    {
+        var film = Add(new Movie { Name = "Whole" });
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1/leaving-soon?per_page=200&page=1", Page(Entry("candidate", "movie", "eligible", "2026-12-01T00:00:00Z", Jf(film.Id), candidate: 4)));
+        var (_, leaving) = Setup(server);
+        await leaving.RefreshAsync(Config, true, CancellationToken.None);
+        Assert.NotNull(leaving.Get(film.Id, Config));
+        server.Version = "0.6.1";
+        ReclaimerrApi.ForgetVersions();
+        await leaving.RefreshAsync(Config, true, CancellationToken.None);
+        Assert.Null(leaving.Get(film.Id, Config));
+        Assert.Contains("older than 0.6.15", leaving.Status(Config).LastError);
+    }
+
+    [Fact]
     public void The_feed_skips_what_is_not_leaving_and_counts_entries_naming_no_Jellyfin_item()
     {
         var a = Guid.NewGuid();
@@ -260,14 +282,16 @@ public sealed class IntegrationReclaimerrTests : IDisposable
             Entry("manual", "movie", "running", "2026-12-01T00:00:00Z", Jf(a), schedule: 4),
             Entry("candidate", "movie", "eligible", "2026-12-01T00:00:00Z", string.Empty, candidate: 5)) + "]";
         using var doc = JsonDocument.Parse(json);
-        var members = LeavingSoonService.ParseReclaimerrLeaving(doc.RootElement.EnumerateArray().ToList(), Fixed, out var unmatched);
+        var members = LeavingSoonService.ParseReclaimerrLeaving(doc.RootElement.EnumerateArray().ToList(), Fixed, out var unmatched, out var outOfRange);
         var only = Assert.Single(members);
         Assert.Equal((a, -4), (only.ItemId!.Value, only.CollectionId!.Value));
-        Assert.Equal(1, unmatched);
+        Assert.Equal((1, 0), (unmatched, outOfRange));
 
-        // A day too far away to be real fails the read (the last answer is kept) instead of putting a nonsense date on a badge.
-        using var far = JsonDocument.Parse("[" + Entry("candidate", "movie", "eligible", "2046-12-01T00:00:00Z", Jf(a), candidate: 1) + "]");
-        Assert.Throws<LeavingSoonService.DateRangeException>(() => LeavingSoonService.ParseReclaimerrLeaving(far.RootElement.EnumerateArray().ToList(), Fixed, out _));
+        // A day too far away to be real is skipped on its own: the other entries are still read.
+        var b = Guid.NewGuid();
+        using var far = JsonDocument.Parse("[" + Entry("manual", "movie", "scheduled", "2046-12-01T00:00:00Z", Jf(a), schedule: 1) + "," + Entry("candidate", "movie", "eligible", "2026-12-01T00:00:00Z", Jf(b), candidate: 2) + "]");
+        var kept = LeavingSoonService.ParseReclaimerrLeaving(far.RootElement.EnumerateArray().ToList(), Fixed, out _, out outOfRange);
+        Assert.Equal((b, 1), (Assert.Single(kept).ItemId!.Value, outOfRange));
     }
 
     private static string Movies(int id, params (int Version, Guid Media)[] versions)
@@ -296,6 +320,53 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.Equal(70, JsonDocument.Parse(server.Calls("POST")[1].Body).RootElement.GetProperty("movie_version_id").GetInt32());
         await Assert.ThrowsAsync<MaintainerrActions.ActionException>(() => actions.MarkAsync(movie, Config, null, Guid.NewGuid().ToString("N"), "admin", CancellationToken.None));
         Assert.Equal(2, server.Calls("POST").Count);
+    }
+
+    [Fact]
+    public async Task A_copy_Reclaimerr_has_not_synced_is_never_scheduled_through_the_copy_it_has()
+    {
+        // Jellyfin holds 1080p and 4K; Reclaimerr has synced only the 1080p.
+        var movie = Add(new Movie { Name = "Two here, one there", LocalAlternateVersions = new[] { "/m/4k.mkv" } }, tmdb: "550");
+        var uhd = Guid.NewGuid();
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1/movies?tmdb_id=550&per_page=5", Movies(42, (70, movie.Id)));
+        server.Answer("GET /api/v1/leaving-soon?per_page=200&page=1", Page());
+        var (actions, _) = Setup(server);
+        await Assert.ThrowsAsync<MaintainerrActions.ActionException>(() => actions.MarkAsync(movie, Config, null, uhd.ToString("N"), "admin", CancellationToken.None));
+        Assert.Empty(server.Calls("POST"));
+        // Picking the copy Reclaimerr does hold schedules only that file, not the whole movie (the 4K stays, so must its Radarr entry).
+        await actions.MarkAsync(movie, Config, null, movie.Id.ToString("N"), "admin", CancellationToken.None);
+        Assert.Equal(70, JsonDocument.Parse(Assert.Single(server.Calls("POST")).Body).RootElement.GetProperty("movie_version_id").GetInt32());
+    }
+
+    [Fact]
+    public async Task With_Reclaimerr_on_another_main_server_a_copy_is_found_by_its_path_or_scheduled_whole_when_each_side_has_one()
+    {
+        var movie = Add(new Movie { Name = "Linked", Path = "/movies/Linked (2020)/Linked.mkv" }, tmdb: "550");
+        using var server = new Reclaimerr();
+        // Plex ids, not Jellyfin's: two versions, one at this item's path.
+        server.Answer("GET /api/v1/movies?tmdb_id=550&per_page=5", "{\"items\":[{\"id\":42,\"tmdb_id\":550,\"versions\":[{\"id\":70,\"path\":\"/movies/Linked (2020)/Linked.mkv\",\"service_item_id\":\"9\",\"service_media_id\":\"9\"},{\"id\":71,\"path\":\"/movies/Linked (2020)/Linked 4K.mkv\",\"service_item_id\":\"9\",\"service_media_id\":\"10\"}]}]}");
+        server.Answer("GET /api/v1/leaving-soon?per_page=200&page=1", Page());
+        var (actions, _) = Setup(server);
+        await actions.MarkAsync(movie, Config, null, null, "admin", CancellationToken.None);
+        Assert.Equal(70, JsonDocument.Parse(Assert.Single(server.Calls("POST")).Body).RootElement.GetProperty("movie_version_id").GetInt32());
+
+        using var single = new Reclaimerr();
+        single.Answer("GET /api/v1/movies?tmdb_id=550&per_page=5", "{\"items\":[{\"id\":43,\"tmdb_id\":550,\"versions\":[{\"id\":80,\"path\":\"/data/elsewhere.mkv\",\"service_item_id\":\"9\",\"service_media_id\":\"9\"}]}]}");
+        single.Answer("GET /api/v1/leaving-soon?per_page=200&page=1", Page());
+        await Setup(single).Actions.MarkAsync(movie, Config, null, null, "admin", CancellationToken.None);
+        Assert.Equal(JsonValueKind.Null, JsonDocument.Parse(Assert.Single(single.Calls("POST")).Body).RootElement.GetProperty("movie_version_id").ValueKind);
+    }
+
+    [Fact]
+    public async Task Several_Reclaimerr_titles_with_the_TMDB_id_and_none_provably_this_item_are_refused()
+    {
+        var show = Add(new Series { Name = "Twice" }, tmdb: "77");
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1/series?tmdb_id=77&per_page=5", "{\"items\":[{\"id\":1,\"tmdb_id\":77},{\"id\":2,\"tmdb_id\":77}]}");
+        var (actions, _) = Setup(server);
+        await Assert.ThrowsAsync<MaintainerrActions.ActionException>(() => actions.MarkAsync(show, Config, null, null, "admin", CancellationToken.None));
+        Assert.Empty(server.Calls("POST"));
     }
 
     [Fact]
@@ -362,6 +433,26 @@ public sealed class IntegrationReclaimerrTests : IDisposable
     }
 
     [Fact]
+    public async Task Approving_with_the_grace_period_is_refused_when_Reclaimerr_now_says_another_period_or_cannot_say()
+    {
+        using var server = new Reclaimerr();
+        var grace = "{\"delete_request_grace_period_days\":0}";
+        server.Routes["GET /api/v1/delete-requests/approval-options"] = _ => (200, grace);
+        server.Answer("GET /api/v1/leaving-soon?per_page=200&page=1", Page());
+        var (actions, _) = Setup(server);
+        // The page said 14 days; it is 0 now, so the default would delete at once.
+        var ex = await Assert.ThrowsAsync<MaintainerrActions.ActionException>(() => actions.ReviewRequestAsync(7, true, null, "jake", Config, CancellationToken.None, ReclaimerrActions.ApprovalTiming.GracePeriod, null, 14));
+        Assert.Contains("now 0", ex.Message);
+        server.Routes["GET /api/v1/delete-requests/approval-options"] = _ => (500, "{}");
+        await Assert.ThrowsAsync<MaintainerrActions.ActionException>(() => actions.ReviewRequestAsync(7, true, null, "jake", Config, CancellationToken.None, ReclaimerrActions.ApprovalTiming.GracePeriod, null, 14));
+        Assert.Empty(server.Calls("POST"));
+        grace = "{\"delete_request_grace_period_days\":14}";
+        server.Routes["GET /api/v1/delete-requests/approval-options"] = _ => (200, grace);
+        await actions.ReviewRequestAsync(7, true, null, "jake", Config, CancellationToken.None, ReclaimerrActions.ApprovalTiming.GracePeriod, null, 14);
+        Assert.Equal("/api/v1/delete-requests/7/approve", Assert.Single(server.Calls("POST")).Path);
+    }
+
+    [Fact]
     public async Task The_grace_period_comes_from_the_approval_options_and_is_unknown_when_it_cannot_be_read()
     {
         using var server = new Reclaimerr();
@@ -399,6 +490,16 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         var mine = await actions.RequestsAsync(Config, sam, mine: true, CancellationToken.None);
         Assert.Equal(new[] { 1, 5 }, mine!.Select(r => r.Id));
         Assert.All(server.Seen.Where(s => s.Path.StartsWith("/api/v1/")), s => Assert.Equal("Bearer rcl_token", s.Bearer));
+    }
+
+    [Fact]
+    public async Task Waiting_requests_stay_when_only_the_approved_list_fails()
+    {
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1/delete-requests?status=pending&per_page=200&page=1", Page(Request(1, "pending", Guid.NewGuid(), null)));
+        server.Answer("GET /api/v1/delete-requests?status=approved&per_page=200&page=1", "{\"detail\":\"boom\"}", 500);
+        var (actions, _) = Setup(server);
+        Assert.Equal(new[] { 1 }, (await actions.RequestsAsync(Config, Guid.NewGuid(), mine: false, CancellationToken.None))!.Select(r => r.Id));
     }
 
     [Fact]
@@ -448,6 +549,39 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.Equal("mine", (await actions.RequestRemovalAsync(movie, sam, "Sam", null, Config, CancellationToken.None)).Existing);
         Assert.Equal("other", (await actions.RequestRemovalAsync(movie, pat, "Pat", null, Config, CancellationToken.None)).Existing);
         Assert.Empty(server.Calls("POST"));
+    }
+
+    [Fact]
+    public async Task A_waiting_request_for_one_season_or_version_is_not_the_same_as_one_for_the_whole_title()
+    {
+        var movie = Add(new Movie { Name = "Film" }, tmdb: "550");
+        var sam = Guid.NewGuid();
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1/movies?tmdb_id=550&per_page=5", Movies(42, (70, movie.Id)));
+        server.Answer("GET /api/v1/users?limit=1000&offset=0", Users(("sam_user", sam, true)));
+        server.Answer("GET /api/v1/delete-requests?status=pending&per_page=200&page=1", Page(Request(42, "pending", sam, movie.Id, extra: ",\"target_scope\":\"version\",\"movie_version_id\":70")));
+        server.Answer("POST /api/delete-requests", "{\"id\":9}", 201);
+        var (actions, _) = Setup(server);
+        Assert.Null((await actions.RequestRemovalAsync(movie, sam, "Sam", null, Config, CancellationToken.None)).Existing);
+        Assert.Single(server.Calls("POST"));
+    }
+
+    [Fact]
+    public async Task An_unlinked_user_cannot_file_a_request_even_right_after_one_went_through()
+    {
+        var movie = Add(new Movie { Name = "Film" }, tmdb: "550");
+        var sam = Guid.NewGuid();
+        using var server = new Reclaimerr();
+        var users = Users(("sam_user", sam, true));
+        server.Answer("GET /api/v1/movies?tmdb_id=550&per_page=5", Movies(42, (70, movie.Id)));
+        server.Routes["GET /api/v1/users?limit=1000&offset=0"] = _ => (200, users);
+        server.Answer("GET /api/v1/delete-requests?status=pending&per_page=200&page=1", Page());
+        server.Answer("POST /api/delete-requests", "{\"id\":9}", 201);
+        var (actions, _) = Setup(server);
+        await actions.RequestRemovalAsync(movie, sam, "Sam", null, Config, CancellationToken.None);
+        users = Users(("sam_user", null, true));
+        await Assert.ThrowsAsync<MaintainerrActions.ActionException>(() => actions.RequestRemovalAsync(movie, sam, "Sam", null, Config, CancellationToken.None));
+        Assert.Single(server.Calls("POST"));
     }
 
     [Fact]
@@ -512,6 +646,22 @@ public sealed class IntegrationReclaimerrTests : IDisposable
             Assert.Equal(new[] { "requests" }, body.GetProperty("allowed_pages").EnumerateArray().Select(e => e.GetString()));
             Assert.False(body.GetProperty("use_default_page_access").GetBoolean());
         }
+    }
+
+    [Fact]
+    public async Task Importing_carries_on_when_another_Jellyfin_server_Reclaimerr_knows_is_down()
+    {
+        var sam = Guid.NewGuid();
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1/users/import-from-media-server/providers", "[{\"service_config_id\":1,\"service_type\":\"jellyfin\",\"name\":\"Down\"},{\"service_config_id\":2,\"service_type\":\"jellyfin\",\"name\":\"This one\"}]");
+        server.Routes["POST /api/v1/users/import-from-media-server?preview=true"] = hit => JsonDocument.Parse(hit.Body).RootElement.GetProperty("service_config_id").GetInt32() == 2
+            ? (200, "{\"rows\":[{\"source_user_id\":\"" + sam.ToString("N") + "\",\"status\":\"ready_to_create\",\"revision\":\"r\"}]}")
+            : (502, "{\"detail\":\"Jellyfin unreachable\"}");
+        server.Answer("POST /api/v1/users/import-from-media-server?preview=false", "{\"rows\":[{\"source_user_id\":\"" + sam.ToString("N") + "\",\"status\":\"created\"}]}");
+        server.Answer("GET /api/v1/users?limit=1000&offset=0", "[]");
+        var (actions, _) = Setup(server);
+        var result = await actions.ImportUsersAsync(Config, new Dictionary<Guid, string> { [sam] = "Sam" }, new[] { "request" }, new[] { "requests" }, CancellationToken.None);
+        Assert.Equal(new[] { "Sam" }, result.Created);
     }
 
     [Fact]

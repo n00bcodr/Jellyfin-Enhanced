@@ -28,6 +28,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>Approve only: <c>default</c> (Reclaimerr's grace period, none unless set), <c>now</c>, or <c>date</c> (needs <c>date</c>).</summary>
         [JsonPropertyName("when")] public string? When { get; set; }
         [JsonPropertyName("date")] public DateTimeOffset? Date { get; set; }
+        /// <summary>The <c>source</c> of the list the request was shown in (<c>leaving-soon/list</c>); refused when Reclaimerr changed since.</summary>
+        [JsonPropertyName("source")] public string? Source { get; set; }
+        /// <summary>Approve with the grace period: the days the administrator was shown; refused when Reclaimerr's setting differs now.</summary>
+        [JsonPropertyName("graceDays")] public int? GraceDays { get; set; }
     }
 
     /// <summary>Body of the Reclaimerr item actions.</summary>
@@ -150,6 +154,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!IsAdmin()) return Forbid();
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.LeavingSoonPageEnabled || !ReclaimerrActions.Enabled(config)) return NotFound();
+            if (!string.IsNullOrEmpty(body?.Source) && !string.Equals(body.Source, ReclaimerrApi.SourceId(config), StringComparison.Ordinal))
+                return Conflict(new { error = "The Reclaimerr address changed since this list was read. Reload it." });
             try
             {
                 var timing = body?.When?.ToLowerInvariant() switch
@@ -158,7 +164,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     "date" => ReclaimerrActions.ApprovalTiming.OnDate,
                     _ => ReclaimerrActions.ApprovalTiming.GracePeriod,
                 };
-                await _reclaimerr.ReviewRequestAsync(requestId, approve, body?.Note, CurrentUserName(), config, token, timing, body?.Date).ConfigureAwait(false);
+                await _reclaimerr.ReviewRequestAsync(requestId, approve, body?.Note, CurrentUserName(), config, token, timing, body?.Date, body?.GraceDays).ConfigureAwait(false);
                 return Ok(new { id = requestId, approved = approve });
             }
             catch (MaintainerrActions.ActionException ex)
