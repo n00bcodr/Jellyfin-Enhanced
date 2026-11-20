@@ -450,7 +450,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Omitting scheduled_at means the grace period; null means now; a day schedules it.
             object body = !approve || timing == ApprovalTiming.GracePeriod ? new { admin_notes = text }
                 : timing == ApprovalTiming.Now ? new { admin_notes = text, scheduled_at = (string?)null }
-                : new { admin_notes = text, scheduled_at = (string?)Iso(CheckedDate(at ?? throw new MaintainerrActions.ActionException("Pick the day to delete it."))) };
+                : new { admin_notes = text, scheduled_at = Iso(CheckedDate(at ?? throw new MaintainerrActions.ActionException("Pick the day to delete it."))) };
             try
             {
                 using (await TokenAsync(config, HttpMethod.Post, $"/api/v1/delete-requests/{requestId}/{(approve ? "approve" : "deny")}", body, token).ConfigureAwait(false)) { }
