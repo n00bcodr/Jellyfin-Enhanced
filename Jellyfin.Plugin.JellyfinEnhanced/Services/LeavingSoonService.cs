@@ -327,6 +327,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var current = config != null && Configured(config) && _snapshot.Signature == Signature(config);
                 var merged = current ? Merge(_snapshot) : new Dictionary<string, TagLeaving>();
+                // A merged movie names its own item and each version's item; the page lists it once (see MaintainerrItems), so count it once.
+                if (current && UsesReclaimerr(config))
+                {
+                    foreach (var key in merged.Keys.ToList())
+                    {
+                        if (Guid.TryParseExact(key, "N", out var id) && PrimaryVersionOf(id) is { } primary && merged.ContainsKey(primary.ToString("N"))) merged.Remove(key);
+                    }
+                }
+
                 return new LeavingSoonStatus
                 {
                     Configured = Configured(config),
