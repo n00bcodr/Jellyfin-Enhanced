@@ -290,10 +290,10 @@
     /**
      * A deletion request as a card in the Requests page's layout: poster (opens the item), title, state, what it would delete
      * (a season, an episode or one version, when not the whole title), who asked (their Jellyfin name and avatar), their note,
-     * why a deletion failed, and for administrators the Approve and Deny buttons. Approving deletes from the library at once
-     * (Reclaimerr acts on approval), so it asks first, names the scope and takes an optional note.
+     * why a deletion failed, and for administrators the Approve and Deny buttons. Approving asks first: when to delete (Reclaimerr's
+     * grace period, now, or a day), the scope, and an optional note.
      */
-    function requestCard(r, admin, canSchedule, graceDays) {
+    function requestCard(r, admin, graceDays) {
         const el = document.createElement('div');
         el.className = 'je-ls-card je-ls-reqcard';
         const when = r.createdAt ? relativeDate(r.createdAt) : '';
@@ -328,8 +328,8 @@
                 no.addEventListener('click', () => review(r.id, false, no));
                 actions.append(ok, no);
             };
-            // Approving removes it from the library (now, after Reclaimerr's grace period, or on a day when this Reclaimerr can schedule):
-            // one more click, with the words (scope-aware), the choice of when, and an optional note.
+            // Approving removes it from the library (after Reclaimerr's grace period, now, or on a day): one more click, with the
+            // words (scope-aware), the choice of when, and an optional note.
             const showConfirm = () => {
                 actions.textContent = '';
                 const warn = document.createElement('div');
@@ -341,50 +341,47 @@
                 const row = document.createElement('div');
                 row.className = 'je-ls-confirm';
                 const yes = document.createElement('button');
-                yes.type = 'button'; yes.className = 'je-ls-btn danger'; yes.textContent = t(canSchedule ? 'leavingsoon_approve' : 'leavingsoon_delete_now');
+                yes.type = 'button'; yes.className = 'je-ls-btn danger'; yes.textContent = t('leavingsoon_approve');
                 const cancel = document.createElement('button');
                 cancel.type = 'button'; cancel.className = 'je-ls-btn'; cancel.textContent = t('maintainerr_cancel');
                 const parts = [warn];
-                let when = null, day = null;
-                if (canSchedule) {
-                    when = document.createElement('select');
-                    when.className = 'je-ls-note-input';
-                    when.setAttribute('aria-label', t('reclaimerr_schedule_title'));
-                    for (const [value, label] of [['default', graceDays > 0 ? t('leavingsoon_when_default_days', { days: graceDays }) : t('leavingsoon_when_default')], ['now', t('leavingsoon_delete_now')], ['date', t('leavingsoon_when_date')]]) {
-                        const option = document.createElement('option');
-                        option.value = value; option.textContent = label;
-                        when.appendChild(option);
-                    }
-                    day = document.createElement('input');
-                    day.type = 'datetime-local'; day.className = 'je-ls-note-input'; day.hidden = true;
-                    day.min = localInput(new Date(Date.now() + 60000));
-                    day.value = localInput(new Date(Date.now() + 7 * DAY_MS));
-                    day.setAttribute('aria-label', t('leavingsoon_when_date'));
-                    const sync = () => {
-                        day.hidden = when.value !== 'date';
-                        const picked = new Date(day.value);
-                        const valid = when.value !== 'date' || (day.value !== '' && !Number.isNaN(picked.getTime()) && picked.getTime() > Date.now());
-                        yes.disabled = !valid;
-                        warn.textContent = when.value === 'now' ? confirmText(r)
-                            : when.value === 'date' ? (valid ? t('leavingsoon_confirm_on', { date: shortDate(picked) }) : '')
-                            : graceDays === 0 ? confirmText(r)
-                            : graceDays > 0 ? t('leavingsoon_confirm_on', { date: shortDate(new Date(Date.now() + graceDays * DAY_MS)) })
-                            : t('leavingsoon_confirm_grace');
-                    };
-                    when.addEventListener('change', sync);
-                    day.addEventListener('input', sync);
-                    parts.push(when, day);
-                    sync();
+                const when = document.createElement('select');
+                when.className = 'je-ls-note-input';
+                when.setAttribute('aria-label', t('reclaimerr_schedule_title'));
+                for (const [value, label] of [['default', graceDays > 0 ? t('leavingsoon_when_default_days', { days: graceDays }) : t('leavingsoon_when_default')], ['now', t('leavingsoon_delete_now')], ['date', t('leavingsoon_when_date')]]) {
+                    const option = document.createElement('option');
+                    option.value = value; option.textContent = label;
+                    when.appendChild(option);
                 }
+                const day = document.createElement('input');
+                day.type = 'datetime-local'; day.className = 'je-ls-note-input'; day.hidden = true;
+                day.min = localInput(new Date(Date.now() + 60000));
+                day.value = localInput(new Date(Date.now() + 7 * DAY_MS));
+                day.setAttribute('aria-label', t('leavingsoon_when_date'));
+                const sync = () => {
+                    day.hidden = when.value !== 'date';
+                    const picked = new Date(day.value);
+                    const valid = when.value !== 'date' || (day.value !== '' && !Number.isNaN(picked.getTime()) && picked.getTime() > Date.now());
+                    yes.disabled = !valid;
+                    warn.textContent = when.value === 'now' ? confirmText(r)
+                        : when.value === 'date' ? (valid ? t('leavingsoon_confirm_on', { date: shortDate(picked) }) : '')
+                        : graceDays === 0 ? confirmText(r)
+                        : graceDays > 0 ? t('leavingsoon_confirm_on', { date: shortDate(new Date(Date.now() + graceDays * DAY_MS)) })
+                        : t('leavingsoon_confirm_grace');
+                };
+                when.addEventListener('change', sync);
+                day.addEventListener('input', sync);
+                parts.push(when, day);
+                sync();
 
                 yes.addEventListener('click', () => {
-                    const timing = !when ? null : when.value === 'date' ? { when: 'date', date: new Date(day.value).toISOString() } : { when: when.value };
+                    const timing = when.value === 'date' ? { when: 'date', date: new Date(day.value).toISOString() } : { when: when.value };
                     review(r.id, true, yes, note.value.trim(), timing);
                 });
                 cancel.addEventListener('click', showChoice);
                 row.append(yes, cancel);
                 actions.append(...parts, note, row);
-                if (when) paintPopups(when, day);
+                paintPopups(when, day);
             };
             showChoice();
         }
@@ -427,7 +424,7 @@
             const sec = document.createElement('div'); sec.className = 'je-ls-section';
             sec.innerHTML = `<h3><span class="material-icons" aria-hidden="true">inbox</span>${esc(t('leavingsoon_requests_title', { count: pending.length }))}</h3>`;
             const grid = document.createElement('div'); grid.className = 'je-ls-grid';
-            for (const r of pending) grid.appendChild(requestCard(r, true, !!data.canSchedule, Number.isInteger(data.graceDays) ? data.graceDays : null));
+            for (const r of pending) grid.appendChild(requestCard(r, true, Number.isInteger(data.graceDays) ? data.graceDays : null));
             sec.appendChild(grid);
             root.appendChild(sec);
         }

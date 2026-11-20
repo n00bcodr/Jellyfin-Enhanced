@@ -1263,33 +1263,21 @@ JEAdmin.define({
     'arr-reclaimerr': {
         title: 'Reclaimerr', iconImg: 'selfhst/svg/reclaimerr.svg',
         items: [
-            { type: 'note', html: 'Reclaimerr decides which items leave your library, like Maintainerr. Jellyfin Enhanced reads its cleanup candidates and scheduled deletions for the <strong>Leaving soon</strong> tag and home row. Administrators can <strong>mark, keep and postpone</strong> from an item\'s &#8942; menu (pick an exact day), and any signed-in user can <strong>request a removal</strong>, which lands in Reclaimerr as a deletion request for an administrator to approve. The shared options are in the <strong>Leaving soon</strong> card.' },
+            { type: 'note', html: 'Reclaimerr decides which items leave your library, like Maintainerr. Needs <strong>Reclaimerr 0.6.15 or newer</strong>. Jellyfin Enhanced reads what Reclaimerr will remove (cleanup candidates, scheduled deletions and approved requests waiting for their day) for the <strong>Leaving soon</strong> tag, page and home row. Administrators can <strong>mark, keep and postpone</strong> from an item\'s &#8942; menu and approve or deny removal requests on the Leaving soon page, and users can <strong>request a removal</strong>. The shared options are in the <strong>Leaving soon</strong> card.' },
             { id: 'ReclaimerrEnabled', prop: 'ReclaimerrEnabled', type: 'toggle', default: false, label: 'Use Reclaimerr',
               desc: 'Turning this on turns Maintainerr off (and the other way round). Its settings below are kept either way.' },
             { id: 'ReclaimerrUrl', prop: 'ReclaimerrUrl', type: 'text', label: 'Reclaimerr URL', placeholder: 'http://reclaimerr:8000', showIf: 'ReclaimerrEnabled',
               desc: 'The address this server reaches Reclaimerr at (<code>http://</code> or <code>https://</code>, no credentials or query). Redirects are not followed.' },
             { id: 'ReclaimerrApiKey', prop: 'ReclaimerrToken', type: 'text', label: 'Reclaimerr API token', showIf: 'ReclaimerrEnabled',
               toConfig: (v) => String(v || '').trim(), fromConfig: (v) => v || '',
-              desc: 'Create it in Reclaimerr under <em>Settings &gt; Integrations</em> with the candidates (manage), protections (manage), media (read) and system (read) scopes. Used for reading and for Keep and Postpone.' },
-            { id: 'ReclaimerrActAsUser', prop: 'ReclaimerrActAsUser', type: 'toggle', default: true, label: 'Act as the Jellyfin user', showIf: 'ReclaimerrEnabled',
-              desc: 'Requests and schedules carry the name of the Jellyfin user who made them (<strong>Request removal</strong>, <strong>Mark for removal</strong>, cancelling or moving a scheduled deletion), through Reclaimerr\'s trusted-proxy sign-in. Turn on <code>FORWARD_AUTH_ENABLED</code> in Reclaimerr with this server\'s address in <code>FORWARD_AUTH_TRUSTED_PROXIES</code>, and the user needs a Reclaimerr account: when they sign in to Reclaimerr with their Jellyfin login (media sign-in), Reclaimerr creates one (for example <code>sam_user</code>) and links it to them, and the plugin finds it through that link, so nothing has to be created or mapped by hand. Where that does not work, the service account below is used instead.' },
+              desc: 'Create it in Reclaimerr under <em>Settings &gt; Integrations</em> with the <strong>candidates</strong>, <strong>scheduled deletions</strong>, <strong>delete requests</strong> and <strong>users</strong> (manage) and <strong>media</strong> (read) scopes. Everything the plugin reads and does in Reclaimerr goes through it.' },
+            { id: 'ReclaimerrActAsUser', prop: 'ReclaimerrActAsUser', type: 'toggle', default: false, label: 'Let users request removals', showIf: 'ReclaimerrEnabled',
+              desc: 'Adds <strong>Request removal</strong> to the &#8942; menu for users who are not administrators. Reclaimerr only takes a request from the person themself, so the plugin files it as their own Reclaimerr account (the one linked to their Jellyfin account: use <strong>Import Jellyfin users</strong> below, or they sign in to Reclaimerr with Jellyfin once) through Reclaimerr\'s trusted-proxy sign-in. Set <code>FORWARD_AUTH_ENABLED=true</code> in Reclaimerr with this server\'s address in <code>FORWARD_AUTH_TRUSTED_PROXIES</code>.' },
             { id: 'ReclaimerrUserHeader', prop: 'ReclaimerrUserHeader', type: 'text', default: 'Remote-User', label: 'User header', showIf: 'ReclaimerrActAsUser',
               toConfig: (v) => String(v || '').trim() || 'Remote-User',
               desc: 'The header Reclaimerr reads the user from: its <code>FORWARD_AUTH_USER_HEADER</code> (default <code>Remote-User</code>).' },
-            { id: 'ReclaimerrUserMap', prop: 'ReclaimerrUserMap', type: 'textarea', rows: 3, placeholder: 'sam = samuel', label: 'Jellyfin user to Reclaimerr user', showIf: 'ReclaimerrActAsUser',
-              toConfig: (v) => String(v || '').trim(),
-              desc: 'Normally empty: the plugin finds each user\'s Reclaimerr account through the link Reclaimerr made when they signed in with Jellyfin (needs the service account to read it), else by the same name. List a user here only to point them at a different Reclaimerr account: one <code>Jellyfin name = Reclaimerr name</code> per line. This wins over the link.' },
-            { id: 'ReclaimerrUsername', prop: 'ReclaimerrUsername', type: 'text', label: 'Service account username (fallback)', showIf: 'ReclaimerrEnabled',
-              toConfig: (v) => String(v || '').trim(),
-              desc: 'A dedicated Reclaimerr admin account, <strong>the fallback</strong> when the plugin cannot act as the user (Reclaimerr\'s trusted-proxy sign-in is off, or the user has no Reclaimerr account), and what reads scheduled deletions. Without acting as the user it is needed for <strong>Mark for removal</strong> and <strong>Request removal</strong>. Use <strong>Create service account</strong> below to make one (it asks for a Reclaimerr administrator\'s name, and a password only if their trusted sign-in is not available). Reading candidates, Keep and Postpone work with the token alone.' },
-            { id: 'ReclaimerrPassword', prop: 'ReclaimerrPassword', type: 'text', label: 'Service account password (only for local login)', showIf: 'ReclaimerrEnabled',
-              toConfig: (v) => String(v || ''), fromConfig: (v) => v || '',
-              desc: 'Optional. With <strong>Act as the Jellyfin user</strong> on and Reclaimerr\'s trusted-proxy sign-in working, the service account signs in by name alone, so this can stay empty (and Reclaimerr\'s local login can be switched off). It is used only when that does not work.' },
-            { type: 'custom', showIf: 'ReclaimerrEnabled', html: '<div class="inputContainer jea-row"><button type="button" id="reclaimerrCreateAccountBtn" class="jea-btn">Create service account</button>'
-                + '<div id="reclaimerrCreateAccountLine" class="jea-hint">Asks for a Reclaimerr administrator\'s name once (and a password only if their trusted sign-in is not available; not stored), creates a <code>jellyfin-enhanced</code> admin account with a random password and saves it here. Save the Reclaimerr URL first.</div></div>',
-              init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireCreateAccount() },
-            { type: 'group', title: 'Create Reclaimerr accounts for Jellyfin users', open: true, showIf: 'ReclaimerrEnabled', items: [
-                { type: 'note', html: 'Creates a Reclaimerr account for every Jellyfin user who has none, so each person\'s requests carry their own name and they can see them under <strong>My requests</strong>. They sign in through the trusted-proxy sign-in, so there is no password to know. Needs the service account above. Existing accounts are left as they are. Names shorter than 5 characters get <code>_user</code> added (Reclaimerr\'s minimum), and other characters become <code>_</code>.' },
+            { type: 'group', title: 'Import Jellyfin users into Reclaimerr', open: true, showIf: 'ReclaimerrEnabled', items: [
+                { type: 'note', html: 'Creates a Reclaimerr account for every Jellyfin user who has none and links it to them, through Reclaimerr\'s own import (the token needs the users scope). Their requests then carry their own name, and they see them under <strong>My requests</strong>. Users already linked are left as they are. A user Reclaimerr matches to an existing account by name or email is not linked here: confirm those under Reclaimerr\'s <em>Settings &gt; Users &gt; Import from media server</em>. Save the Reclaimerr settings first.' },
                 { type: 'custom', html: '<div class="inputContainer">'
                     + '<div><strong>What the new accounts may do</strong></div>'
                     + '<div id="reclaimerrNewPerms" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
@@ -1297,9 +1285,9 @@ JEAdmin.define({
                     + '<div><strong>Reclaimerr pages they can open</strong></div>'
                     + '<div id="reclaimerrNewPages" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
                     + ['requests', 'candidates', 'settings', 'dashboard', 'movies', 'series', 'protected', 'duplicates', 'calendar', 'storage', 'history'].map((v) => '<label><input type="checkbox" value="' + v + '"> ' + v.charAt(0).toUpperCase() + v.slice(1) + '</label>').join('') + '</div>'
-                    + '<div class="jea-row"><button type="button" id="reclaimerrCreateUsersBtn" class="jea-btn">Create accounts for all Jellyfin users</button></div>'
-                    + '<div id="reclaimerrCreateUsersLine" class="jea-hint"></div></div>',
-                  init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireCreateUsers() }
+                    + '<div class="jea-row"><button type="button" id="reclaimerrImportUsersBtn" class="jea-btn">Import Jellyfin users</button></div>'
+                    + '<div id="reclaimerrImportUsersLine" class="jea-hint"></div></div>',
+                  init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireImportUsers() }
             ] }
         ]
     },
@@ -1413,37 +1401,9 @@ JEAdmin.maintainerr = (function () {
         if (typeof api.onStatus === 'function') api.onStatus(last);
     }
 
-    /** Create service account: one administrator login, used once, makes the plugin's own Reclaimerr account. */
-    function wireCreateAccount() {
-        const button = el('reclaimerrCreateAccountBtn');
-        if (!button || button._wired) return;
-        button._wired = true;
-        button.addEventListener('click', async () => {
-            const line = el('reclaimerrCreateAccountLine');
-            const adminUsername = window.prompt('Reclaimerr administrator username (used once, not stored):');
-            if (!adminUsername) return;
-            // Empty is fine: the plugin then acts as that administrator by name (trusted-proxy sign-in), no password needed.
-            const adminPassword = window.prompt('Password for ' + adminUsername + ' (leave empty to sign in by name through Reclaimerr\'s trusted-proxy sign-in; used once, never stored):') || '';
-            button.disabled = true;
-            try {
-                const answer = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/service-account'), data: JSON.stringify({ adminUsername, adminPassword }), contentType: 'application/json', dataType: 'json' });
-                const user = el('ReclaimerrUsername');
-                if (user) user.value = answer.username;
-                // The page's Save writes this field back, so it must hold the new password or Save would wipe it.
-                const pass = el('ReclaimerrPassword');
-                if (pass && answer.password) pass.value = answer.password;
-                if (line) line.textContent = 'Created and saved: ' + answer.username + '.';
-            } catch (err) {
-                let reason = null;
-                try { reason = typeof err?.json === 'function' ? (await err.json())?.error : null; } catch (e) { /* no body */ }
-                if (line) line.textContent = 'Could not create it: ' + (reason || err?.status || err?.message || 'request failed');
-            } finally { button.disabled = false; }
-        });
-    }
-
-    /** Create a Reclaimerr account for every Jellyfin user that has none, with the ticked permissions and pages. */
-    function wireCreateUsers() {
-        const button = el('reclaimerrCreateUsersBtn');
+    /** Import this server's users into Reclaimerr (its own import, through the token), with the ticked permissions and pages for new accounts. */
+    function wireImportUsers() {
+        const button = el('reclaimerrImportUsersBtn');
         if (!button || button._wired) return;
         button._wired = true;
         // Set in script rather than markup so nothing else on the page can change the starting ticks.
@@ -1451,22 +1411,22 @@ JEAdmin.maintainerr = (function () {
         for (const [id, on] of Object.entries(start)) for (const box of document.querySelectorAll('#' + id + ' input')) box.checked = on.includes(box.value);
         const ticked = (id) => Array.from(document.querySelectorAll('#' + id + ' input:checked')).map((i) => i.value);
         button.addEventListener('click', async () => {
-            const line = el('reclaimerrCreateUsersLine');
+            const line = el('reclaimerrImportUsersLine');
             const pages = ticked('reclaimerrNewPages');
             if (!pages.length) { if (line) line.textContent = 'Pick at least one page.'; return; }
-            if (!window.confirm('Create a Reclaimerr account for every Jellyfin user who has none?')) return;
+            if (!window.confirm('Create and link a Reclaimerr account for every Jellyfin user who has none?')) return;
             button.disabled = true;
+            if (line) line.textContent = 'Importing\u2026';
             try {
-                const answer = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/create-users'), data: JSON.stringify({ permissions: ticked('reclaimerrNewPerms'), pages }), contentType: 'application/json', dataType: 'json' });
-                // The page's Save writes the user map back, so it must hold the new lines or Save would drop them.
-                const map = el('ReclaimerrUserMap');
-                if (map && typeof answer.userMap === 'string') map.value = answer.userMap;
-                const skipped = answer.skipped || [];
-                if (line) line.textContent = 'Created ' + answer.created.length + ', already had an account: ' + answer.existing + (skipped.length ? ', not created: ' + skipped.join('; ') : '') + '.';
+                const answer = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/import-users'), data: JSON.stringify({ permissions: ticked('reclaimerrNewPerms'), pages }), contentType: 'application/json', dataType: 'json' });
+                const parts = ['Created ' + (answer.created || []).length, 'already linked ' + (answer.alreadyLinked || 0)];
+                if ((answer.needsReview || []).length) parts.push('to confirm in Reclaimerr: ' + answer.needsReview.join(', '));
+                if ((answer.skipped || []).length) parts.push('not imported: ' + answer.skipped.join('; '));
+                if (line) line.textContent = parts.join(', ') + '.';
             } catch (err) {
                 let reason = null;
                 try { reason = typeof err?.json === 'function' ? (await err.json())?.error : null; } catch (e) { /* no body */ }
-                if (line) line.textContent = 'Could not create the accounts: ' + (reason || err?.status || err?.message || 'request failed');
+                if (line) line.textContent = 'Could not import the users: ' + (reason || err?.status || err?.message || 'request failed');
             } finally { button.disabled = false; }
         });
     }
@@ -1490,6 +1450,6 @@ JEAdmin.maintainerr = (function () {
         });
         setTimeout(() => load(false), 0);
     }
-    const api = { wire, wireCreateAccount, wireCreateUsers, load, status: () => last, onStatus: null };
+    const api = { wire, wireImportUsers, load, status: () => last, onStatus: null };
     return api;
 })();
