@@ -1272,7 +1272,7 @@ JEAdmin.define({
               toConfig: (v) => String(v || '').trim(), fromConfig: (v) => v || '',
               desc: 'Create it in Reclaimerr under <em>Settings &gt; Integrations</em> with manage access to <strong>candidates</strong>, <strong>scheduled deletions</strong>, <strong>delete requests</strong> and <strong>users</strong>, and read access to <strong>media</strong>.' },
             { id: 'ReclaimerrUserRequests', prop: 'ReclaimerrUserRequests', type: 'toggle', default: false, label: 'Let users request removals', showIf: 'ReclaimerrEnabled',
-              desc: 'Adds <strong>Request removal</strong> to the &#8942; menu, filed as the user\'s linked Reclaimerr account. In Reclaimerr, set <code>FORWARD_AUTH_ENABLED=true</code> and add this server\'s IP to <code>FORWARD_AUTH_TRUSTED_PROXIES</code>.' },
+              desc: 'Adds <strong>Request removal</strong> to the &#8942; menu (needs <strong>Mark, keep and postpone from the item menu</strong> on), filed as the user\'s linked Reclaimerr account. In Reclaimerr, set <code>FORWARD_AUTH_ENABLED=true</code> and add this server\'s IP to <code>FORWARD_AUTH_TRUSTED_PROXIES</code>.' },
             { id: 'ReclaimerrUserHeader', prop: 'ReclaimerrUserHeader', type: 'text', default: 'Remote-User', label: 'User header', showIf: 'ReclaimerrUserRequests',
               toConfig: (v) => String(v || '').trim() || 'Remote-User',
               desc: 'The header Reclaimerr reads the user from: its <code>FORWARD_AUTH_USER_HEADER</code> (default <code>Remote-User</code>).' },
@@ -1281,10 +1281,10 @@ JEAdmin.define({
                 { type: 'custom', html: '<div class="inputContainer">'
                     + '<div><strong>What the new accounts may do</strong></div>'
                     + '<div id="reclaimerrNewPerms" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
-                    + [['request', 'Request removals'], ['auto_approve', 'Auto-approve'], ['manage_requests', 'Manage requests'], ['manage_protection', 'Manage protection'], ['manage_reclaim', 'Manage reclaim']].map(([v, l]) => '<label><input type="checkbox" value="' + v + '"> ' + l + '</label>').join('') + '</div>'
+                    + [['request', 'Request removals'], ['auto_approve', 'Auto-approve'], ['manage_requests', 'Manage requests'], ['manage_protection', 'Manage protection'], ['manage_reclaim', 'Manage reclaim']].map(([v, l]) => '<label><input type="checkbox" id="reclaimerrNewPerm-' + v + '" value="' + v + '"> ' + l + '</label>').join('') + '</div>'
                     + '<div><strong>Reclaimerr pages they can open</strong></div>'
                     + '<div id="reclaimerrNewPages" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
-                    + ['requests', 'candidates', 'settings', 'dashboard', 'movies', 'series', 'protected', 'duplicates', 'calendar', 'storage', 'history'].map((v) => '<label><input type="checkbox" value="' + v + '"> ' + v.charAt(0).toUpperCase() + v.slice(1) + '</label>').join('') + '</div>'
+                    + ['requests', 'candidates', 'settings', 'dashboard', 'movies', 'series', 'protected', 'duplicates', 'calendar', 'storage', 'history'].map((v) => '<label><input type="checkbox" id="reclaimerrNewPage-' + v + '" value="' + v + '"> ' + v.charAt(0).toUpperCase() + v.slice(1) + '</label>').join('') + '</div>'
                     + '<div class="jea-row"><button type="button" id="reclaimerrImportUsersBtn" class="jea-btn">Import Jellyfin users</button></div>'
                     + '<div id="reclaimerrImportUsersLine" class="jea-hint"></div></div>',
                   init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireImportUsers() }
@@ -1412,9 +1412,10 @@ JEAdmin.maintainerr = (function () {
         const button = el('reclaimerrImportUsersBtn');
         if (!button || button._wired) return;
         button._wired = true;
-        // Set in script rather than markup so nothing else on the page can change the starting ticks.
+        // Set in script rather than markup so nothing else on the page can change the starting ticks. Each box has an id, so its copy
+        // in the Services tab is a mirrored field: ticks made there reach these boxes, which the import reads. Both start the same.
         const start = { reclaimerrNewPerms: ['request'], reclaimerrNewPages: ['requests', 'candidates', 'settings'] };
-        for (const [id, on] of Object.entries(start)) for (const box of document.querySelectorAll('#' + id + ' input')) box.checked = on.includes(box.value);
+        for (const [id, on] of Object.entries(start)) for (const box of document.querySelectorAll('#' + id + ' input, #' + id + '--mirror input')) box.checked = on.includes(box.value);
         const ticked = (id) => Array.from(document.querySelectorAll('#' + id + ' input:checked')).map((i) => i.value);
         button.addEventListener('click', async () => {
             const line = el('reclaimerrImportUsersLine');

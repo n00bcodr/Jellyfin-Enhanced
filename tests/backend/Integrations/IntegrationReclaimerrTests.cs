@@ -743,6 +743,7 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         var result = await actions.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false), (b, "B", false) }, CancellationToken.None);
         Assert.Contains("did not answer", Assert.Single(result.Issues));
         Assert.Single(server.Seen, s => s.Path == "/api/account/me");
+        Assert.All(result.Users, u => Assert.False(u.Checked));
     }
 
     [Fact]
@@ -759,6 +760,17 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.Single(server.Seen, s => s.Path == "/api/account/me");
         // Neither user is known to be able to request: both are marked not checked, not counted as fine.
         Assert.All(result.Users, u => Assert.False(u.Checked));
+
+        // Requests switched on while the item menu is off: no one can request, and the audit says why instead of "all set up".
+        using var menuOff = new Reclaimerr();
+        menuOff.Answer("GET /api/v1", "{\"granted_scopes\":[\"candidates:manage\",\"scheduled_deletions:manage\",\"delete_requests:manage\",\"media:read\",\"users:manage\"]}");
+        menuOff.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("a_user", a, true)));
+        var (noMenu, _) = Setup(menuOff);
+        Config.LeavingSoonMaintainerrActions = false;
+        var told = await noMenu.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false) }, CancellationToken.None);
+        Assert.False(told.RequestsEnabled);
+        Assert.Contains("Mark, keep and postpone from the item menu is off", Assert.Single(told.Issues));
+        Assert.DoesNotContain(menuOff.Seen, s => s.Path == "/api/account/me");
 
         // With requests off, nobody's sign-in is tried: only links matter.
         using var quiet = new Reclaimerr();

@@ -605,6 +605,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var requests = RequestsEnabled(config);
             var result = new AuditResult(null, requests, new List<string>(), new List<AuditUser>());
+            // Request removal lives in the item menu, so it is off while the item-menu actions are, whatever its own switch says.
+            if (!requests && config.ReclaimerrUserRequests && !Enabled(config))
+            {
+                result.Issues.Add("Let users request removals is on, but Mark, keep and postpone from the item menu is off, and Request removal is in that menu: turn it on (Leaving soon card).");
+            }
 
             // The scopes the token has (GET /api/v1 lists them); a manage scope grants its read scope.
             using (var discovery = await TokenAsync(config, HttpMethod.Get, "/api/v1", null, token).ConfigureAwait(false))
