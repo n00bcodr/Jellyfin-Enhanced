@@ -277,6 +277,23 @@ public sealed class IntegrationReclaimerrTests : IDisposable
     }
 
     [Fact]
+    public async Task A_copy_merged_into_a_movie_after_the_last_read_stays_listed_until_the_next_read()
+    {
+        // Reclaimerr read the copy as a movie of its own; the library merged it under another movie afterwards.
+        var movie = Add(new Movie { Name = "Movie card" });
+        var copy = Add(new Movie { Name = "Its copy" });
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1/leaving-soon?per_page=200&page=1", Page(Entry("candidate", "movie", "eligible", "2026-12-01T00:00:00Z", Jf(copy.Id, copy.Id), candidate: 4)));
+        var (_, leaving) = Setup(server);
+        await leaving.RefreshAsync(Config, true, CancellationToken.None);
+        AlternateOf(copy, movie);
+        Assert.Equal(new[] { copy.Id }, leaving.MaintainerrItems(Config).Select(m => m.ItemId));
+        // The next read marks the movie card, and the copy leaves the list.
+        await leaving.RefreshAsync(Config, true, CancellationToken.None);
+        Assert.Equal(new[] { movie.Id }, leaving.MaintainerrItems(Config).Select(m => m.ItemId));
+    }
+
+    [Fact]
     public void The_feed_skips_what_is_not_leaving_and_counts_entries_naming_no_Jellyfin_item()
     {
         var a = Guid.NewGuid();

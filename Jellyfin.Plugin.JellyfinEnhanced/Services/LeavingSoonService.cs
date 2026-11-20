@@ -828,14 +828,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// The removal tool's members as of the last read (item id and delete time), for the lists (the Leaving soon page, the home row,
         /// the item list route): the facts anyone who can see the item may see. Empty while no tool is set up. With Reclaimerr, a hidden
-        /// alternate version of a merged movie is left out: Reclaimerr names that copy's own item, and its primary (the movie card) is
-        /// always marked with it, so listing both would show the movie twice. The alternate keeps its fact for its own badge.
+        /// alternate version of a merged movie is left out when its primary (the movie card) is listed too, as the read marks it: listing
+        /// both would show the movie twice. One merged only after the last read still has just the alternate, which then stays listed so
+        /// the movie does not vanish. The alternate keeps its fact for its own badge either way.
         /// </summary>
         public IReadOnlyList<(Guid ItemId, long? DeleteAt)> MaintainerrItems(PluginConfiguration? config)
         {
             if (config == null || !ApiConfigured(config)) return Array.Empty<(Guid, long?)>();
             var signature = Signature(config);
             List<(Guid, long?)> list;
+            HashSet<Guid> listed;
             lock (_sync)
             {
                 if (_snapshot.Signature != signature) return Array.Empty<(Guid, long?)>();
@@ -844,9 +846,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     if (Guid.TryParseExact(pair.Key, "N", out var id)) list.Add((id, pair.Value));
                 }
+
+                listed = list.Select(m => m.Item1).ToHashSet();
             }
 
-            return UsesReclaimerr(config) ? list.Where(m => PrimaryVersionOf(m.Item1) == null).ToList() : list;
+            return UsesReclaimerr(config) ? list.Where(m => PrimaryVersionOf(m.Item1) is not { } primary || !listed.Contains(primary)).ToList() : list;
         }
 
         /// <summary>Whether only one version of the item's title is leaving (a scheduled deletion of one movie file) as of the last read.</summary>
