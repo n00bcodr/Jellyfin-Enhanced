@@ -311,7 +311,8 @@
             + (person ? `<span class="je-ls-avatar" aria-hidden="true">${esc(person.charAt(0).toUpperCase())}${r.jellyfinUserId ? `<img alt="" src="${esc(ApiClient.getUrl(`Users/${r.jellyfinUserId}/Images/Primary`, { maxHeight: 48, quality: 90 }))}"/>` : ''}</span><span>${esc(t('leavingsoon_requested_by', { name: person }))}</span>` : '')
             + `</div>`
             + (when ? `<div class="je-ls-sub">${esc(when)}</div>` : '')
-            + (r.scheduledAt && r.status === 'approved' && !Number.isNaN(utcDate(r.scheduledAt).getTime()) ? `<div class="je-ls-sub">${esc(t('leavingsoon_leaves_on', { date: shortDate(utcDate(r.scheduledAt)) }))}</div>` : '')
+            // A cancelled (Keep) or finished schedule keeps its old day in Reclaimerr's answer: it no longer says when the title leaves.
+            + (r.scheduledAt && r.status === 'approved' && r.scheduleState !== 'canceled' && r.scheduleState !== 'completed' && !Number.isNaN(utcDate(r.scheduledAt).getTime()) ? `<div class="je-ls-sub">${esc(t('leavingsoon_leaves_on', { date: shortDate(utcDate(r.scheduledAt)) }))}</div>` : '')
             + (r.note ? `<div class="je-ls-sub je-ls-note">${esc(r.note)}</div>` : '')
             + (!admin && r.adminNotes && !/ in Jellyfin\)?$/.test(r.adminNotes) ? `<div class="je-ls-sub je-ls-note">${esc(r.adminNotes)}</div>` : '')
             + (r.executionError ? `<div class="je-ls-err">${esc(r.executionError)}</div>` : '')
