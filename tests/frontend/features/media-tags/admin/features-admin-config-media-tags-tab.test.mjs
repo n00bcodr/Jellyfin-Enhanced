@@ -19,6 +19,8 @@ const SECTIONS = ['overview', 'layout', 'groups', 'rules', 'colours', 'badges', 
 
 const clone = (v) => structuredClone(v);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** The settings search runs this long after the last keystroke (upstream 1952fa31; 150 ms before). */
+const SEARCH_DEBOUNCE = 300;
 
 /**
  * Boot the configuration page with the Media Tags tab available.
@@ -240,7 +242,7 @@ test('showing the Media Tags tab again keeps its section in the address', async 
   const input = h.document.getElementById('settingsSearchInput');
   input.value = 'rating';
   input.dispatchEvent(new h.window.Event('input', { bubbles: true }));
-  await sleep(250);
+  await sleep(SEARCH_DEBOUNCE + 100);
   input.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await h.settle();
   assert.ok(h.tab.classList.contains('active'));
@@ -471,7 +473,7 @@ test('searching and clearing the search leaves the Media Tags tab as it was', as
   const input = h.document.getElementById('settingsSearchInput');
   input.value = 'rating';
   input.dispatchEvent(new h.window.Event('input', { bubbles: true }));
-  await sleep(250);
+  await sleep(SEARCH_DEBOUNCE + 100);
   assert.ok(h.form.classList.contains('je-search-mode'));
   input.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await h.settle();
@@ -497,7 +499,7 @@ test('the settings search lists matching Media Tags settings under the form, and
   const search = async (value, done = () => !box.hidden) => {
     input.value = value;
     input.dispatchEvent(new h.window.Event('input', { bubbles: true }));
-    await sleep(200);
+    await sleep(SEARCH_DEBOUNCE + 50);
     for (let i = 0; i < 200 && !done(); i++) await sleep(5);
     await h.settle();
   };
@@ -564,7 +566,7 @@ test('a search answered after a newer one, or after the view is gone, draws noth
   await h.settle();
   const box = document.getElementById('jeMtSearchResults');
   const input = document.getElementById('settingsSearchInput');
-  const type = async (value) => { input.value = value; input.dispatchEvent(new h.window.Event('input', { bubbles: true })); await sleep(200); };
+  const type = async (value) => { input.value = value; input.dispatchEvent(new h.window.Event('input', { bubbles: true })); await sleep(SEARCH_DEBOUNCE + 50); };
   // The tab is still loading when the second query replaces the first: only the second is drawn.
   await type('time windows');
   await type('badges on collections');
@@ -577,7 +579,7 @@ test('a search answered after a newer one, or after the view is gone, draws noth
   const goneInput = gone.document.getElementById('settingsSearchInput');
   goneInput.value = 'time windows';
   goneInput.dispatchEvent(new gone.window.Event('input', { bubbles: true }));
-  await sleep(160);
+  await sleep(SEARCH_DEBOUNCE + 10);
   gone.page.dispatchEvent(new gone.window.Event('viewdestroy'));
   await sleep(400);
   await gone.settle(40);

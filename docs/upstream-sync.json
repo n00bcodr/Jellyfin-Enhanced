@@ -3318,6 +3318,33 @@
       ],
       "reason": "Upstream #1091 moves the Reclaimerr integration to Reclaimerr 0.6.15's token API: it drops the service account (its username, password and cookie login, and the Create service account button), the Jellyfin-to-Reclaimerr user map and the act-as-user switch, replaces Create accounts for Jellyfin users with Import Jellyfin users, and adds a read-only user audit. A port changes the frozen contract here, which an unattended sync may not do: it removes two existing routes and their lines, POST JellyfinEnhanced/reclaimerr/service-account (action CreateReclaimerrServiceAccount) and POST JellyfinEnhanced/reclaimerr/create-users (action CreateReclaimerrUsers), from tests/backend/Architecture/route-auth.snapshot.json, auth-helper-calls.snapshot.json and auth-reads-by-route.base.json and from artifacts/restructure-plan/baselines/inventory-routes.txt, and adds two administrator-only routes, POST reclaimerr/import-users (ImportUsers, body {permissions?, pages?}) and GET reclaimerr/user-audit (UserAudit). It also removes four stored settings (ReclaimerrUsername, ReclaimerrPassword, ReclaimerrUserMap, ReclaimerrActAsUser) for a new ReclaimerrUserRequests, off by default, and from then on refuses a Reclaimerr older than 0.6.15. The squash's other fixes (no leave date on a kept or completed schedule, a merged movie listed once, standalone visibility for request cards and the request gate, the shared 30-second request-list cache, the administrator's reason when requests cannot load) are written over the token API and are not split out by guesswork. Nothing of it is ported yet.",
       "needs": "A maintainer's decision on the contract: accept removing the reclaimerr/service-account and reclaimerr/create-users lines (route-auth, auth-helper-calls, auth-reads-by-route and inventory-routes) and adding reclaimerr/import-users and reclaimerr/user-audit; a later run then ports the whole commit with those changes in its last commit for review. Or keep the two routes (say how they behave once the service account is gone) and port the rest with only the two additions."
+    },
+    {
+      "sha": "1952fa31e9767d334b57c2a64b17eb92299457de",
+      "date": "2026-11-20T20:39:38Z",
+      "subject": "fix(admin): analytics icons reapply on refresh, hide sidebar links for hidden groups, search-mode card gaps, wrap New badge on small widths",
+      "class": "fix",
+      "features": [
+        "admin"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 3,
+        "insertions": 47,
+        "deletions": 14
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/jeAdmin.css",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/jeAdmin.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "d2612110aa4eaecd3f66c216688f08589cbeacce"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p98-*",
+      "notes": "Re-implemented in the admin configuration page (client/src/admin/config). (1) Analytics icons: the engine (engine/index.ts) keeps the reported properties markAnalytics was given and draws the icons again on every refresh (applyAnalytics, upstream's), so a card drawn or filled after the list arrived still gets them; load.ts tries a failed GET usage/fields once more two seconds later, as upstream. Differences: the retry runs on the page lifecycle's timer, so it is dropped when the page goes away (upstream: a bare setTimeout); an answer that is not a list is an answer, not a failure, and is not retried (upstream's new Set({}) throws and so retries an object, not null); markAnalytics keeps its typed list argument (upstream also takes null to re-apply only, which nothing calls). (2) Sidebar: engine/shell.ts gains syncTree, called from refresh after syncShowIf as upstream: a group link (.jea-nav-sub) is hidden while its group sits inside a false showIf condition (.jea-dep-hidden) or after the main toggle of a card that is off (.jea-off and .jea-sub), with the same rule; the link's group is kept in a WeakMap instead of upstream's _group expando. On a default lab the Maintenance Mode card's Messages and Action links and the Spoiler Guard card's three group links are hidden while their switches are off. (3) Settings search (page/search.ts): 300 ms after the last keystroke (was 150) and only from 3 characters (was 2), with the hint 'Type 3+ characters to search', as upstream; the comment above the minimum is rewritten to say why. Two-character names such as 'tv' or '4k' no longer start a search, which is upstream's choice. (4) jeAdmin.css: upstream's hunk applied as is (the .jea-nav-leaf[hidden] rule the sidebar change needs, the card margin in search mode, and the New badge wrapping under 600 px). Tests (failed first): tests/frontend/admin/config/admin-config-sidebar-search.test.mjs (4 tests: group links follow a main toggle; group links follow a showIf condition while the card's other links stay; the search starts at 3 characters, 300 ms after the last keystroke; the stylesheet rules) and two in admin-config-address.test.mjs (a failed read is tried once more and its answer draws the icons, never a third read; the kept list draws a lost icon again on the card's next change). The Media Tags tab tests that type into the settings search waited 150 ms plus a margin for the debounce; they now wait SEARCH_DEBOUNCE (300) plus the same margins, assertions unchanged (with the old waits 'searching and clearing the search leaves the Media Tags tab as it was' would find no search mode)."
     }
   ]
 }

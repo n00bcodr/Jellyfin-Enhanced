@@ -39,6 +39,21 @@ function focusCard(tab: Element, card: Element, group?: HTMLDetailsElement): voi
     }
 }
 
+/** The group each sidebar group link opens, so the link can follow whether its card shows the group. */
+const linkedGroups = new WeakMap<Element, HTMLDetailsElement>();
+
+/**
+ * Hide the sidebar link of a group its card hides: inside a showIf condition that is false, or after the main toggle
+ * of a card that is off (upstream 1952fa31). Search mode shows every group but hides the sidebar, so it needs nothing.
+ */
+export function syncTree(): void {
+    document.querySelectorAll<HTMLElement>('.jea-nav-sub').forEach(link => {
+        const group = linkedGroups.get(link);
+        if (!group) return;
+        link.hidden = !!group.closest('.jea-dep-hidden') || !!(group.closest('.jea-off') && group.closest('.jea-sub'));
+    });
+}
+
 function topGroups(card: Element): HTMLDetailsElement[] {
     return Array.from(card.querySelectorAll<HTMLDetailsElement>('.jea-group')).filter(group => !group.parentElement?.closest('.jea-group'));
 }
@@ -80,6 +95,7 @@ function buildTree(bar: Element, lifecycle: MountLifecycle): void {
                     subLink.href = '#';
                     subLink.className = 'jea-nav-leaf jea-nav-sub';
                     subLink.textContent = (group.querySelector(':scope > summary')?.textContent ?? '').trim();
+                    linkedGroups.set(subLink, group);
                     subLink.addEventListener('click', event => {
                         event.preventDefault();
                         open(() => { focusCard(tab, card, group); mark(link, subLink); setHash('card', slugOf(link.textContent)); });

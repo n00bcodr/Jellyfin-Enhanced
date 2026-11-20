@@ -146,3 +146,46 @@ test('the address the page writes keeps the page name as Jellyfin writes it', as
   await settle(window);
   assert.equal(window.location.hash, `#/configurationpage?name=Jellyfin%20Enhanced&tab=seerr&card=${slug(leaf.textContent)}`);
 });
+
+// Upstream 1952fa31: right after a reload the first read of the list can fail before the session is ready, which left
+// the page without icons. The page asks once more two seconds later, and only once.
+const poll = async (check, ms = 8000) => { for (const end = Date.now() + ms; !check() && Date.now() < end;) await new Promise(r => setTimeout(r, 25)); };
+const fieldsReads = h => h.calls.ajax.filter(r => /\/JellyfinEnhanced\/usage\/fields$/.test(r.url)).length;
+
+test('a failed read of the list is tried once more, and its answer still draws the icons', async t => {
+  const answers = { recovers: [() => Promise.reject(new Error('session not ready')), () => ['ShowWatchProgress']], stays: [] };
+  const boot = name => {
+    let n = 0;
+    const h = bootGenerated({ ajax: request => (/usage\/fields$/.test(request.url) ? (answers[name][n++] ?? (() => Promise.reject(new Error('offline'))))() : undefined) });
+    t.after(h.close);
+    return h;
+  };
+  const recovers = boot('recovers');
+  const stays = boot('stays');
+  await Promise.all([recovers.ready(), stays.ready()]);
+  assert.equal(fieldsReads(recovers), 1, 'one read as the page starts');
+  assert.equal(recovers.document.querySelectorAll('.jea-analytics').length, 0);
+
+  await poll(() => recovers.document.querySelector('.jea-analytics') && fieldsReads(stays) === 2);
+  assert.equal(fieldsReads(recovers), 2, 'the second read');
+  assert.deepEqual([...recovers.document.querySelectorAll('.jea-analytics')].map(b => b.closest('label')), [labelOf(recovers.document, 'showWatchProgress')]);
+  assert.equal(fieldsReads(stays), 2);
+  await new Promise(r => setTimeout(r, 2600));
+  assert.equal(fieldsReads(stays), 2, 'two failures: no third read');
+  assert.equal(stays.document.querySelectorAll('.jea-analytics').length, 0);
+  assert.deepEqual(stays.logged.filter(line => /usage|analytics/i.test(line)), []);
+});
+
+test('the list is kept: a setting whose icon is gone gets it back when its card next changes', async t => {
+  const h = bootGenerated({ ajax: reporting(['ShowWatchProgress']) });
+  t.after(h.close);
+  await h.ready();
+  const { document, window } = h;
+  const label = labelOf(document, 'showWatchProgress');
+  label.querySelector('.jea-analytics').remove();
+  const toggle = document.getElementById('showWatchProgress');
+  toggle.checked = !toggle.checked;
+  toggle.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await settle(window);
+  assert.equal(label.querySelectorAll('.jea-analytics').length, 1, 'drawn again, once');
+});

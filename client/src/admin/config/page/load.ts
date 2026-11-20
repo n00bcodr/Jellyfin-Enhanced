@@ -398,11 +398,18 @@ export function createLoad(m: LoadDeps) {
     /** Runs this module's start-up work, in the page's original order. */
     function wire(): void {
         // An icon on every setting the usage report carries. The list is the server's own reporting rules (upstream
-        // b0a8a963); without it the page simply shows no icons.
-        ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/usage/fields'), dataType: 'json' }).then((names: unknown) => {
-            if (lifecycle.disposed || !Array.isArray(names)) return;
-            JEAdmin.markAnalytics(names.filter((name): name is string => typeof name === 'string'));
-        }, () => { /* the icons only point at the Usage Statistics card */ });
+        // b0a8a963); without it the page simply shows no icons. Right after a reload the first read can fail before the
+        // session is ready, so a failed read is tried once more two seconds later (upstream 1952fa31).
+        const readReported = (retry: boolean): void => {
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/usage/fields'), dataType: 'json' }).then((names: unknown) => {
+                if (lifecycle.disposed || !Array.isArray(names)) return;
+                JEAdmin.markAnalytics(names.filter((name): name is string => typeof name === 'string'));
+            }, () => {
+                // The icons only point at the Usage Statistics card.
+                if (retry) lifecycle.timeout(() => readReported(false), 2000);
+            });
+        };
+        readReported(true);
     }
 
     return {

@@ -255,18 +255,16 @@ export function createSearch(m: SearchDeps) {
                     return;
                 }
 
-                // 1-character queries like "a" or "e" match ~2000–4000 text
-                // nodes across the entire settings page, each triggering a
-                // DOM mutation. That costs 3–6 s and feels like the page
-                // froze. A 2-char minimum keeps the search responsive and
-                // still lets short feature names (e.g. "ui", "tv", "4k")
-                // through. If the user is mid-edit (backspaced a longer
-                // query down to 1 char), exit search mode and clear stale
-                // highlights, then surface a hint via the counter so the
-                // search UI doesn't look broken.
-                if (query.length < 2) {
+                // Short queries match thousands of text nodes across the
+                // whole settings page, each a DOM mutation: "a" costs 3–6 s,
+                // and two characters ("re") still froze typing, so the search
+                // starts at 3 (upstream 1952fa31). If the user is mid-edit
+                // (backspaced a longer query below that), exit search mode
+                // and clear stale highlights, then surface a hint via the
+                // counter so the search UI doesn't look broken.
+                if (query.length < 3) {
                     if (isSearchMode) exitSearchMode();
-                    searchCount.textContent = 'Type 2+ characters to search';
+                    searchCount.textContent = 'Type 3+ characters to search';
                     searchCount.style.display = 'block';
                     searchClear.style.display = 'block';
                     return;
@@ -415,7 +413,7 @@ export function createSearch(m: SearchDeps) {
     function wire(): void {
             searchInput.addEventListener('input', () => {
                 clearTimeout(searchDebounce);
-                searchDebounce = setTimeout(() => performSearch(searchInput.value), 150);
+                searchDebounce = setTimeout(() => performSearch(searchInput.value), 300);
             });
 
             searchInput.addEventListener('keydown', (e) => {

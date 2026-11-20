@@ -7,7 +7,7 @@ import { initMasonry } from './masonry';
 import { wireMirrors, syncMirrors } from './mirrors';
 import { allFields, boundFields, esc, fieldsOf, isPerUser, propOf, sectionHtml, type RenderState } from './render';
 import type { FieldSpec, SectionSpec, ShowIf, UiValue } from './schema';
-import { mountShell, openCard } from './shell';
+import { mountShell, openCard, syncTree } from './shell';
 
 type ChangedField = { props: string[]; labels: string[] };
 
@@ -93,12 +93,27 @@ export function createEngine(): AdminEngine {
         });
     }
 
+    // The reported properties are kept and drawn again on every refresh, so a card drawn or filled after the list
+    // arrived still gets its icons (upstream 1952fa31).
+    let analyticsProps: ReadonlySet<string> | null = null;
+    function applyAnalytics(): void {
+        if (!analyticsProps) return;
+        const reported = analyticsProps;
+        allFields(sections).filter(field => field.id && reported.has(propOf(field))).forEach(field => {
+            const control = document.getElementById(field.id);
+            const label = control && (control.closest('label') ?? document.querySelector('label[for="' + field.id + '"]'));
+            if (label && !label.querySelector('.jea-analytics')) label.insertAdjacentHTML('beforeend', ANALYTICS_BADGE);
+        });
+    }
+
     /** Show the banner in each section with per-user fields that differ from the last loaded or applied values. */
     function refresh(): void {
         syncMirrors();
         syncCollapse();
         syncPos();
         syncShowIf();
+        syncTree();
+        applyAnalytics();
         Object.values(sections).forEach(section => {
             const fields = fieldsOf(section, sections);
             const first = fields[0] && document.getElementById(fields[0].id);
@@ -234,12 +249,8 @@ export function createEngine(): AdminEngine {
         openCard,
         // The list comes from the server's own reporting rules, so nothing here names a setting by hand.
         markAnalytics(properties) {
-            const reported = new Set(properties);
-            allFields(sections).filter(field => field.id && reported.has(propOf(field))).forEach(field => {
-                const control = document.getElementById(field.id);
-                const label = control && (control.closest('label') ?? document.querySelector('label[for="' + field.id + '"]'));
-                if (label && !label.querySelector('.jea-analytics')) label.insertAdjacentHTML('beforeend', ANALYTICS_BADGE);
-            });
+            analyticsProps = new Set(properties);
+            applyAnalytics();
         },
     };
     return engine;

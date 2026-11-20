@@ -488,6 +488,14 @@
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   }
+  var linkedGroups = /* @__PURE__ */ new WeakMap();
+  function syncTree() {
+    document.querySelectorAll(".jea-nav-sub").forEach((link) => {
+      const group = linkedGroups.get(link);
+      if (!group) return;
+      link.hidden = !!group.closest(".jea-dep-hidden") || !!(group.closest(".jea-off") && group.closest(".jea-sub"));
+    });
+  }
   function topGroups(card) {
     return Array.from(card.querySelectorAll(".jea-group")).filter((group) => !group.parentElement?.closest(".jea-group"));
   }
@@ -534,6 +542,7 @@
             subLink.href = "#";
             subLink.className = "jea-nav-leaf jea-nav-sub";
             subLink.textContent = (group.querySelector(":scope > summary")?.textContent ?? "").trim();
+            linkedGroups.set(subLink, group);
             subLink.addEventListener("click", (event) => {
               event.preventDefault();
               open(() => {
@@ -732,11 +741,23 @@
         if (description) description.classList.toggle("jea-dep-hidden", !on);
       });
     }
+    let analyticsProps = null;
+    function applyAnalytics() {
+      if (!analyticsProps) return;
+      const reported = analyticsProps;
+      allFields(sections).filter((field) => field.id && reported.has(propOf(field))).forEach((field) => {
+        const control = document.getElementById(field.id);
+        const label = control && (control.closest("label") ?? document.querySelector('label[for="' + field.id + '"]'));
+        if (label && !label.querySelector(".jea-analytics")) label.insertAdjacentHTML("beforeend", ANALYTICS_BADGE);
+      });
+    }
     function refresh() {
       syncMirrors();
       syncCollapse();
       syncPos();
       syncShowIf();
+      syncTree();
+      applyAnalytics();
       Object.values(sections).forEach((section) => {
         const fields = fieldsOf(section, sections);
         const first = fields[0] && document.getElementById(fields[0].id);
@@ -868,12 +889,8 @@
       openCard,
       // The list comes from the server's own reporting rules, so nothing here names a setting by hand.
       markAnalytics(properties) {
-        const reported = new Set(properties);
-        allFields(sections).filter((field) => field.id && reported.has(propOf(field))).forEach((field) => {
-          const control = document.getElementById(field.id);
-          const label = control && (control.closest("label") ?? document.querySelector('label[for="' + field.id + '"]'));
-          if (label && !label.querySelector(".jea-analytics")) label.insertAdjacentHTML("beforeend", ANALYTICS_BADGE);
-        });
+        analyticsProps = new Set(properties);
+        applyAnalytics();
       }
     };
     return engine2;
