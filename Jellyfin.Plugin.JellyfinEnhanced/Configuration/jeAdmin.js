@@ -228,11 +228,34 @@
         syncMirrors();
     }
 
+    // The list is remembered and re-applied on every refresh, so a card rendered or filled after the list arrived still gets its icon.
+    let analyticsProps = null;
+    function applyAnalytics() {
+        if (!analyticsProps) return;
+        all().filter((f) => f.id && analyticsProps.has(propOf(f))).forEach((f) => {
+            const el = document.getElementById(f.id);
+            const lbl = el && (el.closest('label') || document.querySelector(`label[for="${f.id}"]`));
+            if (lbl && !lbl.querySelector('.jea-analytics')) lbl.insertAdjacentHTML('beforeend', ANALYTICS_BADGE);
+        });
+    }
+
+    // Hide sidebar links whose card group is hidden (main toggle off or a showIf condition false). Search mode shows everything, so leave them.
+    function syncTree() {
+        document.querySelectorAll('.jea-nav-sub').forEach((a) => {
+            const g = a._group;
+            if (!g) return;
+            const hidden = !!g.closest('.jea-dep-hidden') || !!(g.closest('.jea-off') && g.closest('.jea-sub'));
+            a.hidden = hidden;
+        });
+    }
+
     function refresh() {
         syncMirrors();
         syncCollapse();
         syncPos();
         syncShowIf();
+        syncTree();
+        applyAnalytics();
         Object.values(sections).forEach((s) => {
             const fields = fieldsOf(s);
             const first = fields[0] && document.getElementById(fields[0].id);
@@ -412,6 +435,7 @@
                         sa.href = '#';
                         sa.className = 'jea-nav-leaf jea-nav-sub';
                         sa.textContent = (g.querySelector(':scope > summary') || { textContent: '' }).textContent.trim();
+                        sa._group = g;
                         sa.addEventListener('click', (e) => { e.preventDefault(); open(() => { focusCard(tab, fs, g); mark(a, sa); }); });
                         sub.appendChild(sa);
                     });
@@ -625,12 +649,8 @@
         },
         // Adds an insights icon to every field whose property the analytics report sends (list comes from the server, so nothing is defined by hand).
         markAnalytics(props) {
-            const set = new Set(props);
-            all().filter((f) => f.id && set.has(propOf(f))).forEach((f) => {
-                const el = document.getElementById(f.id);
-                const lbl = el && (el.closest('label') || document.querySelector(`label[for="${f.id}"]`));
-                if (lbl && !lbl.querySelector('.jea-analytics')) lbl.insertAdjacentHTML('beforeend', ANALYTICS_BADGE);
-            });
+            if (props) analyticsProps = new Set(props);
+            applyAnalytics();
         }
     };
 })();

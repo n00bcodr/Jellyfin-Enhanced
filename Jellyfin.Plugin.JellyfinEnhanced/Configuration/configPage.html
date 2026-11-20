@@ -359,8 +359,11 @@
 
             JEAdmin.mount(document);
             // Icon on every setting the usage report sends; the list is read from the server's own reporting code.
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/usage/fields'), dataType: 'json' })
-                .then((names) => JEAdmin.markAnalytics(names)).catch(() => { /* badges are cosmetic */ });
+            // One retry: right after a reload the first call can fail before the session is ready, which used to leave the page without icons.
+            const loadAnalytics = (retry) => ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/usage/fields'), dataType: 'json' })
+                .then((names) => JEAdmin.markAnalytics(names))
+                .catch(() => { if (retry) setTimeout(() => loadAnalytics(false), 2000); });
+            loadAnalytics(true);
 
             const page = document.querySelector('#JellyfinEnhancedPage');
             const form = document.querySelector('#JellyfinEnhancedForm');
@@ -1060,7 +1063,7 @@
             let searchDebounce;
             searchInput.addEventListener('input', () => {
                 clearTimeout(searchDebounce);
-                searchDebounce = setTimeout(() => performSearch(searchInput.value), 150);
+                searchDebounce = setTimeout(() => performSearch(searchInput.value), 300);
             });
 
             searchInput.addEventListener('keydown', (e) => {
@@ -1315,9 +1318,10 @@
                 // query down to 1 char), exit search mode and clear stale
                 // highlights, then surface a hint via the counter so the
                 // search UI doesn't look broken.
-                if (query.length < 2) {
+                // 2 characters ("re") match most of the page and highlight thousands of nodes, which is what froze typing; 3 is selective enough.
+                if (query.length < 3) {
                     if (isSearchMode) exitSearchMode();
-                    searchCount.textContent = 'Type 2+ characters to search';
+                    searchCount.textContent = 'Type 3+ characters to search';
                     searchCount.style.display = 'block';
                     searchClear.style.display = 'block';
                     return;
