@@ -145,7 +145,7 @@ With **Leaving soon home row** on (and a Maintainerr URL), the plugin registers 
 | Setting | Default | What it does |
 |---|---|---|
 | **Use Reclaimerr** | Off | Turns Reclaimerr on and Maintainerr off |
-| **Reclaimerr URL** | Empty | The address this server reaches Reclaimerr at (`http://` or `https://`, no credentials or query). Redirects are not followed |
+| **Reclaimerr URL** | Empty | Where this server reaches Reclaimerr: `http://` or `https://`, with no credentials, query or redirect |
 | **Reclaimerr API token** | Empty | A token from Reclaimerr's **Settings › Integrations** with the **candidates**, **scheduled deletions**, **delete requests** and **users** (manage) and **media** (read) scopes. Everything the plugin reads and does in Reclaimerr goes through it, except filing a user's own request (below). Sent as a bearer token; masked in the page like the other keys, and never sent to users or written to the snapshot or logs |
 | **Let users request removals** | Off | Adds **Request removal** to the ⋮ menu for users who are not administrators. Reclaimerr's token cannot file a request for someone else, so the plugin files it as the user's own Reclaimerr account, the one linked to their Jellyfin account, through Reclaimerr's trusted-proxy sign-in (see below). A user gets a linked account from **Import Jellyfin users**, or by signing in to Reclaimerr with Jellyfin once. A user without one is told to ask an administrator |
 | **User header** | `Remote-User` | The header the Reclaimerr user name is sent in; match Reclaimerr's `FORWARD_AUTH_USER_HEADER` |
