@@ -80,6 +80,18 @@ test('the page says so when the requests could not be read, and a leaving card s
   assert.equal(card.querySelector('.je-ls-year').textContent, '(2026)');
 });
 
+test('an administrator is told why the requests could not be read; anyone else only that they could not', async t => {
+  const reason = 'API token requires the delete_requests:read scope';
+  const admin = setup(t, { ...base, requestsUnavailable: true, requestsError: reason });
+  admin.JE.leavingSoonPage.renderForCustomTab(admin.$('#host'));
+  await admin.settle();
+  assert.equal(admin.$('.je-ls-notice').textContent, `leavingsoon_requests_unavailable (${reason})`);
+  const viewer = setup(t, { ...base, admin: false, requestsUnavailable: true, requestsError: reason });
+  viewer.JE.leavingSoonPage.renderForCustomTab(viewer.$('#host'));
+  await viewer.settle();
+  assert.equal(viewer.$('.je-ls-notice').textContent, 'leavingsoon_requests_unavailable');
+});
+
 test('dates read like the Requests page: day, short month, year for the leave date, and "ago" for a recent request', async t => {
   const fixed = Date.UTC(2026, 11, 10, 12);
   const h = setup(t, {

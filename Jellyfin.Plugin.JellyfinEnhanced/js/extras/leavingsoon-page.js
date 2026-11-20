@@ -433,7 +433,9 @@
         }
         const pending = data.requests || [];
         if (data.requestsUnavailable) {
-            const note = document.createElement('div'); note.className = 'je-ls-notice'; note.textContent = t('leavingsoon_requests_unavailable');
+            // Administrators also get Reclaimerr's reason (for example a scope the token lacks); it is only sent to them.
+            const note = document.createElement('div'); note.className = 'je-ls-notice';
+            note.textContent = t('leavingsoon_requests_unavailable') + (data.admin && data.requestsError ? ` (${data.requestsError})` : '');
             root.appendChild(note);
         }
         if (data.admin && pending.length) {

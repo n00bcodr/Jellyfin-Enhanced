@@ -95,6 +95,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static bool Supported(Version? found) => found != null && found >= MinimumVersion;
 
+        /// <summary>The version text the Reclaimerr at the configured address last reported, or null before a check.</summary>
+        internal static string? ReportedVersion(PluginConfiguration config) => Versions.TryGetValue(BaseUrl(config), out var known) ? known.Reported : null;
+
         /// <summary>One call to the token API (<paramref name="path"/> starts <c>/api/v1</c>), after the version check.</summary>
         internal static async Task<JsonDocument> TokenAsync(IHttpClientFactory http, PluginConfiguration config, HttpMethod method, string path, object? body, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token)
         {

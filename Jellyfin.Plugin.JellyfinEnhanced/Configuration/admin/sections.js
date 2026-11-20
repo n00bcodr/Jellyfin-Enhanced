@@ -1272,12 +1272,12 @@ JEAdmin.define({
               toConfig: (v) => String(v || '').trim(), fromConfig: (v) => v || '',
               desc: 'Create it in Reclaimerr under <em>Settings &gt; Integrations</em> with manage access to <strong>candidates</strong>, <strong>scheduled deletions</strong>, <strong>delete requests</strong> and <strong>users</strong>, and read access to <strong>media</strong>.' },
             { id: 'ReclaimerrUserRequests', prop: 'ReclaimerrUserRequests', type: 'toggle', default: false, label: 'Let users request removals', showIf: 'ReclaimerrEnabled',
-              desc: 'Adds <strong>Request removal</strong> to the &#8942; menu for users who are not administrators. Reclaimerr only takes a request from the person themself, so the plugin files it as their own Reclaimerr account (the one linked to their Jellyfin account: use <strong>Import Jellyfin users</strong> below, or they sign in to Reclaimerr with Jellyfin once) through Reclaimerr\'s trusted-proxy sign-in. Set <code>FORWARD_AUTH_ENABLED=true</code> in Reclaimerr with this server\'s address in <code>FORWARD_AUTH_TRUSTED_PROXIES</code>.' },
+              desc: 'Adds <strong>Request removal</strong> to the &#8942; menu, filed as the user\'s linked Reclaimerr account. In Reclaimerr, set <code>FORWARD_AUTH_ENABLED=true</code> and add this server\'s IP to <code>FORWARD_AUTH_TRUSTED_PROXIES</code>.' },
             { id: 'ReclaimerrUserHeader', prop: 'ReclaimerrUserHeader', type: 'text', default: 'Remote-User', label: 'User header', showIf: 'ReclaimerrUserRequests',
               toConfig: (v) => String(v || '').trim() || 'Remote-User',
               desc: 'The header Reclaimerr reads the user from: its <code>FORWARD_AUTH_USER_HEADER</code> (default <code>Remote-User</code>).' },
             { type: 'group', title: 'Import Jellyfin users into Reclaimerr', open: true, showIf: 'ReclaimerrEnabled', items: [
-                { type: 'note', html: 'Creates a Reclaimerr account for every Jellyfin user who has none and links it to them, through Reclaimerr\'s own import (the token needs the users scope). Their requests then carry their own name, and they see them under <strong>My requests</strong>. Users already linked are left as they are. A user Reclaimerr matches to an existing account by name or email is not linked here: confirm those under Reclaimerr\'s <em>Settings &gt; Users &gt; Import from media server</em>. Save the Reclaimerr settings first.' },
+                { type: 'note', html: 'Creates and links a Reclaimerr account for each Jellyfin user without one. Users Reclaimerr matches to an existing account are listed for you to confirm in Reclaimerr.' },
                 { type: 'custom', html: '<div class="inputContainer">'
                     + '<div><strong>What the new accounts may do</strong></div>'
                     + '<div id="reclaimerrNewPerms" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
@@ -1288,6 +1288,12 @@ JEAdmin.define({
                     + '<div class="jea-row"><button type="button" id="reclaimerrImportUsersBtn" class="jea-btn">Import Jellyfin users</button></div>'
                     + '<div id="reclaimerrImportUsersLine" class="jea-hint"></div></div>',
                   init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireImportUsers() }
+            ] },
+            { type: 'group', title: 'User audit', open: false, showIf: 'ReclaimerrEnabled', items: [
+                { type: 'note', html: 'Checks each Jellyfin user\'s linked Reclaimerr account and, with requests on, whether they can request removals. Also lists token scopes that are missing. Save the Reclaimerr settings first.' },
+                { type: 'custom', html: '<div class="inputContainer"><div class="jea-row"><button type="button" id="reclaimerrAuditBtn" class="jea-btn">Run Audit</button></div>'
+                    + '<div id="reclaimerrAuditResult" style="display:none;margin-top:1em"></div></div>',
+                  init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireUserAudit() }
             ] }
         ]
     },
@@ -1450,6 +1456,86 @@ JEAdmin.maintainerr = (function () {
         });
         setTimeout(() => load(false), 0);
     }
-    const api = { wire, wireImportUsers, load, status: () => last, onStatus: null };
+    /**
+     * Reclaimerr user audit: the token's missing scopes and setup problems first, then a card for each user with issues (in the
+     * Seerr permission audit's style), and the users with none folded away. Built with textContent only: names and reasons come
+     * from Jellyfin and Reclaimerr.
+     */
+    function wireUserAudit() {
+        const button = el('reclaimerrAuditBtn');
+        if (!button || button._wired) return;
+        button._wired = true;
+        const node = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+        const icon = (name) => { const i = node('i', 'material-icons', name); i.setAttribute('aria-hidden', 'true'); return i; };
+        const chip = (kind, iconName, text) => { const c = node('span', 'je-audit-chip je-audit-chip-' + kind); c.append(icon(iconName), document.createTextNode(text)); return c; };
+        button.addEventListener('click', async () => {
+            const out = el('reclaimerrAuditResult');
+            if (!out) return;
+            button.disabled = true;
+            button.textContent = 'Running\u2026';
+            out.style.display = 'none';
+            out.textContent = '';
+            try {
+                const data = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/user-audit'), dataType: 'json' });
+                const users = data.users || [];
+                const flagged = users.filter((u) => (u.issues || []).length > 0);
+                const ok = users.filter((u) => !(u.issues || []).length);
+                const summary = node('div', 'je-audit-summary');
+                const setup = data.issues || [];
+                summary.append(node('div', 'je-audit-summary-title', !setup.length && !flagged.length
+                    ? 'All ' + ok.length + ' user(s) are set up' + (data.requestsEnabled ? ' to request removals.' : '.') + (data.version ? ' Reclaimerr ' + data.version + '.' : '')
+                    : 'Audit complete' + (data.version ? ' (Reclaimerr ' + data.version + ')' : '') + ', review the items below.'));
+                if (setup.length || flagged.length) {
+                    const chips = node('div', 'je-audit-summary-chips');
+                    if (setup.length) chips.append(chip('warn', 'settings', setup.length + ' setup'));
+                    if (flagged.length) chips.append(chip('warn', 'warning', flagged.length + ' with issues'));
+                    if (ok.length) chips.append(chip('ok', 'check_circle', ok.length + ' OK'));
+                    summary.append(chips);
+                }
+                out.append(summary);
+                const cards = node('div', 'je-audit-cards');
+                if (setup.length) {
+                    const card = node('div', 'je-audit-card je-audit-card-warn');
+                    const head = node('div', 'je-audit-card-header');
+                    const who = node('span', 'je-audit-card-user'); who.append(icon('settings'), document.createTextNode('Setup'));
+                    head.append(who);
+                    const list = node('ul', 'je-audit-card-issues');
+                    for (const issue of setup) list.append(node('li', null, issue));
+                    card.append(head, list);
+                    cards.append(card);
+                }
+                for (const u of flagged) {
+                    const card = node('div', 'je-audit-card ' + (u.linked ? 'je-audit-card-warn' : 'je-audit-card-unlinked'));
+                    const head = node('div', 'je-audit-card-header');
+                    const who = node('span', 'je-audit-card-user');
+                    who.append(icon(u.linked ? 'person' : 'person_off'), document.createTextNode(u.jellyfinUsername + (u.reclaimerrUsername ? ' \u2192 ' + u.reclaimerrUsername : '')));
+                    head.append(who, u.linked ? chip('warn', 'warning', 'Needs attention') : chip('unlinked', 'link_off', 'Not linked'));
+                    const list = node('ul', 'je-audit-card-issues');
+                    for (const issue of u.issues) list.append(node('li', null, issue));
+                    card.append(head, list);
+                    cards.append(card);
+                }
+                if (cards.childNodes.length) out.append(cards);
+                if (ok.length && (setup.length || flagged.length)) {
+                    const details = node('details', 'je-audit-ok-section');
+                    details.append(node('summary', null, 'Show ' + ok.length + ' user(s) with no issues'));
+                    const names = node('ul', 'je-audit-ok-names');
+                    for (const u of ok) names.append(node('li', null, u.jellyfinUsername + (u.reclaimerrUsername ? ' \u2192 ' + u.reclaimerrUsername : '')));
+                    details.append(names);
+                    out.append(details);
+                }
+            } catch (err) {
+                let reason = null;
+                try { reason = typeof err?.json === 'function' ? (await err.json())?.error : null; } catch (e) { /* no body */ }
+                out.append(node('div', 'je-audit-error', 'Audit failed: ' + (reason || err?.status || err?.message || 'request failed')));
+            } finally {
+                out.style.display = 'block';
+                button.disabled = false;
+                button.textContent = 'Run Audit';
+            }
+        });
+    }
+
+    const api = { wire, wireImportUsers, wireUserAudit, load, status: () => last, onStatus: null };
     return api;
 })();

@@ -295,25 +295,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// Deletion requests: every pending one plus the approved ones whose deletion failed or is held back (administrators), or the
         /// caller's own of any state (<paramref name="mine"/>, the requests whose requester is linked to <paramref name="userId"/>).
-        /// Null when they could not be read. The approved ones are extra: when only they fail, the pending ones still come back.
+        /// Null rows, with the reason (Reclaimerr's own, such as a scope the token lacks), when they could not be read. The approved ones
+        /// are extra: when only they fail, the pending ones still come back.
         /// </summary>
-        public async Task<IReadOnlyList<ReclaimerrRequestRow>?> RequestsAsync(PluginConfiguration config, Guid userId, bool mine, CancellationToken token)
+        public async Task<(IReadOnlyList<ReclaimerrRequestRow>? Rows, string? Error)> RequestsAsync(PluginConfiguration config, Guid userId, bool mine, CancellationToken token)
         {
             List<ReclaimerrRequestRow> all;
             try
             {
                 if (mine)
                 {
-                    if (userId == Guid.Empty) return Array.Empty<ReclaimerrRequestRow>();
-                    return Parse(await ListAllAsync(config, "/api/v1/delete-requests", token).ConfigureAwait(false), r => r.RequesterIds?.Contains(userId) == true);
+                    if (userId == Guid.Empty) return (Array.Empty<ReclaimerrRequestRow>(), null);
+                    return (Parse(await ListAllAsync(config, "/api/v1/delete-requests", token).ConfigureAwait(false), r => r.RequesterIds?.Contains(userId) == true), null);
                 }
 
                 all = Parse(await ListAllAsync(config, "/api/v1/delete-requests?status=pending", token).ConfigureAwait(false), null);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.Warning($"[Reclaimerr] Could not read the deletion requests ({MaintainerrHttp.Describe(ex)}).");
-                return null;
+                var reason = MaintainerrHttp.Describe(ex);
+                _logger.Warning($"[Reclaimerr] Could not read the deletion requests ({reason}).");
+                return (null, reason);
             }
 
             try
@@ -327,7 +329,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Warning($"[Reclaimerr] Could not read the approved deletion requests ({MaintainerrHttp.Describe(ex)}); showing the waiting ones.");
             }
 
-            return all;
+            return (all, null);
         }
 
         /// <summary>Every entry of a request list, saying in the log when there were more than <see cref="AllPages"/> pages.</summary>
@@ -549,9 +551,141 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private async Task<Dictionary<Guid, string>> ReadIdentitiesAsync(PluginConfiguration config, bool includeInactive, CancellationToken token)
         {
-            const int limit = 1000;
             var map = new Dictionary<Guid, string>();
-            var clashes = new HashSet<Guid>();
+            foreach (var (id, accounts) in await ReadAccountsAsync(config, token).ConfigureAwait(false))
+            {
+                var usable = accounts.Where(a => includeInactive || a.Active).Select(a => a.Username).Distinct(StringComparer.Ordinal).ToList();
+                if (usable.Count == 1) map[id] = usable[0];
+            }
+
+            return map;
+        }
+
+        /// <summary>The token scopes the integration uses, each with what goes without it (a manage scope grants its read scope).</summary>
+        internal static readonly (string Scope, string Needs)[] RequiredScopes =
+        {
+            ("candidates:manage", "Leaving soon cannot read cleanup candidates, and Keep and Postpone cannot act on them"),
+            ("scheduled_deletions:manage", "Mark for removal, and Keep and Postpone on a scheduled deletion, are refused"),
+            ("delete_requests:manage", "removal requests cannot be listed, approved or denied"),
+            ("media:read", "Mark for removal and Request removal cannot find the title"),
+            ("users:manage", "Import Jellyfin users is refused (users read alone lets requests and this audit find accounts)"),
+        };
+
+        /// <summary>One Jellyfin user in the audit: the Reclaimerr account linked to them (null when none) and what stops them.</summary>
+        public sealed record AuditUser(
+            [property: JsonPropertyName("jellyfinUsername")] string JellyfinUsername,
+            [property: JsonPropertyName("jellyfinUserId")] string JellyfinUserId,
+            [property: JsonPropertyName("admin")] bool Admin,
+            [property: JsonPropertyName("linked")] bool Linked,
+            [property: JsonPropertyName("reclaimerrUsername")] string? ReclaimerrUsername,
+            [property: JsonPropertyName("issues")] List<string> Issues);
+
+        /// <summary>The audit: the version Reclaimerr reports, problems with the setup as a whole (token scopes, the trusted-proxy sign-in), and each user.</summary>
+        public sealed record AuditResult(
+            [property: JsonPropertyName("version")] string? Version,
+            [property: JsonPropertyName("requestsEnabled")] bool RequestsEnabled,
+            [property: JsonPropertyName("issues")] List<string> Issues,
+            [property: JsonPropertyName("users")] List<AuditUser> Users);
+
+        /// <summary>
+        /// Check every Jellyfin user against Reclaimerr, read-only: whether a Reclaimerr account is linked to them (and only one, and active),
+        /// and, with removal requests on, whether Reclaimerr's trusted-proxy sign-in accepts that account (<c>GET /api/account/me</c> as them,
+        /// which writes nothing) and whether it may request. Administrators mark instead of requesting, so only their link is checked. Also
+        /// reports the token scopes the integration uses that the token lacks. A sign-in refused for everyone (the feature off, this server
+        /// not trusted) is said once, and the remaining users are not tried.
+        /// </summary>
+        public async Task<AuditResult> AuditUsersAsync(PluginConfiguration config, IReadOnlyList<(Guid Id, string Name, bool Admin)> jellyfinUsers, CancellationToken token)
+        {
+            var requests = RequestsEnabled(config);
+            var result = new AuditResult(null, requests, new List<string>(), new List<AuditUser>());
+
+            // The scopes the token has (GET /api/v1 lists them); a manage scope grants its read scope.
+            using (var discovery = await TokenAsync(config, HttpMethod.Get, "/api/v1", null, token).ConfigureAwait(false))
+            {
+                var granted = new HashSet<string>(StringComparer.Ordinal);
+                if (discovery.RootElement.ValueKind == JsonValueKind.Object && discovery.RootElement.TryGetProperty("granted_scopes", out var scopes) && scopes.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var scope in scopes.EnumerateArray())
+                    {
+                        if (scope.ValueKind == JsonValueKind.String && scope.GetString() is { } name) granted.Add(name);
+                    }
+                }
+
+                foreach (var (scope, needs) in RequiredScopes)
+                {
+                    if (!granted.Contains(scope)) result.Issues.Add($"The API token lacks {scope}: {needs}.");
+                }
+            }
+
+            result = result with { Version = ReclaimerrApi.ReportedVersion(config) };
+            Dictionary<Guid, List<(string Username, bool Active)>> accounts;
+            try
+            {
+                accounts = await ReadAccountsAsync(config, token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                result.Issues.Add($"Reclaimerr's users could not be read ({MaintainerrHttp.Describe(ex)}), so no user was checked.");
+                return result;
+            }
+
+            string? refused = null;
+            foreach (var (id, name, admin) in jellyfinUsers.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var issues = new List<string>();
+                // The same rule as filing a request: exactly one active linked account.
+                var mine = accounts.TryGetValue(id, out var found) ? found : new List<(string Username, bool Active)>();
+                var linked = mine.Select(a => a.Username).Distinct(StringComparer.Ordinal).ToList();
+                var active = mine.Where(a => a.Active).Select(a => a.Username).Distinct(StringComparer.Ordinal).ToList();
+                string? account = active.Count == 1 ? active[0] : linked.Count == 1 ? linked[0] : null;
+                if (linked.Count == 0)
+                {
+                    issues.Add("No Reclaimerr account is linked to this user: run Import Jellyfin users, or have them sign in to Reclaimerr with Jellyfin once.");
+                }
+                else if (active.Count > 1)
+                {
+                    issues.Add($"Linked to several active Reclaimerr accounts ({string.Join(", ", active)}): requests are refused until only one is linked.");
+                }
+                else if (active.Count == 0)
+                {
+                    issues.Add($"The linked Reclaimerr account {string.Join(", ", linked)} is disabled.");
+                }
+                else if (requests && !admin && refused == null)
+                {
+                    try
+                    {
+                        using var me = await ReclaimerrApi.SendAsUserAsync(_http, config, account!, HttpMethod.Get, "/api/account/me", null, Timeout, token).ConfigureAwait(false);
+                        var root = me.RootElement;
+                        var role = root.TryGetProperty("role", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null;
+                        var canRequest = role == "admin" || (root.TryGetProperty("permissions", out var p) && p.ValueKind == JsonValueKind.Array && p.EnumerateArray().Any(x => x.ValueKind == JsonValueKind.String && x.GetString() == "request"));
+                        if (!canRequest) issues.Add($"The Reclaimerr account {account} lacks the Request permission, so Request removal is refused.");
+                    }
+                    catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401)
+                    {
+                        refused = account;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
+                    {
+                        issues.Add($"Could not check the Reclaimerr account {account} ({MaintainerrHttp.Describe(ex)}).");
+                    }
+                }
+
+                result.Users.Add(new AuditUser(name, id.ToString("N"), admin, linked.Count > 0, account, issues));
+            }
+
+            if (refused != null)
+            {
+                result.Issues.Insert(0, $"Reclaimerr's trusted-proxy sign-in refused {refused}, so users cannot request removals: set FORWARD_AUTH_ENABLED=true in Reclaimerr, with this server's IP in FORWARD_AUTH_TRUSTED_PROXIES and FORWARD_AUTH_USER_HEADER matching the User header here.");
+            }
+
+            return result;
+        }
+
+        /// <summary>Jellyfin user id to every Reclaimerr account linked to it (username, active), from <c>/api/v1/users</c>.</summary>
+        private async Task<Dictionary<Guid, List<(string Username, bool Active)>>> ReadAccountsAsync(PluginConfiguration config, CancellationToken token)
+        {
+            const int limit = 1000;
+            var map = new Dictionary<Guid, List<(string, bool)>>();
             for (var offset = 0; offset < 20 * limit; offset += limit)
             {
                 using var doc = await TokenAsync(config, HttpMethod.Get, $"/api/v1/users?limit={limit}&offset={offset.ToString(CultureInfo.InvariantCulture)}", null, token).ConfigureAwait(false);
@@ -559,19 +693,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 foreach (var u in doc.RootElement.EnumerateArray())
                 {
                     if (u.ValueKind != JsonValueKind.Object || !u.TryGetProperty("username", out var name) || name.ValueKind != JsonValueKind.String || name.GetString() is not { Length: > 0 } username) continue;
-                    if (!includeInactive && !(u.TryGetProperty("is_active", out var active) && active.ValueKind == JsonValueKind.True)) continue;
+                    var active = u.TryGetProperty("is_active", out var a) && a.ValueKind == JsonValueKind.True;
                     if (!u.TryGetProperty("media_identities", out var identities)) continue;
                     foreach (var id in ReclaimerrApi.JellyfinIds(identities, "source_user_id"))
                     {
-                        if (map.TryGetValue(id, out var previous) && !string.Equals(previous, username, StringComparison.Ordinal)) clashes.Add(id);
-                        map[id] = username;
+                        if (!map.TryGetValue(id, out var list)) map[id] = list = new List<(string, bool)>();
+                        list.Add((username, active));
                     }
                 }
 
                 if (doc.RootElement.GetArrayLength() < limit) break;
             }
 
-            foreach (var id in clashes) map.Remove(id);
             return map;
         }
 

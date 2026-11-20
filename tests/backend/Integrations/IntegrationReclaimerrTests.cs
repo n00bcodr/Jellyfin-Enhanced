@@ -502,14 +502,14 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         server.Answer("GET /api/v1/delete-requests?per_page=200&page=1", Page(Request(1, "pending", sam, film), Request(3, "approved", pat, null), Request(5, "denied", sam, null)));
         var (actions, _) = Setup(server);
 
-        var admin = await actions.RequestsAsync(Config, Guid.NewGuid(), mine: false, CancellationToken.None);
+        var admin = (await actions.RequestsAsync(Config, Guid.NewGuid(), mine: false, CancellationToken.None)).Rows;
         Assert.Equal(new[] { 1, 2, 3 }, admin!.Select(r => r.Id));
         Assert.Equal(new[] { sam }, admin[0].RequesterIds!);
         Assert.Equal(new[] { film }, admin[0].ItemIds!);
         Assert.Equal("too long", admin[0].Reason);
         Assert.Empty(admin[1].RequesterIds!);
 
-        var mine = await actions.RequestsAsync(Config, sam, mine: true, CancellationToken.None);
+        var mine = (await actions.RequestsAsync(Config, sam, mine: true, CancellationToken.None)).Rows;
         Assert.Equal(new[] { 1, 5 }, mine!.Select(r => r.Id));
         Assert.All(server.Seen.Where(s => s.Path.StartsWith("/api/v1/")), s => Assert.Equal("Bearer rcl_token", s.Bearer));
     }
@@ -521,7 +521,7 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         server.Answer("GET /api/v1/delete-requests?status=pending&per_page=200&page=1", Page(Request(1, "pending", Guid.NewGuid(), null)));
         server.Answer("GET /api/v1/delete-requests?status=approved&per_page=200&page=1", "{\"detail\":\"boom\"}", 500);
         var (actions, _) = Setup(server);
-        Assert.Equal(new[] { 1 }, (await actions.RequestsAsync(Config, Guid.NewGuid(), mine: false, CancellationToken.None))!.Select(r => r.Id));
+        Assert.Equal(new[] { 1 }, (await actions.RequestsAsync(Config, Guid.NewGuid(), mine: false, CancellationToken.None)).Rows!.Select(r => r.Id));
     }
 
     [Fact]
@@ -530,7 +530,10 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         using var server = new Reclaimerr();
         server.Answer("GET /api/v1/delete-requests?status=pending&per_page=200&page=1", "{\"detail\":\"API token requires the delete_requests:read scope\"}", 403);
         var (actions, _) = Setup(server);
-        Assert.Null(await actions.RequestsAsync(Config, Guid.NewGuid(), mine: false, CancellationToken.None));
+        var (rows, error) = await actions.RequestsAsync(Config, Guid.NewGuid(), mine: false, CancellationToken.None);
+        Assert.Null(rows);
+        // The administrator is told Reclaimerr's own reason, here the scope the token lacks.
+        Assert.Equal("API token requires the delete_requests:read scope", error);
     }
 
     private static string Users(params (string Name, Guid? Jellyfin, bool Active)[] users)
@@ -668,6 +671,66 @@ public sealed class IntegrationReclaimerrTests : IDisposable
             Assert.Equal(new[] { "requests" }, body.GetProperty("allowed_pages").EnumerateArray().Select(e => e.GetString()));
             Assert.False(body.GetProperty("use_default_page_access").GetBoolean());
         }
+    }
+
+
+    private static string AuditUsers(params (string Name, Guid? Jellyfin, bool Active)[] users) => Users(users);
+
+    [Fact]
+    public async Task The_audit_names_missing_scopes_and_each_users_link_and_request_problems()
+    {
+        var ok = Guid.NewGuid(); var unlinked = Guid.NewGuid(); var off = Guid.NewGuid(); var twice = Guid.NewGuid(); var noPerm = Guid.NewGuid(); var admin = Guid.NewGuid();
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1", "{\"api_version\":\"v1\",\"resources\":{},\"granted_scopes\":[\"candidates:manage\",\"media:read\",\"users:read\"]}");
+        server.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("ok_user", ok, true), ("off_user", off, false), ("twice_a", twice, true), ("twice_b", twice, true), ("noperm_user", noPerm, true), ("boss", admin, true)));
+        server.Routes["GET /api/account/me"] = hit => hit.User switch
+        {
+            "ok_user" => (200, "{\"username\":\"ok_user\",\"role\":\"user\",\"permissions\":[\"request\"]}"),
+            "noperm_user" => (200, "{\"username\":\"noperm_user\",\"role\":\"user\",\"permissions\":[]}"),
+            _ => (401, "{\"detail\":\"Not authenticated\"}"),
+        };
+        var (actions, _) = Setup(server);
+        var users = new List<(Guid, string, bool)> { (ok, "Ok", false), (unlinked, "Nobody", false), (off, "Off", false), (twice, "Twice", false), (noPerm, "NoPerm", false), (admin, "Boss", true) };
+        var result = await actions.AuditUsersAsync(Config, users, CancellationToken.None);
+
+        Assert.Equal("0.6.15", result.Version);
+        Assert.True(result.RequestsEnabled);
+        Assert.Equal(new[] { "scheduled_deletions:manage", "delete_requests:manage", "users:manage" }, result.Issues.Select(i => i.Split(' ')[4].TrimEnd(':')));
+        IReadOnlyList<string> Issues(string name) => result.Users.Single(u => u.JellyfinUsername == name).Issues;
+        Assert.Empty(Issues("Ok"));
+        Assert.Contains("No Reclaimerr account", Assert.Single(Issues("Nobody")));
+        Assert.Contains("disabled", Assert.Single(Issues("Off")));
+        Assert.Contains("several active Reclaimerr accounts", Assert.Single(Issues("Twice")));
+        Assert.Contains("lacks the Request permission", Assert.Single(Issues("NoPerm")));
+        Assert.Empty(Issues("Boss"));
+        Assert.Equal("ok_user", result.Users.Single(u => u.JellyfinUsername == "Ok").ReclaimerrUsername);
+        // Read-only: nothing but GETs, the sign-in check sent as the user without the token, and an administrator's sign-in never tried.
+        Assert.All(server.Seen, s => Assert.Equal("GET", s.Method));
+        Assert.All(server.Seen.Where(s => s.Path == "/api/account/me"), s => Assert.Null(s.Bearer));
+        Assert.DoesNotContain(server.Seen, s => s.User == "boss");
+    }
+
+    [Fact]
+    public async Task A_trusted_proxy_sign_in_refused_for_everyone_is_said_once_and_not_retried_per_user()
+    {
+        var a = Guid.NewGuid(); var b = Guid.NewGuid();
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1", "{\"granted_scopes\":[\"candidates:manage\",\"scheduled_deletions:manage\",\"delete_requests:manage\",\"media:read\",\"users:manage\"]}");
+        server.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("a_user", a, true), ("b_user", b, true)));
+        server.Answer("GET /api/account/me", "{\"detail\":\"Not authenticated\"}", 401);
+        var (actions, _) = Setup(server);
+        var result = await actions.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false), (b, "B", false) }, CancellationToken.None);
+        Assert.Contains("FORWARD_AUTH_ENABLED", Assert.Single(result.Issues));
+        Assert.Single(server.Seen, s => s.Path == "/api/account/me");
+
+        // With requests off, nobody's sign-in is tried: only links matter.
+        using var quiet = new Reclaimerr();
+        quiet.Answer("GET /api/v1", "{\"granted_scopes\":[\"candidates:manage\",\"scheduled_deletions:manage\",\"delete_requests:manage\",\"media:read\",\"users:manage\"]}");
+        quiet.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("a_user", a, true)));
+        var (closed, _) = Setup(quiet, requests: false);
+        var calm = await closed.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false) }, CancellationToken.None);
+        Assert.Empty(calm.Issues);
+        Assert.DoesNotContain(quiet.Seen, s => s.Path == "/api/account/me");
     }
 
     [Fact]

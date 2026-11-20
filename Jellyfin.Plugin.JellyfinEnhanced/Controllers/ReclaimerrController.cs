@@ -207,6 +207,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
+        /// Audit every Jellyfin user against Reclaimerr, read-only: the linked account, and with removal requests on whether Reclaimerr's
+        /// trusted-proxy sign-in accepts it and whether it may request; plus the token scopes the integration uses that the token lacks.
+        /// Administrators only. Answers <c>{version, requestsEnabled, issues[], users[]}</c>.
+        /// </summary>
+        [HttpGet("user-audit")]
+        [Authorize]
+        [Produces("application/json")]
+        public async Task<IActionResult> UserAudit(CancellationToken token)
+        {
+            if (!IsAdmin()) return Forbid();
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !ReclaimerrActions.Enabled(config)) return NotFound();
+            try
+            {
+                var users = UserManager.GetAllUsers().Select(u => (u.Id, u.Username, u.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator))).ToList();
+                return Ok(await _reclaimerr.AuditUsersAsync(config, users, token).ConfigureAwait(false));
+            }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(502, new { error = "Reclaimerr: " + MaintainerrHttp.Describe(ex) });
+            }
+        }
+
+        /// <summary>
         /// Import this server's users into Reclaimerr through its token API: every Jellyfin user without a Reclaimerr account gets one,
         /// with the permissions and pages picked, linked to them. Administrators only. Answers <c>{created, alreadyLinked, needsReview, skipped}</c>
         /// (Jellyfin user names; <c>needsReview</c> are matched to an existing Reclaimerr account, which an administrator confirms in Reclaimerr).

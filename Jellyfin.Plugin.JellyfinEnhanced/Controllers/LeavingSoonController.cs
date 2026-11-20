@@ -143,6 +143,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             IReadOnlyList<LeavingSoonRequestDto> requests = Array.Empty<LeavingSoonRequestDto>();
             IReadOnlyList<LeavingSoonRequestDto> mine = Array.Empty<LeavingSoonRequestDto>();
             var requestsUnavailable = false;
+            string? requestsError = null;
             int? graceDays = null;
             if (reclaimerr && ReclaimerrActions.Enabled(config))
             {
@@ -154,11 +155,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     try
                     {
-                        var rows = await _reclaimerr.RequestsAsync(config!, user.Id, mine: !pending, budget.Token).ConfigureAwait(false);
-                        if (rows == null) { requestsUnavailable = true; return Array.Empty<LeavingSoonRequestDto>(); }
+                        var (rows, error) = await _reclaimerr.RequestsAsync(config!, user.Id, mine: !pending, budget.Token).ConfigureAwait(false);
+                        if (rows == null) { requestsUnavailable = true; requestsError ??= error; return Array.Empty<LeavingSoonRequestDto>(); }
                         return Describe(rows, user);
                     }
-                    catch (OperationCanceledException) when (!token.IsCancellationRequested) { requestsUnavailable = true; return Array.Empty<LeavingSoonRequestDto>(); }
+                    catch (OperationCanceledException) when (!token.IsCancellationRequested) { requestsUnavailable = true; requestsError ??= "Reclaimerr did not answer in time"; return Array.Empty<LeavingSoonRequestDto>(); }
                 }
 
                 // The delay an approval gets when no day is named, so the page can say what "Reclaimerr's grace period" means
@@ -187,6 +188,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 requests,
                 mine,
                 requestsUnavailable,
+                // Why, for administrators (Reclaimerr's own reason, such as a scope the token lacks); others only learn that they could not be read.
+                requestsError = admin ? requestsError : null,
                 graceDays,
                 // Which Reclaimerr the requests came from: a review sends it back, so a card read from one is never approved at another.
                 source = reclaimerr ? ReclaimerrApi.SourceId(config!) : null,
