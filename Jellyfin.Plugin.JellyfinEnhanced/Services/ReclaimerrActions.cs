@@ -207,11 +207,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 throw new MaintainerrActions.ActionException($"The Reclaimerr account {who} may not request removals (it needs the Request permission).");
             }
-            finally
+            catch
             {
+                // Refused for another reason (already requested, a failure, no answer): Reclaimerr may have changed, so read the lists
+                // again. A refused sign-in or permission (above) changed nothing, so it keeps them: repeated clicks must not empty them.
                 ForgetLists();
+                throw;
             }
 
+            ForgetLists();
             _logger.Info($"[Reclaimerr] {userName} ({who}) requested the removal of '{item.Name}'.");
             return (State(item, config), null);
         }
