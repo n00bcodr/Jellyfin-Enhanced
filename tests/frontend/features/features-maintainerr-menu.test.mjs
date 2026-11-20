@@ -89,7 +89,7 @@ test('an administrator gets Mark for removal on an unlisted movie, before Share;
   assert.ok(h.toasts().some(text => text.startsWith('maintainerr_kept')));
 });
 
-test('a listed item gets Keep and Postpone; Postpone opens a chooser whose day buttons, custom count and reset post accordingly', async t => {
+test('a listed item gets Keep and Postpone; Postpone opens a chooser whose day buttons, custom count post accordingly', async t => {
   const soon = Date.now() + 5 * 86400000 + 3600000;
   const h = setup(t, { html: card(SERIES, 'Series'), states: { [SERIES]: { Marked: true, DeleteAt: soon, CollectionId: 2 } } });
   await h.open(SERIES);
@@ -119,17 +119,15 @@ test('a listed item gets Keep and Postpone; Postpone opens a chooser whose day b
   await h.settle();
   assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'postpone', body: { itemId: SERIES, days: 45 } });
 
-  // Reset sends no days; Escape and Cancel close without a request.
+  // There is no reset or Cancel button; Escape and the X close without a request.
   h.JE.removalMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
-  h.click(h.$('.je-mt-reset'));
-  await h.settle();
-  assert.deepEqual(h.requests.at(-1), { type: 'POST', tool: 'maintainerr', path: 'postpone', body: { itemId: SERIES } });
+  assert.equal(h.$('.je-mt-reset'), null);
+  assert.equal(h.$('.je-mt-cancel'), null);
+  h.click(h.$('.je-mt-x'));
+  assert.equal(h.$('.je-mt-dialog'), null);
   const before = h.requests.length;
   h.JE.removalMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
   h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  assert.equal(h.$('.je-mt-dialog'), null);
-  h.JE.removalMenu.postpone(SERIES, { Marked: true, DeleteAt: soon }, null);
-  h.click(h.$('.je-mt-cancel'));
   assert.equal(h.$('.je-mt-dialog'), null);
   assert.equal(h.requests.length, before);
 
@@ -233,7 +231,7 @@ test('with Reclaimerr, Postpone can send an exact date', async t => {
   h.click(h.$('[data-id="je-maintainerr-postpone"]'));
   await h.settle();
   const dialog = h.$('.je-mt-dialog');
-  assert.ok(dialog.querySelector('.je-mt-reset'), 'a timer reset stays for postpone');
+  assert.equal(dialog.querySelector('.je-mt-reset'), null, 'no timer reset in the chooser');
   dialog.querySelector('.je-mt-date').value = '2031-06-01';
   h.click(dialog.querySelector('.je-mt-applydate'));
   await h.settle();
