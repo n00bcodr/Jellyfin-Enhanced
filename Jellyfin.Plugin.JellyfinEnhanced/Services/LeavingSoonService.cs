@@ -594,7 +594,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 if (ids.Count == 0) { unmatched++; continue; }
-                foreach (var id in ids) members.Add(new MaintainerrMember(id, null, scope == "series" ? "show" : "movie", date.ToUnixTimeMilliseconds(), owner, null, scope == "version", size));
+                foreach (var id in ids) members.Add(new MaintainerrMember(id, null, scope == "series" ? "show" : "movie", date.ToUnixTimeMilliseconds(), owner, scope == "version", size));
             }
 
             return members;
@@ -627,7 +627,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>One Maintainerr collection member: its Jellyfin id (when the answer has one), TMDB id and type, delete time, and the Maintainerr collection (id) listing it.</summary>
-        internal sealed record MaintainerrMember(Guid? ItemId, string? TmdbId, string Type, long? DeleteAt, int? CollectionId = null, string? Path = null, bool OneVersion = false, long? Size = null);
+        internal sealed record MaintainerrMember(Guid? ItemId, string? TmdbId, string Type, long? DeleteAt, int? CollectionId = null, bool OneVersion = false, long? Size = null);
 
         /// <summary>
         /// Read <c>GET /api/collections</c>: an array of collections (or one wrapped in
@@ -762,9 +762,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// <see cref="ToItems(IReadOnlyList{MaintainerrMember}, Func{string, string, IReadOnlyList{Guid}})"/>, also
         /// giving the Maintainerr collection each item was found in (<paramref name="collections"/>, the one whose
-        /// delete time won, so a postpone or removal addresses the collection that governs the badge).
+        /// delete time won, so a postpone or removal addresses the collection that governs the badge). With
+        /// <paramref name="primaryOf"/>, an item that is a hidden alternate version also marks the primary version the
+        /// library shows; <paramref name="versionOnly"/> and <paramref name="sizes"/> collect, from the member whose time
+        /// won, the items where only one version is leaving and the bytes leaving frees.
         /// </summary>
-        internal static Dictionary<string, long?> ToItems(IReadOnlyList<MaintainerrMember> members, Func<string, string, IReadOnlyList<Guid>>? tmdbLookup, out Dictionary<string, int> collections, Func<Guid, string?>? pathOf = null, Func<Guid, Guid?>? primaryOf = null, HashSet<string>? versionOnly = null, Dictionary<string, long>? sizes = null)
+        internal static Dictionary<string, long?> ToItems(IReadOnlyList<MaintainerrMember> members, Func<string, string, IReadOnlyList<Guid>>? tmdbLookup, out Dictionary<string, int> collections, Func<Guid, Guid?>? primaryOf = null, HashSet<string>? versionOnly = null, Dictionary<string, long>? sizes = null)
         {
             var items = new Dictionary<string, long?>(StringComparer.Ordinal);
             var owners = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -793,20 +796,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     continue;
                 }
                 if (tmdbLookup == null || member.TmdbId == null || member.Type is not ("movie" or "show")) continue;
-                var matches = tmdbLookup(member.Type, member.TmdbId);
-                // One file of a movie (Reclaimerr names its path): only the library item holding that file, when it can be told apart.
-                if (member.Path != null && pathOf != null)
-                {
-                    var same = matches.Where(m => string.Equals(pathOf(m), member.Path, StringComparison.OrdinalIgnoreCase)).ToList();
-                    if (same.Count > 0) matches = same;
-                    else if (matches.Count > 1) continue; // several copies and none is the scheduled file: marking all would cancel the wrong one
-                }
-
-                foreach (var found in matches)
-                {
-                    Add(found, member.DeleteAt, member.CollectionId, member.Path != null || member.OneVersion, member.Size);
-                    if (primaryOf?.Invoke(found) is { } primary && primary != Guid.Empty && primary != found) Add(primary, member.DeleteAt, member.CollectionId, member.Path != null || member.OneVersion, member.Size);
-                }
+                foreach (var found in tmdbLookup(member.Type, member.TmdbId)) Add(found, member.DeleteAt, member.CollectionId, member.OneVersion, member.Size);
             }
 
             collections = owners;

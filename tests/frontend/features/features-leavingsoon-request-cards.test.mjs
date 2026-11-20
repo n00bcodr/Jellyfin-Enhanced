@@ -38,6 +38,7 @@ test('a request says what it would delete, approving names that scope and carrie
   const series = { mediaType: 'series', requestedBy: 'x', status: 'pending', title: 'Sherlock', year: 2010 };
   const h = setup(t, {
     ...base,
+    graceDays: 0,
     requests: [
       { ...series, id: 1, scope: 'season', seasonNumber: 2 },
       { ...series, id: 2, scope: 'episode', seasonNumber: 2, episodeNumber: 5 },
@@ -59,10 +60,10 @@ test('a request says what it would delete, approving names that scope and carrie
 
   cards[0].querySelector('.je-ls-icon-btn.approve').click();
   assert.equal(cards[0].querySelector('.je-ls-warn').textContent, 'leavingsoon_confirm_delete_scope:leavingsoon_scope_season:2', 'the warning names the season');
-  cards[0].querySelector('.je-ls-note-input').value = '  gone in a week  ';
+  cards[0].querySelector('input[type="text"].je-ls-note-input').value = '  gone in a week  ';
   cards[0].querySelector('.je-ls-btn.danger').click();
   await h.settle();
-  assert.deepEqual(h.calls.find(c => c.path === 'reclaimerr/requests/1/approve').body, { note: 'gone in a week' });
+  assert.deepEqual(h.calls.find(c => c.path === 'reclaimerr/requests/1/approve').body, { note: 'gone in a week', when: 'default' });
 
   cards[2].querySelector('.je-ls-icon-btn.approve').click();
   assert.equal(cards[2].querySelector('.je-ls-warn').textContent, 'leavingsoon_confirm_delete_scope:leavingsoon_scope_version · 2160p · 3.0 GB');

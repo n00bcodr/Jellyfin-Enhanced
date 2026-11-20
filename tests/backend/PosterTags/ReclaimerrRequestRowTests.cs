@@ -12,7 +12,7 @@ public class ReclaimerrRequestRowTests
         const string json = """
         [
           { "id": 1, "media_title": "Sherlock", "media_year": 2010, "media_type": "series", "target_scope": "season", "season_number": 2,
-            "requested_by_username": "sam_user", "reason": "Requested by Sam from Jellyfin: boring", "status": "pending", "created_at": "2026-11-16T10:00:00Z", "media_id": 9 },
+            "requested_by_username": "sam_user", "reason": "boring", "status": "pending", "created_at": "2026-11-16T10:00:00Z", "media_id": 9 },
           { "id": 2, "media_title": "Jailer 2", "media_year": 2026, "media_type": "movie", "movie_version_id": 4, "version_resolution": "2160p", "version_size": 3221225472,
             "requested_by_username": "x", "status": "approved", "execution_error": "Radarr refused", "created_at": "2026-11-16T10:00:00Z", "media_id": 3 },
           { "id": 3, "media_title": "Crash", "media_type": "movie", "requested_by_username": "x", "status": "approved", "playback_deferral": { "until": "later" }, "executed_at": null, "created_at": "2026-11-16T10:00:00Z" },
@@ -20,7 +20,7 @@ public class ReclaimerrRequestRowTests
         ]
         """;
         using var doc = JsonDocument.Parse(json);
-        var rows = ReclaimerrActions.Parse(doc, null);
+        var rows = ReclaimerrActions.Parse(doc.RootElement.EnumerateArray(), null);
 
         Assert.Equal(4, rows.Count);
         Assert.Equal(("season", 2, null), (rows[0].Scope, rows[0].SeasonNumber, rows[0].EpisodeNumber));
@@ -41,7 +41,7 @@ public class ReclaimerrRequestRowTests
         ]
         """;
         using var doc = JsonDocument.Parse(json);
-        var rows = ReclaimerrActions.Parse(doc, r => !string.IsNullOrEmpty(r.ExecutionError) || r.Deferred);
+        var rows = ReclaimerrActions.Parse(doc.RootElement.EnumerateArray(), r => !string.IsNullOrEmpty(r.ExecutionError) || r.Deferred);
         Assert.Equal(new[] { 2 }, rows.Select(r => r.Id).ToArray());
     }
 }
