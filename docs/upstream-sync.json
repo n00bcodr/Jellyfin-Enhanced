@@ -3497,6 +3497,33 @@
       "status": "already-present",
       "rewriteCommits": [],
       "evidence": "Features/MediaTags/Services/ReclaimerrActions.cs, ApproveRequestAsync: the approval body's scheduled_at is `day`, a string? assigned from Iso(CheckedDate(...)) with no cast, and the Now timing leaves it null; git grep 'scheduled_at = (string?)' finds nothing in this tree. The line upstream changed is in its token-API version of the approval (TokenAsync, /api/v1/delete-requests), which arrives with the deferred row 97 (da3d9ee9): that port should take upstream's line as it is after 3e83f009, without the cast."
+    },
+    {
+      "sha": "8212d2877aaa08f3088b1fbd9c186b6eed9972fc",
+      "date": "2026-11-21T02:41:45Z",
+      "subject": "Translations update from Hosted Weblate (#1093)",
+      "class": "translation",
+      "features": [
+        "platform"
+      ],
+      "issues": [
+        "#1093"
+      ],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 5,
+        "deletions": 5
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/fr.json"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "2ec8df0f7b08d431f62d7d9670f8e44c48e9a8fb"
+      ],
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p105-locales.txt",
+      "notes": "Applied as is (git show 8212d287 | git apply --3way, clean): Jellyfin.Plugin.JellyfinEnhanced/js/locales/fr.json is byte for byte upstream's at 8212d287. Five French values put a no-break space (U+00A0) instead of a plain space before a colon, as French typography wants and as 13 of the file's values already did (69 others keep a plain space, here and upstream): leavingsoon_confirm_delete_scope, leavingsoon_status_deferred, leavingsoon_requests_unavailable_reason, discovery_filter_match_label and discovery_filter_profile_full. No key is added or removed and every {placeholder} is kept. leavingsoon_requests_unavailable_reason is still not in this tree's en.json (it arrives with the deferred row 97), so that one value stays unused. The server reads no leavingsoon_* or discovery_* key, so no resolver version moves."
     }
   ]
 }

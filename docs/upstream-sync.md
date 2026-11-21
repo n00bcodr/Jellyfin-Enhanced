@@ -4,7 +4,7 @@
 
 What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-Enhanced) (`main`) since it branched at `2e0f9251bf`. The source of truth is [`upstream-sync.json`](upstream-sync.json); the procedure is [upstream-sync-procedure.md](upstream-sync-procedure.md).
 
-104 upstream commits: 99 ported, 4 already-present, 1 deferred.
+105 upstream commits: 100 ported, 4 already-present, 1 deferred.
 
 | # | Upstream | Date | Class | Features | Subject | Status | Rewrite commit | Note |
 |---|---|---|---|---|---|---|---|---|
@@ -112,3 +112,4 @@ What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-
 | 102 | [`26b62383`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/26b6238368d60bbe02b167893c742cccc654d270) | 2026-11-20 | test | media-tags | test(leavingsoon): the removal date dialog no longer has Reset timer or Cancel | ported | `ff36d925` | With `fc9b58ea`. artifacts/restructure-plan/step-logs/upstream-sync-evidence/p99-* |
 | 103 | [`728bba15`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/728bba151c644129ee080a54011b94f1ffe5c416) | 2026-11-20 | test | admin, media-tags | test(admin): wait for the search debounce instead of a fixed 250 ms | ported | `5afcc38a` | With `1952fa31`. artifacts/restructure-plan/step-logs/upstream-sync-evidence/p103.tests.txt |
 | 104 | [`3e83f009`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/3e83f00994af7ece49fd94e1974b7a16d1a3f6bf) | 2026-11-20 | fix | media-tags | fix(reclaimerr): drop a redundant string cast flagged by CodeQL | already-present |  | Features/MediaTags/Services/ReclaimerrActions.cs, ApproveRequestAsync: the approval body's scheduled_at is `day`, a string? assigned from Iso(CheckedDate(...)) with no cast, and the Now timing leaves it null; git grep 'scheduled_at = (string?)' finds nothing in this tree. The line upstream changed is in its token-API version of the approval (TokenAsync, /api/v1/delete-requests), which arrives with the deferred row 97 (da3d9ee9): that port should take upstream's line as it is after 3e83f009, without the cast. |
+| 105 | [`8212d287`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/8212d2877aaa08f3088b1fbd9c186b6eed9972fc) | 2026-11-21 | translation | platform | Translations update from Hosted Weblate (#1093) | ported | `2ec8df0f` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p105-locales.txt |
