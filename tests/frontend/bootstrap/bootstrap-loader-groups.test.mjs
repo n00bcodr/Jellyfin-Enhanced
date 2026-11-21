@@ -409,6 +409,9 @@ test('a boot batch of several groups runs as one paced list: one wait for idle t
   // the features they consult (Seerr cards drawn before Hidden Content existed).
   let idleWaits = 0;
   const boot = basic(t, { url: 'http://jellyfin.test/web/index.html#/details?id=1' });
+  // The loader's clock stands still, so only the waits the loader plans are counted. On the wall clock a cold or
+  // loaded run spends the 10 ms run budget inside enhanced/config.js, and the slice waits for idle time once more.
+  boot.window.performance.now = () => 0;
   // Wrapped before the loader's first wait (it is still waiting for the bootstrap answer).
   const idle = boot.window.requestIdleCallback;
   boot.window.requestIdleCallback = (callback, options) => { idleWaits++; return idle(callback, options); };
@@ -421,6 +424,8 @@ test('a boot batch of several groups runs as one paced list: one wait for idle t
 test('groups loaded for a page the user went to run in idle time; a group asked for directly does not wait for it', async t => {
   const boot = basic(t);
   await boot.booted();
+  // The loader's clock stands still, as above: a spent run budget between the page's modules is not a planned wait.
+  boot.window.performance.now = () => 0;
   let idleWaits = 0;
   const idle = boot.window.requestIdleCallback;
   boot.window.requestIdleCallback = (callback, options) => { idleWaits++; return idle(callback, options); };

@@ -3546,6 +3546,51 @@
       "status": "already-present",
       "rewriteCommits": [],
       "evidence": "Features/MediaTags/Services/ReclaimerrActions.cs, ReviewRequestAsync: upstream's follow-up to 3e83f009 computes the day once as a string? (`when`, null unless the timing is OnDate) so the Now branch needs no `(string?)null` cast and both scheduled bodies are one anonymous type. This tree already does that: `string? day = null`, set only for ApprovalTiming.OnDate, and `Body` sends `new { admin_notes, scheduled_at = day }` for any scheduled approval, else `new { admin_notes }`; git grep 'scheduled_at = (string?)' finds nothing. JE.Tests.Features.MediaTags.IntegrationReclaimerrApprovalTimingTests (13 tests, among them Approving_now_sends_scheduled_at_null_and_on_a_day_sends_that_moment_in_UTC) pass on 6bbd95cf. The lines upstream changed are in its token-API approval (TokenAsync, /api/v1/delete-requests) from the deferred row 97 (da3d9ee9): that port should take upstream's lines as they are after fbbb0213. artifacts/restructure-plan/step-logs/upstream-sync-evidence/p106-already-present.txt"
+    },
+    {
+      "sha": "df9dcdc3b9b9b40309a079220eca19bfb53f4899",
+      "date": "2026-11-21T21:12:37Z",
+      "subject": "v12.17.0.0",
+      "class": "release",
+      "features": [],
+      "issues": [],
+      "release": "12.17.0.0",
+      "size": {
+        "files": 1,
+        "insertions": 2,
+        "deletions": 2
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "dfaa854bf779e10871dfdb4de7730ee7e7618109"
+      ],
+      "notes": "AssemblyVersion and FileVersion 12.17.0.0, as upstream main. docs/advanced/api.md names the same version."
+    },
+    {
+      "sha": "868803ef32eee90ac848e07924117abb119fa6aa",
+      "date": "2026-11-21T21:26:38Z",
+      "subject": "v12.17.0.0 - Jellyfin Enhanced (synced from jellyfin-plugins)",
+      "class": "release",
+      "features": [],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 16,
+        "deletions": 0
+      },
+      "paths": [
+        "manifest.json"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "dfaa854bf779e10871dfdb4de7730ee7e7618109"
+      ],
+      "with": "df9dcdc3b9b9b40309a079220eca19bfb53f4899",
+      "notes": "manifest.json is byte-identical to upstream's at 868803ef: the two catalog entries the release workflow added for 12.17.0.0 (the Jellyfin 12 and the Jellyfin 10.11 build). They are release data about artifacts upstream published, not code; their changelog also lists upstream's da3d9ee9 (#1091), which is deferred here (row 97). The rewrite builds for Jellyfin 12 only, and nothing is built or published by this commit."
     }
   ]
 }
