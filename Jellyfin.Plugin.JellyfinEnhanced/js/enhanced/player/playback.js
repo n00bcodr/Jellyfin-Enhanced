@@ -2026,6 +2026,25 @@
     let speedOverlay = null;
     let pressStartX = null;
     let pressStartY = null;
+    let touchTarget = null;
+    let touchPointerDown = null;
+    let suppressClickUntil = 0;
+
+    /** Only claim the playing video surface, never controls, dialogs or paused playback. */
+    function canStartLongPress(e) {
+        const video = getVideo();
+        return JE.currentSettings.longPress2xEnabled && video && !video.paused
+            && e.target?.closest?.('video, .videoPlayerContainer, #videoOsdPage')
+            && !e.target.closest('button, a, input, select, textarea, [role="button"], .osdControls, .headerTop, .upNextContainer, .dialogContainer, .pause-screen-active, .jellyfin-enhanced-panel');
+    }
+
+    /** Jellyfin toggles the OSD on pointerdown; defer a touch tap until its release. */
+    JE.handleLongPressPointerDown = (e) => {
+        suppressClickUntil = 0;
+        if (e.pointerType !== 'touch' || !canStartLongPress(e)) return;
+        touchPointerDown = e;
+        e.stopImmediatePropagation();
+    };
 
     function createSpeedOverlay() {
         if (speedOverlay) return;
@@ -2056,29 +2075,39 @@
     }
 
     JE.handleLongPressDown = (e) => {
-        if (!JE.currentSettings.longPress2xEnabled || (e.button !== undefined && e.button !== 0) || pressTimer) {
+        suppressClickUntil = 0;
+        if (e.touches?.length > 1) {
+            JE.handleLongPressCancel();
             return;
         }
+        if (!canStartLongPress(e) || (e.button !== undefined && e.button !== 0) || pressTimer) return;
         videoElement = getVideo();
-        if (!videoElement) return;
+
+        if (e.touches) {
+            // Cancel native scrolling and compatibility mouse/click events from this touch.
+            // A short tap is forwarded to Jellyfin on release; a hold owns the whole gesture.
+            touchTarget = e.target;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
 
         // Store initial press position
-        pressStartX = e.clientX || e.touches?.[0]?.clientX;
-        pressStartY = e.clientY || e.touches?.[0]?.clientY;
+        pressStartX = e.touches?.[0]?.clientX ?? e.clientX;
+        pressStartY = e.touches?.[0]?.clientY ?? e.clientY;
 
         originalSpeed = videoElement.playbackRate || LONG_PRESS_CONFIG.SPEED_NORMAL;
         isLongPress = false;
 
         pressTimer = setTimeout(() => {
+            if (videoElement !== getVideo() || videoElement.paused || !JE.currentSettings.longPress2xEnabled) {
+                JE.handleLongPressCancel();
+                return;
+            }
             if (JE.state.pauseScreenClickTimer) {
                 clearTimeout(JE.state.pauseScreenClickTimer);
                 JE.state.pauseScreenClickTimer = null;
             }
             isLongPress = true;
-            // Make sure video is playing when we activate speed boost
-            if (videoElement.paused) {
-                videoElement.play().catch(err => console.warn("🪼 Play blocked:", err));
-            }
             videoElement.playbackRate = LONG_PRESS_CONFIG.SPEED_FAST;
             showOverlay(LONG_PRESS_CONFIG.SPEED_FAST);
             if (navigator.vibrate) navigator.vibrate(50);
@@ -2086,50 +2115,62 @@
     };
 
     JE.handleLongPressUp = (e) => {
-        if (!pressTimer) return;
-        clearTimeout(pressTimer);
-        pressTimer = null;
-
-        if (isLongPress) {
-            const video = getVideo();
-            if (video) {
-                video.playbackRate = originalSpeed;
-            }
-            hideOverlay();
+        const target = touchTarget;
+        const pointer = touchPointerDown;
+        const tap = target && pressTimer && !isLongPress && videoElement === getVideo();
+        if (target || isLongPress) {
             e.preventDefault();
-            e.stopPropagation();
             e.stopImmediatePropagation();
         }
-        isLongPress = false;
-        pressStartX = null;
-        pressStartY = null;
+        JE.handleLongPressCancel();
+        if (tap && target.isConnected) {
+            // Reuse Jellyfin's own OSD handler, including its double-tap timing guard.
+            const event = pointer
+                ? new PointerEvent('pointerdown', {
+                    bubbles: true, pointerType: 'touch', pointerId: pointer.pointerId,
+                    clientX: pointer.clientX, clientY: pointer.clientY, button: 0
+                })
+                : new MouseEvent('click', { bubbles: true });
+            target.dispatchEvent(event);
+            if (pointer) {
+                // Jellyfin tracks pointer state on window to decide when the OSD may hide.
+                target.dispatchEvent(new PointerEvent('pointerup', {
+                    bubbles: true, pointerType: 'touch', pointerId: pointer.pointerId,
+                    clientX: pointer.clientX, clientY: pointer.clientY, button: 0
+                }));
+            }
+        }
     };
 
     JE.handleLongPressCancel = () => {
-        if (pressTimer) {
-            clearTimeout(pressTimer);
-            pressTimer = null;
-            if (isLongPress) {
-                const video = getVideo();
-                if (video) {
-                    video.playbackRate = originalSpeed;
-                }
-                hideOverlay();
-            }
-            isLongPress = false;
+        clearTimeout(pressTimer);
+        pressTimer = null;
+        if (isLongPress) {
+            // Restore the original element, even if navigation replaced the current video.
+            if (videoElement) videoElement.playbackRate = originalSpeed;
+            hideOverlay();
+            suppressClickUntil = Date.now() + 400;
         }
+        isLongPress = false;
+        videoElement = null;
         pressStartX = null;
         pressStartY = null;
+        touchTarget = null;
+        touchPointerDown = null;
     };
 
     // Handle mouse movement during press to detect drag/scrub
     JE.handleLongPressMove = (e) => {
-        if (!pressTimer || isLongPress || !pressStartX || !pressStartY) return;
+        if (touchTarget || isLongPress) {
+            if (e.cancelable) e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+        if (!pressTimer || isLongPress || pressStartX == null || pressStartY == null) return;
 
-        const currentX = e.clientX || e.touches?.[0]?.clientX;
-        const currentY = e.clientY || e.touches?.[0]?.clientY;
+        const currentX = e.touches?.[0]?.clientX ?? e.clientX;
+        const currentY = e.touches?.[0]?.clientY ?? e.clientY;
 
-        if (currentX === null || currentY === null) return;
+        if (currentX == null || currentY == null) return;
 
         const distanceMoved = Math.sqrt(
             Math.pow(currentX - pressStartX, 2) + Math.pow(currentY - pressStartY, 2)
@@ -2148,7 +2189,7 @@
     JE.handleLongPressClick = (e) => {
         // If long press is just completed OR user is still holding (timer active),
         // prevent the click from pausing the video
-        if (isLongPress || pressTimer) {
+        if (isLongPress || pressTimer || Date.now() < suppressClickUntil) {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
