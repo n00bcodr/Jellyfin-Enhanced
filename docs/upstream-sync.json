@@ -3524,6 +3524,28 @@
       ],
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p105-locales.txt",
       "notes": "Applied as is (git show 8212d287 | git apply --3way, clean): Jellyfin.Plugin.JellyfinEnhanced/js/locales/fr.json is byte for byte upstream's at 8212d287. Five French values put a no-break space (U+00A0) instead of a plain space before a colon, as French typography wants and as 13 of the file's values already did (69 others keep a plain space, here and upstream): leavingsoon_confirm_delete_scope, leavingsoon_status_deferred, leavingsoon_requests_unavailable_reason, discovery_filter_match_label and discovery_filter_profile_full. No key is added or removed and every {placeholder} is kept. leavingsoon_requests_unavailable_reason is still not in this tree's en.json (it arrives with the deferred row 97), so that one value stays unused. The server reads no leavingsoon_* or discovery_* key, so no resolver version moves."
+    },
+    {
+      "sha": "fbbb0213481de201f2992473bde6cd2abdd74f08",
+      "date": "2026-11-21T21:01:43Z",
+      "subject": "fix(reclaimerr): drop a redundant string cast flagged by CodeQL",
+      "class": "fix",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 2,
+        "deletions": 3
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrActions.cs"
+      ],
+      "status": "already-present",
+      "rewriteCommits": [],
+      "evidence": "Features/MediaTags/Services/ReclaimerrActions.cs, ReviewRequestAsync: upstream's follow-up to 3e83f009 computes the day once as a string? (`when`, null unless the timing is OnDate) so the Now branch needs no `(string?)null` cast and both scheduled bodies are one anonymous type. This tree already does that: `string? day = null`, set only for ApprovalTiming.OnDate, and `Body` sends `new { admin_notes, scheduled_at = day }` for any scheduled approval, else `new { admin_notes }`; git grep 'scheduled_at = (string?)' finds nothing. JE.Tests.Features.MediaTags.IntegrationReclaimerrApprovalTimingTests (13 tests, among them Approving_now_sends_scheduled_at_null_and_on_a_day_sends_that_moment_in_UTC) pass on 6bbd95cf. The lines upstream changed are in its token-API approval (TokenAsync, /api/v1/delete-requests) from the deferred row 97 (da3d9ee9): that port should take upstream's lines as they are after fbbb0213. artifacts/restructure-plan/step-logs/upstream-sync-evidence/p106-already-present.txt"
     }
   ]
 }
