@@ -1,0 +1,3826 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.">
+      
+      
+        <meta name="author" content="n00bcodr">
+      
+      
+        <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/12.17/elsewhere/elsewhere-settings/">
+      
+      
+      
+        <link rel="prev" href="../elsewhere-features/">
+      
+      
+        <link rel="next" href="../../other/other-features/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="zensical-0.1.2">
+    
+    
+  
+  
+    
+      <title>Settings - Jellyfin Enhanced</title>
+    
+  
+
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/classic/main.0006804e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/classic/palette.813d4b3f.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Ubuntu:300,300i,400,400i,500,500i,700,700i%7CUbuntu+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Ubuntu";--md-code-font:"Ubuntu Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/touch.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Jellyfin Enhanced" class="md-header__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Jellyfin Enhanced
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Settings
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+  
+    
+  
+  <span class="je-tab-label">Home</span>
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../open-in-jellyfin/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"/></svg>
+  
+  <span class="je-tab-label">Getting Started</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/enhanced-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"/></svg>
+  
+  <span class="je-tab-label">Enhanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/tags/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"/></svg>
+  
+  <span class="je-tab-label">Tags & Badges</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../spoiler-guard/spoiler-guard-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"/></svg>
+  
+  <span class="je-tab-label">Spoiler Guard</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../seerr/seerr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"/></svg>
+  
+  <span class="je-tab-label">Seerr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../arr/arr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"/></svg>
+  
+  <span class="je-tab-label">*arr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../elsewhere-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2m1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+  
+  <span class="je-tab-label">Elsewhere & Reviews</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../other/other-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"/></svg>
+  
+  <span class="je-tab-label">Other</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/community-analytics/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"/></svg>
+  
+  <span class="je-tab-label">Community Analytics</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/css-customization/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>
+  
+  <span class="je-tab-label">Advanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../faq-support/faq/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"/></svg>
+  
+  <span class="je-tab-label">Help</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    Jellyfin Enhanced
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"/></svg>
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../open-in-jellyfin/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Open in Jellyfin
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/installation/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/compatibility/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Compatibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/settings-overview/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Settings Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/pages-and-tabs/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    JE Pages & Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"/></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"/></svg>
+  
+  <span class="md-ellipsis">
+    Enhanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Enhanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"/></svg>
+  
+  <span class="md-ellipsis">
+    Tags & Badges
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Tags & Badges
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-layouts/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Layouts & Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-quality/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Quality, Genre & Language
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-groups/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Ratings, Awards & More
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-status/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Status Badges
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-server/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Server & Styles
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Spoiler Guard
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Spoiler Guard
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"/></svg>
+  
+  <span class="md-ellipsis">
+    Seerr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Seerr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/permission-audit/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Permission Audit
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"/></svg>
+  
+  <span class="md-ellipsis">
+    *arr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            *arr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/troubleshooting-support/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"/></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2m1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+  
+  <span class="md-ellipsis">
+    Elsewhere & Reviews
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            Elsewhere & Reviews
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../elsewhere-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Prerequisites
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Setup
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration Options
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#default-region" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Default Region
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#default-providers" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Default Providers
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ignore-providers" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Ignore Providers
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Usage
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Usage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#on-item-detail-pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        On Item Detail Pages
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manual-country-searches" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Manual country searches
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#search-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Search Settings
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Search Settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How to use
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-season-providers" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Per-season providers
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Per-season providers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How to use
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-branding" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Custom Branding
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Custom Branding">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How to use
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tmdb-reviews" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        TMDB Reviews
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="TMDB Reviews">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How to use
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#anilist-reviews" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        AniList Reviews
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AniList Reviews">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How to use
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#review-translation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Review Translation
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Review Translation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How to use
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#user-reviews" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        User Reviews
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="User Reviews">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How to use
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#author-visibility-and-moderation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Author visibility and moderation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#averages-and-poster-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Averages and poster controls
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jellyfin-rating-mirroring" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Jellyfin rating mirroring
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#spoiler-guard" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Spoiler Guard
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#release-dates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Release Dates
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Release Dates">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How to use
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integration-with-seerr" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Integration with Seerr
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Integration with Seerr">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-use_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How to use
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#privacy-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Privacy &amp; Data
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Privacy &amp; Data">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cache-freshness-and-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Cache freshness and storage
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        API access
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Troubleshooting
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#elsewhere-not-showing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Elsewhere Not Showing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#no-providers-showing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        No Providers Showing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#provider-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Provider errors
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reviews-or-dates-missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Reviews or dates missing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Limitations
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#support" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Support
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"/></svg>
+  
+  <span class="md-ellipsis">
+    Other
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            Other
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"/></svg>
+  
+  <span class="md-ellipsis">
+    Community Analytics
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            Community Analytics
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    What's collected
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics-dashboard/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Live Dashboard
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Advanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            Advanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/css-customization/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    CSS Customization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/api/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/project-structure/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Project Structure
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/admin-media-tags/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Admin Media Tags Tab
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"/></svg>
+  
+  <span class="md-ellipsis">
+    Help
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            Help
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/faq/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/report-issues/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Report Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/feature-requests/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Feature Requests
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/contributing-translations/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Contributing Translations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/support/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Support + Community
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other-projects/other-projects/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Related Projects
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    About
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+  
+  
+                  
+
+  
+  
+
+
+<h1 id="elsewhere-reviews-settings">Elsewhere &amp; Reviews Settings<a class="headerlink" href="#elsewhere-reviews-settings" title="Permanent link">&para;</a></h1>
+<p>Configure providers, TMDB reviews, release dates, and local reviews in <strong>Dashboard</strong> → <strong>Plugins</strong> → <strong>Jellyfin Enhanced</strong> → <a href="../../open-in-jellyfin/?tab=elsewhere"><strong>Elsewhere &amp; Reviews</strong></a>. Settings on this page are admin settings for the server unless marked per user. The <a href="../../open-in-jellyfin/?tab=elsewhere&amp;card=tmdb"><strong>TMDB</strong></a> and <a href="../../open-in-jellyfin/?tab=elsewhere&amp;card=anilist"><strong>AniList</strong></a> cards also appear on the <strong>Services</strong> tab as linked copies, so changing one changes the other. For viewer workflows, see <a href="../elsewhere-features/">Elsewhere Integration</a>.</p>
+<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
+<p>Use a compatible Jellyfin web client with Jellyfin Enhanced loaded. See <a href="../../getting-started/compatibility/">Compatibility</a> to check your client.</p>
+<div class="admonition note">
+<p class="admonition-title">A compatible web client is required</p>
+<p>These panels depend on the web client's detail-page elements. Installing the server plugin does not add them to every native or third-party app.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">TMDB key and internet access</p>
+<p>TMDB reviews and release dates need a TMDB API key; provider lookup and Seerr poster logos can instead use Seerr's streaming-provider data when no TMDB key is set and the Seerr integration is enabled (per-season providers still need TMDB). TMDB-backed features need outbound internet access from your Jellyfin server. Get the v3 API key from your <a href="https://www.themoviedb.org/settings/api">TMDB account's API settings</a>. Local reviews need no key, but the item still needs a TMDB identity.</p>
+</div>
+<details class="info">
+<summary>How items are identified</summary>
+<p>Ordinary provider lookup finds a title through a TMDB external link in the detail section. A metadata ID alone is not enough to show this panel. Eligible season pages have a parent-series exception described under <a href="#per-season-providers">Per-season providers</a>. Reviews and release-date chips use IDs from Jellyfin item metadata instead.</p>
+</details>
+<h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=elsewhere&amp;card=tmdb">Elsewhere &amp; Reviews &gt; TMDB</a></p>
+<p>Set up the shared TMDB key first, then choose the Elsewhere features you want. The same key also serves JE's TMDB-dependent Seerr features.</p>
+<ol>
+<li>Enter your <strong>TMDB API Key</strong>. Click <strong>Test</strong> beside it and read the feedback. This checks the entered key through Jellyfin, including an unsaved key; it does not save configuration.</li>
+<li>Turn on <strong>Enable Elsewhere</strong>. Enter the key first if this checkbox is disabled.</li>
+<li>Choose <strong>Default Region</strong>, such as <code>US</code>, <code>GB</code>, <code>DE</code>, or <code>AU</code>. Optionally configure <strong>Default Providers</strong>, <strong>Ignore Providers</strong>, and <strong>Custom Branding</strong>.</li>
+<li>Turn on any review or release-date features you want, then click <strong>Save Settings</strong>.</li>
+<li>Reload the client and open a supported item detail page.</li>
+</ol>
+<details class="note">
+<summary>Configured key versus tested key</summary>
+<p><strong>Enable Elsewhere</strong> ships on, but providers cannot work until a key is configured. Its checkbox depends on that key requirement. The server's configured-key flag only means the key is nonempty and non-whitespace; it does not mean the key passed <strong>Test</strong>.</p>
+</details>
+<h2 id="configuration-options">Configuration Options<a class="headerlink" href="#configuration-options" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=elsewhere&amp;card=elsewhere-streaming-providers">Elsewhere &amp; Reviews &gt; Elsewhere (Streaming Providers)</a></p>
+<p>Use <strong>Elsewhere (Streaming Providers)</strong> to choose what appears in automatic detail-page results. The country and provider filters also affect logos on JE's Seerr cards.</p>
+<p>Follow <a href="#setup">Setup</a> to apply these server settings, then use the sections below to adjust countries and filters.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/elsewhere.webp"><img alt="Elsewhere provider and region settings" src="../../images/admin/elsewhere.webp" /></a></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Elsewhere</strong></td>
+<td>On</td>
+<td>Enables the detail-page provider panel with a configured TMDB key or, without one, the Seerr integration.</td>
+</tr>
+<tr>
+<td><strong>TMDB API Key</strong></td>
+<td>Empty</td>
+<td>Supplies the server-side key shared by TMDB-backed features.</td>
+</tr>
+<tr>
+<td><strong>Default Region</strong></td>
+<td><code>US</code></td>
+<td>Sets the automatic search country unless the viewer chooses a personal default. Empty falls back to <code>US</code>.</td>
+</tr>
+<tr>
+<td><strong>Default Providers</strong></td>
+<td>Empty</td>
+<td>Shows all subscription providers when empty; otherwise permits only exact provider names.</td>
+</tr>
+<tr>
+<td><strong>Ignore Providers</strong></td>
+<td>Empty</td>
+<td>Hides matching provider names after <strong>Default Providers</strong> is applied.</td>
+</tr>
+<tr>
+<td><strong>Use each user's Seerr streaming region</strong></td>
+<td>Off</td>
+<td>Looks providers up in each user's Seerr <strong>Streaming Region</strong> (their own Seerr setting, else Seerr's global one, else US as Seerr does) instead of the Default Region or the user's own Elsewhere country; needs the Seerr integration. Falls back to the Default Region if Seerr gives none. Applies to the Elsewhere panel, Seerr poster logos, and the More Info modal's streaming row.</td>
+</tr>
+<tr>
+<td><strong>Per-season providers</strong></td>
+<td>On</td>
+<td>Enables automatic season lookup for default/aired-order series; users can opt out.</td>
+</tr>
+<tr>
+<td><strong>Custom Branding Message</strong></td>
+<td>Empty</td>
+<td>Replaces the unavailable heading when no filtered automatic providers or season groups remain.</td>
+</tr>
+<tr>
+<td><strong>Custom Branding Icon URL</strong></td>
+<td>Empty</td>
+<td>Adds an optional icon beside a nonempty custom message.</td>
+</tr>
+<tr>
+<td><strong>Upload Icon</strong></td>
+<td>None</td>
+<td>An icon stored on the server, used in place of the icon URL.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="default-region">Default Region<a class="headerlink" href="#default-region" title="Permanent link">&para;</a></h3>
+<p>Choose the main country for your server's provider results.</p>
+<p>Choose <strong>Default Region</strong> and click <strong>Save Settings</strong>. Viewers inherit it until they save <strong>Default Search Country</strong> in the provider panel's <a href="#search-settings">Search Settings</a>.</p>
+<details class="info">
+<summary>Country defaults and suggestions</summary>
+<p>Seerr provider logos and movie release-date preference use the admin country. Your personal country override does not affect them.</p>
+<p>The admin selector and personal suggestions offer country names and codes. The linked <a href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/regions.txt">region suggestion list</a> helps you select a country; it does not guarantee provider data in every country.</p>
+</details>
+<h3 id="default-providers">Default Providers<a class="headerlink" href="#default-providers" title="Permanent link">&para;</a></h3>
+<p>Limit automatic results and Seerr poster logos to the services you want. Leave <strong>Default Providers</strong> blank to allow all TMDB subscription providers.</p>
+<ol>
+<li>Enter provider names, separated by commas or newlines. Copy names exactly, including capitalization.</li>
+<li>Click <strong>Save Settings</strong>.</li>
+</ol>
+<p>For example:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Netflix,Amazon Prime Video,Disney Plus
+</span></code></pre></div>
+<p>The <a href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt">provider suggestion list</a> can help you find names. Availability and names depend on the TMDB data returned.</p>
+<details class="info">
+<summary>Exact matching and list handling</summary>
+<p><strong>Default Providers</strong> uses case-sensitive full-name equality, rather than a regular expression or a partial-name match. A list with no matching names removes every provider.</p>
+<p>Both admin lists accept comma-separated or newline-separated entries. Leading and trailing whitespace is trimmed, empty entries are discarded, and apostrophes are removed. A pattern containing a comma is split into multiple entries and cannot remain one pattern.</p>
+<p>Manual searches bypass <strong>Default Providers</strong> and <strong>Ignore Providers</strong>. They use your personal <strong>Providers (leave empty to show all available)</strong> selection instead, so a manual search in the same country can show different services.</p>
+</details>
+<h3 id="ignore-providers">Ignore Providers<a class="headerlink" href="#ignore-providers" title="Permanent link">&para;</a></h3>
+<p>Hide services from automatic results and Seerr poster logos. <strong>Ignore Providers</strong> applies after <strong>Default Providers</strong>, so an exclusion wins even if you allowed that service.</p>
+<ol>
+<li>Enter names or patterns in <strong>Ignore Providers</strong>, separated by commas or newlines.</li>
+<li>Click <strong>Save Settings</strong>.</li>
+</ol>
+<p>For simple exclusions:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Apple TV,Google Play Movies
+</span></code></pre></div>
+<details class="info">
+<summary>Pattern matching and invalid patterns</summary>
+<p>Each entry becomes a case-insensitive regular expression. Simple patterns match anywhere in a name. For full-name matches, anchor the patterns:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>^Apple TV$,^Google Play Movies$
+</span></code></pre></div>
+<p>To match a literal name containing regex metacharacters such as <code>+</code>, <code>.</code>, or parentheses, escape them with a backslash. For example, <code>\+</code> matches a literal plus sign. A pattern such as <code>.*with Ads</code> hides matching subscription-provider names; it does not filter a separate ad-supported availability category.</p>
+<p>If any entry is an invalid regex, the entire ignore step is skipped and an error is logged in the browser console. <strong>Default Providers</strong> still applies. With <strong>Default Providers</strong> set to <code>Netflix,Amazon Prime Video</code> and <strong>Ignore Providers</strong> set to <code>^Netflix$</code>, only Amazon Prime Video survives when both services are returned.</p>
+</details>
+<h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
+<p>The provider panel shows services for your saved <strong>Default Search Country</strong>, or the admin <strong>Default Region</strong> until you set one. Automatic lookup uses the admin provider lists and, when enabled, season lookup.</p>
+<h3 id="on-item-detail-pages">On Item Detail Pages<a class="headerlink" href="#on-item-detail-pages" title="Permanent link">&para;</a></h3>
+<p>Read provider badges to see which subscription services carry a title. The badges show names and logos; they do not link to playback.</p>
+<ol>
+<li>Open a supported movie or series page. Find the provider panel, normally directly below external links.</li>
+<li>Look for <strong>Also available in {region} on:</strong> or <strong>Not available on any streaming services in {region}</strong>. Custom branding can replace the unavailable heading.</li>
+<li>Click an available heading to open TMDB's regional availability URL in a new tab, when supplied. Both automatic and manual-country headings use the <strong>JustWatch</strong> tooltip.</li>
+</ol>
+<details class="note">
+<summary>Other display states</summary>
+<p>When raw providers exist but an active <strong>Default Providers</strong> list leaves no matching automatic providers, the panel can also show <strong>No configured services available</strong>. Broken badge logos are hidden while names remain.</p>
+</details>
+<h3 id="manual-country-searches">Manual country searches<a class="headerlink" href="#manual-country-searches" title="Permanent link">&para;</a></h3>
+<p>Compare subscription availability in other countries using your personal provider selection. Manual searches check the whole title, including when you start from a season page.</p>
+<ol>
+<li>Open the gear icon's <strong>Search Settings</strong> and choose countries and providers.</li>
+<li>Click <strong>Save</strong>, then use the panel's magnifying-glass icon. It shows <strong>Searching…</strong> while fetching.</li>
+<li>Read the available-country blocks and the combined unavailable-country block. Use their close icons to dismiss them; searching again replaces all previous manual blocks.</li>
+</ol>
+<details class="info">
+<summary>Which countries and providers are searched</summary>
+<p>A nonempty <strong>Search Other Countries (leave empty to use default)</strong> list replaces the fallback country list. Your default country is not automatically added. With that list empty, the search checks your effective default country only.</p>
+<p>Personal provider selection uses case-sensitive full-name matching. Empty shows all available subscription providers. Manual results bypass both admin lists.</p>
+</details>
+<h2 id="search-settings">Search Settings<a class="headerlink" href="#search-settings" title="Permanent link">&para;</a></h2>
+<p>Use the provider panel's gear icon to choose your country and manual-search preferences. These settings belong to your Jellyfin account and are saved on the server, so they are not limited to one browser.</p>
+<h3 id="how-to-use">How to use<a class="headerlink" href="#how-to-use" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Open <strong>Search Settings</strong> and choose <strong>Default Search Country</strong> from the dropdown. Its <strong>Reset to plugin default</strong> icon selects the current admin country.</li>
+<li>Type in the country or provider autocomplete field, then select a suggestion to add a removable chip. While suggestions are open, use <span class="keys"><kbd class="key-arrow-up">Up</kbd></span> or <span class="keys"><kbd class="key-arrow-down">Down</kbd></span> to navigate, <span class="keys"><kbd class="key-enter">Enter</kbd></span> to add, and <span class="keys"><kbd class="key-escape">Esc</kbd></span> to dismiss suggestions. Remove a chip with its × control.</li>
+<li>Set <strong>Show providers per season (when seasons differ)</strong> if available.</li>
+<li>Click <strong>Save</strong> to submit your selections. <strong>Cancel</strong> or a click on the backdrop closes the dialog without saving.</li>
+<li>Reload or revisit the page to update automatic results for your new country and season preference.</li>
+</ol>
+<figure class="je-video">
+  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Changing streaming countries and providers in Search Settings">
+    <source src="../../../images/elsewhere/provider-region-flow.mp4" type="video/mp4">
+  </video>
+  <figcaption>Save Canada, Australia, and Netflix in Search Settings, then search for matching providers.</figcaption>
+</figure>
+
+<p>Per-user settings:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Default Search Country</strong></td>
+<td>Empty; inherits admin country</td>
+<td>Sets your automatic country and the manual-search fallback country.</td>
+</tr>
+<tr>
+<td><strong>Search Other Countries (leave empty to use default)</strong></td>
+<td>Empty list</td>
+<td>Replaces the manual-search country list when nonempty.</td>
+</tr>
+<tr>
+<td><strong>Providers (leave empty to show all available)</strong></td>
+<td>Empty list</td>
+<td>Selects exact provider names for manual searches only.</td>
+</tr>
+<tr>
+<td><strong>Show providers per season (when seasons differ)</strong></td>
+<td>On</td>
+<td>Enables your automatic season lookup; shown only when the admin permits it.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Saving, resetting, and reopening the dialog</summary>
+<p>Preferences are saved in <code>elsewhere.json</code>. <strong>Save</strong> updates the manual-search variables and closes the dialog, but does not rebuild automatic results already on the page.</p>
+<p>Closing without saving does not reset the dialog's unsaved controls; they can still be present when you reopen it. The country reset selects the admin country rather than clearing your saved override back to an inherited empty value.</p>
+<p>Save failures are logged without an error shown in this dialog. If preferences do not persist after reloading, check the browser console and Jellyfin logs.</p>
+</details>
+<h2 id="per-season-providers">Per-season providers<a class="headerlink" href="#per-season-providers" title="Permanent link">&para;</a></h2>
+<p>Show which services carry different parts of a series. A series page groups different provider sets under labels such as <strong>Seasons 1–6</strong> and <strong>Season 7</strong>; a season page shows that season's filtered providers.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/elsewhere/provider-seasons.webp"><img alt="Series providers grouped by season, with the Season 3 page showing its own providers below" src="../../images/elsewhere/provider-seasons.webp" /></a>
+<em>Top: series groups; bottom: the Season 3 page.</em></p>
+<h3 id="how-to-use_1">How to use<a class="headerlink" href="#how-to-use_1" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Use a default/aired-order series with a TMDB ID and numbered Jellyfin seasons visible to your account, or an eligible season page with its parent-series ID and season number.</li>
+<li>Keep the admin <strong>Per-season providers</strong> on.</li>
+<li>In the panel's <strong>Search Settings</strong>, leave <strong>Show providers per season (when seasons differ)</strong> on and click <strong>Save</strong>.</li>
+<li>Reload or revisit the series or season page.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Per-season providers</strong></td>
+<td>On (admin)</td>
+<td>Permits automatic season lookup.</td>
+</tr>
+<tr>
+<td><strong>Show providers per season (when seasons differ)</strong></td>
+<td>On (per user)</td>
+<td>Lets you opt out when the admin permits season lookup.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>Grouping, display orders, and fallbacks</summary>
+<p>Grouping considers integer-numbered Jellyfin seasons returned for you, rather than every season TMDB knows about. If all considered seasons have the same provider set, the display stays at series level.</p>
+<p>Admin filters run before grouping and fallback. A regular season with missing data or no matching providers falls back to the filtered series providers. In series grouping, specials (season 0) without matching providers are omitted; they do not inherit series providers. A specials detail page with no usable season result can still fall back to the title-level panel. Different raw season data can collapse to the same set after filtering.</p>
+<p>DVD, absolute, and other alternate display orders keep title-level results because their numbers may not match TMDB's aired order. Manual searches and Seerr cards are always title-level. A season page without a TMDB external link can show the panel through its parent series only when both season settings permit lookup and the parent uses default/aired order.</p>
+</details>
+<h2 id="custom-branding">Custom Branding<a class="headerlink" href="#custom-branding" title="Permanent link">&para;</a></h2>
+<p>Show your own heading when no filtered automatic providers or season groups remain. The message describes the current country and filters; it does not establish that the title is exclusive to your server.</p>
+<h3 id="how-to-use_2">How to use<a class="headerlink" href="#how-to-use_2" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Expand <a href="../../open-in-jellyfin/?tab=elsewhere&amp;card=elsewhere-streaming-providers"><strong>Custom Branding</strong> in <strong>Elsewhere &amp; Reviews</strong></a>.</li>
+<li>Enter a message.</li>
+<li>Optionally add an icon, either way:
+    - <strong>Upload Icon:</strong> drop or pick a PNG, JPG, GIF, WebP or SVG file. It is stored on the server straight away and used instead of the icon URL; the bin button removes it.
+    - <strong>Custom Branding Icon URL:</strong> each viewer's browser loads the icon, so use a web address it can open, such as <code>https://example.com/logo.png</code>, or a path Jellyfin serves, such as <code>/web/favicons/touchicon.png</code>. A file path on the server, such as <code>/config/logo.png</code>, doesn't work. If the admin page can't load the image, a warning appears under the field.</li>
+<li>Click <strong>Save Settings</strong> and reload the client.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Custom Branding Message</strong></td>
+<td>Empty</td>
+<td>Replaces only the automatic unavailable heading. Empty keeps the standard unavailable heading.</td>
+</tr>
+<tr>
+<td><strong>Custom Branding Icon URL</strong></td>
+<td>Empty</td>
+<td>Adds a 24 × 24 CSS-pixel icon beside the custom message. Any image type browsers show works, such as PNG, SVG or WebP. Ignored while an icon is uploaded. Empty supplies no icon.</td>
+</tr>
+<tr>
+<td><strong>Upload Icon</strong></td>
+<td>None</td>
+<td>An icon stored on the server, used in place of the icon URL.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition tip">
+<p class="admonition-title">Check your touch devices</p>
+<p>With a custom message in the unavailable automatic state, search and settings controls appear on hover. Test this state on the touch devices you use before relying on hover instructions.</p>
+</div>
+<details class="info">
+<summary>Icons, headings, and hidden controls</summary>
+<p>An icon without a message has no effect. Failed icons are hidden, and the browser console logs a warning naming the URL. Paths starting with <code>/web/</code> or <code>/JellyfinEnhanced/</code> are resolved against your server address, so they keep working when Jellyfin runs under a base path such as <code>/jellyfin</code>; other root-relative paths are used as entered. There is no default branding logo. Manual-country results retain their own availability headings.</p>
+<p>With a custom message in the unavailable automatic state, search and settings controls initially have zero opacity. Pointer entry reveals them and pointer exit hides them; their click handlers remain.</p>
+</details>
+<h2 id="tmdb-reviews">TMDB Reviews<a class="headerlink" href="#tmdb-reviews" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=elsewhere&amp;card=tmdb-reviews">Elsewhere &amp; Reviews &gt; TMDB Reviews</a></p>
+<p>Read TMDB community reviews on movie and series pages. See <a href="../elsewhere-features/#tmdb-reviews">TMDB Reviews</a> for card behavior and limits.</p>
+<h3 id="how-to-use_3">How to use<a class="headerlink" href="#how-to-use_3" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Configure and test <strong>TMDB API Key</strong>. Keep <strong>Enable Elsewhere</strong> on to edit the review controls.</li>
+<li>Turn on <strong>Show TMDB Reviews</strong> and, optionally, <strong>Expand reviews by default</strong>.</li>
+<li>Click <strong>Save Settings</strong> and reload the client.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show TMDB Reviews</strong></td>
+<td>Off</td>
+<td>Enables TMDB review cards for movies and series with TMDB IDs and a configured key.</td>
+</tr>
+<tr>
+<td><strong>Expand reviews by default</strong></td>
+<td>Off</td>
+<td>Sets the admin default for opening the shared reviews section. A stored viewer preference overrides it.</td>
+</tr>
+</tbody>
+</table>
+<p>Opening or closing <strong>Reviews ({count})</strong> saves your expansion choice, including for local-only reviews. Opening a writing form also opens the section.</p>
+<details class="info">
+<summary>Control dependencies and loading limits</summary>
+<p>The admin UI disables both controls when <strong>Enable Elsewhere</strong> is off. It also disables expansion when <strong>Show TMDB Reviews</strong> is off. This dependency applies to the admin UI: loading TMDB reviews does not require <strong>Enable Elsewhere</strong>. Local reviews are independent of both toggles.</p>
+<p>Your expansion choice is stored in <code>settings.json</code>. TMDB requests use <code>en-US</code>, page 1, and show at most ten TMDB cards. The count includes all fetched TMDB reviews plus visible local reviews and can exceed the cards shown. Failed or empty lookups can leave <strong>Reviews (0)</strong>.</p>
+</details>
+<h2 id="anilist-reviews">AniList Reviews<a class="headerlink" href="#anilist-reviews" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=elsewhere&amp;card=anilist">Elsewhere &amp; Reviews &gt; AniList</a></p>
+<p>Show the top AniList user reviews for anime on movie and series pages. See <a href="../elsewhere-features/#anilist-reviews">AniList Reviews</a> for card behavior and limits.</p>
+<h3 id="how-to-use_4">How to use<a class="headerlink" href="#how-to-use_4" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Make sure AniList is a metadata provider for your anime library, so items have an AniList ID.</li>
+<li>Turn on <strong>Show AniList Reviews</strong>, click <strong>Save Settings</strong>, and reload the client.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show AniList Reviews</strong></td>
+<td>Off</td>
+<td>Enables AniList review cards for movies and series that have an AniList ID.</td>
+</tr>
+</tbody>
+</table>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/elsewhere/anilist-reviews-settings.webp"><img alt="AniList Reviews setting in the Elsewhere &amp; Reviews tab" src="../../images/elsewhere/anilist-reviews-settings.webp" /></a></p>
+<details class="info">
+<summary>Dependencies and privacy</summary>
+<p>This needs no API key and is independent of <strong>Enable Elsewhere</strong>, the TMDB key and <strong>Show TMDB Reviews</strong>. Items without an AniList ID show no AniList cards.</p>
+<p>Your Jellyfin server sends the item's AniList ID to AniList's public GraphQL API (<code>graphql.anilist.co</code>) and caches the response in memory. No user information is sent.</p>
+</details>
+<h2 id="review-translation">Review Translation<a class="headerlink" href="#review-translation" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=elsewhere&amp;card=review-translation">Elsewhere &amp; Reviews &gt; Review Translation</a></p>
+<p>Add a <strong>Translate</strong> button to English TMDB and AniList reviews. See <a href="../elsewhere-features/#review-translation">Review Translation</a> for how it behaves.</p>
+<div class="admonition warning">
+<p class="admonition-title">Only shown when the user's display language is not English</p>
+<p>The button appears only for users whose Jellyfin display language is <strong>not English</strong>. Users on an English display language never see it, even with this setting on.</p>
+</div>
+<h3 id="how-to-use_5">How to use<a class="headerlink" href="#how-to-use_5" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Turn on <strong>Enable Review Translation</strong> in <a href="../../open-in-jellyfin/?tab=elsewhere&amp;card=review-translation"><strong>Elsewhere &amp; Reviews</strong></a>.</li>
+<li>Optionally enter your <strong>LibreTranslate URL</strong> (and <strong>API Key</strong> if your instance needs one) for browsers without a built-in translator.</li>
+<li>Click <strong>Save Settings</strong> and reload the client.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Review Translation</strong></td>
+<td>Off</td>
+<td>Turns the <strong>Translate</strong> button on. The browser's built-in translator needs nothing else.</td>
+</tr>
+<tr>
+<td><strong>LibreTranslate URL (optional)</strong></td>
+<td>Empty</td>
+<td>Base address of your LibreTranslate instance, for example <code>http://localhost:5000</code>. Used when the browser cannot translate.</td>
+</tr>
+<tr>
+<td><strong>LibreTranslate API Key (optional)</strong></td>
+<td>Empty</td>
+<td>Sent with each request to your instance. Needed only if the instance requires a key.</td>
+</tr>
+</tbody>
+</table>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/elsewhere/review-translation-settings.webp"><img alt="Review Translation settings in the Elsewhere &amp; Reviews tab" src="../../images/elsewhere/review-translation-settings.webp" /></a></p>
+<details class="info">
+<summary>Privacy, limits and requirements</summary>
+<p>With the browser's built-in translator, the review text stays on the device. With LibreTranslate, your Jellyfin server sends only the review text (English source, your language as target) to the URL you set. The API key is never sent to the browser, which only learns whether a server is configured.</p>
+<p>The URL goes through the same address checks as the Sonarr and Radarr URLs. Reviews over 20,000 characters are rejected. The button only shows for languages the browser or your instance offers.</p>
+<p>The browser's built-in translator is limited to desktop Chromium browsers (such as Chrome and Edge) on HTTPS or <code>localhost</code>. Firefox, Safari, most mobile browsers and the Jellyfin apps do not have it, so set a <strong>LibreTranslate URL</strong> if those users should be able to translate. See <a href="../elsewhere-features/#review-translation">the browser translator's limits</a>.</p>
+</details>
+<h2 id="user-reviews">User Reviews<a class="headerlink" href="#user-reviews" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=elsewhere&amp;card=user-reviews">Elsewhere &amp; Reviews &gt; User Reviews</a></p>
+<p>Let viewers share text reviews and/or star ratings on your server. Local reviews need no TMDB API key or enabled provider panel.</p>
+<h3 id="how-to-use_6">How to use<a class="headerlink" href="#how-to-use_6" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Turn on <strong>Enable User Written Reviews</strong> in <a href="../../open-in-jellyfin/?tab=elsewhere&amp;card=user-reviews"><strong>Elsewhere &amp; Reviews</strong></a>, click <strong>Save Settings</strong>, and reload the client.</li>
+<li>On an eligible detail page, expand <strong>Reviews ({count})</strong> and click <strong>Write a Review</strong> if you have no review for that item, or <strong>Edit</strong> on your existing review.</li>
+</ol>
+<p>See <a href="../elsewhere-features/#user-reviews">User Reviews</a> for writing, editing, deletion, character limits, and the picker limitation.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable User Written Reviews</strong></td>
+<td>Off</td>
+<td>Enables local review UI independently of provider lookup and TMDB reviews.</td>
+</tr>
+<tr>
+<td><strong>Hide reviews from hidden users</strong></td>
+<td>On</td>
+<td>Hides reviews by hidden Jellyfin authors from other non-admin viewers.</td>
+</tr>
+<tr>
+<td><strong>Hide reviews from disabled users</strong></td>
+<td>On</td>
+<td>Hides reviews by disabled Jellyfin authors from other non-admin viewers.</td>
+</tr>
+<tr>
+<td><strong>Also save review star ratings as the user's Jellyfin rating</strong></td>
+<td>Off</td>
+<td>Copies movie/series review stars to the author's Jellyfin rating at twice the star value.</td>
+</tr>
+<tr>
+<td><strong>Show average user rating on poster cards</strong></td>
+<td>Off</td>
+<td>Adds visible local-review averages to eligible posters when rating tags are enabled.</td>
+</tr>
+<tr>
+<td><strong>Show a dash on posters for unrated items</strong></td>
+<td>On</td>
+<td>Uses a dash when no visible rated-review average exists and poster averages are enabled.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Item requirements</p>
+<p>Movies and series need TMDB IDs. Seasons and episodes need the parent-series TMDB ID and the relevant numbering.</p>
+</div>
+<details class="note">
+<summary>Admin control dependency</summary>
+<p>The admin UI disables the five subordinate local-review controls when <strong>Enable User Written Reviews</strong> is off.</p>
+</details>
+<h3 id="author-visibility-and-moderation">Author visibility and moderation<a class="headerlink" href="#author-visibility-and-moderation" title="Permanent link">&para;</a></h3>
+<p>Choose whose reviews other viewers can see, and remove reviews when needed. Local reviews are shared server data, rather than private personal notes.</p>
+<ol>
+<li>Use <strong>Hide reviews from hidden users</strong> and <strong>Hide reviews from disabled users</strong> to set author visibility.</li>
+<li>Authors can <strong>Edit</strong> or <strong>Delete</strong> their own cards. Admins can use <strong>Delete as admin</strong> on other authors' cards, with confirmation and failure feedback. The web UI does not let admins edit another author's review.</li>
+</ol>
+<details class="info">
+<summary>Visibility rules and deleted accounts</summary>
+<p>The two author-hide settings filter reviews for other non-admin viewers. They use Jellyfin account policies for hidden/disabled users, rather than your <strong>Hidden Content</strong> list. Existing authors always see their own reviews, and admins bypass author filtering.</p>
+<p>Reviews whose authors were deleted are hidden from non-admins while either filter is enabled. With both filters off, those reviews are visible. These rules also govern review averages. Hiding an author leaves the review stored. Deleting a Jellyfin account does not erase its stored reviews.</p>
+<p>Account updates, deletion, and lockout invalidate cached authors for subsequent requests.</p>
+</details>
+<h3 id="averages-and-poster-controls">Averages and poster controls<a class="headerlink" href="#averages-and-poster-controls" title="Permanent link">&para;</a></h3>
+<p>Detail pages show the average of visible rated local reviews out of ten. For example, 3- and 4-star reviews average to 7; text-only reviews do not contribute.</p>
+<ol>
+<li>Keep <strong>Enable User Written Reviews</strong> on and turn on <strong>Show average user rating on poster cards</strong>.</li>
+<li>Enable rating tags: use the admin <strong>Enable Rating Tags</strong> in <strong>Display</strong>, or your personal <strong>Show Rating Tags</strong> preference.</li>
+<li>Choose whether <strong>Show a dash on posters for unrated items</strong> should show a dash when no visible rated-review average exists.</li>
+</ol>
+<p>See <a href="../../enhanced/tags/">Tags</a> for rating-tag placement and supported card contexts.</p>
+<details class="note">
+<summary>Rating-tag defaults and the dash</summary>
+<p>Poster averages require local reviews, poster averages, and effective rating tags to be enabled. The admin <strong>Enable Rating Tags</strong> defaults off. A stored per-user <strong>Show Rating Tags</strong> value overrides that default, including a saved off value.</p>
+<p>The dash means there is no visible rated-review average. It does not mean the current viewer has not rated the item.</p>
+</details>
+<h3 id="jellyfin-rating-mirroring">Jellyfin rating mirroring<a class="headerlink" href="#jellyfin-rating-mirroring" title="Permanent link">&para;</a></h3>
+<p>Copy movie and series review stars to the author's Jellyfin rating. The Jellyfin value is twice the star value; seasons and episodes are excluded.</p>
+<p>To use this, turn on <strong>Also save review star ratings as the user's Jellyfin rating</strong>. Saving movie/series stars then copies the rating.</p>
+<div class="admonition warning">
+<p class="admonition-title">Existing Jellyfin ratings are overwritten</p>
+<p>Saving review stars with this setting on replaces a Jellyfin rating set elsewhere.</p>
+</div>
+<details class="note">
+<summary>Removing stars, deleting reviews, and failures</summary>
+<p>Removing stars or deleting the review clears the Jellyfin rating only while mirroring is enabled and the current rating still matches the previous review stars ×2. A value changed elsewhere is preserved.</p>
+<p>A mirroring failure is logged and does not undo the review save or deletion.</p>
+</details>
+<h3 id="spoiler-guard">Spoiler Guard<a class="headerlink" href="#spoiler-guard" title="Permanent link">&para;</a></h3>
+<p>Hide both local and TMDB review panels on guarded items in the web client. This includes guarded movies and a guarded series' child pages.</p>
+<ol>
+<li>Use the admin <strong>Enable Spoiler Guard</strong> and <strong>Hide reviews on Spoiler Guard series</strong> settings in <a href="../../open-in-jellyfin/?tab=display&amp;card=spoiler-guard"><strong>Display</strong></a>.</li>
+<li>Set your personal <strong>Reviews</strong> preference in Spoiler Guard to override the admin policy, or leave it unset to inherit that policy.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Spoiler Guard</strong></td>
+<td>Off (admin, <a href="../../open-in-jellyfin/?tab=display&amp;card=spoiler-guard"><strong>Display</strong></a>)</td>
+<td>Enables Spoiler Guard, including its review-suppression checks.</td>
+</tr>
+<tr>
+<td><strong>Hide reviews on Spoiler Guard series</strong></td>
+<td>On (admin, <a href="../../open-in-jellyfin/?tab=display&amp;card=spoiler-guard"><strong>Display</strong></a>)</td>
+<td>Permits suppression of local and TMDB review panels for guarded items.</td>
+</tr>
+<tr>
+<td><strong>Reviews</strong></td>
+<td>Unset; inherits admin policy (per user)</td>
+<td>Controls personal review hiding in Spoiler Guard preferences. Off allows reviews once state loads successfully.</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../../spoiler-guard/spoiler-guard-settings/">Spoiler Guard settings</a>.</p>
+<details class="note">
+<summary>State-loading failures and API access</summary>
+<p>If Spoiler Guard state fails to load, reviews are hidden before your personal override is checked. Hiding the panel is a web-client behavior; it does not make local reviews inaccessible through the review API.</p>
+</details>
+<h2 id="release-dates">Release Dates<a class="headerlink" href="#release-dates" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=elsewhere&amp;card=release-dates">Elsewhere &amp; Reviews &gt; Release Dates</a></p>
+<p>Show movie release dates and television air dates beside detail-page metadata. See <a href="../elsewhere-features/#release-dates">Release Dates</a> for how each item's date is chosen.</p>
+<h3 id="how-to-use_7">How to use<a class="headerlink" href="#how-to-use_7" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Configure the shared <strong>TMDB API Key</strong>.</li>
+<li>Turn on <strong>Show Release/Air Date</strong> under <a href="../../open-in-jellyfin/?tab=elsewhere&amp;card=release-dates"><strong>Release Dates</strong></a>, then click <strong>Save Settings</strong>.</li>
+<li>Reload the client and open an identifiable movie, series, season, or episode.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show Release/Air Date</strong></td>
+<td>Off</td>
+<td>Enables release/air-date chips with a configured key and resolvable date data.</td>
+</tr>
+<tr>
+<td><strong>Default Region</strong></td>
+<td><code>US</code></td>
+<td>Sets movie release-date country preference, followed by US and then other available regions.</td>
+</tr>
+</tbody>
+</table>
+<p>Dates use your locale's format and preserve the calendar day. Missing dates leave out the chip. This feature does not require <strong>Enable Elsewhere</strong>.</p>
+<details class="note">
+<summary>Country preference and child items</summary>
+<p>Your personal <strong>Default Search Country</strong> does not affect movie release dates. Child pages need a parent-series TMDB ID, even when an episode uses its Jellyfin premiere date.</p>
+</details>
+<h2 id="integration-with-seerr">Integration with Seerr<a class="headerlink" href="#integration-with-seerr" title="Permanent link">&para;</a></h2>
+<p>Show subscription-provider logos on JE's Seerr cards inside Jellyfin, including Seerr results in Jellyfin search. This setting does not configure the external Seerr website.</p>
+<h3 id="how-to-use_8">How to use<a class="headerlink" href="#how-to-use_8" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Complete <a href="../../seerr/seerr-settings/">Seerr connection setup</a>.</li>
+<li>Configure the shared <strong>TMDB API Key</strong> in <a href="../../open-in-jellyfin/?tab=elsewhere&amp;card=tmdb"><strong>Elsewhere &amp; Reviews</strong></a>.</li>
+<li>Open <a href="../../open-in-jellyfin/?tab=seerr&amp;card=discovery-ui-extras"><strong>Seerr</strong></a>, turn on <strong>Show Streaming Providers on Posters</strong>, and click <strong>Save Settings</strong>.</li>
+<li>Reload the client and browse JE's Seerr cards. For Jellyfin search cards, keep <strong>Show Seerr Results in Search</strong> on.</li>
+</ol>
+<p>Admin settings in <strong>Seerr</strong>, except the TMDB key:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Seerr integration</strong></td>
+<td>Off</td>
+<td>Enables JE's Seerr features.</td>
+</tr>
+<tr>
+<td><strong>Seerr URL(s) (One per line)</strong></td>
+<td>Empty</td>
+<td>Supplies the Seerr instance addresses used by JE.</td>
+</tr>
+<tr>
+<td><strong>Seerr API Key</strong></td>
+<td>Empty</td>
+<td>Authenticates JE's requests to Seerr.</td>
+</tr>
+<tr>
+<td><strong>TMDB API Key</strong></td>
+<td>Empty (<a href="../../open-in-jellyfin/?tab=elsewhere&amp;card=tmdb"><strong>Elsewhere &amp; Reviews</strong></a>)</td>
+<td>Enables server-side watch-provider lookups.</td>
+</tr>
+<tr>
+<td><strong>Show Streaming Providers on Posters</strong></td>
+<td>Off</td>
+<td>Adds at most four valid subscription-provider logos to JE's Seerr cards.</td>
+</tr>
+<tr>
+<td><strong>Show Seerr Results in Search</strong></td>
+<td>On</td>
+<td>Enables JE's Seerr results in Jellyfin search when connection and access requirements are met.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>Country, filters, and logos</summary>
+<p>Cards use the admin <strong>Default Region</strong>, <strong>Default Providers</strong>, and <strong>Ignore Providers</strong>, with title-level availability. They can differ from personal or season-specific item-page results. These cards have no personal country-search/settings panel.</p>
+<p>Logos have provider-name tooltips; failed logos are removed. The logo setting does not require <strong>Enable Elsewhere</strong>.</p>
+</details>
+<h2 id="privacy-data">Privacy &amp; Data<a class="headerlink" href="#privacy-data" title="Permanent link">&para;</a></h2>
+<p>TMDB lookups send the queried title identifiers and your server's API key to TMDB over HTTPS. User-written reviews stay in Jellyfin's local storage and are not posted to TMDB.</p>
+<p>The plugin does not upload your full library inventory or viewing history to TMDB. Individual TMDB IDs identify the titles being looked up. Encryption between your browser and Jellyfin depends on your deployment's HTTPS configuration.</p>
+<details class="info">
+<summary>Request handling and external images</summary>
+<p>Jellyfin handles TMDB API requests through authenticated JE routes. Watch-provider responses contain all available regions. Ordinary detail requests select the country in the browser; Seerr batches send the country to Jellyfin for server-side extraction. The selected country is not added to ordinary upstream watch-provider requests.</p>
+<p>Browsers load provider logos from <code>image.tmdb.org</code> and custom branding images from the host in the configured URL. Country/provider suggestions use JE's local CDN route, backed by jsDelivr, with hardcoded fallbacks if loading fails. Clicking an external availability heading opens the URL supplied by TMDB.</p>
+</details>
+<h3 id="cache-freshness-and-storage">Cache freshness and storage<a class="headerlink" href="#cache-freshness-and-storage" title="Permanent link">&para;</a></h3>
+<p>Cached results can take time to reflect changes on TMDB. Reloading clears results temporarily saved in your browser, but your Jellyfin server may still return its saved results.</p>
+<details class="info">
+<summary>Cache lifetimes and requests</summary>
+<p>Title-level provider and TMDB-review requests use a shared 30-minute client cache. Successful JSON server lookup responses have a six-hour lifetime; JSON 404 responses are cached for ten minutes. Non-JSON responses and HTTP 401, 429, and 5xx outcomes are not stored in that server response cache.</p>
+<p>Concurrent identical lookups share upstream work. Eligible title requests without cached data can bundle providers, reviews, and other title data. Each upstream attempt has a 30-second timeout budget; that does not guarantee a 30-second limit for the entire browser operation.</p>
+<p>Season-provider and TMDB season-number promises stay cached for the lifetime of the initialized Elsewhere script, across detail-page navigation, without time-based expiry. Failed entries are removed. Release-date results have a separate one-hour client cache.</p>
+</details>
+<details class="note">
+<summary>Stored files and backups</summary>
+<p>JE stores these files under <code>&lt;PluginsPath&gt;/configurations/Jellyfin.Plugin.JellyfinEnhanced/</code>:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;userId&gt;/elsewhere.json</code></td>
+<td>Personal country, manual-search countries/providers, and season preference.</td>
+</tr>
+<tr>
+<td><code>&lt;userId&gt;/settings.json</code></td>
+<td>Personal Enhanced settings, including review expansion.</td>
+</tr>
+<tr>
+<td><code>reviews.json</code></td>
+<td>Shared local reviews; back this up separately from per-user preferences.</td>
+</tr>
+<tr>
+<td><code>tmdb-cache.json</code></td>
+<td>Persistent shared TMDB response cache; not the local-review store.</td>
+</tr>
+</tbody>
+</table>
+<p>User-directory IDs are normalized lowercase GUIDs without dashes. See <a href="../../getting-started/settings-overview/">Settings Overview</a> for the broader settings and backup reference.</p>
+</details>
+<h3 id="api-access">API access<a class="headerlink" href="#api-access" title="Permanent link">&para;</a></h3>
+<p>You can use authenticated JE routes to access provider data, preferences, and reviews. See the <a href="../../advanced/api/">API reference</a> for integration examples.</p>
+<details class="info">
+<summary>Provider, settings, and review routes</summary>
+<p>All routes below use the <code>/JellyfinEnhanced</code> prefix and require authentication. Admin-only actions check administrator status in their handlers.</p>
+<table>
+<thead>
+<tr>
+<th>Method and route</th>
+<th>Access and limits</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET tmdb/{**apiPath}</code></td>
+<td>Authenticated TMDB proxy; missing configured key returns 503. Parental restrictions can refuse lookups.</td>
+</tr>
+<tr>
+<td><code>GET tmdb/validate?apiKey=…</code></td>
+<td>Admin-only test of the supplied key, including an unsaved key.</td>
+</tr>
+<tr>
+<td><code>GET watch-providers?items=movie:603,tv:1399&amp;region=US</code></td>
+<td>At most 100 distinct valid titles; <code>items</code> at most 2,048 characters. IDs are positive, one to nine digits. An explicit nonempty region must be two uppercase letters. Omitted/empty uses normalized admin country, falling back to US if invalid.</td>
+</tr>
+<tr>
+<td><code>GET user-settings/{userId}/elsewhere.json</code></td>
+<td>Own preferences, or another user's preferences for an admin.</td>
+</tr>
+<tr>
+<td><code>POST user-settings/{userId}/elsewhere.json</code></td>
+<td>Same access rules; saves personal preferences.</td>
+</tr>
+<tr>
+<td><code>GET reviews/{mediaType}/{tmdbId}</code></td>
+<td>Returns reviews visible to the authenticated viewer.</td>
+</tr>
+<tr>
+<td><code>POST reviews/{mediaType}/{tmdbId}</code></td>
+<td>Creates or updates the caller's review.</td>
+</tr>
+<tr>
+<td><code>DELETE reviews/{mediaType}/{tmdbId}</code></td>
+<td>Deletes the caller's review.</td>
+</tr>
+<tr>
+<td><code>GET reviews/ratings?keys=…</code></td>
+<td>Averages and counts of visible rated reviews; at most 200 distinct valid keys.</td>
+</tr>
+<tr>
+<td><code>GET reviews/admin/all</code></td>
+<td>Admin list/export; supports <code>since</code>, <code>userId</code>, <code>limit</code>, and <code>offset</code>. Limit defaults to 500, accepts 1–1,000; offset defaults to 0 and must be nonnegative.</td>
+</tr>
+<tr>
+<td><code>POST reviews/admin/{userIdN}/{mediaType}/{tmdbId}</code></td>
+<td>Admin upsert on another author's behalf.</td>
+</tr>
+<tr>
+<td><code>DELETE reviews/admin/{userIdN}/{mediaType}/{tmdbId}</code></td>
+<td>Admin moderation deletion.</td>
+</tr>
+</tbody>
+</table>
+<p>Review media types are <code>movie</code> and <code>tv</code>. Season keys use <code>&lt;seriesTmdbId&gt;:s&lt;n&gt;</code>; episode keys use <code>&lt;seriesTmdbId&gt;:s&lt;n&gt;:e&lt;n&gt;</code>. Reviews are keyed by author, media type, and item key. POST accepts <code>content</code> and/or <code>rating</code>, with the same 2,000-character and 1–5 half-star limits as the UI.</p>
+<p>Provider batches return a <code>region</code> and a <code>results</code> map. An empty array means no usable regional subscription entries after server extraction, which also validates names and logo paths. <code>null</code> can mean a blocked/failed lookup or an unusable response. Parental restrictions apply to TMDB proxy and provider-batch requests. A missing TMDB key returns 503 for provider batches too.</p>
+<p>The review-ratings response maps keys to <code>{average, count}</code> or <code>null</code> when no visible rated review exists; its API average is on the five-star scale. <strong>Enable User Written Reviews</strong> governs the client UI, not authorization or availability of the review endpoints. <strong>Show average user rating on poster cards</strong> governs poster inclusion, not access to the direct ratings endpoint.</p>
+</details>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<p>If the whole client enhancement is absent, start with <a href="../../installation/troubleshooting/">installation troubleshooting</a>. Elsewhere's panels are added to the web client.</p>
+<h3 id="elsewhere-not-showing">Elsewhere Not Showing<a class="headerlink" href="#elsewhere-not-showing" title="Permanent link">&para;</a></h3>
+<p>Check the key and the item's TMDB link first. The server also needs a working connection to TMDB.</p>
+<ol>
+<li>Check <strong>Enable Elsewhere</strong>, test <strong>TMDB API Key</strong>, click <strong>Save Settings</strong>, and reload.</li>
+<li>Confirm the detail section has a matching TMDB movie/TV external link. A metadata ID alone is not enough.</li>
+<li>For a season without that link, check the parent TMDB ID, aired/default order, season number, and both season settings.</li>
+<li>Check DNS, internet connectivity, and firewall rules on the server or inside its container. TMDB API access starts from Jellyfin.</li>
+<li>Check parental restrictions, the browser console, and Jellyfin logs.</li>
+</ol>
+<details class="note">
+<summary>Client layouts and device VPNs</summary>
+<p>A web-client layout without the expected detail elements can prevent the panel from appearing. A VPN applied only to your viewing device does not change the server's outbound connection.</p>
+</details>
+<h3 id="no-providers-showing">No Providers Showing<a class="headerlink" href="#no-providers-showing" title="Permanent link">&para;</a></h3>
+<p>Check the country and filters before assuming a title has no subscription providers. TMDB data can also be incomplete or outdated, and cached results can delay changes.</p>
+<ol>
+<li>Check your effective default country and both admin lists. <strong>Default Providers</strong> can remove everything through unmatched names or capitalization; <strong>Ignore Providers</strong> can exclude all matches.</li>
+<li>Try a manual search with an empty personal provider list to compare unfiltered subscription data in another country.</li>
+<li>If names show without logos, check browser access to <code>image.tmdb.org</code>. For a missing branding icon, check the warning under <strong>Custom Branding Icon URL</strong> and the browser console; the URL must be a web address, not a server file path. An uploaded icon replaces the URL.</li>
+</ol>
+<details class="note">
+<summary>Subscription categories</summary>
+<p>No matching subscription (<code>flatrate</code>) providers does not mean the title is unavailable to rent, buy, or watch through another category.</p>
+</details>
+<h3 id="provider-errors">Provider errors<a class="headerlink" href="#provider-errors" title="Permanent link">&para;</a></h3>
+<p>Use the message shown in the panel to choose your next check.</p>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>What to check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Invalid TMDB API Key.</strong></td>
+<td>Re-enter the v3 key and use <strong>Test</strong> before saving.</td>
+</tr>
+<tr>
+<td><strong>The requested item could not be found on TMDB.</strong></td>
+<td>Verify the item's TMDB identity and metadata match.</td>
+</tr>
+<tr>
+<td><strong>Too many requests. Please wait a moment and try again.</strong></td>
+<td>Allow the rate limit to recover before retrying.</td>
+</tr>
+<tr>
+<td><strong>The TMDB service is temporarily unavailable. Please try again later.</strong></td>
+<td>Check Jellyfin logs and server/container connectivity; retry after the temporary failure.</td>
+</tr>
+<tr>
+<td><strong>Received an unexpected response from the server. Check your reverse proxy or Jellyfin configuration.</strong></td>
+<td>Inspect reverse-proxy/middleware responses for a non-JSON error page.</td>
+</tr>
+<tr>
+<td><strong>TMDB API is unreachable.</strong></td>
+<td>Check the browser-to-Jellyfin request as well as the server's outbound TMDB connection.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Missing keys and other errors</summary>
+<p>The missing-key proxy response is 503, so the temporary-service message can also mean no key is configured. Other errors can show their underlying HTTP message, including parental-policy refusals.</p>
+<p>Review retrieval failures are logged and can appear as an empty review section rather than a provider error.</p>
+</details>
+<h3 id="reviews-or-dates-missing">Reviews or dates missing<a class="headerlink" href="#reviews-or-dates-missing" title="Permanent link">&para;</a></h3>
+<p>Check the feature's own setting and the item's metadata. Local reviews need no key; TMDB reviews and dates do.</p>
+<ol>
+<li>Check the relevant feature toggle and <strong>TMDB API Key</strong> for TMDB reviews or dates. For local reviews, check <strong>Enable User Written Reviews</strong>.</li>
+<li>Verify item IDs and child numbering. If the review panel is absent, check <a href="#spoiler-guard">Spoiler Guard</a>.</li>
+<li>Check author filtering, which can reduce reviews and averages. Poster average chips also need rating tags enabled; check <strong>Show Rating Tags</strong> and see <a href="#averages-and-poster-controls">Averages and poster controls</a> for the admin default and your personal override.</li>
+<li>If a preference change has not appeared, reload or revisit after <strong>Search Settings</strong> → <strong>Save</strong>.</li>
+</ol>
+<p>Missing release data simply leaves out date chips.</p>
+<details class="note">
+<summary>Preferences that do not persist</summary>
+<p>If changes do not persist, inspect the logged save failure. The search dialog does not display that error.</p>
+</details>
+<h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Permanent link">&para;</a></h2>
+<p>Availability depends on TMDB's data quality, country coverage, and update timing. Displays use subscription-provider data only, and your filters can narrow it further.</p>
+<div class="admonition note">
+<p class="admonition-title">Availability is informational</p>
+<p>Logos and headings do not verify your subscriptions or start playback. TMDB lookups and external images require internet access. Local reviews remain local, and cached results can lag behind upstream changes.</p>
+</div>
+<h2 id="support">Support<a class="headerlink" href="#support" title="Permanent link">&para;</a></h2>
+<p>Check the <a href="../../faq-support/faq/">FAQ</a>, <a href="../../installation/troubleshooting/">installation troubleshooting</a>, and your browser/Jellyfin logs. For an unresolved issue, use the <a href="../../faq-support/report-issues/">issue-reporting guide</a> or <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/issues">GitHub issues</a>.</p>
+<p>Include the client, item type, country, and relevant settings. Redact API keys.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../elsewhere-features/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Features">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Features
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../other/other-features/" class="md-footer__link md-footer__link--next" aria-label="Next: Features">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Features
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  <p class="je-keyhint">
+    Press <kbd>/</kbd> to search, <kbd>P</kbd> or <kbd>N</kbd> for the previous or next page
+  </p>
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy;2026 n00bcodr. Made with 💜 for Jellyfin and the community
+    </div>
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      
+<div class="md-progress" data-md-component="progress" role="progressbar" aria-label="Loading"></div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.instant","navigation.instant.progress","navigation.tracking","navigation.tabs","navigation.tabs.sticky","navigation.sections","navigation.indexes","navigation.top","navigation.footer","toc.follow","toc.integrate","search.suggest","search.highlight","search.share","content.code.copy","content.code.annotate","content.tabs.link","announce.dismiss"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"default":"latest","provider":"mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
+      
+        <script src="../../javascripts/extra.js"></script>
+      
+    
+  </body>
+</html>

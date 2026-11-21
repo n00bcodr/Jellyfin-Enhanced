@@ -1,0 +1,4474 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.">
+      
+      
+        <meta name="author" content="n00bcodr">
+      
+      
+        <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/12.17/enhanced/enhanced-settings/">
+      
+      
+      
+        <link rel="prev" href="../enhanced-features/">
+      
+      
+        <link rel="next" href="../tags/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="zensical-0.1.2">
+    
+    
+  
+  
+    
+      <title>Settings - Jellyfin Enhanced</title>
+    
+  
+
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/classic/main.0006804e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/classic/palette.813d4b3f.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Ubuntu:300,300i,400,400i,500,500i,700,700i%7CUbuntu+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Ubuntu";--md-code-font:"Ubuntu Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/touch.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Jellyfin Enhanced" class="md-header__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Jellyfin Enhanced
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Settings
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+  
+    
+  
+  <span class="je-tab-label">Home</span>
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../open-in-jellyfin/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"/></svg>
+  
+  <span class="je-tab-label">Getting Started</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../enhanced-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"/></svg>
+  
+  <span class="je-tab-label">Enhanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../tags/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"/></svg>
+  
+  <span class="je-tab-label">Tags & Badges</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../spoiler-guard/spoiler-guard-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"/></svg>
+  
+  <span class="je-tab-label">Spoiler Guard</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../seerr/seerr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"/></svg>
+  
+  <span class="je-tab-label">Seerr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../arr/arr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"/></svg>
+  
+  <span class="je-tab-label">*arr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../elsewhere/elsewhere-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2m1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+  
+  <span class="je-tab-label">Elsewhere & Reviews</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../other/other-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"/></svg>
+  
+  <span class="je-tab-label">Other</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/community-analytics/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"/></svg>
+  
+  <span class="je-tab-label">Community Analytics</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/css-customization/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>
+  
+  <span class="je-tab-label">Advanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../faq-support/faq/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"/></svg>
+  
+  <span class="je-tab-label">Help</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    Jellyfin Enhanced
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"/></svg>
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../open-in-jellyfin/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Open in Jellyfin
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/installation/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/compatibility/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Compatibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/settings-overview/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Settings Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/pages-and-tabs/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    JE Pages & Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"/></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"/></svg>
+  
+  <span class="md-ellipsis">
+    Enhanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Enhanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../enhanced-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#enhanced-settings-user-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Enhanced Settings — User configuration
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Enhanced Settings — User configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#enhanced-panel" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Enhanced Panel
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#saving-and-syncing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Saving and syncing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Shortcuts
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#playback-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Playback Settings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-skip-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Auto-Skip Settings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subtitle-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Subtitle Settings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#random-button-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Random Button Settings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ui-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        UI Settings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#media-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Media Tags
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hidden-content" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Hidden Content
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#spoiler-guard" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Spoiler Guard
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#language-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Language Settings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#about" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        About
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#enhanced-settings-admin-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Enhanced Settings — Admin configuration
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Enhanced Settings — Admin configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#feature-toggles" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Feature Toggles
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Feature Toggles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#server-defaults-and-overwriting-personal-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Server defaults and overwriting personal settings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#display-defaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Display defaults
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#playback-defaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Playback defaults
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#random-button-defaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Random button defaults
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keyboard-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Keyboard configuration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#page-entry-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Page entry points
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bookmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Bookmarks
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hidden-content-administration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Hidden Content administration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#activity-feed" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Activity Feed
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#leaving-soon" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Leaving Soon
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#catch-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Catch Up
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tags-quality-genre-language-rating-age-rating-status-awards-logos-custom-people" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Tags: Quality, Genre, Language, Rating, Age Rating, Status, Awards, Logos, Custom, People
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tags: Quality, Genre, Language, Rating, Age Rating, Status, Awards, Logos, Custom, People">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#custom-tag-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Custom tag rules
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#status-tags-badge-groups" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Status Tags badge groups
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#logo-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Logo Tags
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server-side-tag-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Server-Side Tag Cache
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio-language-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Audio Language Tags
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#native-poster-tags-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Native Poster Tags (Experimental)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#settings-in-other-areas" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Settings in other areas
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation-in-the-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Documentation in the dashboard
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#awards-poster-group" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Awards poster group
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quality-stream-display" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Quality stream display
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#technical-poster-facts" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Technical poster facts
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"/></svg>
+  
+  <span class="md-ellipsis">
+    Tags & Badges
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Tags & Badges
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tags/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tags-layouts/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Layouts & Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tags-quality/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Quality, Genre & Language
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tags-groups/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Ratings, Awards & More
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tags-status/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Status Badges
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tags-server/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Server & Styles
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Spoiler Guard
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Spoiler Guard
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"/></svg>
+  
+  <span class="md-ellipsis">
+    Seerr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Seerr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/permission-audit/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Permission Audit
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"/></svg>
+  
+  <span class="md-ellipsis">
+    *arr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            *arr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/troubleshooting-support/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"/></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2m1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+  
+  <span class="md-ellipsis">
+    Elsewhere & Reviews
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            Elsewhere & Reviews
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"/></svg>
+  
+  <span class="md-ellipsis">
+    Other
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            Other
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"/></svg>
+  
+  <span class="md-ellipsis">
+    Community Analytics
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            Community Analytics
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    What's collected
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics-dashboard/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Live Dashboard
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Advanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            Advanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/css-customization/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    CSS Customization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/api/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/project-structure/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Project Structure
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/admin-media-tags/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Admin Media Tags Tab
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"/></svg>
+  
+  <span class="md-ellipsis">
+    Help
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            Help
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/faq/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/report-issues/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Report Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/feature-requests/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Feature Requests
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/contributing-translations/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Contributing Translations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/support/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Support + Community
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other-projects/other-projects/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Related Projects
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    About
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+  
+  
+                  
+
+  
+  
+
+
+<h1 id="enhanced-settings">Enhanced settings<a class="headerlink" href="#enhanced-settings" title="Permanent link">&para;</a></h1>
+<p>Use the Enhanced panel for your preferences, or <strong>Dashboard</strong> → <strong>Plugins</strong> → <strong>Jellyfin Enhanced</strong> for server features and new users' starting values. This page covers Enhanced; <a href="../tags/">Tags &amp; Badges</a> and specialist settings pages cover their own controls. Defaults below are for plugin 12.12.0.0; your administrator may choose different starting values.</p>
+<h2 id="enhanced-settings-user-configuration">Enhanced Settings — User configuration<a class="headerlink" href="#enhanced-settings-user-configuration" title="Permanent link">&para;</a></h2>
+<h3 id="enhanced-panel">Enhanced Panel<a class="headerlink" href="#enhanced-panel" title="Permanent link">&para;</a></h3>
+<p>Anyone can open the Enhanced panel to set their own preferences; no companion plugin is needed.</p>
+<p><strong>How to open it on desktop:</strong></p>
+<ul>
+<li>In Jellyfin 12's Modern layout, open your avatar menu and choose <strong>Jellyfin Enhanced</strong>.</li>
+<li>If you have a sidebar, choose <strong>Enhanced Panel</strong> under <strong>Jellyfin Enhanced</strong>.</li>
+<li>In Jellyfin's user preferences menu, choose <strong>Jellyfin Enhanced - User Settings</strong>.</li>
+<li>Press <span class="keys"><kbd class="key-question">?</kbd></span> outside an input or textarea. This works even when the administrator disables ordinary keyboard shortcuts.</li>
+</ul>
+<p><strong>How to open it on a phone:</strong></p>
+<ul>
+<li>Open the navigation drawer and tap <strong>Enhanced Panel</strong>.</li>
+<li>Choose <strong>Jellyfin Enhanced</strong> in the Jellyfin 12 avatar menu, or <strong>Jellyfin Enhanced - User Settings</strong> in user preferences.</li>
+<li>During playback, reveal the controls and tap the tune icon titled <strong>Jellyfin Enhanced</strong>.</li>
+</ul>
+<p>In mobile or TV web layouts, the player button appears beside the native settings button when those controls are available. Desktop web layouts hide it.</p>
+<p>Use <strong>Search settings…</strong> to filter sections by their contents, then select a section. Matching <strong>Media Tags</strong> controls are also listed under the box by name: pick one (or press <span class="keys"><kbd class="key-enter">Enter</kbd></span> for the first) to open its tab with the control focused. On a phone, the section select and search stay above the open section; the back-arrow button returns to the section list. Close the panel with ×, <span class="keys"><kbd class="key-escape">Esc</kbd></span>, or <span class="keys"><kbd class="key-question">?</kbd></span> outside editable fields; focus returns to where you opened it. While the panel is open, the page behind it is inert and focus stays inside the dialog. On desktop, you can drag the header to move it.</p>
+<p><strong>Make the panel bigger:</strong> in a browser window at least 900 pixels wide, choose <strong>Default</strong>, <strong>Large</strong> (90% of the window) or <strong>Fill</strong> (the whole window less a small margin) beside the × in the header, or drag the grip in the bottom-right corner, or the bottom edge. With the grip focused, the arrow keys change the size (hold <span class="keys"><kbd class="key-shift">Shift</kbd></span> for bigger steps); a polite status announces the dimensions and the maximum size. The size is remembered per user in this browser and shrinks to fit a smaller window; <strong>Reset size</strong> appears after dragging or resizing with the arrow keys and returns to <strong>Default</strong>. The section list and the open section, including the Media Tags preview, use the extra room. Size controls are hidden below 900 pixels wide; the full-screen layout applies at the phone breakpoint (760 pixels and below).</p>
+<div class="admonition note">
+<p class="admonition-title">Use a supported web client</p>
+<p>The panel needs a client that runs Jellyfin Enhanced's injected web scripts. If your native client cannot run them, change your account's preferences through the web client. Available entry points depend on your web client's layout and controls.</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p>The sections are <strong>Shortcuts</strong>, <strong>Playback Settings</strong>, <strong>Auto-Skip Settings</strong>, <strong>Subtitle Settings</strong>, <strong>Random Button Settings</strong>, <strong>UI Settings</strong>, <strong>Media Tags</strong>, <strong>Hidden Content</strong>, <strong>Spoiler Guard</strong>, <strong>Language Settings</strong>, and <strong>About</strong>. <strong>Shortcuts</strong> is hidden when the administrator disables shortcuts. <strong>Hidden Content</strong> and <strong>Spoiler Guard</strong> require their server features to be enabled.</p>
+<p>On desktop, the panel restores your last-opened section. A new account starts at <strong>Shortcuts</strong>, or the first available section if shortcuts are disabled. At widths up to 760 pixels, the panel fills the screen and starts with the section list. Tap a section to open it.</p>
+<p>The panel can close automatically when the pointer is outside it. The administrator controls the delay, initially 15 seconds.</p>
+<p>Modern layout has a mobile drawer rather than a desktop sidebar. Legacy layout has the sidebar. Jellyfin's user preferences menu uses <code>#/mypreferencesmenu</code>.</p>
+</details>
+<h3 id="saving-and-syncing">Saving and syncing<a class="headerlink" href="#saving-and-syncing" title="Permanent link">&para;</a></h3>
+<p>Your changes save automatically to your account on the server. There is no personal <strong>Save</strong> button.</p>
+<ol>
+<li>Sign in with the same account on another browser or device to load your saved preferences.</li>
+<li>Reload an already-open client to load all changes made elsewhere.</li>
+<li>Follow any refresh message shown by a control.</li>
+</ol>
+<p>Changing <strong>Custom Pause Screen</strong> or <strong>Disable Custom Styles</strong> asks you to refresh. Reload after first enabling <strong>Long Press for 2x Speed (β)</strong>.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>Opening the panel fetches fresh general settings. There is no live synchronization of every running feature. Many controls update the current client directly, including shortcut bindings, subtitle styling, and random-picker preferences. The first reload after enabling the speed gesture installs its listeners.</p>
+<p>Each account has separate files on the Jellyfin server:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>What it stores</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>settings.json</code></td>
+<td>General preferences.</td>
+</tr>
+<tr>
+<td><code>shortcuts.json</code></td>
+<td>Shortcut overrides.</td>
+</tr>
+<tr>
+<td><code>hidden-content.json</code></td>
+<td>Hidden Content preferences and hidden items.</td>
+</tr>
+<tr>
+<td><code>spoilerblur.json</code></td>
+<td>Spoiler Guard preferences and protected-title lists.</td>
+</tr>
+</tbody>
+</table>
+<p>They are stored under:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>&lt;PluginsPath&gt;/configurations/Jellyfin.Plugin.JellyfinEnhanced/&lt;user-id&gt;/
+</span></code></pre></div>
+<p>Browser storage still holds caches and local interface state. Language resolution has both a browser preference and a server preference. Catch Up dismissals stay in that browser. Those exceptions are explained below. Clearing caches does not replace your server-stored personal settings.</p>
+</details>
+<h3 id="shortcuts">Shortcuts<a class="headerlink" href="#shortcuts" title="Permanent link">&para;</a></h3>
+<p>Shortcuts let you navigate Jellyfin and control playback from your keyboard. Your keys start from the administrator's <a href="../../open-in-jellyfin/?tab=keyboard&amp;card=keyboard-shortcuts"><strong>Keyboard</strong></a> configuration, and you can choose your own overrides.</p>
+<ol>
+<li>Open <strong>Shortcuts</strong>. Actions are grouped under <strong>Global</strong> and <strong>Player</strong>.</li>
+<li>Click or focus a binding and wait for <strong>Waiting…</strong>.</li>
+<li>Press the new combination. A dot titled <strong>Modified by user</strong> marks your override.</li>
+</ol>
+<p>While the editor is listening, <span class="keys"><kbd class="key-backspace">Backspace</kbd></span> restores the current administrator binding. <span class="keys"><kbd class="key-delete">Del</kbd></span> or the adjacent disable button disables the action. Re-enabling also restores the administrator binding.</p>
+<p>The stock bindings are below. Actions marked <em>Player</em> only work in the video player.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Open Search</strong></td>
+<td><span class="keys"><kbd class="key-slash">/</kbd></span></td>
+<td>Opens search and focuses it when available.</td>
+</tr>
+<tr>
+<td><strong>Go to Home</strong></td>
+<td><span class="keys"><kbd class="key-shift">Shift</kbd><span>+</span><kbd class="key-h">H</kbd></span></td>
+<td>Opens Home.</td>
+</tr>
+<tr>
+<td><strong>Go to Dashboard</strong></td>
+<td><span class="keys"><kbd class="key-d">D</kbd></span></td>
+<td>Opens the dashboard; Jellyfin permissions still apply.</td>
+</tr>
+<tr>
+<td><strong>Quick Connect</strong></td>
+<td><span class="keys"><kbd class="key-q">Q</kbd></span></td>
+<td>Opens Quick Connect.</td>
+</tr>
+<tr>
+<td><strong>Play Random Item</strong></td>
+<td><span class="keys"><kbd class="key-r">R</kbd></span></td>
+<td>Outside the player, clicks the dice button when available and opens a random item's details.</td>
+</tr>
+<tr>
+<td><strong>Cycle Aspect Ratio</strong></td>
+<td><span class="keys"><kbd class="key-a">A</kbd></span></td>
+<td>Player. Cycles <strong>Auto → Cover → Fill</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show Playback Info</strong></td>
+<td><span class="keys"><kbd class="key-i">I</kbd></span></td>
+<td>Player. Toggles JE's statistics overlay.</td>
+</tr>
+<tr>
+<td><strong>Subtitle Menu</strong></td>
+<td><span class="keys"><kbd class="key-s">S</kbd></span></td>
+<td>Player. Opens the subtitle menu.</td>
+</tr>
+<tr>
+<td><strong>Cycle Subtitle Tracks</strong></td>
+<td><span class="keys"><kbd class="key-c">C</kbd></span></td>
+<td>Player. Cycles tracks, including <strong>Off</strong>.</td>
+</tr>
+<tr>
+<td><strong>Cycle Audio Tracks</strong></td>
+<td><span class="keys"><kbd class="key-v">V</kbd></span></td>
+<td>Player. Cycles audio tracks, without an Off option.</td>
+</tr>
+<tr>
+<td><strong>Increase Playback Speed</strong></td>
+<td><span class="keys"><kbd class="key-plus">+</kbd></span></td>
+<td>Player. Steps up through 0.25×, 0.5×, 0.75×, 1×, 1.25×, 1.5×, 1.75× and 2×.</td>
+</tr>
+<tr>
+<td><strong>Decrease Playback Speed</strong></td>
+<td><span class="keys"><kbd class="key-minus">-</kbd></span></td>
+<td>Player. Steps down through those speeds.</td>
+</tr>
+<tr>
+<td><strong>Reset Playback Speed</strong></td>
+<td><span class="keys"><kbd class="key-r">R</kbd></span></td>
+<td>Player. Returns to 1×.</td>
+</tr>
+<tr>
+<td><strong>Bookmark Current Time</strong></td>
+<td><span class="keys"><kbd class="key-b">B</kbd></span></td>
+<td>Player. Opens <strong>Add Bookmark</strong> at the current position when Bookmarks is enabled.</td>
+</tr>
+<tr>
+<td><strong>Open Episode Preview</strong></td>
+<td><span class="keys"><kbd class="key-p">P</kbd></span></td>
+<td>Player. Clicks the existing preview button; requires the separate InPlayerEpisodePreview plugin.</td>
+</tr>
+<tr>
+<td><strong>Skip Intro/Outro</strong></td>
+<td><span class="keys"><kbd class="key-o">O</kbd></span></td>
+<td>Player. Skips the current intro or outro segment.</td>
+</tr>
+<tr>
+<td><strong>Step Back One Frame</strong></td>
+<td><span class="keys"><kbd class="key-comma">,</kbd></span></td>
+<td>Player. Pauses and seeks back one estimated frame.</td>
+</tr>
+<tr>
+<td><strong>Step Forward One Frame</strong></td>
+<td><span class="keys"><kbd class="key-period">.</kbd></span></td>
+<td>Player. Pauses and seeks forward one estimated frame.</td>
+</tr>
+<tr>
+<td><strong>Decrease Subtitle Offset</strong></td>
+<td>++left-bracket++</td>
+<td>Player. Shifts subtitles 0.1 s later (lowers the offset) and briefly shows Jellyfin's subtitle offset panel.</td>
+</tr>
+<tr>
+<td><strong>Increase Subtitle Offset</strong></td>
+<td>++right-bracket++</td>
+<td>Player. Shifts subtitles 0.1 s earlier (raises the offset) and briefly shows Jellyfin's subtitle offset panel.</td>
+</tr>
+<tr>
+<td><strong>Sync Subtitles</strong></td>
+<td><span class="keys"><kbd class="key-shift">Shift</kbd><span>+</span><kbd class="key-s">S</kbd></span></td>
+<td>Player. Opens or closes <a href="../enhanced-features/#subtitle-sync">Subtitle Sync</a>: choose the line you just heard to sync the subtitles, or search and jump to a line.</td>
+</tr>
+<tr>
+<td><strong>Jump to Last Position</strong></td>
+<td><span class="keys"><kbd class="key-z">Z</kbd></span></td>
+<td>Player. Returns once to the position saved before your last seek.</td>
+</tr>
+<tr>
+<td><strong>Jump to % of video</strong></td>
+<td><span class="keys"><kbd class="key-0">0</kbd></span>–<span class="keys"><kbd class="key-9">9</kbd></span></td>
+<td>Player. Seeks to 0%, 10%, … 90%. Can be disabled but not rebound.</td>
+</tr>
+</tbody>
+</table>
+<p>Ordinary shortcuts do not fire while an input or textarea is focused. See <a href="../enhanced-features/">Enhanced features</a> for the player tools.</p>
+<details class="note">
+<summary>Details</summary>
+<p>The editor rejects modifier-only presses, conflicting bindings, and reserved native player keys for player actions. Invalid combinations flash red and shake. <strong>Jump to % of video</strong> can be disabled but cannot be rebound.</p>
+<p><strong>Open Episode Preview</strong> clicks the existing InPlayerEpisodePreview button. <strong>Skip Intro/Outro</strong> seeks to the end of the current Media Segment, falling back to the visible skip button. <strong>Jump to Last Position</strong> consumes its saved target when used.</p>
+<p>Frame stepping uses timestamp seeking. It falls back to 24 fps with a notice when frame-rate metadata is unavailable. Speed steps are 0.25×, 0.5×, 0.75×, 1×, 1.25×, 1.5×, 1.75×, and 2×.</p>
+</details>
+<h3 id="playback-settings">Playback Settings<a class="headerlink" href="#playback-settings" title="Permanent link">&para;</a></h3>
+<p>Choose what happens when you leave a video tab and what you see while a video is paused. These are per-user preferences.</p>
+<p>Open <strong>Playback Settings</strong> and turn on the behavior you want.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/enhanced/panel-playback.webp"><img alt="Personal Playback Settings and pause-screen delay" src="../../images/enhanced/panel-playback.webp" /></a></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Auto-pause</strong></td>
+<td>On</td>
+<td>Pauses a playing video when the browser tab becomes hidden.</td>
+</tr>
+<tr>
+<td><strong>Auto-resume</strong></td>
+<td>Off</td>
+<td>Resumes on return if JE paused the video when you left.</td>
+</tr>
+<tr>
+<td><strong>Auto Picture-in-Picture</strong></td>
+<td>Off</td>
+<td>Tries to open browser PiP when you leave the tab and closes PiP that JE opened when you return.</td>
+</tr>
+<tr>
+<td><strong>Long Press for 2x Speed (β)</strong></td>
+<td>Off</td>
+<td>Hold the video for 500 ms for temporary 2× playback; release or cancel to restore the previous rate. Mouse and touch are supported.</td>
+</tr>
+<tr>
+<td><strong>Custom Pause Screen</strong></td>
+<td>On</td>
+<td>Shows artwork and playback information after idle time while paused. Refresh after changing the toggle.</td>
+</tr>
+<tr>
+<td><strong>Delay before showing (seconds):</strong></td>
+<td>5</td>
+<td>Sets the pause-screen idle delay, from 1–60 whole seconds. Updates the running pause screen immediately.</td>
+</tr>
+</tbody>
+</table>
+<p>On the pause screen, press <span class="keys"><kbd class="key-space">Space</kbd></span>/<span class="keys"><kbd class="key-enter">Enter</kbd></span> or tap the background to resume. × dismisses the overlay for the rest of that pause without resuming. See <a href="../enhanced-features/">Enhanced features</a> for the pause screen and playback controls.</p>
+<div class="admonition tip">
+<p class="admonition-title">Keep playing in Picture-in-Picture</p>
+<p>Turn <strong>Auto-pause</strong> off if you want continuous playback in PiP. Auto-pause and PiP can both run when you leave the tab. PiP needs browser support and an eligible video; the browser may refuse the request.</p>
+</div>
+<details class="note">
+<summary>Details</summary>
+<p><strong>Auto-resume</strong> does not resume a video you had already paused manually before leaving.</p>
+<p>Reload after first enabling <strong>Long Press for 2x Speed (β)</strong>. Moving more than ten pixels before the hold activates cancels it. Holding a paused video attempts to start playback.</p>
+<p>Pause-screen artwork depends on the item's available images.</p>
+</details>
+<h3 id="auto-skip-settings">Auto-Skip Settings<a class="headerlink" href="#auto-skip-settings" title="Permanent link">&para;</a></h3>
+<p>Auto-skip lets you move past intros and outros during web playback. You can choose either type separately for your account.</p>
+<p>Open <strong>Auto-Skip Settings</strong> and turn on the segment types you want to skip.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Automatically Skip Intro</strong></td>
+<td>Off</td>
+<td>Seeks to the end of an Intro segment.</td>
+</tr>
+<tr>
+<td><strong>Automatically Skip Outro</strong></td>
+<td>Off</td>
+<td>Seeks to the end of an Outro segment.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Intro/outro data required</p>
+<p>Auto-skip needs usable Intro/Outro segment data, commonly supplied by Intro Skipper. The panel says <strong>Depends on Intro-Skipper Plugin being available</strong>.</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p>JE reads Jellyfin's Media Segments API. It does not need a visible or English-language skip button. Segments without start/end boundaries or shorter than one second are ignored. Failed segment retrieval or an ambiguous playing-item identity can leave auto-skip inactive. If you seek back into a skipped segment, you can watch it without immediately skipping again.</p>
+<p>Direct play and HLS work best. Progressive transcoding may not have produced the target yet. These local seeks do not synchronize a SyncPlay group. Outro skipping seeks to the segment end; Jellyfin remains responsible for next-episode autoplay.</p>
+</details>
+<h3 id="subtitle-settings">Subtitle Settings<a class="headerlink" href="#subtitle-settings" title="Permanent link">&para;</a></h3>
+<p>Make text subtitles easier to read with your preferred colors, size, and position. These are per-user preferences for the web player.</p>
+<ol>
+<li>Open <strong>Subtitle Settings</strong> and choose a preset.</li>
+<li>Adjust the preview, or use the color and opacity controls.</li>
+<li>To use positioning, set Jellyfin's own subtitle appearance to <strong>Custom</strong>.</li>
+</ol>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/enhanced/panel-subtitles.webp"><img alt="Personal subtitle settings and styling opt-out" src="../../images/enhanced/panel-subtitles.webp" /></a></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Disable Custom Styles</strong></td>
+<td>Off</td>
+<td>Uses Jellyfin's subtitle styling instead of JE's overrides. Refresh after changing it.</td>
+</tr>
+<tr>
+<td><strong>Subtitle Sync Button</strong></td>
+<td>Off</td>
+<td>Adds a button next to <strong>Subtitles</strong> in the player that syncs the subtitles to the line you just heard. Its list of lines can also be searched and jumped through. See <a href="../enhanced-features/#subtitle-sync">Subtitle Sync</a>.</td>
+</tr>
+<tr>
+<td><strong>Style</strong></td>
+<td><strong>Clean White</strong></td>
+<td>Chooses <strong>Clean White</strong>, <strong>Classic Black Box</strong>, <strong>Netflix Style</strong>, <strong>Cinema Yellow</strong>, <strong>Soft Gray</strong>, or <strong>High Contrast</strong>. Choosing a style replaces custom text/background colors.</td>
+</tr>
+<tr>
+<td><strong>Text</strong></td>
+<td>Opaque white (<code>#FFFFFFFF</code>)</td>
+<td>Sets text color and opacity; the opacity slider runs from 0–255.</td>
+</tr>
+<tr>
+<td><strong>Background</strong></td>
+<td>Transparent (<code>#00000000</code>)</td>
+<td>Sets background color and opacity, also 0–255.</td>
+</tr>
+<tr>
+<td><strong>Size</strong></td>
+<td><strong>Normal</strong></td>
+<td>Chooses <strong>Tiny</strong>, <strong>Small</strong>, <strong>Normal</strong>, <strong>Large</strong>, <strong>Extra Large</strong>, or <strong>Gigantic</strong>.</td>
+</tr>
+<tr>
+<td><strong>Font</strong></td>
+<td><strong>Default</strong></td>
+<td>Chooses <strong>Default</strong>, <strong>Noto Sans</strong>, <strong>Sans Serif</strong>, <strong>Typewriter</strong>, or <strong>Roboto</strong>.</td>
+</tr>
+<tr>
+<td><strong>Text Effect</strong></td>
+<td><strong>Auto</strong></td>
+<td>Chooses <strong>Auto</strong>, <strong>None</strong>, <strong>Shadow</strong>, <strong>Outline</strong>, or <strong>Outline + Shadow</strong>. <strong>Auto</strong> adds a shadow with the transparent preset or <code>#00000000</code>; a visible box, including a semi-transparent one, gets no Auto shadow.</td>
+</tr>
+<tr>
+<td><strong>Position</strong></td>
+<td>Horizontal 50%, vertical 85% for newly created settings</td>
+<td>Click or drag the grid to move the subtitle stack. Both axes are limited to 2–98%.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Subtitle formats</p>
+<p>These controls style text subtitles, including the primary and secondary text tracks. They do not restyle ASS/SSA, PGS, VobSub, DVB, or subtitles burned into the video.</p>
+</div>
+<p>See <a href="../enhanced-features/">Enhanced features</a> for subtitle previews and rendering limits.</p>
+<details class="note">
+<summary>Details</summary>
+<p>The vertical position locates the subtitle stack's lower edge. The position reset icon sets horizontal 50%, vertical 95%. Missing-value client fallbacks also use 95% vertically.</p>
+<p><strong>Roboto</strong> uses Roboto Mono. Colors, fonts, and sizes also apply to native browser cues, though their box styling differs.</p>
+<p>When you open the panel, the format warning checks the primary subtitle track of the first controllable playing session. Reopen after changing tracks. No warning does not guarantee that the format is supported.</p>
+</details>
+<h3 id="random-button-settings">Random Button Settings<a class="headerlink" href="#random-button-settings" title="Permanent link">&para;</a></h3>
+<p>The header's dice button helps you pick something to watch by opening a random item's details. It does not start playback automatically.</p>
+<ol>
+<li>Open <strong>Random Button Settings</strong>.</li>
+<li>Choose your per-user pool under <strong>Item Types</strong> and <strong>Random Source</strong>.</li>
+<li>Click the header dice button to pick an item.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Random Button</strong></td>
+<td>On</td>
+<td>Shows the header dice button.</td>
+</tr>
+<tr>
+<td><strong>Unwatched Only</strong></td>
+<td>Off</td>
+<td>Restricts candidates to unplayed movies/episodes or series with unwatched episodes.</td>
+</tr>
+<tr>
+<td><strong>Movies</strong></td>
+<td>On</td>
+<td>Includes movies.</td>
+</tr>
+<tr>
+<td><strong>Shows</strong></td>
+<td>On</td>
+<td>Includes series, and episodes within containers. At least one item type must remain selected.</td>
+</tr>
+<tr>
+<td><strong>Use the playlist or collection I'm viewing</strong></td>
+<td>Off</td>
+<td>Gives the current playlist/collection detail page priority over the pinned source.</td>
+</tr>
+<tr>
+<td><strong>Everywhere else, pick from</strong></td>
+<td><strong>Whole library</strong></td>
+<td>Pins an accessible playlist or collection for other pages. This choice has no admin counterpart.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>How it works</summary>
+<p>With current-container selection enabled, a readable playlist or collection on the current detail page takes priority. Otherwise, JE tries your pinned source.</p>
+<p>If none is pinned, JE uses the whole library. A missing or invalid pinned source also uses the library, with a notice. If a resolved container's sample has no eligible items, JE goes directly to the whole library with a notice, bypassing the pinned source. Candidate-query errors show an error toast instead.</p>
+<p>Container queries use direct children; whole-library queries are recursive. Each query samples at most 100 randomly ordered items. An empty filtered sample does not prove the entire source has no eligible items.</p>
+</details>
+<h3 id="ui-settings">UI Settings<a class="headerlink" href="#ui-settings" title="Permanent link">&para;</a></h3>
+<p>Choose the extra information you see on item details and add removal buttons to home rows. These controls are per-user preferences.</p>
+<p>Open <strong>UI Settings</strong> and turn on the options you want.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/enhanced/panel-ui.webp"><img alt="Personal UI Settings with progress and file size options and the note pointing to Media Tags" src="../../images/enhanced/panel-ui.webp" /></a></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show Watch Progress</strong></td>
+<td>Off</td>
+<td>Adds watch progress to item details.</td>
+</tr>
+<tr>
+<td><strong>Percentage</strong> / <strong>Time Watched</strong> / <strong>Time Remaining</strong></td>
+<td><strong>Percentage</strong></td>
+<td>Chooses how <strong>Show Watch Progress</strong> shows progress.</td>
+</tr>
+<tr>
+<td><strong>h:m</strong> / <strong>y<img alt="🇲🇴" class="twemoji" src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@16.0.1/assets/svg/1f1f2-1f1f4.svg" title=":mo:" />d:h:m</strong></td>
+<td><strong>h:m</strong></td>
+<td>Selects the time format for time-based progress displays.</td>
+</tr>
+<tr>
+<td><strong>Show File Sizes</strong></td>
+<td>Off</td>
+<td>Shows total file size on item details.</td>
+</tr>
+<tr>
+<td><strong>Show Audio Languages</strong></td>
+<td>On</td>
+<td>Audio language links on item details.</td>
+</tr>
+<tr>
+<td><strong>Add Remove from Continue Watching &amp; Next Up Buttons</strong></td>
+<td>Off</td>
+<td>Adds removal buttons to home rows and keeps your playback position.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>How it works</summary>
+<p>The progress-display selector beneath <strong>Show Watch Progress</strong> has no separate label.</p>
+<p>Row removal can work without the full Hidden Content feature when the administrator enables <strong>Enable "Remove from Continue Watching"</strong>. The relevant <strong>Filter Continue Watching</strong> / <strong>Filter Next Up</strong> preferences and <strong>Enable Content Hiding</strong> must also remain on for server filtering.</p>
+<p>To review or manually restore removed entries, the administrator must enable <strong>Enable Hidden Content</strong>. In its management page:</p>
+<ul>
+<li>Use <strong>Add back to Continue Watching</strong> for a Continue Watching-only entry.</li>
+<li>Use <strong>Unhide</strong> for Next Up or combined entries.</li>
+</ul>
+<p>Resuming clears Continue Watching-only hides. Combined hides retain their Next Up scope. Next Up-only and global hides remain until removed manually. See <a href="../enhanced-features/#content-management">Content management</a>.</p>
+</details>
+<h3 id="media-tags">Media Tags<a class="headerlink" href="#media-tags" title="Permanent link">&para;</a></h3>
+<p>Your poster tags: layout, tag groups, status badges, rules and locked items, and colour preset. A live preview beside the tabs (a strip below them on a phone) shows the result as you change it. Administrators set server defaults on the <a href="../tags/#the-media-tags-section">Media Tags admin tab</a>.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/tags/media-tags-hub.webp"><img alt="Media Tags on its Layout tab with the live preview" src="../../images/tags/media-tags-hub.webp" /></a></p>
+<p>Each tab covers one job. The full setting reference for all of them is <a href="../tags/">Tags &amp; Badges</a>.</p>
+<ul>
+<li><strong>Layout:</strong> your layout tile, label density, tag size, gap, edge spacing, hide on hover, Native Poster Tags, People Tags, presets, import and export, and optional episode-thumbnail and list-row looks. See <a href="../tags-layouts/#layouts">Layouts</a>.</li>
+<li><strong>Groups:</strong> priority order, each group's switch, position and limit, and what Quality and Language include. <strong>Follow server settings</strong> keeps following the administrator; any change you make stays yours. <strong>Reset to defaults</strong> restores the administrator's layout, positions, order and limits but keeps group switches and includes.</li>
+<li><strong>Status badges:</strong> which badge families the Status group may show: Just Added, New releases, Trending, Schedule, Milestones, Series status, Leaving soon and Direct-play warning.</li>
+<li><strong>Rules &amp; locks:</strong> your own rules, the first enabled match decides a card's layout and density, and items you locked from their ⋮ menu. Locks always win. See <a href="../tags-layouts/#rules-and-locked-items">Rules and locked items</a>.</li>
+<li><strong>Colours:</strong> your <strong>Tag Colours</strong> preset, shown only when the administrator allows personal presets.</li>
+<li><strong>Server</strong> (administrators only): shortcuts to the admin tab's defaults, colours, tag cache and Native Poster Tags. See <a href="../tags-layouts/#import-export-and-presets">Import, export and presets</a> for server-wide import and presets.</li>
+</ul>
+<h3 id="hidden-content">Hidden Content<a class="headerlink" href="#hidden-content" title="Permanent link">&para;</a></h3>
+<p>Choose where your saved hidden items disappear and where hide buttons appear. This personal section appears only when the administrator enables Hidden Content.</p>
+<ol>
+<li>Open <strong>Hidden Content</strong> and choose the filters and buttons you want.</li>
+<li>Click an item's open-eye <strong>Hide</strong> button to hide it.</li>
+<li>Use <strong>Manage Hidden Content</strong> to review or restore entries and see your hidden-item count.</li>
+</ol>
+<p>All controls below are per-user preferences. The matching admin defaults are under <a href="../../open-in-jellyfin/?tab=pages&amp;card=hidden-content"><strong>Pages</strong> → <strong>Hidden Content</strong></a>.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/enhanced/panel-hidden.webp"><img alt="Personal Hidden Content button and filter preferences" src="../../images/enhanced/panel-hidden.webp" /></a></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Content Hiding</strong></td>
+<td>On</td>
+<td>Enables filtering for your account while the server feature is available. Admin default: <strong>Hidden Content enabled by default</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show Hide Buttons</strong></td>
+<td>On</td>
+<td>Shows hide controls. Turning it off leaves enabled filters working. Admin default: <strong>Show "Hide" buttons by default</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show Confirmation Dialog</strong></td>
+<td>On</td>
+<td>Asks before hiding an item. Admin default: <strong>Show confirmation dialog before hiding</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show on Seerr Items</strong></td>
+<td>On</td>
+<td>Shows hide buttons on Seerr search/discovery cards. Admin default: <strong>Show "Hide" button on Seerr search results</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show in Library Views</strong></td>
+<td>Off</td>
+<td>Shows hide buttons on native library/home cards. Admin default: <strong>Show "Hide" button on library / home cards</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show on Detail Pages</strong></td>
+<td>On</td>
+<td>Shows hide controls on supported item detail pages. Admin default: <strong>Show "Hide" button on item details pages</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show on Cast/Actors</strong></td>
+<td>Off</td>
+<td>Shows hide controls on cast/actor cards and supports hiding people. Admin default: <strong>Show "Hide" button on cast / actor cards</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Library</strong></td>
+<td>On</td>
+<td>Filters native library browsing and supported related detail-page lists. Admin default: <strong>Filter Library &amp; details pages</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Discovery</strong></td>
+<td>On</td>
+<td>Filters Seerr discovery.</td>
+</tr>
+<tr>
+<td><strong>Filter Search</strong></td>
+<td>Off</td>
+<td>Filters Jellyfin and Seerr search results. Admin default: <strong>Filter Search results</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Calendar</strong></td>
+<td>On</td>
+<td>Filters the calendar.</td>
+</tr>
+<tr>
+<td><strong>Filter Upcoming</strong></td>
+<td>On</td>
+<td>Filters upcoming episodes. Admin default: <strong>Filter Upcoming episodes</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Recommendations</strong></td>
+<td>On</td>
+<td>Filters suggestions and similar/recommended rows. Admin default: <strong>Filter Suggestions / recommendations</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Requests</strong></td>
+<td>On</td>
+<td>Filters the Requests page. Admin default: <strong>Filter Requests page</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Next Up</strong></td>
+<td>On</td>
+<td>Filters the Next Up home row.</td>
+</tr>
+<tr>
+<td><strong>Filter Continue Watching</strong></td>
+<td>On</td>
+<td>Filters the Continue Watching home row.</td>
+</tr>
+<tr>
+<td><strong>Hide Collections &amp; Libraries</strong></td>
+<td>Off</td>
+<td>Experimental: also allows hiding libraries, collections, and playlists. Admin default: <strong>Allow hiding collections, libraries, and playlists (experimental)</strong>.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Global hides apply across the surfaces whose filters you enable. Search remains visible by default. Hiding changes browsing results; it does not revoke direct access or prevent playback. Experimental container hiding can disrupt browsing.</p>
+</div>
+<details class="note">
+<summary>Details</summary>
+<p>Button locations and surface filters are under <strong>Hide Button Visibility</strong>. The experimental control is under <strong>Experimental</strong>. These preferences are stored in <code>hidden-content.json</code>. See <a href="../enhanced-features/#content-management">Content management</a> for scope choices and limits.</p>
+</details>
+<h3 id="spoiler-guard">Spoiler Guard<a class="headerlink" href="#spoiler-guard" title="Permanent link">&para;</a></h3>
+<p>Choose which types of spoilers you want hidden. Your personal choices inherit the administrator's protection policy unless you opt out.</p>
+<ol>
+<li>Open <strong>Spoiler Guard</strong> when its server feature is enabled.</li>
+<li>Uncheck a category to opt out. Check it again to inherit the admin policy.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>TV show descriptions</strong></td>
+<td>Checked; inherit admin policy</td>
+<td>Hides protected show descriptions.</td>
+</tr>
+<tr>
+<td><strong>Episode descriptions</strong></td>
+<td>Checked; inherit admin policy</td>
+<td>Hides protected episode descriptions.</td>
+</tr>
+<tr>
+<td><strong>Episode titles</strong></td>
+<td>Checked; inherit admin policy</td>
+<td>Replaces protected episode titles.</td>
+</tr>
+<tr>
+<td><strong>Chapter names</strong></td>
+<td>Checked; inherit admin policy</td>
+<td>Hides protected chapter names.</td>
+</tr>
+<tr>
+<td><strong>Cast list</strong></td>
+<td>Checked; inherit admin policy</td>
+<td>Hides protected cast information.</td>
+</tr>
+<tr>
+<td><strong>Ratings</strong></td>
+<td>Checked; inherit admin policy</td>
+<td>Hides protected community/critic ratings.</td>
+</tr>
+<tr>
+<td><strong>Air date</strong></td>
+<td>Checked; inherit admin policy</td>
+<td>Hides protected air dates.</td>
+</tr>
+<tr>
+<td><strong>Taglines</strong></td>
+<td>Checked; inherit admin policy</td>
+<td>Hides protected taglines.</td>
+</tr>
+<tr>
+<td><strong>Tags</strong></td>
+<td>Checked; inherit admin policy</td>
+<td>Hides protected metadata tags.</td>
+</tr>
+<tr>
+<td><strong>Reviews</strong></td>
+<td>Checked; inherit admin policy</td>
+<td>Hides reviews in the protected web interface.</td>
+</tr>
+<tr>
+<td><strong>Seek previews</strong></td>
+<td>Checked; inherit admin policy</td>
+<td>Hides trickplay thumbnails while seeking through protected unwatched episodes and movies.</td>
+</tr>
+<tr>
+<td><strong>Advanced per-category reveals</strong></td>
+<td>Checked; inherit admin policy</td>
+<td>Uses the admin's enabled advanced reveals; unchecking restores stricter uniform protection.</td>
+</tr>
+<tr>
+<td><strong>Don't ask me to confirm when turning Spoiler Guard off</strong></td>
+<td>Off</td>
+<td>Skips the disable-confirmation dialog.</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../../spoiler-guard/spoiler-guard-settings/">Spoiler Guard settings</a> for the admin controls and full protection rules.</p>
+<details class="note">
+<summary>Details</summary>
+<p>Category rows appear only when the administrator enables that category. <strong>Advanced per-category reveals</strong> appears only when advanced mode is enabled. These per-user preferences are stored in <code>spoilerblur.json</code>.</p>
+</details>
+<h3 id="language-settings">Language Settings<a class="headerlink" href="#language-settings" title="Permanent link">&para;</a></h3>
+<p>Choose the language of JE's interface. This does not set your audio or subtitle language.</p>
+<ol>
+<li>Open <strong>Language Settings</strong> and choose <strong>Display Language</strong>.</li>
+<li>Wait about 1.5 seconds for the page to reload.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Display Language</strong></td>
+<td><strong>Auto</strong></td>
+<td>Uses Jellyfin's resolved document language, or lets you choose a JE translation. New accounts start from the administrator's <strong>Default UI Language</strong>.</td>
+</tr>
+</tbody>
+</table>
+<p>To clear this browser's JE translations, click <strong>Clear Translation Cache</strong>. The page reloads after about two seconds and keeps your feature preferences and language choice. See <a href="../../other/other-settings/">Other settings</a> for server cache controls.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>Changing <strong>Display Language</strong> saves the server preference and this browser's user-language key. An existing browser language key takes priority during translation loading. Changing the preference on another device does not automatically replace it. Choose the desired language in this browser if it continues to use an older choice.</p>
+<p><strong>Clear Translation Cache</strong> removes this browser's JE translation-cache entries. It differs from the server's <strong>Refresh Translation Cache</strong> scheduled task, which signals invalidation on clients' next load. Clearing does not guarantee a newer translation: bundled translations are tried first.</p>
+</details>
+<h3 id="about">About<a class="headerlink" href="#about" title="Permanent link">&para;</a></h3>
+<p>Check <strong>About</strong> to see your installed plugin version. This section has no settings.</p>
+<p>Choose <strong>Release Notes</strong> to fetch the latest GitHub release, or <strong>Contribute</strong> to open the project repository.</p>
+<details class="note">
+<summary>Details</summary>
+<p><strong>Release Notes</strong> needs browser access to GitHub. The latest release may differ from your installed version.</p>
+</details>
+<h2 id="enhanced-settings-admin-configuration">Enhanced Settings — Admin configuration<a class="headerlink" href="#enhanced-settings-admin-configuration" title="Permanent link">&para;</a></h2>
+<h3 id="feature-toggles">Feature Toggles<a class="headerlink" href="#feature-toggles" title="Permanent link">&para;</a></h3>
+<p>Use the admin configuration page to turn server features on and set starting preferences for users. You can search across tabs to find a control.</p>
+<ol>
+<li>Open <strong>Dashboard</strong> → <strong>Plugins</strong> → <strong>Jellyfin Enhanced</strong>.</li>
+<li>Select the appropriate tab, or use <strong>Search settings...</strong> to find controls across tabs. Clear the search to restore normal navigation.</li>
+<li>Change the controls and click <strong>Save Settings</strong>.</li>
+<li>Refresh affected web clients to load the new configuration.</li>
+</ol>
+<p><strong>Descriptions</strong> shows or hides explanations. Section jumps, previews, and navigation do not save edits; watch the unsaved indicator before leaving.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>The tabs are <a href="../../open-in-jellyfin/?tab=overview"><strong>Overview</strong></a>, <a href="../../open-in-jellyfin/?tab=display"><strong>Display</strong></a>, <a href="../../open-in-jellyfin/?jeSection=media-tags"><strong>Media Tags</strong></a>, <a href="../../open-in-jellyfin/?tab=elsewhere"><strong>Elsewhere &amp; Reviews</strong></a>, <a href="../../open-in-jellyfin/?tab=playback"><strong>Playback</strong></a>, <a href="../../open-in-jellyfin/?tab=pages"><strong>Pages</strong></a>, <a href="../../open-in-jellyfin/?tab=extras"><strong>Extras</strong></a>, <a href="../../open-in-jellyfin/?tab=keyboard&amp;card=keyboard-shortcuts"><strong>Keyboard</strong></a>, <a href="../../open-in-jellyfin/?tab=services"><strong>Services</strong></a>, <a href="../../open-in-jellyfin/?tab=seerr"><strong>Seerr</strong></a>, <a href="../../open-in-jellyfin/?tab=arr"><strong>*arr</strong></a>, <a href="../../open-in-jellyfin/?tab=admin"><strong>Admin</strong></a>, <strong>Credits</strong>, and <strong>Docs</strong>. The sidebar groups them and lists each tab's cards (for Media Tags, its sections) underneath. The <strong>Media Tags</strong> tab saves each change as you make it, so it has no <strong>Save Settings</strong>; <strong>Save Settings</strong> on the other tabs never changes a Media Tags setting. See <a href="../tags/">Tags &amp; badges</a>.</p>
+<p>Some server effects happen immediately. Page integrations can have additional requirements, described below.</p>
+<p><strong>Overview</strong> contains <strong>Service Status</strong>, <strong>Optional Dependencies</strong>, <strong>Features</strong>, and <strong>Quick Actions</strong>. Status/feature cards take you to their configuration. <strong>Re-test all service connections</strong> runs service checks. Connection and URL-mapping tests are also available in their integration sections. <strong>Clear all client tag caches</strong> is a cache action, described in <a href="../tags/">Tags &amp; Badges</a>.</p>
+<p><strong>What's new in v{version}:</strong> or <strong>What's new since you last checked:</strong> links to newly detected settings, with <strong>New in v{version}</strong> badges and release links. <strong>Dismiss</strong> acknowledges the shared server baseline; it does not enable features. Undismissed additions keep their first-detected version across releases.</p>
+<p>A fresh installation establishes the current baseline. Existing plugin data can trigger the bundled 12.2.0.0 baseline when no acknowledgment exists. This is settings discovery rather than a complete release history.</p>
+</details>
+<h4 id="server-defaults-and-overwriting-personal-settings">Server defaults and overwriting personal settings<a class="headerlink" href="#server-defaults-and-overwriting-personal-settings" title="Permanent link">&para;</a></h4>
+<p>Admin Display/Playback preferences generally supply starting values when a user settings file is missing. Existing personal values take precedence; ordinary <strong>Save Settings</strong> does not keep enforcing those defaults.</p>
+<p>To change existing users, a setting that users also hold personally (marked with a small people icon) shows a banner in its card when you change it. <strong>Apply the above</strong> copies only the listed settings to every user. <strong>Apply all plugin settings</strong> replaces all personal preferences with the admin values.</p>
+<p>To replace all existing preferences from the Overview instead:</p>
+<ol>
+<li>Set and save the intended defaults.</li>
+<li>Choose <strong>Overview</strong> → <strong>Quick Actions</strong> → <strong>Apply all plugin settings to every user</strong>.</li>
+<li>Confirm the action.</li>
+</ol>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>This action replaces personal customizations. Users must refresh and reapply choices they want to keep. It also resets personal-only values such as custom subtitle colors/position, the pinned random source, and last-opened section.</p>
+</div>
+<p>For the broader storage and backup reference, see <a href="../../getting-started/settings-overview/">Settings overview</a>.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>Server feature switches, such as <strong>Enable Hidden Content</strong>, control availability independently of a user's saved choice. Disabled child controls need their parent feature enabled.</p>
+<p>After confirmation, the overwrite action saves the current form and synchronizes managed Custom Tabs entries. It replaces general settings for users with known JE data folders. It resets Hidden Content preferences while keeping hidden items. It also resets existing Spoiler Guard preferences to inherit the admin policy while keeping protected-title lists. Shortcut overrides in <code>shortcuts.json</code> remain.</p>
+<p>In this version, the overwrite path resets watch-progress mode/time format to <strong>Percentage</strong>/<strong>h:m</strong>, even if the corresponding admin defaults differ.</p>
+</details>
+<h3 id="display-defaults">Display defaults<a class="headerlink" href="#display-defaults" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=display">Display</a></p>
+<p>Choose the starting information new users see on item details. Users can override these admin preferences in <strong>UI Settings</strong>.</p>
+<p>Open <a href="../../open-in-jellyfin/?tab=display&amp;card=ui-preferences"><strong>Display</strong> → <strong>UI Preferences</strong></a> and set the starting values:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show watch progress</strong></td>
+<td>Off</td>
+<td>Starts <strong>Show Watch Progress</strong> enabled for new users.</td>
+</tr>
+<tr>
+<td><strong>Watch Progress Default</strong></td>
+<td><strong>Percentage</strong></td>
+<td>Starts the personal display at <strong>Percentage</strong>, <strong>Time Watched</strong>, or <strong>Time Remaining</strong>.</td>
+</tr>
+<tr>
+<td><strong>Watch Progress Time Format</strong></td>
+<td><strong>h:m</strong></td>
+<td>Starts the personal time format at <strong>h:m</strong> or <strong>y<img alt="🇲🇴" class="twemoji" src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@16.0.1/assets/svg/1f1f2-1f1f4.svg" title=":mo:" />d:h:m</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show file sizes</strong></td>
+<td>Off</td>
+<td>Starts <strong>Show File Sizes</strong> enabled.</td>
+</tr>
+<tr>
+<td><strong>Show available audio languages on item detail page</strong></td>
+<td>On</td>
+<td>Starts <strong>Show Audio Languages</strong> enabled; users override it in <strong>UI Settings</strong>.</td>
+</tr>
+<tr>
+<td><strong>Enable "Remove from Continue Watching"</strong></td>
+<td>Off</td>
+<td>Starts <strong>Add Remove from Continue Watching &amp; Next Up Buttons</strong> enabled.</td>
+</tr>
+</tbody>
+</table>
+<p>Under <a href="../../open-in-jellyfin/?tab=display&amp;card=icons-theme"><strong>Display</strong> → <strong>Icons &amp; Theme</strong></a>, these are server settings with no personal-panel counterpart:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Use Icons in UI</strong></td>
+<td>On</td>
+<td>Uses icons in JE's interface.</td>
+</tr>
+<tr>
+<td><strong>Icon Style</strong></td>
+<td><strong>Emoji</strong></td>
+<td>Chooses <strong>Emoji</strong>, <strong>Lucide Icons</strong>, or <strong>Material UI Icons</strong>.</td>
+</tr>
+</tbody>
+</table>
+<p>Under <a href="../../open-in-jellyfin/?tab=display&amp;card=default-language"><strong>Display</strong> → <strong>Default Language</strong></a>, choose the starting interface language:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Default UI Language</strong></td>
+<td><strong>System Default</strong></td>
+<td>Supplies the initial personal <strong>Display Language</strong>. Users can choose their own language or <strong>Auto</strong>.</td>
+</tr>
+</tbody>
+</table>
+<p><a href="../../open-in-jellyfin/?tab=display&amp;card=spoiler-guard"><strong>Display</strong> → <strong>Spoiler Guard</strong></a> is covered by <a href="../../spoiler-guard/spoiler-guard-settings/">Spoiler Guard settings</a>. <a href="../../open-in-jellyfin/?tab=display&amp;card=awards"><strong>Display</strong> → <strong>Awards</strong></a> and <strong>MDBList Ratings</strong> are covered by <a href="../../other/other-settings/">Other settings</a>.</p>
+<h3 id="playback-defaults">Playback defaults<a class="headerlink" href="#playback-defaults" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=playback">Playback</a></p>
+<p>Set starting playback preferences for your users, including tab switching, auto-skip, and subtitles. Users can override the personal preferences in <strong>Playback Settings</strong>, <strong>Auto-Skip Settings</strong>, and <strong>Subtitle Settings</strong>.</p>
+<p>Open <a href="../../open-in-jellyfin/?tab=playback&amp;card=player-behaviour"><strong>Playback</strong> → <strong>Player Behaviour</strong></a> to set these starting preferences. The playback-start rating badge is a server setting with no personal toggle.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Auto-pause on tab switch</strong></td>
+<td>On</td>
+<td>Starts personal <strong>Auto-pause</strong> enabled.</td>
+</tr>
+<tr>
+<td><strong>Auto-resume on tab switch</strong></td>
+<td>Off</td>
+<td>Starts personal <strong>Auto-resume</strong> enabled.</td>
+</tr>
+<tr>
+<td><strong>Auto Picture-in-Picture on tab switch</strong></td>
+<td>Off</td>
+<td>Starts personal <strong>Auto Picture-in-Picture</strong> enabled. Browser restrictions still apply.</td>
+</tr>
+<tr>
+<td><strong>Long press/hold for 2x speed β</strong></td>
+<td>Off</td>
+<td>Starts personal <strong>Long Press for 2x Speed (β)</strong> enabled. Supports mouse and touch.</td>
+</tr>
+<tr>
+<td><strong>Enable Custom Pause Screen</strong></td>
+<td>On</td>
+<td>Starts personal <strong>Custom Pause Screen</strong> enabled.</td>
+</tr>
+<tr>
+<td><strong>Show Age Rating When Playback Starts</strong></td>
+<td>Off</td>
+<td>Shows the official age rating, up to three recognized advisory tags and up to three genres for five seconds when playback starts. No personal-panel toggle.</td>
+</tr>
+</tbody>
+</table>
+<p>Player rating chips have a separate admin server control under <a href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=groups"><strong>Media Tags</strong> → <strong>Groups</strong></a> → <strong>Rating</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show Rating in Video Player</strong></td>
+<td>On</td>
+<td>Adds community/critic rating chips beside the player's time information. Uses the server setting and has no personal-panel toggle.</td>
+</tr>
+</tbody>
+</table>
+<p>Under <a href="../../open-in-jellyfin/?tab=playback&amp;card=auto-skip"><strong>Playback</strong> → <strong>Auto-Skip</strong></a>, choose starting preferences for <strong>Auto-Skip Settings</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Auto-skip Intro</strong></td>
+<td>Off</td>
+<td>Starts <strong>Automatically Skip Intro</strong> enabled. Requires usable Intro segment data.</td>
+</tr>
+<tr>
+<td><strong>Auto-skip Outro</strong></td>
+<td>Off</td>
+<td>Starts <strong>Automatically Skip Outro</strong> enabled. Requires usable Outro segment data.</td>
+</tr>
+</tbody>
+</table>
+<p>Under <a href="../../open-in-jellyfin/?tab=playback&amp;card=subtitles"><strong>Playback</strong> → <strong>Subtitles</strong></a>, choose starting preferences for <strong>Subtitle Settings</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Disable Custom Subtitle Styles by default</strong></td>
+<td>Off</td>
+<td>Starts <strong>Disable Custom Styles</strong> enabled. Users can override it.</td>
+</tr>
+<tr>
+<td><strong>Show Subtitle Sync Button in the Player</strong></td>
+<td>Off</td>
+<td>Starts <strong>Subtitle Sync Button</strong> enabled. Users can override it.</td>
+</tr>
+<tr>
+<td><strong>Default Subtitle Style</strong></td>
+<td><strong>Clean White</strong></td>
+<td>Supplies the initial <strong>Style</strong>.</td>
+</tr>
+<tr>
+<td><strong>Default Subtitle Size</strong></td>
+<td><strong>Normal</strong></td>
+<td>Supplies the initial <strong>Size</strong>.</td>
+</tr>
+<tr>
+<td><strong>Default Subtitle Font</strong></td>
+<td><strong>Default</strong></td>
+<td>Supplies the initial <strong>Font</strong>.</td>
+</tr>
+<tr>
+<td><strong>Default Subtitle Text Effect</strong></td>
+<td><strong>Auto</strong></td>
+<td>Supplies the initial <strong>Text Effect</strong>.</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="#subtitle-settings">Subtitle Settings</a> for choices and format limits.</p>
+<p>Under <a href="../../open-in-jellyfin/?tab=playback&amp;card=shortcuts-panel-toast-timing"><strong>Playback</strong> → <strong>Shortcuts Panel &amp; Toast Timing</strong></a>, set these server timings. Use <strong>Preview autoclose</strong> and <strong>Preview toast</strong> to try them:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Shortcuts Panel Autoclose Delay (ms)</strong></td>
+<td>15000</td>
+<td>Sets how long the Enhanced panel stays open with the pointer outside it.</td>
+</tr>
+<tr>
+<td><strong>Toast Notification Duration (ms)</strong></td>
+<td>1500</td>
+<td>Sets JE toast duration.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p><strong>Show Age Rating When Playback Starts</strong> shows the official rating, up to three recognized advisory tags, and up to three genres for five seconds when playback starts. Episodes can fall back to series metadata.</p>
+<p>There is no admin form input for the pause-screen delay. Its server configuration default is five seconds; users have <strong>Delay before showing (seconds):</strong>. Custom subtitle colors and position also have no admin form inputs.</p>
+</details>
+<h3 id="random-button-defaults">Random button defaults<a class="headerlink" href="#random-button-defaults" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=display&amp;card=random-button">Display &gt; Random Button</a></p>
+<p>Set the dice button's starting pool for new users. Users can override all five preferences in <strong>Random Button Settings</strong>.</p>
+<p>Choose the starting values:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Random Button</strong></td>
+<td>On</td>
+<td>Starts the header dice button enabled.</td>
+</tr>
+<tr>
+<td><strong>Show unwatched only</strong></td>
+<td>Off</td>
+<td>Starts <strong>Unwatched Only</strong> enabled.</td>
+</tr>
+<tr>
+<td><strong>Include movies</strong></td>
+<td>On</td>
+<td>Starts <strong>Movies</strong> selected.</td>
+</tr>
+<tr>
+<td><strong>Include shows</strong></td>
+<td>On</td>
+<td>Starts <strong>Shows</strong> selected.</td>
+</tr>
+<tr>
+<td><strong>Scope to the current playlist or collection</strong></td>
+<td>Off</td>
+<td>Starts <strong>Use the playlist or collection I'm viewing</strong> enabled.</td>
+</tr>
+</tbody>
+</table>
+<p>Users choose their own pinned source; no admin control sets it. See <a href="#random-button-settings">Random Button Settings</a> for source priority and sampling limits.</p>
+<h3 id="keyboard-configuration">Keyboard configuration<a class="headerlink" href="#keyboard-configuration" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=keyboard">Keyboard</a></p>
+<p>Set the server's keyboard bindings, which users inherit until they choose personal overrides. You can also disable ordinary JE shortcuts.</p>
+<ol>
+<li>Open <a href="../../open-in-jellyfin/?tab=keyboard&amp;card=keyboard-shortcuts"><strong>Keyboard</strong> → <strong>Keyboard Shortcuts</strong></a>.</li>
+<li>Click a key and press a combination. <span class="keys"><kbd class="key-delete">Del</kbd></span> disables the server binding; <span class="keys"><kbd class="key-backspace">Backspace</kbd></span> restores its stock key.</li>
+<li>Save your admin edits.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Disable Keyboard Shortcuts</strong></td>
+<td>Off</td>
+<td>Disables ordinary JE shortcuts and hides the personal <strong>Shortcuts</strong> section. You can still open the panel with <span class="keys"><kbd class="key-question">?</kbd></span>.</td>
+</tr>
+</tbody>
+</table>
+<p>The editable action labels and stock keys match the <a href="#shortcuts">Shortcuts table</a>, except <strong>Jump to % of video</strong>, which is not in the admin recorder.</p>
+<details class="note">
+<summary>Details</summary>
+<p>Personal overrides remain in effect until users reset them in their own editor. Personal <span class="keys"><kbd class="key-backspace">Backspace</kbd></span> restores the saved administrator binding, which may differ from the stock key.</p>
+</details>
+<h3 id="page-entry-points">Page entry points<a class="headerlink" href="#page-entry-points" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=pages">Pages</a></p>
+<p>Enable the page, choose its placement, and click <strong>Save Settings</strong>. Bookmarks, Hidden Content, Activity, Leaving Soon, and Catch Up controls are listed below. Follow <a href="../../getting-started/pages-and-tabs/">JE Pages &amp; Tabs</a> for native Home links, Plugin Pages registration, and automatic or manual Custom Tabs setup.</p>
+<h3 id="bookmarks">Bookmarks<a class="headerlink" href="#bookmarks" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=pages">Pages</a></p>
+<p>Bookmarks save positions within videos so you can return to them later. The bookmark library lets you manage those saved positions.</p>
+<ol>
+<li>Under <a href="../../open-in-jellyfin/?tab=pages&amp;card=bookmarks"><strong>Pages</strong> → <strong>Bookmarks</strong></a>, enable the server feature and choose an entry point.</li>
+<li>Create a bookmark in the player or with <strong>Bookmark Current Time</strong>.</li>
+</ol>
+<p>These are admin server settings. There is no personal bookmark master toggle in the Enhanced panel.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Bookmarks Feature</strong></td>
+<td>On</td>
+<td>Enables bookmark tools and management.</td>
+</tr>
+<tr>
+<td><strong>Add Bookmarks as a native Home tab</strong></td>
+<td>Off</td>
+<td>Adds the built-in Bookmarks Home tab.</td>
+</tr>
+<tr>
+<td><strong>Use Plugin Pages for Bookmarks Library</strong></td>
+<td>Off</td>
+<td>Exposes the bookmark library through Plugin Pages.</td>
+</tr>
+<tr>
+<td><strong>Use Custom Tabs for Bookmarks</strong></td>
+<td>Off</td>
+<td>Enables the bookmark library's Custom Tabs embed.</td>
+</tr>
+<tr>
+<td><strong>Add the Custom Tabs entry for me</strong></td>
+<td>Off</td>
+<td>Creates the matching managed Custom Tabs entry on save.</td>
+</tr>
+</tbody>
+</table>
+<p>Custom Tabs is optional. See <a href="../enhanced-features/#smart-bookmarks">Smart Bookmarks</a> for editing, timeline markers, and management.</p>
+<details class="note">
+<summary>Details</summary>
+<p>Bookmark data is saved per account on the server in <code>bookmark.json</code>. The interface has no export/import operation.</p>
+</details>
+<h3 id="hidden-content-administration">Hidden Content administration<a class="headerlink" href="#hidden-content-administration" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=pages">Pages</a></p>
+<p>Enable Hidden Content so users can manage their own hidden lists. When allowed, administrators can also inspect and edit other users' lists.</p>
+<ol>
+<li>Open <a href="../../open-in-jellyfin/?tab=pages&amp;card=hidden-content"><strong>Pages</strong> → <strong>Hidden Content</strong></a>.</li>
+<li>Enable the server feature and choose page access; expand <strong>Admin Controls</strong> to set administrator access to other users' hidden content.</li>
+<li>Under <strong>More Settings</strong>, set the starting personal preferences.</li>
+</ol>
+<p>Admin server settings:</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/hidden-defaults.webp"><img alt="Hidden Content admin settings with More Settings defaults and Admin Controls expanded" src="../../images/admin/hidden-defaults.webp" /></a></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Hidden Content</strong></td>
+<td>Off</td>
+<td>Enables Hidden Content, its management page, and its personal panel section.</td>
+</tr>
+<tr>
+<td><strong>Add Hidden Content as a native Home tab</strong></td>
+<td>Off</td>
+<td>Adds the built-in Hidden Content Home tab.</td>
+</tr>
+<tr>
+<td><strong>Use Plugin Pages for Hidden Content</strong></td>
+<td>Off</td>
+<td>Exposes the page through Plugin Pages.</td>
+</tr>
+<tr>
+<td><strong>Use Custom Tabs for Hidden Content</strong></td>
+<td>Off</td>
+<td>Enables its Custom Tabs embed.</td>
+</tr>
+<tr>
+<td><strong>Add the Custom Tabs entry for me</strong></td>
+<td>Off</td>
+<td>Creates the matching managed Custom Tabs entry on save.</td>
+</tr>
+<tr>
+<td><strong>Let admins view and manage other users' hidden content</strong></td>
+<td>On</td>
+<td>Adds another-user selection to management. Viewing another account starts read-only; <strong>Edit</strong> enables changes on its behalf. Turning it off disables both viewing and editing.</td>
+</tr>
+</tbody>
+</table>
+<p>Under <strong>More Settings</strong>, these admin values supply starting values for the matching <a href="#hidden-content">personal Hidden Content controls</a>. Saving new defaults leaves existing personal copies intact.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Hidden Content enabled by default</strong></td>
+<td>On</td>
+<td>Sets <strong>Enable Content Hiding</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show "Hide" buttons by default</strong></td>
+<td>On</td>
+<td>Sets <strong>Show Hide Buttons</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show confirmation dialog before hiding</strong></td>
+<td>On</td>
+<td>Sets <strong>Show Confirmation Dialog</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show "Hide" button on Seerr search results</strong></td>
+<td>On</td>
+<td>Sets <strong>Show on Seerr Items</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show "Hide" button on item details pages</strong></td>
+<td>On</td>
+<td>Sets <strong>Show on Detail Pages</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show "Hide" button on library / home cards</strong></td>
+<td>Off</td>
+<td>Sets <strong>Show in Library Views</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show "Hide" button on cast / actor cards</strong></td>
+<td>Off</td>
+<td>Sets <strong>Show on Cast/Actors</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Library &amp; details pages</strong></td>
+<td>On</td>
+<td>Sets <strong>Filter Library</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Search results</strong></td>
+<td>Off</td>
+<td>Sets <strong>Filter Search</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Continue Watching</strong></td>
+<td>On</td>
+<td>Sets <strong>Filter Continue Watching</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Next Up</strong></td>
+<td>On</td>
+<td>Sets <strong>Filter Next Up</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Upcoming episodes</strong></td>
+<td>On</td>
+<td>Sets <strong>Filter Upcoming</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Suggestions / recommendations</strong></td>
+<td>On</td>
+<td>Sets <strong>Filter Recommendations</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Discovery</strong></td>
+<td>On</td>
+<td>Sets <strong>Filter Discovery</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Calendar</strong></td>
+<td>On</td>
+<td>Sets <strong>Filter Calendar</strong>.</td>
+</tr>
+<tr>
+<td><strong>Filter Requests page</strong></td>
+<td>On</td>
+<td>Sets <strong>Filter Requests</strong>.</td>
+</tr>
+<tr>
+<td><strong>Allow hiding collections, libraries, and playlists (experimental)</strong></td>
+<td>Off</td>
+<td>Sets <strong>Hide Collections &amp; Libraries</strong>. Experimental container hiding can disrupt browsing.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p>The server master defaults to Off even though personal hiding defaults to On. The personal controls and browsing limits are separate from the row-removal preference in <a href="../../open-in-jellyfin/?tab=display&amp;card=ui-preferences"><strong>Display</strong> → <strong>UI Preferences</strong></a>.</p>
+</details>
+<h3 id="activity-feed">Activity Feed<a class="headerlink" href="#activity-feed" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=pages">Pages</a></p>
+<p>Activity shows watching history, favorites, and reviews, with an optional live-stream section. You can open titles or artwork to view their details.</p>
+<ol>
+<li>Enable the feature under <a href="../../open-in-jellyfin/?tab=pages&amp;card=activity-feed"><strong>Pages</strong> → <strong>Activity Feed</strong></a> and configure an entry point.</li>
+<li>Open <strong>Activity</strong> and browse <strong>Active Streams</strong>, <strong>Watch History</strong>, and <strong>Reviews</strong>. Favorites share <strong>Reviews</strong>.</li>
+<li>Use <strong>Refresh</strong> to reload stored activity. Partial watches show progress; completed watches use completion wording.</li>
+</ol>
+<p>All settings below are admin server settings, with no personal-panel counterparts.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/activity-catchup.webp"><img alt="Seerr Recommendations Page, Activity Feed and Catch Up settings on the Pages tab" src="../../images/admin/activity-catchup.webp" /></a>
+<em>The disabled <strong>Use Plugin Pages</strong> and <strong>Use Custom Tabs</strong> controls require their companion plugins.</em></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Activity Feed</strong></td>
+<td>Off</td>
+<td>Enables the feed and its watched/favorite collection. Turning it off retains saved activity.</td>
+</tr>
+<tr>
+<td><strong>Show recently watched</strong></td>
+<td>On</td>
+<td>Collects and shows qualifying stopped or completed playback.</td>
+</tr>
+<tr>
+<td><strong>Show recently favorited</strong></td>
+<td>On</td>
+<td>Collects and shows favorites. Unfavoriting removes the saved entry.</td>
+</tr>
+<tr>
+<td><strong>Show recently reviewed</strong></td>
+<td>On</td>
+<td>Includes reviews from the current User Reviews store.</td>
+</tr>
+<tr>
+<td><strong>Non-admins only see their own activity</strong></td>
+<td>Off</td>
+<td>Regular users only see their own watched, favorited and reviewed entries; administrators still see everyone.</td>
+</tr>
+<tr>
+<td><strong>Show Active Streams section</strong></td>
+<td>On</td>
+<td>Adds live sessions when the separate Active Streams feature and viewer permissions allow them.</td>
+</tr>
+<tr>
+<td><strong>Add Activity as a native Home tab</strong></td>
+<td>Off</td>
+<td>Adds the built-in Activity Home tab.</td>
+</tr>
+<tr>
+<td><strong>Use Plugin Pages</strong></td>
+<td>Off</td>
+<td>Exposes Activity through Plugin Pages.</td>
+</tr>
+<tr>
+<td><strong>Use Custom Tabs</strong></td>
+<td>Off</td>
+<td>Enables the Activity Custom Tabs embed.</td>
+</tr>
+<tr>
+<td><strong>Add the Custom Tabs entry for me</strong></td>
+<td>Off</td>
+<td>Creates the matching managed Custom Tabs entry on save.</td>
+</tr>
+</tbody>
+</table>
+<p>For the live section, also configure these admin server settings under <a href="../../open-in-jellyfin/?tab=extras&amp;card=active-streams"><strong>Extras</strong> → <strong>Active Streams</strong></a>:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Active Streams Header Widget</strong></td>
+<td>Off</td>
+<td>Enables the header widget and live-session data used by the feed.</td>
+</tr>
+<tr>
+<td><strong>Show widget to non-admins</strong></td>
+<td>Off</td>
+<td>Permits authenticated non-admins to read live sessions.</td>
+</tr>
+</tbody>
+</table>
+<p>Stored watched/favorite/review entries respect viewer library access. Active Streams has separate access rules and can show sessions for items outside a viewer's library access. See <a href="../../other/other-settings/">Other settings</a> for the widget's full behavior.</p>
+<details class="info">
+<summary>How it works</summary>
+<p><strong>Show recently watched</strong> collects playback stopped at a position of at least 5% of known runtime, plus playback Jellyfin reports completed. The 5% threshold measures stopped playback position, not time spent watching.</p>
+<p>The usual request returns up to 50 merged entries with no UI pagination. Watched/favorite storage in <code>activity.json</code> is capped at 500 entries. Rewatches update the timestamp while retaining maximum progress and completion.</p>
+<p><a href="../../open-in-jellyfin/?tab=elsewhere&amp;card=user-reviews"><strong>Elsewhere &amp; Reviews</strong> → <strong>User Reviews</strong></a> → <strong>Hide reviews from hidden users</strong> and <strong>Hide reviews from disabled users</strong> both default to On. They also filter activity authors, with admin/self exceptions. User Reviews runs independently. Disabling Activity Feed stops watched/favorite collection, but reviews written while it is off can appear when the feed returns. See <a href="../../elsewhere/elsewhere-settings/">Elsewhere &amp; Reviews Settings</a> for those shared review controls.</p>
+<p><strong>Active Streams Header Widget</strong> enables the Active Streams data endpoint as well as the header widget. The feed's live section refreshes every 15 seconds while the document is visible. Stored history does not use that polling. The header widget refreshes on initialization, opening, and manual refresh.</p>
+</details>
+<h3 id="leaving-soon">Leaving Soon<a class="headerlink" href="#leaving-soon" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=pages">Pages</a></p>
+<p>The Leaving Soon page lists everything the removal tool that is on (<a href="../tags-status/#leaving-soon-maintainerr-or-reclaimerr">Maintainerr or Reclaimerr</a>) will remove, with the days left. Everyone sees the items they can access, soonest first, and can filter <strong>Movies</strong> and <strong>Shows</strong>. It needs a removal tool set up first.</p>
+<ol>
+<li>Set up and turn on a removal tool in the <strong>*arr</strong> tab (the Maintainerr or Reclaimerr card).</li>
+<li>Enable the page under <a href="../../open-in-jellyfin/?tab=pages&amp;card=leaving-soon"><strong>Pages</strong> → <strong>Leaving Soon</strong></a> and configure an entry point.</li>
+<li>Open <strong>Leaving Soon</strong>. Click a poster or title to open the item.</li>
+</ol>
+<p>What each person gets:</p>
+<ul>
+<li><strong>Everyone:</strong> the list, with a chip for the day it leaves (<strong>Leaves in 5d</strong>, <strong>Leaves tomorrow</strong>, <strong>Leaves today</strong>, or <strong>Leaving soon</strong> when no date is known). With Reclaimerr, their own removal requests and whether each is waiting, approved or denied.</li>
+<li><strong>Administrators:</strong> <strong>Keep</strong> and <strong>Change removal date</strong> (<strong>Postpone</strong> with Maintainerr) on each card, the same actions as the item menu, and with Reclaimerr the waiting removal requests as cards (poster, title, who asked with their Jellyfin name and avatar, and their note) with <strong>Approve</strong> and <strong>Deny</strong>. Approve asks you to confirm and <strong>when</strong> to delete: <strong>Use Reclaimerr's grace period</strong> (the delay set in its General settings; none by default, so right away, and with its default setting the files are deleted and the Radarr or Sonarr entry is kept unmonitored), <strong>Delete now</strong>, or <strong>Choose a date</strong>, which Reclaimerr then deletes on and the Leaving Soon page lists like any scheduled deletion. An approved request whose deletion failed, is blocked or is held back by playback stays on the page with the reason, and one that is scheduled shows its day; <strong>Deny</strong> keeps the title and needs no confirmation. Reclaimerr records the plugin's token as the reviewer, so the note names the administrator who approved or denied it in Jellyfin.</li>
+</ul>
+<p>All settings below are admin server settings.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable the Leaving Soon page</strong></td>
+<td>Off</td>
+<td>Turns the page on. It lists nothing until a removal tool is set up.</td>
+</tr>
+<tr>
+<td><strong>Add Leaving Soon as a native Home tab</strong></td>
+<td>Off</td>
+<td>Adds the built-in Leaving Soon Home tab.</td>
+</tr>
+<tr>
+<td><strong>Use Plugin Pages</strong></td>
+<td>Off</td>
+<td>Exposes the page through Plugin Pages.</td>
+</tr>
+<tr>
+<td><strong>Use Custom Tabs</strong></td>
+<td>Off</td>
+<td>Enables the Leaving Soon Custom Tabs embed (<code>&lt;div class="jellyfinenhanced leavingsoon"&gt;&lt;/div&gt;</code>).</td>
+</tr>
+<tr>
+<td><strong>Add the Custom Tabs entry for me</strong></td>
+<td>Off</td>
+<td>Creates the matching managed Custom Tabs entry on save.</td>
+</tr>
+</tbody>
+</table>
+<p>The page reads the server's last read of the removal tool (the <strong>Leaving soon</strong> card's refresh interval) and reloads itself every five minutes and after any Keep or date change made from the item menu or the page. See <a href="../../advanced/api/">API reference</a> for the <code>leaving-soon</code> routes.</p>
+<h3 id="catch-up">Catch Up<a class="headerlink" href="#catch-up" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=pages">Pages</a></p>
+<p>Catch Up gives you swipeable cards for unwatched movies and shows. Use them to mark items watched, dismiss them, add them to your watchlist, or open their details.</p>
+<ol>
+<li>Enable the feature under <a href="../../open-in-jellyfin/?tab=pages&amp;card=catch-up"><strong>Pages</strong> → <strong>Catch Up</strong></a> and configure an entry point.</li>
+<li>Open <strong>Catch Up</strong> and choose <strong>Movies</strong> or <strong>Shows</strong>.</li>
+<li>Swipe right to mark watched, left to dismiss, up to add to the watchlist, or down to open details. Buttons and arrow keys provide the same actions.</li>
+<li>Press <span class="keys"><kbd class="key-backspace">Backspace</kbd></span> to rewind when an undo is available.</li>
+</ol>
+<p>All settings below are admin server settings.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Catch Up</strong></td>
+<td>Off</td>
+<td>Enables decks of unwatched items accessible to each user.</td>
+</tr>
+<tr>
+<td><strong>Add Catch Up as a native Home tab</strong></td>
+<td>Off</td>
+<td>Adds the built-in Catch Up Home tab.</td>
+</tr>
+<tr>
+<td><strong>Use Plugin Pages</strong></td>
+<td>Off</td>
+<td>Exposes Catch Up through Plugin Pages.</td>
+</tr>
+<tr>
+<td><strong>Use Custom Tabs</strong></td>
+<td>Off</td>
+<td>Enables the Catch Up Custom Tabs embed.</td>
+</tr>
+<tr>
+<td><strong>Add the Custom Tabs entry for me</strong></td>
+<td>Off</td>
+<td>Creates the matching managed Custom Tabs entry on save.</td>
+</tr>
+<tr>
+<td><strong>Record Catch Up activity</strong></td>
+<td>On</td>
+<td>Saves reported actions for administrators while Catch Up is enabled. Turning it off stops new records; existing history remains readable.</td>
+</tr>
+</tbody>
+</table>
+<p>Dismissals stay in this browser for your account, separate from server-synced Hidden Content. Reloading keeps them. Clear their browser storage or use an available rewind to reverse them.</p>
+<p>Administrators can open <strong>Activity</strong> to view <strong>Feed</strong> or <strong>Summary</strong>, even with recording disabled. Use <strong>All users</strong>, <strong>Search titles</strong>, and action chips to filter <strong>Feed</strong>; those filters do not affect <strong>Summary</strong>. <strong>Refresh</strong> reloads the selected view and <strong>Hide</strong> closes it.</p>
+<p>See <a href="../enhanced-features/">Enhanced features</a> for the full gesture workflow and <a href="../../advanced/api/">API reference</a> for event routes.</p>
+<details class="info">
+<summary>How it works</summary>
+<p>The watchlist uses Jellyfin's Likes flag. Decks sample random batches of 40 items, excluding dismissed, already-seen, and imageless cards. They do not sort newest first. <strong>Nothing more to show here.</strong> can mean a batch produced no eligible new cards.</p>
+<p>A show's season picker appears only with at least two regular seasons; specials are excluded. Shows with fewer regular seasons are marked watched directly.</p>
+<p>The selected deck mode is remembered locally for the browser. Switching decks or restarting resets the queue, seen set, and undo history.</p>
+<p>The open admin activity panel refreshes every ten seconds and docks at widths of at least 1100 pixels. Narrower screens use a dialog.</p>
+<p>Logs contain open, undo, and failed actions as well as swipes. They are client-reported actions, not proof of viewing. <strong>Feed</strong> requests up to 300 matching events. <strong>Summary</strong> counts distinct surviving user/title actions not marked failed, removes recorded undos, and lists up to 15 top titles per action.</p>
+<p>The server retains <code>catchup-log.jsonl</code> and <code>catchup-log.1.jsonl</code> in the plugin configuration folder. It rotates before the next append once the live file exceeds 5 MiB.</p>
+</details>
+<h3 id="tags-quality-genre-language-rating-age-rating-status-awards-logos-custom-people">Tags: Quality, Genre, Language, Rating, Age Rating, Status, Awards, Logos, Custom, People<a class="headerlink" href="#tags-quality-genre-language-rating-age-rating-status-awards-logos-custom-people" title="Permanent link">&para;</a></h3>
+<p>Tag settings (quality, language, rating scopes, custom rules, people and review badges, hover behavior, Tag Styles) are covered in <a href="../tags/">Tags &amp; Badges</a>.</p>
+<h4 id="custom-tag-rules">Custom tag rules<a class="headerlink" href="#custom-tag-rules" title="Permanent link">&para;</a></h4>
+<p><a href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=groups"><strong>Media Tags</strong> → <strong>Groups</strong></a> → <strong>Custom</strong> (the configuration page's Media Tags tab) turns Jellyfin tags and collections into poster chips: up to 20 rules of match type, name, label and optional icon, plus <strong>Enable Custom Tags</strong> and its <strong>Position</strong> as defaults for users. Colour the labels under <strong>Tag Styles</strong> → <strong>Custom</strong>. See <a href="../tags-groups/#custom-tags">Custom Tags</a>.</p>
+<h4 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h4>
+<p>For personal tag choices, open <strong>Media Tags</strong>. Administrators use the configuration page's <a href="../../open-in-jellyfin/?jeSection=media-tags"><strong>Media Tags</strong></a> tab. See <a href="../tags/">Tags &amp; Badges</a> for exact labels, defaults, and configuration instructions.</p>
+<h4 id="status-tags-badge-groups">Status Tags badge groups<a class="headerlink" href="#status-tags-badge-groups" title="Permanent link">&para;</a></h4>
+<p>Under <a href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=badges"><strong>Media Tags</strong> → <strong>Status badges</strong></a>, the eight personal switches are Just Added, New releases (New Movie / New Series / New Episode), Trending, Schedule (Airing Today / Airs / Returns / Coming Soon), Milestones (New Season / Premiere / Finale / Complete Season), Series status (Returning / Ended / Cancelled), Leaving soon (Maintainerr or leaving collections) and Direct-play warning (Transcode / Won't direct play, web only). The first five default on; the last three off. The administrator sets the Leaving soon source (Maintainerr URL and API key, or existing collection names, and how often it is read) in the <strong>Status badges</strong> section of the Media Tags admin tab; see <a href="../tags-status/#leaving-soon-maintainerr-or-reclaimerr">Leaving soon</a> and <a href="../tags-status/#direct-play-warning">Direct-play warning</a>. Administrators set starting defaults and the two shared day windows in the <strong>Status badges</strong> section of that tab. Finale and series schedule enrichment require a TMDB key; Jellyfin date badges work without one. <strong>Compact</strong> density shortens long milestone labels. See <a href="../tags-status/#status-tags">Status Tags</a> for sources and first-match priority by card type.</p>
+<h4 id="logo-tags">Logo Tags<a class="headerlink" href="#logo-tags" title="Permanent link">&para;</a></h4>
+<p>The <strong>Logos</strong> row on the <strong>Groups</strong> tab of <strong>Media Tags</strong> turns the group on (off by default) and sets its position and <strong>Show up to</strong>. What the logo shows is the administrator's choice under <a href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=groups"><strong>Media Tags</strong> → <strong>Groups</strong></a> → <strong>Logos</strong>: <strong>Movies show</strong> (streaming service, studio or no logo), <strong>Series show</strong> (network, streaming service or no logo), <strong>Streaming region</strong> and <strong>Logos per title</strong> (1 or 2). Logos need the TMDB API key for images; without one, names are shown. See <a href="../tags-groups/#logo-tags">Logo Tags</a>.</p>
+<h4 id="server-side-tag-cache">Server-Side Tag Cache<a class="headerlink" href="#server-side-tag-cache" title="Permanent link">&para;</a></h4>
+<p><a class="je-open" href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=server">Media Tags &gt; Server</a></p>
+<p>Server cache settings, library exclusions, browser fallback persistence, <strong>Clear All Client Caches</strong>, and <a href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=server"><strong>Media Tags</strong> → <strong>Server</strong></a> → <strong>Rebuild Server Tag Cache</strong> are covered in <a href="../tags/">Tags &amp; Badges</a>.</p>
+<h4 id="audio-language-tags">Audio Language Tags<a class="headerlink" href="#audio-language-tags" title="Permanent link">&para;</a></h4>
+<p>The controls under <a href="../../open-in-jellyfin/?tab=display&amp;card=audio-language-tags"><strong>Display</strong> → <strong>Audio Language Tags</strong></a> and the <strong>Sync Audio Language Tags to Jellyfin</strong> task are covered in <a href="../tags/">Tags &amp; Badges</a>.</p>
+<h4 id="native-poster-tags-experimental">Native Poster Tags (Experimental)<a class="headerlink" href="#native-poster-tags-experimental" title="Permanent link">&para;</a></h4>
+<p>The admin <a href="../../open-in-jellyfin/?jeSection=media-tags"><strong>Media Tags</strong></a> tab's controls and personal <strong>Show Tags in Native Clients (Experimental)</strong> are covered in <a href="../tags/">Tags &amp; Badges</a>, including eligible clients, exclusions, and refresh requirements.</p>
+<h3 id="settings-in-other-areas">Settings in other areas<a class="headerlink" href="#settings-in-other-areas" title="Permanent link">&para;</a></h3>
+<p>Use these references for settings owned by other feature areas:</p>
+<ul>
+<li><strong>Seerr</strong> and <a href="../../open-in-jellyfin/?tab=pages&amp;card=seerr-recommendations-page"><strong>Pages</strong> → <strong>Seerr Recommendations Page</strong></a>: <a href="../../seerr/seerr-settings/">Seerr settings</a>.</li>
+<li><strong>*arr</strong>, <a href="../../open-in-jellyfin/?tab=pages&amp;card=calendar-page"><strong>Pages</strong> → <strong>Calendar Page</strong></a>, and the download parts of <a href="../../open-in-jellyfin/?tab=pages&amp;card=requests-page"><strong>Pages</strong> → <strong>Requests Page</strong></a>: <a href="../../arr/arr-settings/">*arr settings</a>. Request controls are also covered in <a href="../../seerr/seerr-settings/">Seerr settings</a>.</li>
+<li><strong>Elsewhere</strong>, <strong>TMDB Reviews</strong>, <strong>Release Dates</strong>, and <strong>User Reviews</strong>: <a href="../../elsewhere/elsewhere-settings/">Elsewhere &amp; Reviews Settings</a>. Written reviews have no separate personal review-tag switch.</li>
+<li><a href="../../open-in-jellyfin/?tab=display&amp;card=spoiler-guard"><strong>Display</strong> → <strong>Spoiler Guard</strong></a>: <a href="../../spoiler-guard/spoiler-guard-settings/">Spoiler Guard settings</a>.</li>
+<li><a href="../../open-in-jellyfin/?tab=display&amp;card=awards"><strong>Display</strong> → <strong>Awards</strong></a> / <strong>MDBList Ratings</strong>, other <strong>Extras</strong> options, and <strong>Admin</strong> maintenance, analytics, developer, and cache controls: <a href="../../other/other-settings/">Other settings</a>.</li>
+</ul>
+<h3 id="documentation-in-the-dashboard">Documentation in the dashboard<a class="headerlink" href="#documentation-in-the-dashboard" title="Permanent link">&para;</a></h3>
+<p>Read the hosted documentation from the dashboard's <strong>Docs</strong> tab. This tab has no enable switch.</p>
+<p>Open <strong>Docs</strong> to load <strong>Documentation</strong> from the GitHub Pages site, or choose <strong>Open in new tab</strong>.</p>
+<details class="note">
+<summary>Details</summary>
+<p>The tab needs connectivity from your browser; it is not an offline copy bundled with the plugin. It loads the document when first opened and retains it when you switch tabs.</p>
+<p>If no iframe load event arrives within eight seconds, a fallback message and link replace it. <strong>Open in new tab</strong> is always an alternative.</p>
+</details>
+<h3 id="awards-poster-group">Awards poster group<a class="headerlink" href="#awards-poster-group" title="Permanent link">&para;</a></h3>
+<p><a href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=groups"><strong>Media Tags → Groups → Awards</strong></a> enables chart and winner chips, with the usual position, priority and cap controls (default two). Existing users start off. Administrators first enable Awards under <a href="../../open-in-jellyfin/?tab=display&amp;card=media-tags"><strong>Display → Media Tags → Awards Tags</strong></a>, choose ribbons, configure the two MDBList lists and a freshness interval (24 hours), and run <strong>Refresh Awards Tags</strong>. IMDb/Letterboxd charts and Certified Fresh require the server MDBList key; Wikidata Oscar/Emmy wins do not. Native posters follow the same group preference. See <a href="../tags-groups/#awards-tags">Awards Tags</a>.</p>
+<h3 id="quality-stream-display">Quality stream display<a class="headerlink" href="#quality-stream-display" title="Permanent link">&para;</a></h3>
+<p>In <a href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=groups"><strong>Media Tags → Groups → Quality</strong></a>, the Sound, Video codec and HDR display modes independently choose <strong>Highest only</strong> (the unchanged default) or <strong>All distinct values</strong>. <strong>Minimum resolution to show</strong> filters resolution chips below Off / 720p / 1080p / 4K; <strong>Hide SDR</strong> removes SDR exposed by All HDR mode. Each field offers <strong>Server default</strong>; <strong>Follow server settings</strong> also restores these five overrides and the technical category switches/orders. Explicit choices stay personal even if they equal the server defaults. Administrator defaults live on the dedicated <a href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=groups"><strong>Media Tags → Groups → Quality</strong></a> page. The Quality group limit and Compact labels apply to the resulting chips, including the existing layout overflow count. See <a href="../tags-quality/#highest-only-or-every-stream-value">quality display and aggregation</a>.</p>
+<h3 id="technical-poster-facts">Technical poster facts<a class="headerlink" href="#technical-poster-facts" title="Permanent link">&para;</a></h3>
+<p><a href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=groups"><strong>Media Tags → Groups → Quality → Include</strong></a> adds <strong>Runtime</strong>, <strong>Aspect ratio</strong> and <strong>Frame rate</strong>, all off initially, with the usual stacking-order controls. The administrator sets their new-user defaults on the Media Tags admin tab, <strong>Groups → Quality</strong>. Full/Compact density changes duration and ratio labels. <a href="../../open-in-jellyfin/?jeSection=media-tags&amp;tab=badges"><strong>Media Tags → Status badges → Scenes</strong></a> is also off initially and allows Post-credits/Mid-credits movie badges once the administrator enables the family and configures TMDB. Language subtitle chips automatically use <strong>SDH</strong> for hearing-impaired tracks when <strong>Include → Subtitles</strong> is on; no extra language switch is required. See <a href="../tags-quality/#runtime-aspect-ratio-and-frame-rate">Tags &amp; badges</a>.</p>
+<p>The Media Tags group editor hides <strong>Show up to</strong> for Status and Age rating, and for Logos when the administrator allows only one logo. Other groups keep their limit control.</p>
+<p>Changing Quality includes or display modes in Media Tags keeps the dialog frame and preview in place, preserving the inner pane scroll and the changed control's focus.</p>
+<p>In Compact quality labels, AC-3 is <strong>DD 5.1</strong> and E-AC-3 is <strong>DD+ 5.1</strong>; Full shows <strong>Dolby Digital 5.1</strong> / <strong>Dolby Digital+ 5.1</strong>. Flush edge styling includes overflow tabs and keeps styled Rating/Awards rings inside the chip on inward sides. Single-chip limits remain effective presentation limits; valid saved caps round-trip unchanged.</p>
+<p>Series and season quality policies preserve version-0 audio labels in Highest and All modes, including preferred-language summaries. Editing an unrelated preference leaves the audio vocabulary unchanged.</p>
+<p>In the Corners tag layout, left-centre and right-centre groups use the available poster width, sharing it when both sides are occupied. The first chip remains visible even on a narrow poster; long labels use an ellipsis, and <code>+N</code> counts later chips.</p>
+<p>When a first chip needs an ellipsis in Corners, only its text shrinks: Custom icons, rating logos and the chip’s height and inward Flush borders stay in place. Awards and Language poster links use the same constraint on their inner chip.</p>
+<p>Media Tags live previews react to each sample’s pointer hover or keyboard focus. <strong>Hover</strong> pins every sample for touch comparison; <strong>Resting</strong> releases that pin. Tag sizes show percentage values. Language code, CC/SDH and Dual/Multi chips follow the Language Tag Styles colours, including Poster artwork colours.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../enhanced-features/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Features">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Features
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../tags/" class="md-footer__link md-footer__link--next" aria-label="Next: Overview">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Overview
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  <p class="je-keyhint">
+    Press <kbd>/</kbd> to search, <kbd>P</kbd> or <kbd>N</kbd> for the previous or next page
+  </p>
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy;2026 n00bcodr. Made with 💜 for Jellyfin and the community
+    </div>
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      
+<div class="md-progress" data-md-component="progress" role="progressbar" aria-label="Loading"></div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.instant","navigation.instant.progress","navigation.tracking","navigation.tabs","navigation.tabs.sticky","navigation.sections","navigation.indexes","navigation.top","navigation.footer","toc.follow","toc.integrate","search.suggest","search.highlight","search.share","content.code.copy","content.code.annotate","content.tabs.link","announce.dismiss"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"default":"latest","provider":"mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
+      
+        <script src="../../javascripts/extra.js"></script>
+      
+    
+  </body>
+</html>

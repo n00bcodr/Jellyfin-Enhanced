@@ -1,0 +1,3839 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.">
+      
+      
+        <meta name="author" content="n00bcodr">
+      
+      
+        <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/12.17/seerr/seerr-settings/">
+      
+      
+      
+        <link rel="prev" href="../seerr-features/">
+      
+      
+        <link rel="next" href="../permission-audit/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="zensical-0.1.2">
+    
+    
+  
+  
+    
+      <title>Settings - Jellyfin Enhanced</title>
+    
+  
+
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/classic/main.0006804e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/classic/palette.813d4b3f.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Ubuntu:300,300i,400,400i,500,500i,700,700i%7CUbuntu+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Ubuntu";--md-code-font:"Ubuntu Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/touch.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Jellyfin Enhanced" class="md-header__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Jellyfin Enhanced
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Settings
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+  
+    
+  
+  <span class="je-tab-label">Home</span>
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../open-in-jellyfin/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"/></svg>
+  
+  <span class="je-tab-label">Getting Started</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/enhanced-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"/></svg>
+  
+  <span class="je-tab-label">Enhanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../enhanced/tags/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"/></svg>
+  
+  <span class="je-tab-label">Tags & Badges</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../spoiler-guard/spoiler-guard-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"/></svg>
+  
+  <span class="je-tab-label">Spoiler Guard</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../seerr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"/></svg>
+  
+  <span class="je-tab-label">Seerr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../arr/arr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"/></svg>
+  
+  <span class="je-tab-label">*arr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../elsewhere/elsewhere-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2m1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+  
+  <span class="je-tab-label">Elsewhere & Reviews</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../other/other-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"/></svg>
+  
+  <span class="je-tab-label">Other</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/community-analytics/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"/></svg>
+  
+  <span class="je-tab-label">Community Analytics</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/css-customization/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>
+  
+  <span class="je-tab-label">Advanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../faq-support/faq/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"/></svg>
+  
+  <span class="je-tab-label">Help</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    Jellyfin Enhanced
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"/></svg>
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../open-in-jellyfin/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Open in Jellyfin
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/installation/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/compatibility/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Compatibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/settings-overview/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Settings Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/pages-and-tabs/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    JE Pages & Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"/></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"/></svg>
+  
+  <span class="md-ellipsis">
+    Enhanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Enhanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/enhanced-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"/></svg>
+  
+  <span class="md-ellipsis">
+    Tags & Badges
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Tags & Badges
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-layouts/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Layouts & Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-quality/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Quality, Genre & Language
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-groups/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Ratings, Awards & More
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-status/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Status Badges
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enhanced/tags-server/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Server & Styles
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Spoiler Guard
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Spoiler Guard
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"/></svg>
+  
+  <span class="md-ellipsis">
+    Seerr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Seerr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../seerr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Setup
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-enable-jellyfin-sign-in-in-seerr" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 1: Enable Jellyfin Sign-In in Seerr
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-import-jellyfin-users" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 2: Import Jellyfin Users
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-configure-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 3: Configure Plugin
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-configure-user-import-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 4: Configure User Import (Optional)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Optional Features
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Optional Features">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#search-and-collection-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Search and collection results
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enable-4k-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Enable 4K Requests
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enable-4k-tv-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Enable 4K TV Requests
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#show-advanced-request-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Show Advanced Request Options
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#more-info-and-detail-links" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        More Info and detail links
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#show-report-issue-button" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Show 'Report Issue' Button
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#streaming-providers" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Streaming providers
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#item-pages-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Item Pages Discovery
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#more-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        More discovery
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#discovery-filters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Discovery filters
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-requested-media-to-watchlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add Requested Media to Watchlist
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sync-seerr-watchlist-to-jellyfin" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sync Seerr Watchlist to Jellyfin
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sync-jellyfin-watchlist-to-seerr" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sync Jellyfin Watchlist to Seerr
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#watchlist-removals" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Watchlist Removals
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#only-allow-requesting-one-season-at-a-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Only Allow Requesting One Season at a Time
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-import-jellyfin-users-to-seerr" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Auto Import Jellyfin Users to Seerr
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#automatic-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Automatic requests
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Automatic requests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#auto-season-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Auto Season Requests
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-movie-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Auto Movie Requests
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-request-removal" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Auto Request Removal
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recently-added-sync-to-seerr" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recently Added Sync to Seerr
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#requests-page-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Requests Page Management
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Requests Page Management">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#enable-requests-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Enable Requests Page
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#show-downloads-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Show Downloads Section
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#show-seerr-issues-section" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Show Seerr Issues Section
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-refresh-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Auto-Refresh Settings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#seerr-recommendations-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Seerr Recommendations Page
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#debug-and-caching" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Debug and caching
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../permission-audit/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Permission Audit
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"/></svg>
+  
+  <span class="md-ellipsis">
+    *arr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            *arr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/troubleshooting-support/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"/></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2m1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+  
+  <span class="md-ellipsis">
+    Elsewhere & Reviews
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            Elsewhere & Reviews
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"/></svg>
+  
+  <span class="md-ellipsis">
+    Other
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            Other
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"/></svg>
+  
+  <span class="md-ellipsis">
+    Community Analytics
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            Community Analytics
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    What's collected
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics-dashboard/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Live Dashboard
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Advanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            Advanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/css-customization/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    CSS Customization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/api/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/project-structure/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Project Structure
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/admin-media-tags/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Admin Media Tags Tab
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"/></svg>
+  
+  <span class="md-ellipsis">
+    Help
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            Help
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/faq/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/report-issues/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Report Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/feature-requests/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Feature Requests
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/contributing-translations/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Contributing Translations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/support/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Support + Community
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other-projects/other-projects/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Related Projects
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    About
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+  
+  
+                  
+
+  
+  
+
+
+<h1 id="seerr-settings">Seerr Settings<a class="headerlink" href="#seerr-settings" title="Permanent link">&para;</a></h1>
+<p>Configure the connection, user access, requests, discovery, and server automations here. For the workflows, see <a href="../seerr-features/">Seerr features</a>; for account and permission checks, see <a href="../permission-audit/">Permission Audit</a>.</p>
+<p>All settings here are <strong>admin (server) settings</strong> unless marked as per-user.</p>
+<div class="admonition note">
+<p class="admonition-title">Seerr controls account access</p>
+<p>Permissions and quotas belong to the linked Seerr account. Enabling a JE feature does not grant those permissions.</p>
+</div>
+<h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=seerr&amp;card=seerr-connection-setup">Seerr &gt; Seerr Connection Setup</a></p>
+<div class="admonition note">
+<p class="admonition-title">Before you start</p>
+<p>You need a reachable Seerr instance, its API key, and Seerr accounts linked to your Jellyfin users. API calls need an address reachable from the Jellyfin server; browser-facing Seerr links need an address your users can reach.</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p>JE sends API calls through the Jellyfin server, keeping the Seerr API key out of the browser and avoiding browser CORS requirements.</p>
+</details>
+<h3 id="step-1-enable-jellyfin-sign-in-in-seerr">Step 1: Enable Jellyfin Sign-In in Seerr<a class="headerlink" href="#step-1-enable-jellyfin-sign-in-in-seerr" title="Permanent link">&para;</a></h3>
+<p>Let Jellyfin users sign in to Seerr.</p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>In Seerr's <strong>Settings</strong> → <strong>Users</strong>, enable <strong>Enable Jellyfin Sign-In</strong> and save.</li>
+<li>Configure Seerr's Jellyfin connection before importing users.</li>
+</ol>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/jellyfin-signin.png"><img alt="Example of Jellyfin sign-in settings in Seerr" src="../../images/jellyfin-signin.png" /></a>
+<em>This upstream example includes a legacy Jellyseerr annotation. Allowing new users to sign in there is separate from JE's automatic import.</em></p>
+<details class="note">
+<summary>Details</summary>
+<p>The upstream interface can differ between Seerr versions.</p>
+</details>
+<h3 id="step-2-import-jellyfin-users">Step 2: Import Jellyfin Users<a class="headerlink" href="#step-2-import-jellyfin-users" title="Permanent link">&para;</a></h3>
+<p>Import the Jellyfin accounts you want to use with Seerr.</p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>In Seerr's <strong>Users</strong> page, use <strong>Import Jellyfin Users</strong>.</li>
+<li>Select the accounts and press <strong>Import</strong>.</li>
+</ol>
+<p>You can instead use JE's <a href="#step-4-configure-user-import-optional">automatic or manual import</a>.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/users-with-access.png"><img alt="Imported Jellyfin users in Seerr" src="../../images/users-with-access.png" /></a>
+<em>Imported accounts still need the appropriate Seerr permissions.</em></p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/users-no-access.png"><img alt="Selecting Jellyfin accounts in Seerr's import dialog" src="../../images/users-no-access.png" /></a>
+<em>This is an import selection dialog. Sample usernames do not establish whether an account has request access.</em></p>
+<details class="info">
+<summary>How it works</summary>
+<p>JE links accounts by the normalized Jellyfin user ID stored in Seerr's <code>jellyfinUserId</code>. Matching usernames alone does not link accounts.</p>
+</details>
+<h3 id="step-3-configure-plugin">Step 3: Configure Plugin<a class="headerlink" href="#step-3-configure-plugin" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=seerr&amp;card=seerr-connection-setup">Seerr &gt; Seerr Connection Setup</a></p>
+<p>Enter your connection details in JE to enable Seerr features.</p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>Open <strong>Dashboard</strong> → <strong>Plugins</strong> → <strong>Jellyfin Enhanced</strong> → <a href="../../open-in-jellyfin/?tab=seerr"><strong>Seerr</strong></a>.</li>
+<li>Under <strong>Seerr Connection Setup</strong>, turn on <strong>Enable Seerr integration</strong>.</li>
+<li>Enter <strong>Seerr URL(s) (One per line)</strong> and <strong>Seerr API Key</strong>. The configuration help points to Seerr's <strong>Settings</strong> → <strong>General Settings</strong> → <strong>API Key</strong> for the key.</li>
+<li>Press <strong>Test</strong> beside the Seerr key.</li>
+<li>Leave <strong>Show Seerr Results in Search</strong> enabled if you want search integration. Add a <strong>TMDB API Key</strong> for the features that need it.</li>
+<li>Press <strong>Save Settings</strong>, then verify user access with <a href="../permission-audit/">Permission Audit</a>.</li>
+</ol>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/seerr.webp"><img alt="Seerr connection setup and successful test" src="../../images/admin/seerr.webp" /></a></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Seerr integration</strong></td>
+<td>Off</td>
+<td>Enables Seerr features independently of the search-results switch.</td>
+</tr>
+<tr>
+<td><strong>Seerr URL(s) (One per line)</strong></td>
+<td>Empty</td>
+<td>Connection addresses for calls from the Jellyfin server.</td>
+</tr>
+<tr>
+<td><strong>Seerr API Key</strong></td>
+<td>Empty</td>
+<td>Authenticates server calls to Seerr.</td>
+</tr>
+<tr>
+<td><strong>TMDB API Key</strong></td>
+<td>Empty</td>
+<td>Shared with Elsewhere; enables the additional TMDB features listed below.</td>
+</tr>
+<tr>
+<td><strong>Seerr URL Mappings</strong></td>
+<td>Empty</td>
+<td>Under <strong>Advanced URL Mappings</strong>. Maps the Jellyfin address used by a client to a browser-facing Seerr address; see <a href="../seerr-features/#url-mappings">URL Mappings</a>.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Testing and connection addresses</p>
+<p><strong>Test</strong> uses the entered values, including unsaved changes. It does not verify each user's linkage or permissions. Use an address reachable from the Jellyfin server or container. Multiple addresses should reach the same Seerr installation.</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p>If a public proxy requires an interactive login, use an internal service address for API calls and a public address in the mappings.</p>
+<p>Saved URL lines must parse as HTTP or HTTPS addresses; invalid lines are dropped. Proxy calls try configured addresses until one succeeds; some background tasks use only the first address.</p>
+<p>The shared <strong>TMDB API Key</strong> is required for automatic movie requests, studio-produced TV discovery, and streaming-provider displays. It also provides fallback collection metadata. Ordinary Seerr search does not require a separate TMDB key.</p>
+</details>
+<h3 id="step-4-configure-user-import-optional">Step 4: Configure User Import (Optional)<a class="headerlink" href="#step-4-configure-user-import-optional" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=seerr&amp;card=users">Seerr &gt; Users</a></p>
+<p>Let JE create missing Seerr accounts automatically, or import users when you choose.</p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>For automatic import, enable <strong>Auto import Jellyfin users to Seerr</strong> and save.</li>
+<li>For an immediate import, press <strong>Import Users Now</strong>. This saves the current configuration and imports unblocked users.</li>
+<li>Read the imported/total counts and any returned errors. Reaching Seerr does not mean every account was imported.</li>
+</ol>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/seerr-users.webp"><img alt="Seerr user import controls and blocked user selection" src="../../images/admin/seerr-users.webp" /></a></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Auto import Jellyfin users to Seerr</strong></td>
+<td>Off</td>
+<td>Imports missing accounts as needed and on a schedule. Already imported users are skipped.</td>
+</tr>
+<tr>
+<td><strong>Blocked Users</strong></td>
+<td>None</td>
+<td>Excludes selected Jellyfin accounts from JE's Seerr user lookup and import, and from watchlist monitoring/sync.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Import requirements and access</p>
+<p><strong>Import Users Now</strong> is an administrator action. It works with automatic import off, but the saved integration must be enabled and saved URLs/key must be nonempty. Importing an account does not grant all request permissions. <strong>Blocked Users</strong> is not a universal gate on direct server automations; see <a href="../seerr-features/#auto-request-settings">automation limits</a>.</p>
+</div>
+<p>The <strong>Import Jellyfin Users to Seerr</strong> scheduled task runs every six hours by default when automatic import is enabled. Change its trigger under <strong>Dashboard</strong> → <strong>Scheduled Tasks</strong>.</p>
+<details class="note">
+<summary>Details</summary>
+<p>Just-in-time import can run during user resolution for search and other proxy operations.</p>
+<p>The manual import endpoint, <code>POST /JellyfinEnhanced/jellyseerr/import-users</code>, rejects non-admins. Disabled integration returns HTTP 400 with <code>Jellyseerr integration is not enabled</code>; missing credentials return HTTP 400 with <code>Jellyseerr URL or API key not configured</code>. Imports normally have a 30-second throttle (HTTP 429: <code>Import was run recently. Please wait before retrying.</code>). If no users were imported and errors were returned, JE resets the throttle so you can fix the problem and retry.</p>
+</details>
+<p>For conflicting-email errors, inspect Seerr for an old or duplicate account before changing anything. Verify the account's stored Jellyfin user ID, then run <a href="../permission-audit/">Permission Audit</a>.</p>
+<h2 id="optional-features">Optional Features<a class="headerlink" href="#optional-features" title="Permanent link">&para;</a></h2>
+<h3 id="search-and-collection-results">Search and collection results<a class="headerlink" href="#search-and-collection-results" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=seerr&amp;card=search-requests">Seerr &gt; Search &amp; Requests</a></p>
+<p>Add requestable titles and collections to Jellyfin search.</p>
+<p><strong>How to use:</strong> Choose the options below. See <a href="../seerr-features/#search-integration">Search Integration</a> and <a href="../seerr-features/#collection-requests">collection requests</a>.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/seerr-discovery.webp"><img alt="Seerr search, request and discovery switches" src="../../images/admin/seerr-discovery.webp" /></a></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show Seerr Results in Search</strong></td>
+<td>On</td>
+<td>Adds Seerr results to Jellyfin search when integration and user access are working.</td>
+</tr>
+<tr>
+<td><strong>Exclude search items already in library</strong></td>
+<td>Off</td>
+<td>Hides library matches from search, including partially owned series and lower-quality movie copies.</td>
+</tr>
+<tr>
+<td><strong>Show Collections in Seerr Results</strong></td>
+<td>On</td>
+<td>Derives collection cards from matching movies. Depends on <strong>Show Seerr Results in Search</strong>.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Search exclusions</p>
+<p>Excluding library matches can hide opportunities to request missing seasons or 4K copies. Use a series' <strong>Request More</strong> action or Seerr directly if search exclusion hides something you want to request.</p>
+</div>
+<details class="note">
+<summary>Details</summary>
+<p>The search exclusion is independent of <strong>Exclude items already in library</strong>, which controls discovery and recommendation cards.</p>
+</details>
+<h3 id="enable-4k-requests">Enable 4K Requests<a class="headerlink" href="#enable-4k-requests" title="Permanent link">&para;</a></h3>
+<p>Show 4K movie request actions.</p>
+<p><strong>How to use:</strong> Open <a href="../../open-in-jellyfin/?tab=seerr&amp;card=search-requests"><strong>Seerr</strong> → <strong>Search &amp; Requests</strong></a> and turn on <strong>Enable 4K Requests</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable 4K Requests</strong></td>
+<td>Off</td>
+<td>Exposes 4K movie requests. Needs a suitable Seerr 4K Radarr destination and permissions; Seerr still validates the request.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">4K movie requirements</p>
+<p>Seerr needs a configured 4K Radarr destination and suitable permissions for 4K movie requests.</p>
+</div>
+<h3 id="enable-4k-tv-requests">Enable 4K TV Requests<a class="headerlink" href="#enable-4k-tv-requests" title="Permanent link">&para;</a></h3>
+<p>Show 4K season requests alongside normal-quality requests.</p>
+<p><strong>How to use:</strong> Open <a href="../../open-in-jellyfin/?tab=seerr&amp;card=search-requests"><strong>Seerr</strong> → <strong>Search &amp; Requests</strong></a> and turn on <strong>Enable 4K TV Requests</strong>. See <a href="../seerr-features/#4k-tv-requesting">4K TV Requesting</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable 4K TV Requests</strong></td>
+<td>Off</td>
+<td>Exposes <strong>Request in 4K</strong>, opening the season dialog in 4K mode. Normal and 4K availability are tracked separately. Needs a suitable Seerr 4K Sonarr destination and permissions.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">4K series requirements</p>
+<p>Seerr needs a configured 4K Sonarr destination and suitable 4K series permissions.</p>
+</div>
+<h3 id="show-advanced-request-options">Show Advanced Request Options<a class="headerlink" href="#show-advanced-request-options" title="Permanent link">&para;</a></h3>
+<p>Let authorized users choose <strong>Destination Server</strong>, <strong>Quality Profile</strong>, and <strong>Root Folder</strong> in request dialogs. Quota information shows their remaining request allowance.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/seerr/movie-request-advanced.webp"><img alt="Movie request dialog for a 4K request, with Radarr 4K, Ultra-HD and a 4K root folder preselected under Advanced Options" src="../../images/seerr/movie-request-advanced.webp" /></a></p>
+<p>For movies, choose <strong>Request in 4K</strong> before opening the dialog; its title remains <strong>Request Movie</strong>, and matching 4K destination defaults are selected when supplied.</p>
+<p><strong>How to use:</strong> Open <a href="../../open-in-jellyfin/?tab=seerr&amp;card=search-requests"><strong>Seerr</strong> → <strong>Search &amp; Requests</strong></a> and choose the options below. See <a href="../seerr-features/#advanced-request-options">advanced request options</a> and <a href="../seerr-features/#request-quotas">request quotas</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show advanced request options</strong></td>
+<td>Off</td>
+<td>Shows destination choices to authorized linked users.</td>
+</tr>
+<tr>
+<td><strong>Show request quota info</strong></td>
+<td>On</td>
+<td>Shows finite Seerr quota usage, its rolling window, and estimated next-slot availability when supplied. Enables detailed quota-error handling.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p>Linked Jellyfin/Seerr administrators and users with <code>REQUEST_ADVANCED</code> or <code>MANAGE_REQUESTS</code> can use advanced options. Unauthorized fields are hidden and stripped if submitted.</p>
+<p>Unlimited quotas show no chip. One or two remaining slots show a warning; exhausted quotas show a restricted state. A recognized quota-exceeded HTTP 403 opens <strong>Request limit reached</strong> with retry guidance and advice to contact an admin. Turning quota information off uses simpler error handling; it does not remove the Seerr quota.</p>
+</details>
+<h3 id="more-info-and-detail-links">More Info and detail links<a class="headerlink" href="#more-info-and-detail-links" title="Permanent link">&para;</a></h3>
+<p>Choose how result posters and Seerr detail links open.</p>
+<p><strong>How to use:</strong> Open <a href="../../open-in-jellyfin/?tab=seerr&amp;card=discovery-ui-extras"><strong>Seerr</strong> → <strong>Discovery &amp; UI Extras</strong></a> and choose the options below. See <a href="../seerr-features/#more-info">More Info</a> and <a href="../seerr-features/#item-details">Item Details</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Open results in "More Info" modal</strong></td>
+<td>On</td>
+<td>Opens non-library result details in JE's modal instead of following an external Seerr link. Also controls the Seerr detail-page link.</td>
+</tr>
+<tr>
+<td><strong>Link available items' posters straight to Jellyfin</strong></td>
+<td>Off</td>
+<td>Makes available posters open their Jellyfin item directly. Available title links already lead to Jellyfin.</td>
+</tr>
+<tr>
+<td><strong>Show Seerr link on item detail pages</strong></td>
+<td>On</td>
+<td>Adds a Seerr link to the <strong>External Links</strong> row for TMDB-identified movies/series, independently of *arr links.</td>
+</tr>
+<tr>
+<td><strong>Show as text instead of icon</strong></td>
+<td>Off</td>
+<td>Uses a text Seerr detail link. Depends on <strong>Show Seerr link on item detail pages</strong>.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p>Collection cards and membership badges use the collection request dialog. More Info's refresh button updates status and seasons manually; it does not continuously poll.</p>
+</details>
+<h3 id="show-report-issue-button">Show 'Report Issue' Button<a class="headerlink" href="#show-report-issue-button" title="Permanent link">&para;</a></h3>
+<p>Let users report media problems from Jellyfin detail pages.</p>
+<p><strong>How to use:</strong> Open <a href="../../open-in-jellyfin/?tab=seerr&amp;card=discovery-ui-extras"><strong>Seerr</strong> → <strong>Discovery &amp; UI Extras</strong></a> and enable the report button. See <a href="../seerr-features/#issue-reporting">Issue Reporting</a> for item eligibility, permissions, and the report form.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show "Report Issue" button on items</strong></td>
+<td>Off</td>
+<td>Adds reporting to eligible movie, series, season, and episode details.</td>
+</tr>
+<tr>
+<td><strong>Show open issue indicator</strong></td>
+<td>Off</td>
+<td>Colors the report icon orange and shows the open-issue count, visually capped at <code>9+</code>. Depends on the report-button switch.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Issue permissions</p>
+<p>Reporting needs a linked account and creation permission. Viewing existing reports and the count needs viewing permission. Manage issue status and conversations in Seerr.</p>
+</div>
+<details class="note">
+<summary>Details</summary>
+<p>Both the modal and indicator fetch at most 50 global issue entries and filter them by title, so older matching reports can be absent. The modal shows existing reports/comments and submits new reports.</p>
+</details>
+<h3 id="streaming-providers">Streaming providers<a class="headerlink" href="#streaming-providers" title="Permanent link">&para;</a></h3>
+<p>Show subscription-provider icons on Seerr posters.</p>
+<p><strong>How to use:</strong> Open <a href="../../open-in-jellyfin/?tab=seerr&amp;card=discovery-ui-extras"><strong>Seerr</strong> → <strong>Discovery &amp; UI Extras</strong></a> and turn on <strong>Show Streaming Providers on Posters</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show Streaming Providers on Posters</strong></td>
+<td>Off</td>
+<td>Adds up to four subscription-provider icons from the admin's default Elsewhere region and provider filters (or each user's Seerr streaming region when that Elsewhere option is on) to Seerr posters; needs a TMDB key or the Seerr integration.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Requires TMDB</p>
+<p>Configure <strong>TMDB API Key</strong> to show streaming providers.</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p>Poster icons use the server region (US by default), the server's provider selection (empty by default, meaning all), and provider exclusions (empty by default). Configure these under <a href="../../elsewhere/elsewhere-settings/">Elsewhere &amp; Reviews Settings</a>.</p>
+<p>More Info's <strong>Streaming</strong> section is independent of this switch. With TMDB configured, it uses your <strong>per-user Elsewhere region</strong>, then the server region, then US. If that region is absent from supplied data, it tries US and then the first supplied region. It shows up to six unique subscription providers.</p>
+</details>
+<h3 id="item-pages-discovery">Item Pages Discovery<a class="headerlink" href="#item-pages-discovery" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=seerr&amp;card=discovery-ui-extras">Seerr &gt; Discovery &amp; UI Extras</a></p>
+<p>Add related titles and follow-up season requests to item detail pages.</p>
+<p><strong>How to use:</strong> Choose the options under <strong>Item Pages Discovery</strong>. See <a href="../seerr-features/#item-details">Item Details</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show similar items</strong></td>
+<td>On</td>
+<td>Adds a <strong>Similar</strong> row to eligible movie/series details (season and episode pages use their series).</td>
+</tr>
+<tr>
+<td><strong>Show recommended items</strong></td>
+<td>On</td>
+<td>Adds a separate <strong>Recommended</strong> row.</td>
+</tr>
+<tr>
+<td><strong>Show "Request More" button on Series</strong></td>
+<td>On</td>
+<td>Adds <strong>Request More</strong> beside seasons when additional regular seasons with episodes are requestable.</td>
+</tr>
+<tr>
+<td><strong>Exclude items already in library</strong></td>
+<td>On</td>
+<td>Filters shared discovery/recommendation cards; separate from search exclusion.</td>
+</tr>
+<tr>
+<td><strong>Exclude blocklisted items</strong></td>
+<td>Off</td>
+<td>Filters Seerr blocklisted media from those cards. Declined requests are a different state.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Requirements</p>
+<p>Similar and recommended rows require a TMDB ID and working Seerr user access.</p>
+</div>
+<details class="note">
+<summary>Details</summary>
+<p>Each row has up to 20 items before filtering, without unlimited paging.</p>
+</details>
+<h3 id="more-discovery">More discovery<a class="headerlink" href="#more-discovery" title="Permanent link">&para;</a></h3>
+<p>Find titles beyond your library from genre, studio, tag, person, and collection pages.</p>
+<p><strong>How to use:</strong> Open <a href="../../open-in-jellyfin/?tab=seerr&amp;card=discovery-ui-extras"><strong>Seerr</strong> → <strong>Discovery &amp; UI Extras</strong></a> → <strong>"More" Discovery</strong> and enable the types you want. See <a href="../seerr-features/#discovery-pages">Discovery Pages</a> for routes and matching requirements.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show "More from Network"</strong></td>
+<td>On</td>
+<td>Adds network/production-company discovery to Jellyfin studio pages. Studio-produced TV needs the separate TMDB key.</td>
+</tr>
+<tr>
+<td><strong>Show "More Genre"</strong></td>
+<td>On</td>
+<td>Adds genre discovery to Jellyfin genre pages.</td>
+</tr>
+<tr>
+<td><strong>Show "More Tag"</strong></td>
+<td>On</td>
+<td>Adds discovery using a TMDB keyword matched from the Jellyfin tag.</td>
+</tr>
+<tr>
+<td><strong>Show "More from Actor"</strong></td>
+<td>On</td>
+<td>Adds filmography discovery to person pages using a TMDB ID or name search.</td>
+</tr>
+<tr>
+<td><strong>Show missing collection movies</strong></td>
+<td>On</td>
+<td>Shows missing movies with request buttons on BoxSet pages that have a TMDB collection ID.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="discovery-filters">Discovery filters<a class="headerlink" href="#discovery-filters" title="Permanent link">&para;</a></h3>
+<p>Choose which filters the <strong>Filters</strong> button of a "More" section offers. A filter turned off is never offered, to anyone. Viewers have no per-user setting for these.</p>
+<p><strong>How to use:</strong> Open <a href="../../open-in-jellyfin/?tab=seerr&amp;card=discovery-ui-extras"><strong>Seerr</strong> → <strong>Discovery &amp; UI Extras</strong></a> → <strong>Filters in the "More" sections</strong> and turn off the filters you don't want. See <a href="../seerr-features/#filters-sort-and-roles">Filters, sort and roles</a> for how viewers use them.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Released</strong></td>
+<td>On</td>
+<td>A range of years, months or days.</td>
+</tr>
+<tr>
+<td><strong>Score</strong></td>
+<td>On</td>
+<td>A range of TMDB user scores, from 0 to 10.</td>
+</tr>
+<tr>
+<td><strong>Votes</strong></td>
+<td>On</td>
+<td>A range for the number of TMDB user votes.</td>
+</tr>
+<tr>
+<td><strong>Runtime</strong></td>
+<td>On</td>
+<td>A runtime range, in minutes. List pages only.</td>
+</tr>
+<tr>
+<td><strong>Genres</strong></td>
+<td>On</td>
+<td>Genres a title must have, and genres it must not have.</td>
+</tr>
+<tr>
+<td><strong>Original language</strong></td>
+<td>On</td>
+<td>Original languages a title must be in, and ones it must not be in.</td>
+</tr>
+<tr>
+<td><strong>Content rating</strong></td>
+<td>On</td>
+<td>The ratings used in your <strong>Default Region</strong> (<a href="../../open-in-jellyfin/?tab=elsewhere&amp;card=tmdb"><strong>Elsewhere &amp; Reviews</strong></a> tab). US ratings where TMDB has none for it. List pages only.</td>
+</tr>
+<tr>
+<td><strong>Streaming services</strong></td>
+<td>On</td>
+<td>The services available in your <strong>Default Region</strong> (<a href="../../open-in-jellyfin/?tab=elsewhere&amp;card=tmdb"><strong>Elsewhere &amp; Reviews</strong></a> tab). List pages only.</td>
+</tr>
+<tr>
+<td><strong>Keywords</strong></td>
+<td>On</td>
+<td>Keywords a title must have, and keywords it must not have. List pages only.</td>
+</tr>
+<tr>
+<td><strong>Role (actor pages)</strong></td>
+<td>On</td>
+<td>What the person did in a title: acting, or a crew department such as Directing or Writing. Person pages only.</td>
+</tr>
+</tbody>
+</table>
+<p>The tabs (<strong>All</strong>, <strong>Movies</strong>, <strong>Series</strong>) and the sort have no switch. The filters reach Seerr's discover feeds; series by a studio come from TMDB directly, which needs the TMDB key described under <strong>Show "More from Network"</strong>.</p>
+<h3 id="add-requested-media-to-watchlist">Add Requested Media to Watchlist<a class="headerlink" href="#add-requested-media-to-watchlist" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=seerr&amp;card=watchlist">Seerr &gt; Watchlist</a></p>
+<p>Add requested titles to the requester's Jellyfin watchlist as they reach the library, or sync watchlist entries between Seerr and Jellyfin.</p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>Enable the options you want.</li>
+<li>Save your settings.</li>
+<li>After enabling requested-media monitoring, restart Jellyfin or run <strong>Jellyfin Enhanced Startup</strong> once to start watching for library additions and updates.</li>
+</ol>
+<p>See <a href="../seerr-features/#watchlist-sync">Watchlist Sync</a> for schedules, limits, and additive behavior.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Add requested media to Watchlist</strong></td>
+<td>Off</td>
+<td>Adds requested movies/series to the requester's Jellyfin watchlist when library additions or updates match them, including requests made outside JE.</td>
+</tr>
+<tr>
+<td><strong>Sync Seerr Watchlist → Jellyfin</strong></td>
+<td>Off</td>
+<td>Enables incoming scheduled watchlist sync. That task also includes requests when the requested-media switch is on.</td>
+</tr>
+<tr>
+<td><strong>Sync Jellyfin Watchlist → Seerr</strong></td>
+<td>Off</td>
+<td>Enables outgoing scheduled watchlist sync for linked accounts and TMDB-identified movies/series.</td>
+</tr>
+<tr>
+<td><strong>Prevent re-adding removed items</strong></td>
+<td>On</td>
+<td>Remembers processed items so removing one from Jellyfin's watchlist does not cause it to be added again during incoming sync/monitoring.</td>
+</tr>
+<tr>
+<td><strong>Memory retention (days):</strong></td>
+<td>365</td>
+<td>Keeps processed-item memory for this many days; input range 1–3650. Applies when re-addition prevention is on.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p>The <a href="https://github.com/ranaldsgift/KefinTweaks">KefinTweaks plugin</a> provides the Jellyfin watchlist interface. Sync switches are checked when their scheduled tasks run. The two add syncs never remove anything; removals are handled by <strong>Sync Watchlist Removals</strong> (see <a href="../seerr-features/#watchlist-removal-sync">Watchlist Removal Sync</a>).</p>
+</details>
+<h3 id="sync-seerr-watchlist-to-jellyfin">Sync Seerr Watchlist to Jellyfin<a class="headerlink" href="#sync-seerr-watchlist-to-jellyfin" title="Permanent link">&para;</a></h3>
+<p>Bring Seerr watchlist entries into Jellyfin with a scheduled task. It runs daily at 03:00 by default.</p>
+<p><strong>How to use:</strong> Enable <strong>Sync Seerr Watchlist → Jellyfin</strong>, then adjust or run <strong>Sync Watchlist from Seerr to Jellyfin</strong> under <strong>Dashboard</strong> → <strong>Scheduled Tasks</strong>. See <a href="../seerr-features/#watchlist-sync">Watchlist Sync</a>.</p>
+<h3 id="sync-jellyfin-watchlist-to-seerr">Sync Jellyfin Watchlist to Seerr<a class="headerlink" href="#sync-jellyfin-watchlist-to-seerr" title="Permanent link">&para;</a></h3>
+<p>Bring Jellyfin watchlist entries into Seerr with a scheduled task. It runs daily at 03:30 by default.</p>
+<p><strong>How to use:</strong> Enable <strong>Sync Jellyfin Watchlist → Seerr</strong>, then adjust or run <strong>Sync Watchlist from Jellyfin to Seerr</strong> under <strong>Dashboard</strong> → <strong>Scheduled Tasks</strong>.</p>
+<h3 id="watchlist-removals">Watchlist Removals<a class="headerlink" href="#watchlist-removals" title="Permanent link">&para;</a></h3>
+<p>Choose whose removals are copied to the other watchlist: <strong>Jellyfin decides</strong> (default), <strong>Seerr decides</strong>, <strong>Both stay in sync</strong>, or <strong>Never</strong>. Runs as <strong>Sync Watchlist Removals between Jellyfin and Seerr</strong>, daily at 04:00 by default. See <a href="../seerr-features/#watchlist-removal-sync">Watchlist Removal Sync</a>.</p>
+<h3 id="only-allow-requesting-one-season-at-a-time">Only Allow Requesting One Season at a Time<a class="headerlink" href="#only-allow-requesting-one-season-at-a-time" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Removes <strong>Select All</strong> from the season modal and lets users tick only one season per request</li>
+<li>Applies everywhere the season modal opens (search, more info, item details)</li>
+<li>Needs <strong>Partial requests</strong> enabled in Seerr; otherwise Seerr requires all seasons and this setting has no effect</li>
+</ul>
+<h3 id="auto-import-jellyfin-users-to-seerr">Auto Import Jellyfin Users to Seerr<a class="headerlink" href="#auto-import-jellyfin-users-to-seerr" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=seerr&amp;card=users">Seerr &gt; Users</a></p>
+<p>Let JE create missing Seerr accounts for Jellyfin users.</p>
+<p><strong>How to use:</strong> Follow <a href="#step-4-configure-user-import-optional">Configure User Import</a> for the controls and manual action. Use <a href="../permission-audit/">Permission Audit</a> after linking accounts or changing their permissions.</p>
+<h2 id="automatic-requests">Automatic requests<a class="headerlink" href="#automatic-requests" title="Permanent link">&para;</a></h2>
+<p>Request the next season or collection movie based on playback. These server automations can also react to native-client playback events.</p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>Enable Seerr and the relevant automation below.</li>
+<li>Save, then restart Jellyfin or run <strong>Jellyfin Enhanced Startup</strong> once.</li>
+</ol>
+<p>See <a href="../seerr-features/#auto-request-settings">Auto-Request Settings</a> for triggers and policy limits.</p>
+<h3 id="auto-season-requests">Auto Season Requests<a class="headerlink" href="#auto-season-requests" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=seerr&amp;card=auto-season-requests">Seerr &gt; Auto Season Requests</a></p>
+<p>Request the next numeric season near the end of the current one.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Automatic Advance Season Requests</strong></td>
+<td>Off</td>
+<td>Requests the next numeric season using the playback user's linked Seerr account when the threshold is met.</td>
+</tr>
+<tr>
+<td><strong>Require All Prior Episodes Watched</strong></td>
+<td>Off</td>
+<td>Requires earlier episodes present in the current Jellyfin season to be watched or marked watched. Does not require the current or later episodes to be watched.</td>
+</tr>
+<tr>
+<td><strong>Episodes Remaining Threshold</strong></td>
+<td>2</td>
+<td>Triggers when upstream season episode count minus current episode number is at most this value; input range 1–20.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Season request requirements</p>
+<p>You need a series TMDB ID and usable Seerr request access. Episode counts come through Seerr; a separate TMDB key is not required.</p>
+</div>
+<h3 id="auto-movie-requests">Auto Movie Requests<a class="headerlink" href="#auto-movie-requests" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=seerr&amp;card=auto-movie-requests">Seerr &gt; Auto Movie Requests</a></p>
+<p>Request the next collection movie based on playback.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Auto Movie Requests</strong></td>
+<td>Off</td>
+<td>Considers the immediately following movie in Seerr's returned collection entries. Needs a TMDB ID, collection membership, JE's TMDB key and linked user access.</td>
+</tr>
+<tr>
+<td><strong>When movie starts</strong></td>
+<td>Off</td>
+<td>Checks at most five minutes in and below 5% playback.</td>
+</tr>
+<tr>
+<td><strong>After X minutes watched</strong></td>
+<td>On</td>
+<td>Checks after playback reaches the position threshold. Seeking or resuming can meet it.</td>
+</tr>
+<tr>
+<td><strong>Minutes Watched Threshold:</strong></td>
+<td>20</td>
+<td>Playback-position threshold in minutes; input range 1–180.</td>
+</tr>
+<tr>
+<td><strong>Only request if released</strong></td>
+<td>On</td>
+<td>Skips a movie with a valid future release date. Missing/unparseable dates do not block a request.</td>
+</tr>
+<tr>
+<td><strong>Quality Profile Mode:</strong></td>
+<td><strong>Default</strong></td>
+<td><strong>Default</strong> lets Seerr choose. <strong>Original</strong> copies settings from the watched movie's first Seerr request. <strong>Custom</strong> sends the configured selections below. A 4K Radarr server is requested as a 4K request.</td>
+</tr>
+<tr>
+<td><strong>Use default instead of 4K fallback</strong></td>
+<td>On</td>
+<td>In <strong>Original</strong>, falls back to Seerr defaults when the copied request was 4K. Turn off to preserve those 4K settings.</td>
+</tr>
+<tr>
+<td><strong>Radarr Server:</strong></td>
+<td>Unset</td>
+<td>Destination used only in <strong>Custom</strong>. A server marked <strong>(4K)</strong> is requested as a 4K request.</td>
+</tr>
+<tr>
+<td><strong>Quality Profile:</strong></td>
+<td>Unset</td>
+<td>Profile used only in <strong>Custom</strong>.</td>
+</tr>
+<tr>
+<td><strong>Root Folder:</strong></td>
+<td>Empty</td>
+<td>Folder used only in <strong>Custom</strong>.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Movie request requirements</p>
+<p>You need <strong>TMDB API Key</strong>, a TMDB-identified movie in a collection, and a linked account with usable request permissions.</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p><strong>Original</strong> uses Seerr request records, not the watched file's measured quality. It falls back to <strong>Default</strong> without usable original settings. <strong>Custom</strong> also falls back if no custom value is set. The service does not sort collection entries locally or search farther ahead when the next entry is already available/requested or is skipped by release checking.</p>
+<p>Start-only stores <code>OnStart</code>; both trigger choices store <code>Both</code>. The default trigger mode is <code>OnMinutesWatched</code>.</p>
+<p>The unset starting values are <code>-1</code> for <strong>Radarr Server:</strong> and <code>0</code> for <strong>Quality Profile:</strong>.</p>
+</details>
+<h3 id="auto-request-removal">Auto Request Removal<a class="headerlink" href="#auto-request-removal" title="Permanent link">&para;</a></h3>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=seerr&amp;card=auto-request-removal">Seerr &gt; Auto Request Removal</a></p>
+<p>Delete a Seerr request once the user who made it has watched it.</p>
+<p><strong>How to use:</strong> Enable the feature. The <strong>Remove watched requests from Seerr</strong> scheduled task runs daily at 04:30 and removes each request on the first run after its requester has watched it; run it from <strong>Dashboard</strong> → <strong>Scheduled Tasks</strong> to apply it at once.</p>
+<div class="admonition warning">
+<p class="admonition-title">Destructive: use with caution</p>
+<p>A deleted request cannot be restored, and its history is gone from Seerr. If request quotas are enabled in Seerr, removing a request also gives that quota back to the user, because Seerr counts quota from the requests that still exist. The same applies to the <strong>Remove request</strong> button on the Requests page.</p>
+</div>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Remove Watched Requests</strong></td>
+<td>Off</td>
+<td><code>AutoRequestRemovalEnabled</code>; deletes approved or completed requests once their requester has watched them. Only the request is deleted, never the media.</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../seerr-features/#auto-request-removal">Auto Request Removal</a> for how movies and series are judged watched.</p>
+<h2 id="recently-added-sync-to-seerr">Recently Added Sync to Seerr<a class="headerlink" href="#recently-added-sync-to-seerr" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=seerr&amp;card=recently-added-sync-to-seerr">Seerr &gt; Recently Added Sync to Seerr</a></p>
+<p>Help Seerr discover availability after Jellyfin library additions by triggering its recently-added scan.</p>
+<p>For an administrator test, press <strong>Trigger scan now</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Trigger Seerr recently-added scan when new Jellyfin items are added</strong></td>
+<td>Off</td>
+<td>Triggers a scan after movie, series, season, and episode additions.</td>
+</tr>
+<tr>
+<td><strong>Debounce (seconds):</strong></td>
+<td>60</td>
+<td>Wait after the last addition; input range 5–3600 seconds.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Scan limits</p>
+<p>A scan does not complete downloading/importing or guarantee an immediate status update.</p>
+</div>
+<details class="info">
+<summary>How it works</summary>
+<p>New additions reset a timer. After the final event, JE waits for <strong>Debounce (seconds):</strong>, then dispatches the automatic scan to every configured Seerr URL.</p>
+<p><strong>Trigger scan now</strong> uses the entered URLs/key, including unsaved values, and stops at the first successful URL. It is an administrator action, not a saved setting.</p>
+<p>After startup initialization, changing the automatic scan switch requires no restart because its listener is always registered.</p>
+</details>
+<h2 id="requests-page-management">Requests Page Management<a class="headerlink" href="#requests-page-management" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=pages&amp;card=requests-page">Pages &gt; Requests Page</a></p>
+<p>The shared <a href="../seerr-features/#requests-page">Requests page</a> brings Seerr requests and optional issues together with *arr downloads/history. Download connection and visibility details also appear in <a href="../../arr/arr-settings/">*arr settings</a>.</p>
+<h3 id="enable-requests-page">Enable Requests Page<a class="headerlink" href="#enable-requests-page" title="Permanent link">&para;</a></h3>
+<p>Choose how users open Requests in Jellyfin.</p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>Open <a href="../../open-in-jellyfin/?tab=pages&amp;card=requests-page"><strong>Pages</strong> → <strong>Requests Page</strong></a> and turn on <strong>Enable Requests Page</strong>.</li>
+<li>Choose a navigation option below, or leave the navigation modes off for built-in navigation.</li>
+<li>Save your settings.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Requests Page</strong></td>
+<td>Off</td>
+<td>Enables the shared page. Seerr requests require enabled/configured Seerr and linked viewers; download sections need configured *arr services.</td>
+</tr>
+<tr>
+<td><strong>Add Requests as a native Home tab</strong></td>
+<td>Off</td>
+<td>Adds a native Home tab without a companion plugin. Recommended by the UI for Jellyfin 12's experimental layout.</td>
+</tr>
+<tr>
+<td><strong>Use Plugin Pages for Requests</strong></td>
+<td>Off</td>
+<td>Uses the <a href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages plugin</a> integration.</td>
+</tr>
+<tr>
+<td><strong>Use Custom Tabs for Requests</strong></td>
+<td>Off</td>
+<td>Embeds Requests with the <a href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs plugin</a>. Cannot be combined with the native Home tab.</td>
+</tr>
+<tr>
+<td><strong>Add the Custom Tabs entry for me</strong></td>
+<td>Off</td>
+<td>When the page and Custom Tabs mode are enabled, creates the matching entry on save. Turning Custom Tabs mode off removes the managed entry; turning it on recreates it.</td>
+</tr>
+</tbody>
+</table>
+<p>For routes, layout limits, Plugin Pages restart rules, and Custom Tabs setup, see <a href="../../getting-started/pages-and-tabs/#choose-a-placement">JE Pages &amp; Tabs</a>.</p>
+<h3 id="show-downloads-section">Show Downloads Section<a class="headerlink" href="#show-downloads-section" title="Permanent link">&para;</a></h3>
+<p>Show active downloads and recent import history alongside requests.</p>
+<p><strong>How to use:</strong> Open <a href="../../open-in-jellyfin/?tab=pages&amp;card=requests-page"><strong>Pages</strong> → <strong>Requests Page</strong></a> and choose the download visibility options below.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show Downloads in Requests Page</strong></td>
+<td>On</td>
+<td>Displays active *arr downloads. Also required to show the history section.</td>
+</tr>
+<tr>
+<td><strong>Filter Downloads by User Requests</strong></td>
+<td>On</td>
+<td>Limits queue/history for non-admins to content they requested through Seerr. Without usable Seerr linkage or matching requests, their results can be empty.</td>
+</tr>
+<tr>
+<td><strong>Show Download History Section</strong></td>
+<td>On</td>
+<td>Adds paginated recent import history.</td>
+</tr>
+<tr>
+<td><strong>Restrict Download History to Admins</strong></td>
+<td>Off</td>
+<td>Restricts history to Jellyfin administrators, enforced by the server.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition warning">
+<p class="admonition-title">Download visibility</p>
+<p>Administrators bypass download-user filtering. Turning it off exposes other users' queue/history entries to authenticated viewers, subject to the separate admin-only history setting.</p>
+</div>
+<p>Request visibility has its own Seerr permission rules. For progress, import outcomes, history bounds, and download search, see <a href="../../arr/arr-features/">*arr features</a>.</p>
+<h3 id="show-seerr-issues-section">Show Seerr Issues Section<a class="headerlink" href="#show-seerr-issues-section" title="Permanent link">&para;</a></h3>
+<p>Let authorized users browse Seerr issues on Requests.</p>
+<p><strong>How to use:</strong> Open <a href="../../open-in-jellyfin/?tab=pages&amp;card=requests-page"><strong>Pages</strong> → <strong>Requests Page</strong></a> and turn on <strong>Show Seerr Issues Section</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Show Seerr Issues Section</strong></td>
+<td>Off</td>
+<td>Adds <strong>Issues</strong> with <strong>Open</strong>/<strong>Resolved</strong> filters and pagination when Seerr is enabled.</td>
+</tr>
+</tbody>
+</table>
+<details class="note">
+<summary>Details</summary>
+<p>Linked ordinary users need <code>VIEW_ISSUES</code> or <code>MANAGE_ISSUES</code> to load issue data; linked Jellyfin/Seerr administrators bypass that local check. Issues returned by Seerr are subject to parental filtering. See <a href="../seerr-features/#issues-on-the-requests-page">Issues on the Requests page</a>.</p>
+</details>
+<h3 id="auto-refresh-settings">Auto-Refresh Settings<a class="headerlink" href="#auto-refresh-settings" title="Permanent link">&para;</a></h3>
+<p>Refresh Requests automatically while users browse.</p>
+<p><strong>How to use:</strong> Open <a href="../../open-in-jellyfin/?tab=pages&amp;card=requests-page"><strong>Pages</strong> → <strong>Requests Page</strong></a> and choose whether and how often to refresh.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Auto-Refresh</strong></td>
+<td>On</td>
+<td>Refreshes the page's requests, enabled downloads, issues, and history.</td>
+</tr>
+<tr>
+<td><strong>Poll Interval (seconds)</strong></td>
+<td>30</td>
+<td>Refresh interval when enabled; input range 30–300 seconds.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>How it works</summary>
+<p>Polling stops when you leave the standalone page or switch away from its native Home or Custom Tabs tab. With Plugin Pages, it can continue after navigation until you reload or close the browser page. Hidden browser tabs are skipped. An issue-read HTTP 403 suppresses repeated issue polling while that permission-denied state persists. The visible manual refresh/search controls belong to Downloads; request and issue lists use filters and pagination. Caching can still affect freshness.</p>
+</details>
+<h2 id="seerr-recommendations-page">Seerr Recommendations Page<a class="headerlink" href="#seerr-recommendations-page" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=pages&amp;card=seerr-recommendations-page">Pages &gt; Seerr Recommendations Page</a></p>
+<p>Give users a dedicated page for discovering movies and series.</p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>Enable the page and choose a navigation option below.</li>
+<li>Save your settings.</li>
+</ol>
+<p>See <a href="../seerr-features/#recommendations-page">Recommendations browsing</a> for using the page.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Enable Recommendations Page</strong></td>
+<td>Off</td>
+<td>Enables <strong>Seerr Recommendations</strong>.</td>
+</tr>
+<tr>
+<td><strong>Add Recommendations as a native Home tab</strong></td>
+<td>Off</td>
+<td>Adds a native Home tab without a companion plugin.</td>
+</tr>
+<tr>
+<td><strong>Use Plugin Pages</strong></td>
+<td>Off</td>
+<td>Uses Plugin Pages for Recommendations.</td>
+</tr>
+<tr>
+<td><strong>Use Custom Tabs</strong></td>
+<td>Off</td>
+<td>Embeds Recommendations with Custom Tabs; incompatible with its native Home tab.</td>
+</tr>
+<tr>
+<td><strong>Add the Custom Tabs entry for me</strong></td>
+<td>Off</td>
+<td>Creates the matching Custom Tabs entry on save when the page and Custom Tabs mode are enabled; disabling/re-enabling that mode removes/recreates the managed entry.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Connection requirements</p>
+<p>The page needs enabled/configured Seerr and a linked viewer.</p>
+</div>
+<p>For routes, layout limits, Plugin Pages restart rules, and Custom Tabs setup, see <a href="../../getting-started/pages-and-tabs/#choose-a-placement">JE Pages &amp; Tabs</a>.</p>
+<details class="note">
+<summary>Details</summary>
+<p>Discovery exclusions apply to shared cards. Studio-produced series require the separate TMDB key; studio and network logos are bundled and need no key.</p>
+</details>
+<h2 id="debug-and-caching">Debug and caching<a class="headerlink" href="#debug-and-caching" title="Permanent link">&para;</a></h2>
+<p><a class="je-open" href="../../open-in-jellyfin/?tab=seerr&amp;card=debug-caching">Seerr &gt; Debug &amp; Caching</a></p>
+<p>Use these controls to investigate stale status or permissions.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Disable server-side response cache</strong></td>
+<td>Off</td>
+<td>Fetches Seerr responses and account lookups without using the server cache.</td>
+</tr>
+<tr>
+<td><strong>Response Cache TTL (min)</strong></td>
+<td>10</td>
+<td>Minutes to keep cached Seerr responses, such as search and discovery.</td>
+</tr>
+<tr>
+<td><strong>User ID Cache TTL (min)</strong></td>
+<td>30</td>
+<td>Minutes to keep Jellyfin-to-Seerr account lookup results.</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>How it works</summary>
+<p>Both TTL inputs have a minimum of 1 minute and no HTML maximum. Disabling the cache increases upstream calls; it does not clear every browser cache.</p>
+<p>Saving JE configuration clears its Seerr server caches. <a href="../permission-audit/">Permission Audit</a> bypasses user lookup caching independently. A refresh control does not guarantee every cached layer has been cleared.</p>
+</details>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../seerr-features/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Features">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Features
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../permission-audit/" class="md-footer__link md-footer__link--next" aria-label="Next: Permission Audit">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Permission Audit
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  <p class="je-keyhint">
+    Press <kbd>/</kbd> to search, <kbd>P</kbd> or <kbd>N</kbd> for the previous or next page
+  </p>
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy;2026 n00bcodr. Made with 💜 for Jellyfin and the community
+    </div>
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      
+<div class="md-progress" data-md-component="progress" role="progressbar" aria-label="Loading"></div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.instant","navigation.instant.progress","navigation.tracking","navigation.tabs","navigation.tabs.sticky","navigation.sections","navigation.indexes","navigation.top","navigation.footer","toc.follow","toc.integrate","search.suggest","search.highlight","search.share","content.code.copy","content.code.annotate","content.tabs.link","announce.dismiss"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"default":"latest","provider":"mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
+      
+        <script src="../../javascripts/extra.js"></script>
+      
+    
+  </body>
+</html>

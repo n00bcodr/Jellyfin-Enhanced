@@ -1,0 +1,3352 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.">
+      
+      
+        <meta name="author" content="n00bcodr">
+      
+      
+        <link rel="canonical" href="https://n00bcodr.github.io/Jellyfin-Enhanced/12.17/enhanced/tags-server/">
+      
+      
+      
+        <link rel="prev" href="../tags-status/">
+      
+      
+        <link rel="next" href="../../spoiler-guard/spoiler-guard-features/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.ico">
+      <meta name="generator" content="zensical-0.1.2">
+    
+    
+  
+  
+    
+      <title>Server & Styles - Jellyfin Enhanced</title>
+    
+  
+
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/classic/main.0006804e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/classic/palette.813d4b3f.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Ubuntu:300,300i,400,400i,500,500i,700,700i%7CUbuntu+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Ubuntu";--md-code-font:"Ubuntu Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/touch.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Jellyfin Enhanced" class="md-header__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Jellyfin Enhanced
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Server & Styles
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+  
+    
+  
+  <span class="je-tab-label">Home</span>
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../open-in-jellyfin/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"/></svg>
+  
+  <span class="je-tab-label">Getting Started</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../enhanced-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"/></svg>
+  
+  <span class="je-tab-label">Enhanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../tags/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"/></svg>
+  
+  <span class="je-tab-label">Tags & Badges</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../spoiler-guard/spoiler-guard-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"/></svg>
+  
+  <span class="je-tab-label">Spoiler Guard</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../seerr/seerr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"/></svg>
+  
+  <span class="je-tab-label">Seerr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../arr/arr-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"/></svg>
+  
+  <span class="je-tab-label">*arr</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../elsewhere/elsewhere-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2m1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+  
+  <span class="je-tab-label">Elsewhere & Reviews</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../other/other-features/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"/></svg>
+  
+  <span class="je-tab-label">Other</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/community-analytics/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"/></svg>
+  
+  <span class="je-tab-label">Community Analytics</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../advanced/css-customization/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>
+  
+  <span class="je-tab-label">Advanced</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../faq-support/faq/" class="md-tabs__link">
+          
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"/></svg>
+  
+  <span class="je-tab-label">Help</span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Jellyfin Enhanced" class="md-nav__button md-logo" aria-label="Jellyfin Enhanced" data-md-component="logo">
+      <span class="je-mark" aria-hidden="true"></span>
+    </a>
+    Jellyfin Enhanced
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    n00bcodr/Jellyfin-Enhanced
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M19.22 4c.28 0 .53 0 .74.05.17 1.39-.02 4.25-3.3 7.53-1.7 1.71-3.73 3.02-6.01 3.89l-2.15-2.1c.92-2.31 2.23-4.34 3.92-6.03C15.18 4.58 17.64 4 19.22 4m0-2c-1.98 0-4.98.69-8.22 3.93-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.38.38.89.61 1.42.61.23 0 .47-.06.7-.15A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61S20.7 2 19.22 2m-4.68 7.46c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"/></svg>
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../open-in-jellyfin/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Open in Jellyfin
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/installation/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/compatibility/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Compatibility
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/settings-overview/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Settings Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/pages-and-tabs/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    JE Pages & Tabs
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"/></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4c3.8 0 6.5 2.8 6.5 6.8a18.3 18.3 0 0 1-13 0C5.5 6.8 8.2 4 12 4m0-2c-4.7 0-8.5 3.5-8.5 8.9.06.8.56 1.5 1.3 1.8l1.7.5v2.3a.5.5 0 0 1-.5.5.5.5 0 0 1-.5-.5.898.898 0 0 0-1-1 .898.898 0 0 0-1 1A2.405 2.405 0 0 0 5.9 18H6c1.41.06 2.56-1.09 2.5-2.5v-1.8h1v5.7c0 .67-1 .67-1 0a.898.898 0 0 0-1-1 .898.898 0 0 0-1 1c-.11 1.4 1 2.6 2.4 2.6H9c1.41.06 2.56-1.09 2.5-2.5V14h1v5.5A2.394 2.394 0 0 0 15 22h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-5.7h1v1.8c0 1.36 1.13 2.46 2.5 2.4h.1c1.37 0 2.46-1.14 2.4-2.5 0-1.33-2-1.33-2 0 0 .67-1 .67-1 0v-2.3l1.7-.5c.72-.34 1.21-1.02 1.3-1.8C20.5 5.5 16.7 2 12 2m0 4.2c-1.47.4-2.76 1.33-3.6 2.6-.4.53-1.2-.07-.8-.6a7.47 7.47 0 0 1 4.2-3 .5.5 0 0 1 .6.4c.1.3-.1.5-.4.6"/></svg>
+  
+  <span class="md-ellipsis">
+    Enhanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Enhanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../enhanced-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../enhanced-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.5 10C7.3 10 8 9.3 8 8.5S7.3 7 6.5 7 5 7.7 5 8.5 5.7 10 6.5 10M9 6l7 7-5 5-7-7V6zm0-2H4c-1.1 0-2 .9-2 2v5c0 .6.2 1.1.6 1.4l7 7c.3.4.8.6 1.4.6s1.1-.2 1.4-.6l5-5c.4-.4.6-.9.6-1.4 0-.6-.2-1.1-.6-1.4l-7-7C10.1 4.2 9.6 4 9 4m4.5 1.7 1-1 6.9 6.9c.4.4.6.9.6 1.4s-.2 1.1-.6 1.4L16 19.8l-1-1 5.7-5.8z"/></svg>
+  
+  <span class="md-ellipsis">
+    Tags & Badges
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Tags & Badges
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tags/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tags-layouts/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Layouts & Rules
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tags-quality/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Quality, Genre & Language
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tags-groups/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Ratings, Awards & More
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tags-status/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Status Badges
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  
+  <span class="md-ellipsis">
+    Server & Styles
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Server & Styles
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#server-side-tag-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Server-Side Tag Cache
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Server-Side Tag Cache">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#builds-refreshes-and-exclusions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Builds, refreshes, and exclusions
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#browser-storage-and-fallback" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Browser storage and fallback
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#card-identity-and-shared-artwork" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Card identity and shared artwork
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tags-after-navigation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Tags after navigation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#related-routes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Related routes
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#native-poster-tags-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Native Poster Tags (Experimental)
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Native Poster Tags (Experimental)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#eligible-clients-and-requests" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Eligible clients and requests
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#limits-and-caching" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Limits and caching
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tag-styles-and-css" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Tag Styles and CSS
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tag Styles and CSS">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Presets
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Presets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-poster-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The Poster preset
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#groups-and-single-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Groups and single tags
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Groups and single tags">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tag-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Tag text
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hidden-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Hidden tags
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#genre-colours" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Genre colours
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#contrast-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Contrast check
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#user-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        User presets
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 11c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V5l9-4 9 4zm-9 10c3.75-1 7-5.46 7-9.78V6.3l-7-3.12L5 6.3v4.92C5 15.54 8.25 20 12 21m2.8-10V9.5C14.8 8.1 13.4 7 12 7S9.2 8.1 9.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3m-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Spoiler Guard
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Spoiler Guard
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../spoiler-guard/spoiler-guard-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M11 20H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h1l2 4h3L8 4h2l2 4h3l-2-4h2l2 4h3l-2-4h4v9c-.5-.8-1.2-1.5-2-2v-1H5.8L4 6.5V18h6.2c.2.7.4 1.4.8 2m9.3-1.1c.4-.7.7-1.5.7-2.4 0-2.5-2-4.5-4.5-4.5S12 14 12 16.5s2 4.5 4.5 4.5c.9 0 1.7-.2 2.4-.7l3.1 3.1 1.4-1.4zm-3.8.1c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5 2.5 1.1 2.5 2.5-1.1 2.5-2.5 2.5"/></svg>
+  
+  <span class="md-ellipsis">
+    Seerr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Seerr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/seerr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../seerr/permission-audit/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Permission Audit
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 11h2v2H7zm14-6v14c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h1V1h2v2h8V1h2v2h1a2 2 0 0 1 2 2M5 7h14V5H5zm14 12V9H5v10zm-4-6v-2h2v2zm-4 0v-2h2v2zm-4 2h2v2H7zm8 2v-2h2v2zm-4 0v-2h2v2z"/></svg>
+  
+  <span class="md-ellipsis">
+    *arr
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            *arr
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/arr-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arr/troubleshooting-support/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m22.61 19-9.08-9.09c.93-2.34.47-5.1-1.44-7C9.79.61 6.21.4 3.66 2.26L7.5 6.11 6.08 7.5 2.25 3.69C.39 6.23.6 9.82 2.9 12.11c1.86 1.86 4.57 2.35 6.89 1.48l9.11 9.11c.39.39 1.02.39 1.41 0l2.3-2.3c.39-.4.39-1.01 0-1.4m-3 1.59-9.46-9.46c-.61.45-1.29.72-2 .82-1.36.2-2.79-.21-3.83-1.25C3.37 9.76 2.93 8.5 3 7.26l3.09 3.09 4.24-4.24L7.24 3c1.26-.05 2.49.39 3.44 1.33a4.47 4.47 0 0 1 1.24 3.96 4.35 4.35 0 0 1-.88 1.96l9.46 9.45z"/></svg>
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.9 17.39c-.26-.8-1.01-1.39-1.9-1.39h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41a7.984 7.984 0 0 1 2.9 12.8M11 19.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2m1-16A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+  
+  <span class="md-ellipsis">
+    Elsewhere & Reviews
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            Elsewhere & Reviews
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elsewhere/elsewhere-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m9 4 2.5 5.5L17 12l-5.5 2.5L9 20l-2.5-5.5L1 12l5.5-2.5zm0 4.83L8 11l-2.17 1L8 13l1 2.17L10 13l2.17-1L10 11zM19 9l-1.26-2.74L15 5l2.74-1.25L19 1l1.25 2.75L23 5l-2.75 1.26zm0 14-1.26-2.74L15 19l2.74-1.25L19 15l1.25 2.75L23 19l-2.75 1.26z"/></svg>
+  
+  <span class="md-ellipsis">
+    Other
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            Other
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-features/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12 6.7 1.45 3.85L17.3 12l-3.85 1.45L12 17.3l-1.45-3.85L6.7 12l3.85-1.45zM12 1 9 9l-8 3 8 3 3 8 3-8 8-3-8-3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other/other-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22 21H2V3h2v16h2v-9h4v9h2V6h4v13h2v-5h4z"/></svg>
+  
+  <span class="md-ellipsis">
+    Community Analytics
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            Community Analytics
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    What's collected
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics-dashboard/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Live Dashboard
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/community-analytics-settings/" class="md-nav__link">
+        
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8 3a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2H3v2h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2v-2H8v-5a2 2 0 0 0-2-2 2 2 0 0 0 2-2V5h2V3m6 0a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1v2h-1a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2v-2h2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5h-2V3z"/></svg>
+  
+  <span class="md-ellipsis">
+    Advanced
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            Advanced
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/css-customization/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    CSS Customization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/api/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/project-structure/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Project Structure
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../advanced/admin-media-tags/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Admin Media Tags Tab
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_12" id="__nav_12_label" tabindex="0">
+            
+  
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19.79 15.41c.95-2.17.95-4.66 0-6.82l-2.74 1.24c.6 1.38.6 2.95.01 4.34zm-4.37-11.2a8.54 8.54 0 0 0-6.83 0l1.24 2.73c1.39-.59 2.96-.59 4.35.01zM4.21 8.58a8.56 8.56 0 0 0 0 6.84l2.74-1.25c-.6-1.38-.6-2.96 0-4.35zm4.38 11.21a8.5 8.5 0 0 0 6.83-.01l-1.24-2.73a5.5 5.5 0 0 1-4.34.01zM12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2m0 6a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4"/></svg>
+  
+  <span class="md-ellipsis">
+    Help
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            Help
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/faq/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    FAQ
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/report-issues/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Report Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/feature-requests/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Feature Requests
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/contributing-translations/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Contributing Translations
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq-support/support/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Support + Community
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../other-projects/other-projects/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    Related Projects
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  
+  <span class="md-ellipsis">
+    About
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+  
+  
+                  
+
+  
+  
+
+
+<h1 id="server-native-posters-styles">Server, Native Posters &amp; Styles<a class="headerlink" href="#server-native-posters-styles" title="Permanent link">&para;</a></h1>
+<p>The server-side tag cache, Native Poster Tags for other apps, and Tag Styles and CSS.</p>
+<h2 id="server-side-tag-cache">Server-Side Tag Cache<a class="headerlink" href="#server-side-tag-cache" title="Permanent link">&para;</a></h2>
+<p>The server cache prepares tags for supported items in included libraries, so each page avoids repeating metadata requests. You receive only data allowed by your library access and Spoiler Guard policy. Each entry also records the item's library (a season's or episode's is its series'), which <a href="../tags-layouts/#rules-and-locked-items">tag look rules</a> match on.</p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>Leave <strong>Server-side tag cache</strong> on (Media Tags admin tab → <strong>Server</strong>). Choose library exclusions if needed.</li>
+<li>After changing exclusions, or after a plugin update that changes tag computation, click <strong>Rebuild cache</strong> there (or on the <strong>Overview</strong> tab).</li>
+<li>Confirm the full rebuild. The Overview shows <strong>Rebuilding</strong> until it is done, keeps showing it if you reload the page meanwhile, and says so when the rebuild finishes.</li>
+<li>Check server logs for progress and completion. The existing cache keeps serving while the new one builds in the background.</li>
+</ol>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/tag-cache.webp"><img alt="Server tag cache duration and library exclusions" src="../../images/admin/tag-cache.webp" /></a>
+<em>Browser fallback controls appear only with the server tag cache off.</em></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Server-Side Tag Cache</strong></td>
+<td>On</td>
+<td>Loads, builds, and maintains the server cache; off uses per-page batch fallback</td>
+</tr>
+<tr>
+<td><strong>Exclude libraries from the tag cache</strong></td>
+<td>Off</td>
+<td>Reveals library selection for omitting libraries from precomputation</td>
+</tr>
+<tr>
+<td><strong>Libraries to exclude</strong></td>
+<td>Empty</td>
+<td>Selects libraries to skip on the next full rebuild; an empty selection excludes nothing</td>
+</tr>
+<tr>
+<td><strong>Tags Cache Duration (days)</strong></td>
+<td>30</td>
+<td>Lifetime of browser fallback entries and People Tags facts, not the server cache's refresh schedule; range 1–365</td>
+</tr>
+<tr>
+<td><strong>Persist Tag Fallback Cache in Browser Storage</strong></td>
+<td>Off in configuration</td>
+<td>Visible only with <strong>Server-Side Tag Cache</strong> off; saving in that mode forces it on. See Browser storage and fallback below</td>
+</tr>
+<tr>
+<td><strong>Clear All Client Caches</strong></td>
+<td>Action</td>
+<td>Visible here only with <strong>Server-Side Tag Cache</strong> off; signals clients to invalidate JE caches on their next load. Does not rebuild the server snapshot or reset server-stored personal preferences</td>
+</tr>
+</tbody>
+</table>
+<h3 id="builds-refreshes-and-exclusions">Builds, refreshes, and exclusions<a class="headerlink" href="#builds-refreshes-and-exclusions" title="Permanent link">&para;</a></h3>
+<p>The retained cache grows with the number of included items. Exclude large libraries or disable server mode if its memory cost is unsuitable.</p>
+<p>Jellyfin compresses the cache response with Brotli or gzip, so a browser downloads about a tenth of its JSON size. On a 3,882-entry test library a full download was 14.7 MB of JSON and 1.39 MB on the wire, about 3.8 KB and 360 bytes per entry; entries have since grown to about 4.6 KB (3,892 entries, November 2026). At that size 50,000 entries are roughly 230 MB of JSON and, compressed as before, about 22 MB to download. The browser reads a full download in pages of 2,000 entries, so no response or parse holds the whole library. Up to 20,000 entries it keeps them in memory and stores a copy afterwards. Past that it writes what it holds, and then each page as it arrives, straight into its stored copy and keeps none of them, so a load never holds more than 20,000 entries plus one page; once the copy is complete it reads entries from it as cards need them. A load that keeps seeing the cache change underneath starts over twice, after short pauses, then leaves the cards to batch lookups until the next navigation tries again; it never asks for the whole cache in one response. After a load it fetches only changed entries, and removed items arrive as a list of ids.</p>
+<p><code>scripts/bench-tag-cache.mjs</code> measures this on a synthetic library whose entries carry the real ones' fields (about 4.2 KB of JSON each; the run prints the size). Memory is the heap still held after each page once garbage is collected, in Node; a browser's own peak (with IndexedDB's copies in flight) is somewhat higher. On a desktop with Node 26:</p>
+<table>
+<thead>
+<tr>
+<th>Synthetic library</th>
+<th>One response</th>
+<th>Pages of 2,000</th>
+<th>Memory kept</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>50,000 entries, 203.3 MB of JSON</td>
+<td>one 203.3 MB body, one 1.7 s parse</td>
+<td>largest body 8.3 MB, longest parse 48 ms</td>
+<td>at most 102.5 MB kept between pages while loading (pages streamed into the stored copy past 20,000); 254.0 MB when every page was held until the copy was written</td>
+</tr>
+<tr>
+<td>100,000 entries, 407.2 MB of JSON</td>
+<td>one 407.2 MB body, one 3.0 s parse</td>
+<td>largest body 8.3 MB, longest parse 57 ms</td>
+<td>at most 102.5 MB kept between pages; 508.7 MB when every page was held</td>
+</tr>
+</tbody>
+</table>
+<p>On the server, every page of a full load reads one shared, sorted list of the cache's keys, made once and made again only when an item is added or removed, instead of sorting the rest of the library for each page. An opt-in benchmark in the backend tests (<code>PrivacyCachePagingBenchmark</code>, run with <code>JE_BENCH_TAG_CACHE=1</code>) pages through 200,000 entries in about 0.3 s for an account that sees everything (100 pages, four such loads at once in about the same time), where sorting the rest of the library for every page took about 4 s for the keys alone.</p>
+<p>Without a stored copy (private browsing, storage blocked or full), a library of up to 20,000 entries stays in memory and the next page load downloads it again; a larger one is not held at all: cards ask for their tags in batches of up to 200 for the rest of the session. Each browser profile downloads in full once, then again only after a full rebuild, more than 20,000 removals between rebuilds, a Spoiler Guard change, or an access change that makes an item visible the browser has not stored (a library or parental limit opened up). When the user can only see less (an item added where they cannot see it, library access removed, an item re-rated above their limit), the next update carries the list of ids they can still see, and the browser drops the rest and clears their tags from the cards on screen. Any update redraws the cards on screen whose items it changed; the other cards keep their tags. If you put Jellyfin behind a reverse proxy, let it pass <code>Accept-Encoding</code> through so compression stays on.</p>
+<details class="info">
+<summary>Cache lifecycle and excluded libraries</summary>
+<p>When poster review chips are enabled, visible review averages travel with the filtered cache data.</p>
+<p>At startup, JE restores <code>tag-cache.json</code> from <code>&lt;PluginsPath&gt;/configurations/Jellyfin.Plugin.JellyfinEnhanced/</code>. If no usable cache is available, it queues <strong>Refresh Tag Cache</strong> to build one. Library item additions, updates, and removals keep entries current. A series edit that changes its scores, age rating or genres also updates the seasons and episodes that take them from it (re-reading their metadata, not their media), on the same update or reconcile; native posters built while the cache is off drop those children's remembered entries at once. The scheduled task normally reconciles changes rather than recomputing every item. Its default daily trigger is 03:00.</p>
+<p>Excluded libraries do not lose access or forcibly lose their web tags. Cards without a server entry can use per-page batch fallback. Exclusions also bypass the normal cache-update audio-language synchronization path; the standalone language-sync task can still process those items.</p>
+<p>Builds load item data in small pages to reduce peak memory.</p>
+<p>Audio languages that JE reads from Matroska track headers (for regional tags such as <code>pt-BR</code>) are kept in <code>matroska-languages.json</code> next to the tag cache, keyed by file path, size and modification time. Later rebuilds, reconciles and tag-data requests do not open an unchanged file again, which matters on network and cloud mounts where each open can download a large read-ahead.</p>
+<p>Turning server mode off releases the in-memory cache and stops loading, building, monitoring, and scheduled refresh work. The saved snapshot remains on disk. Clients pick up the switch on their next load.</p>
+<p>Re-enabling from the dashboard restores the snapshot and catches up on missed changes in the background, without a restart.</p>
+<p>If you edit the configuration file by hand instead, restart Jellyfin and run <strong>Refresh Tag Cache</strong> to catch up.</p>
+</details>
+<h3 id="browser-storage-and-fallback">Browser storage and fallback<a class="headerlink" href="#browser-storage-and-fallback" title="Permanent link">&para;</a></h3>
+<p>Turn off <strong>Server-side tag cache</strong> to reveal <strong>Keep a tag cache in each browser</strong> and <strong>Clear all browser caches</strong> in the <strong>Server</strong> section of the Media Tags admin tab (the configuration page's Overview keeps a quick action for the clear signal).</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/tag-cache-legacy.webp"><img alt="Tag cache settings with the server-side cache turned off" src="../../images/admin/tag-cache-legacy.webp" /></a></p>
+<details class="info">
+<summary>Browser storage and fallback details</summary>
+<p>The first web load downloads the server payload and saves an IndexedDB copy scoped to that server and user. Later loads restore that copy and request changes since the saved cursor. Tags wait for confirmation that the stored version and access/Spoiler Guard revision still match. A rebuild or changed filtering replaces the copy, including changes made from another device. Navigation also checks for updates, with requests spaced during rapid browsing.</p>
+<p>A copy written before the entry format last changed (version 11 added the library) is not restored; the browser downloads the cache again.</p>
+<p>The stored copy is invalidated when server mode is switched off, by <strong>Clear All Client Caches</strong>, or when another account signs in in the same browser. Each copy contains that user's filtered, spoiler-safe data.</p>
+<p>Without usable IndexedDB, including some private modes or storage failures, the client downloads the payload again on each page load and uses memory only.</p>
+<p>Saving with the server cache off forces <strong>Persist Tag Fallback Cache in Browser Storage</strong> on. The client enables localStorage fallback whenever server mode is off.</p>
+<p>Batch fallback fetches the items needed for the current page and keeps frequently used entries in memory. Every group validates its fallback data against the server-issued <code>StripRevision</code> through the shared renderer base. Only authoritative <code>none</code> entries persist in localStorage using <strong>Tags Cache Duration (days)</strong>; guarded entries are page-only, and unknown or mismatched revisions require fresh data. This is separate from the full server-payload copy in IndexedDB. Browser storage failures leave tags able to fetch data again. Average-review lookups in fallback mode are batched separately.</p>
+<p>For <a href="../tags-layouts/#rules-and-locked-items">rules and locked items</a>, the batch lookup's type, series, library, genres and age rating of each item are remembered beside those entries (<code>JE_tagLookFacts</code>, at most 3,000 items, newest kept). Like the per-tag entries, they belong to the signed-in user and are dropped when another account signs in or by <strong>Clear All Client Caches</strong>.</p>
+</details>
+<h3 id="card-identity-and-shared-artwork">Card identity and shared artwork<a class="headerlink" href="#card-identity-and-shared-artwork" title="Permanent link">&para;</a></h3>
+<p>Web badges describe the card's item, even when an episode displays a season or series poster. Loading the artwork later does not change which item's tags appear. Cards without a valid item identifier can still use the poster URL as a fallback.</p>
+<h3 id="tags-after-navigation">Tags after navigation<a class="headerlink" href="#tags-after-navigation" title="Permanent link">&para;</a></h3>
+<p>With the server cache off, cards still waiting for a batch fetch are retried after navigation. Season cards added as a series page opens receive tags without a reload; completed cards keep their tags.</p>
+<h3 id="related-routes">Related routes<a class="headerlink" href="#related-routes" title="Permanent link">&para;</a></h3>
+<details class="info">
+<summary>Diagnostic routes</summary>
+<p>These routes are useful when diagnosing a cache problem; routine setup uses the dashboard controls above. All require authentication. See the <a href="../../advanced/api/">API reference</a> for broader API use.</p>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>Access and behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /JellyfinEnhanced/tag-cache/{userId}</code></td>
+<td>Own account or administrator; filtered cache payload. Returns 404 when server mode is off. Optional <code>since</code> is a Unix-millisecond cursor; use the returned generation <code>timestamp</code>, not <code>servedAt</code></td>
+</tr>
+<tr>
+<td><code>POST /JellyfinEnhanced/tag-data/{userId}</code></td>
+<td>Own account or administrator; per-page fallback for accessible items. Body is a nonempty array of at most 200 item-ID strings; optional <code>mediaSourceId</code> selects a media version; optional <code>latestEpisode=true</code> adds the newest episode's added date to series and seasons</td>
+</tr>
+<tr>
+<td><code>GET /JellyfinEnhanced/status-tags/series?ids=…</code></td>
+<td>Signed-in caller; up to 50 accessible series IDs, returning TMDB status and last/next aired facts</td>
+</tr>
+<tr>
+<td><code>GET /JellyfinEnhanced/status-tags/trending</code></td>
+<td>Any signed-in user; the shared trending list for Status Tags. Empty while the admin has Status Tags or the trending rank off</td>
+</tr>
+<tr>
+<td><code>POST /JellyfinEnhanced/tag-cache/rebuild</code></td>
+<td>Administrator only; starts a full background rebuild. Returns 400 with server mode off, or 409 if a rebuild is already running</td>
+</tr>
+<tr>
+<td><code>GET /JellyfinEnhanced/audio-language-tags?codes=…</code></td>
+<td>Returns base/regional synchronized tag names for the supplied comma-separated language codes; empty mapping when sync is off</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="native-poster-tags-experimental">Native Poster Tags (Experimental)<a class="headerlink" href="#native-poster-tags-experimental" title="Permanent link">&para;</a></h2>
+<p>Native Poster Tags add your enabled poster groups to images shown in eligible native apps, without changing the original artwork files. The feature is built into JE, so you need no companion plugin or client modification.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/tags/native-poster-preview.webp"><img alt="Server-rendered poster preview with embedded tags" src="../../images/tags/native-poster-preview.webp" /></a>
+<em>Server preview; this is not a native-app screenshot.</em></p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/tags/native-status-bands.webp"><img alt="Native status chip in Corners and Bands, with +N overflow in the bottom strip" src="../../images/tags/native-status-bands.webp" /></a>
+<em>Personalized native image responses for the same movie: Corners (left), Bands (right). These are composited posters, not physical-device screenshots.</em></p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/tags/pr-native-tv.webp"><img alt="Jellyfin web beside the Jellyfin Android TV app for Flush Corners and for side anchors, with the same four posters side by side" src="../../images/tags/pr-native-tv.webp" /></a>
+<em>Web (left) and the real Jellyfin Android TV 0.19.10 app in the emulator (right): Flush Corners with Compact labels (top) and Status at left centre with Quality at right centre (bottom). The app dims unfocused cards.</em></p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>Enable suitable tag groups and ensure the items have the required metadata.</li>
+<li>On the Media Tags admin tab → <strong>Server</strong>, turn on <strong>Native poster tags (experimental)</strong>.</li>
+<li>Each user can opt out with <strong>Show Tags in Native Clients (Experimental)</strong> in <a href="../../open-in-jellyfin/?jeSection=media-tags"><strong>Media Tags</strong> → <strong>Layout</strong></a>.</li>
+<li>Reopen the native app's library or restart the app to pick up changed poster addresses.</li>
+</ol>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/native-tags.webp"><img alt="Native poster tag master switch and client exclusions" src="../../images/admin/native-tags.webp" /></a></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Admin: <strong>Native poster tags (experimental)</strong></td>
+<td>Off</td>
+<td>Server-wide master switch; off serves original posters and stops native tag composition</td>
+</tr>
+<tr>
+<td>Admin: <strong>Additional excluded apps</strong></td>
+<td>Empty</td>
+<td>Adds web-wrapper client names that should retain original posters; newline- or comma-separated</td>
+</tr>
+<tr>
+<td>Personal: <strong>Show Tags in Native Clients (Experimental)</strong></td>
+<td>On while allowed</td>
+<td>Shows tags in native clients; hidden while the master switch is off, retaining the saved choice</td>
+</tr>
+</tbody>
+</table>
+<details class="info">
+<summary>Stored native preferences</summary>
+<p>The admin configuration uses <code>NativePosterTagsEnabled</code> and <code>NativePosterTagsWebClientNames</code> for the master switch and additional client exclusions. The personal <code>UseNativePosterTags</code> value permits native tags when null or true; false opts out while retaining the preference when the master switch is off.</p>
+</details>
+<div class="admonition note">
+<p class="admonition-title">Enable the tag groups too</p>
+<p>The master switch alone does not produce visible tags: each user's applicable groups start off.</p>
+</div>
+<details class="info">
+<summary>Supported groups and preferences</summary>
+<p>JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, ratings, user-review, age-classification, Awards, Status, Logos and Custom. People Tags are not a native group.</p>
+<p>It uses personal tag switches, audio/subtitle includes, Flags/Codes style and Dual/Multi badge mode, quality categories/order, sound-language preference, each group's <strong>Where to show</strong> item-type switches, score includes, together with the personal language-priority policy (or the live administrator fallback). Native posters draw <strong>Corners</strong> or <strong>Bands</strong> from your saved default layout. Both respect the chosen Full or Compact label density, as on the web; version-0 (legacy) accounts keep their previous labels. Corners supports all nine anchors, hidden groups, your explicit group order (otherwise the original stacking order) and limits. Bands uses its own top/bottom/hidden profile, priority order and limits. Its translucent gradient strips keep the middle clear; the first top group starts left and later groups align right. Each strip fits at most two rows. The bottom strip shows chips in priority order until the first one with no room, as on the web, and counts the rest in <strong>+N</strong>; only a chip that could never fit is skipped on its own. The overflow chip uses the web’s 11px bold style multiplied by tag size and reserves the total-count width before bottom-band selection, then displays the actual omitted count. Caption, Summary and Minimal fall back to the saved Corners profile with Full labels because native images have no title block or hover surface. Per-item locks, server-wide item looks and <a href="../tags-layouts/#rules-and-locked-items">tag look rules</a> apply natively (each look gets its own poster variant); shape overrides remain web features, because an image request does not say what shape of card shows it.</p>
+<p><strong>Centre-anchor differences:</strong> in the centre slots (top and bottom centre, left and right centre, and centre), native posters omit whole chips that do not fit and show a fitting <strong>+N</strong> count for them; the count is left out when its own box cannot fit. A static image has no hover or focus, so the count cannot reveal the hidden names as the web's tooltip does. The first chip in a centre anchor stays visible with an ellipsis when necessary, keeping its original typography; subsequent chips that do not fit are omitted. The image request cannot reproduce the web card's progress bar, Jellyfin indicators or custom overlays; native placement uses the saved default Bands or Corners profile, the item's own look or the matching rule's. The four default corner positions are unchanged.</p>
+</details>
+<h3 id="eligible-clients-and-requests">Eligible clients and requests<a class="headerlink" href="#eligible-clients-and-requests" title="Permanent link">&para;</a></h3>
+<p>Examples of native clients include Jellyfin for Android TV, Tizen, Swiftfin, Findroid, and Streamyfin.</p>
+<p>The built-in exclusions are Jellyfin Web, Jellyfin Media Player, Jellium Desktop, Jellyfin Desktop, Jellyfin for WebOS, Jellyfin for Android (the phone app), Jellyfin iOS and Jellyfin iPadOS. These load web overlays and retain original poster images. Jellyfin for Android TV is a different client name and is eligible.</p>
+<p>If a custom web wrapper shows tags twice, add its name as shown under <strong>Dashboard</strong> → <strong>Devices</strong> to <strong>Additional excluded apps</strong>.</p>
+<details class="info">
+<summary>Client matching and image requests</summary>
+<p>Native tags depend on the app retaining Jellyfin's personalized image tag in its poster request. Requests that omit it, or ask Jellyfin to draw its own watched/progress/unplayed-count indicators into the image, retain original artwork.</p>
+<p>Exclusion matching trims whitespace and compares exact names without case sensitivity. Unidentified clients are excluded.</p>
+</details>
+<h3 id="limits-and-caching">Limits and caching<a class="headerlink" href="#limits-and-caching" title="Permanent link">&para;</a></h3>
+<details class="info">
+<summary>Layout, Spoiler Guard, and image caching</summary>
+<ul>
+<li><strong>Static layout:</strong> genre hover names and <strong>Hide tags on hover</strong> do not apply. Size follows the image width rather than the app's final display size; landscape episode images use an adjusted layout.</li>
+<li><strong>No page or row context:</strong> <strong>Disable Tags on Search Page</strong> and the <strong>Continue Watching row</strong> / <strong>Next Up row</strong> switches of <strong>Where to show</strong> do not apply. Its item-type switches still apply. Tags can appear anywhere the app reuses that Primary image, including search and detail pages. If an episode card uses a series poster, its tags describe that image's owner.</li>
+<li><strong>Spoiler-safe data:</strong> native composition applies the user's Spoiler Guard stripping policy. Artwork follows the configured stock-card/blur policy, rather than always using blur. Spoiler-scoped responses use <code>no-store</code> so an old poster is not retained under a changed policy.</li>
+<li><strong>Remote status:</strong> cold or expired trending/schedule snapshots omit remote badges for that render and refresh in the background; image delivery never waits for TMDB. Queued series schedules refresh in batches of 16, up to four TMDB lookups at once within the shared rate limit, and each batch shows on the next poster request as soon as it finishes.</li>
+<li><strong>First-view cost:</strong> the server draws a poster the first time a particular variant/size is requested. Rendered images are cached with a 128 MiB memory budget and approximately 1 GiB disk budget under Jellyfin's cache directory, <code>jellyfin-enhanced/poster-tags</code>.</li>
+<li><strong>Status dates and language:</strong> saving personal preferences in the web client with Status enabled remembers that user's date locale and timezone. Native labels use that saved context; until then they use the JE display language (English fallback) and the server timezone. TMDB dates remain plain calendar dates, as on the web. Another native device cannot supply its own browser timezone through an image request. Short month/day dates use browser-generated locale patterns, month names, calendars and digits for the shipped languages and their regional variants (including en-IN, es-419 and fr-CA). An unlisted variant uses its closest culture ancestor. Saved Unicode locale extensions are retained, while native formatting uses their base language/script/region. Status text uses Tag Styles' Status group and individual badge colours; static chips do not apply the web's blurred backdrop.</li>
+<li><strong>Status freshness:</strong> posters with a visible Status group use five-minute URL buckets and an HTTP cache lifetime capped to the remaining URL bucket (whole seconds; sub-second remaining lifetime is served uncached), even with the server tag cache off. Date-window and local-midnight changes appear within five minutes after a fresh metadata/image request. A URL keeps drawing its tags through the next bucket too (status as of the request), so a poster requested just after a bucket boundary is not untagged; a client retaining a URL longer than that must refresh library metadata, and older tokens serve original artwork until then. The server draws a poster again only when the badge it shows changes: its stored composite is keyed by the resolved Status badge (and the filtered parent facts), not by the URL bucket, so a new URL for an unchanged poster is served from the stored image. Text and family colours enter the tile key. No live status data is persisted in the tag cache and its schema is unchanged.</li>
+<li><strong>Refreshes:</strong> settings changes can change poster addresses. With the server tag cache on, tag-data changes also change addresses for cached items. Apps can need a library refresh or restart to use them. With the cache off, tag-data changes keep the same URL; apps can show the old composite for up to an hour before revalidating that URL.</li>
+<li><strong>Fallback:</strong> unsupported identity/token requests, missing renderable tags, decode/render failures, sources over 32 MiB, or decoded image sides outside 32–4096 pixels can yield original artwork. These are implementation limits, not adjustable settings.</li>
+</ul>
+</details>
+<details class="note">
+<summary>Signing key and backups</summary>
+<p>JE stores a 32-byte signing secret in <code>&lt;PluginsPath&gt;/configurations/Jellyfin.Plugin.JellyfinEnhanced/native-poster-tags.key</code>, separately from rendered-image caches. Preserve it in backups to retain personalized URL-signing continuity. JE recreates a missing or invalid key. Older URLs can then serve original artwork until clients refresh.</p>
+<p>If the key cannot be persisted, JE logs a warning and uses a process-lifetime key that changes after restart.</p>
+<p>On Unix, new keys use owner-only read/write permissions. There is no setting for this internal key.</p>
+</details>
+<details class="info">
+<summary>Administrator preview route</summary>
+<p>Administrators can diagnose composition with <code>GET /JellyfinEnhanced/native-poster-tags/preview/{itemId}</code>. It requires an accessible supported item, an existing target user, and a local Primary image.</p>
+<p>Optional <code>userId</code> defaults to the caller. <code>width</code> defaults to 360, and width/optional height are clamped to 32–2048. Optional <code>topRightOffset</code> controls indicator clearance.</p>
+<p>The JPEG response uses <code>no-store</code> and includes <code>X-JE-Poster-Tags-*</code> diagnostics.</p>
+<p>The preview attempts composition even with the master/personal native switch off. It strips tag data for Spoiler Guard but uses original, unblurred artwork. It therefore does not preview image protection.</p>
+</details>
+<p>Server-wide item look edits preserve unrelated changes made by another administrator while saving. Removing a look and immediately choosing <strong>Undo</strong> cancels that edit. After an uncertain save failure, <strong>Undo</strong> stays pending until the server acknowledges the restored look. Server import and its <strong>Undo</strong> replace the complete item-look list, including when both lists contain 500 different entries. Edits made while a replacement is still saving or awaiting <strong>Retry</strong> become part of that replacement; <strong>Keep mine</strong> and <strong>Take theirs</strong> resolve the complete list.</p>
+<h2 id="tag-styles-and-css">Tag Styles and CSS<a class="headerlink" href="#tag-styles-and-css" title="Permanent link">&para;</a></h2>
+<p>Use Tag Styles to recolour poster tags without writing CSS. You pick a preset, then adjust a whole group of tags or a single tag. The same colours reach the web overlays and the posters drawn for native apps.</p>
+<p><strong>How to use:</strong></p>
+<ol>
+<li>Open the <strong>Colours</strong> section of the Media Tags admin tab and turn on <strong>Use these tag colours</strong>.</li>
+<li>Under <strong>Apply to</strong>, choose <strong>Web</strong>, <strong>Native posters</strong> or <strong>Both</strong>.</li>
+<li>Pick a <strong>Preset</strong>. It applies straight away and keeps any group or tag colours you set. The presets are always shown. Under the group tabs, <strong>Preset for this group</strong> gives one group its own preset (for example the Poster preset on Status only); <strong>Same as the design</strong> follows the main one.</li>
+<li>Choose a group tab (<strong>Quality</strong>, <strong>Age</strong>, <strong>Rating</strong>, <strong>Genre</strong>, <strong>Status</strong>, <strong>Language</strong>, <strong>Awards</strong>, <strong>Logos</strong>, <strong>Custom</strong>), then <strong>Whole group</strong> or one tag.</li>
+<li>Set <strong>Background</strong>, <strong>Border</strong> and <strong>Text</strong> with a swatch or any colour, and an <strong>Opacity</strong> of 40–100% on its own row. Watch the contrast badge and the preview; every status badge can be coloured, not only the first few.</li>
+<li>Each edit saves on its own. Refresh web clients to see the change; native posters redraw the next time they load.</li>
+</ol>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/tag-styles.gif"><img alt="Picking a preset, colouring the Quality group and checking contrast in the Tag Styles editor" src="../../images/admin/tag-styles.gif" /></a></p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/media-tags-admin-colours.png"><img alt="The Colours section of the Media Tags admin tab with the editor on" src="../../images/media-tags-admin-colours.png" /></a></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Use these tag colours</strong></td>
+<td>Off</td>
+<td>Turns the colours on. Turning it off keeps your edits</td>
+</tr>
+<tr>
+<td><strong>Apply to</strong></td>
+<td><strong>Both</strong></td>
+<td><strong>Web</strong> recolours the overlays in Jellyfin Web; <strong>Native posters</strong> recolours the tags drawn into posters for apps such as Android TV (needs <strong>Native poster tags (experimental)</strong>)</td>
+</tr>
+<tr>
+<td><strong>Preset</strong></td>
+<td><strong>Default</strong></td>
+<td>The colours every tag starts from (see below)</td>
+</tr>
+<tr>
+<td><strong>Let users pick their own preset</strong></td>
+<td>Off</td>
+<td>Adds the <strong>Colours</strong> tab to each user's <strong>Media Tags</strong> section. Your group and tag colours stay on top of the preset a user picks</td>
+</tr>
+<tr>
+<td><strong>Reset all colours</strong></td>
+<td></td>
+<td>Clears every group and tag colour and returns to the <strong>Default</strong> preset after a confirmation; <strong>Undo</strong> in the message brings them back</td>
+</tr>
+</tbody>
+</table>
+<h3 id="presets">Presets<a class="headerlink" href="#presets" title="Permanent link">&para;</a></h3>
+<p>Each preset sets a background, border and text colour for every kind of tag. Each preset tile previews a 4K, a rating and a PG-13 tag in its colours.</p>
+<table>
+<thead>
+<tr>
+<th>Preset</th>
+<th>Look</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Default</strong></td>
+<td>The built-in colours. Nothing changes and custom CSS keeps working as before</td>
+</tr>
+<tr>
+<td><strong>Glass</strong></td>
+<td>Light translucent chips with a soft white border; white text, gold community scores and trending ranks, red critic scores</td>
+</tr>
+<tr>
+<td><strong>Outline</strong></td>
+<td>Dark translucent chips; the border and text take each tag's tint: blue resolution, orange dynamic range and IMAX/3D, green audio, grey codec and source, gold community score, red critic score, the board colour for age ratings. Genre, status and language get a white border</td>
+</tr>
+<tr>
+<td><strong>Dark</strong></td>
+<td>Near-black chips without a border; white text with gold and red scores</td>
+</tr>
+<tr>
+<td><strong>Light</strong></td>
+<td>Near-white chips without a border; dark text, darker gold and red scores, age ratings in their board colour</td>
+</tr>
+<tr>
+<td><strong>Mono</strong></td>
+<td>Neutral dark grey chips with light grey text and a faint border</td>
+</tr>
+<tr>
+<td><strong>Poster</strong></td>
+<td>Each tag takes its colour from the poster it sits on: the artwork's main colour, kept saturated (a red poster gives red tags) and darkened or lightened just enough that white or black text reads at 4.5:1 or better; a grey or very dark poster gives a neutral dark tag. The border is a lighter or darker shade of the same colour. Flags keep their own look</td>
+</tr>
+</tbody>
+</table>
+<h4 id="the-poster-preset">The Poster preset<a class="headerlink" href="#the-poster-preset" title="Permanent link">&para;</a></h4>
+<p>The colour comes from the artwork your browser is already showing (never the blurred placeholder shown while it loads): a 32px copy is read once, in idle time, and the result is remembered per poster in the browser, so scrolling back is instant. A new poster image for an item is read again. Nothing is sent anywhere. If the browser cannot read an image (for example artwork served from another site), that poster keeps the <strong>Default</strong> colours. Native posters work out the same colour from the image they draw on.</p>
+<p>Group and tag colours you set stay on top, field by field: set a group's text to white and every tag of the group keeps white text over its poster colour. <strong>Default</strong> on a row hands that field back to the poster. Because the colours depend on the artwork, the <a href="#contrast-check">contrast check</a> shows the worst case Poster can produce, and the preview shows the colours of a red poster.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/tags/tag-poster-preset.webp"><img alt="Movie posters with flush Poster tags: each tag's colour matches its poster" src="../../images/tags/tag-poster-preset.webp" /></a></p>
+<h3 id="groups-and-single-tags">Groups and single tags<a class="headerlink" href="#groups-and-single-tags" title="Permanent link">&para;</a></h3>
+<p>The editor shows every tag of the selected group in its current colours, so you can see the result before changing anything. A dot marks a group or tag you changed.</p>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>Tags you can edit one by one</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Quality</strong></td>
+<td>Every quality label (4K, HDR10, ATMOS, TRUEHD ATMOS, DD+ ATMOS, HEVC…)</td>
+<td>Combined labels such as ATMOS 7.1 follow their base label; TRUEHD ATMOS and DD+ ATMOS are labels of their own that start with the ATMOS colours</td>
+</tr>
+<tr>
+<td><strong>Age</strong></td>
+<td>One chip per age rating colour board, shown with a sample rating</td>
+<td>Hover a chip to see every rating it covers</td>
+</tr>
+<tr>
+<td><strong>Rating</strong></td>
+<td><strong>Community</strong>, <strong>Critic</strong>, <strong>User review</strong></td>
+<td>Rating chips have no border of their own: a border colour draws a thin inner ring</td>
+</tr>
+<tr>
+<td><strong>Genre</strong></td>
+<td>Every genre with an icon of its own and <strong>Other</strong> (see <a href="#genre-colours">Genre colours</a>)</td>
+<td><strong>Text</strong> colours the icon; a genre with colours of its own also colours its name beside it on hover</td>
+</tr>
+<tr>
+<td><strong>Status</strong></td>
+<td><strong>Just Added</strong>, <strong>New Movie</strong>, <strong>New Series</strong>, <strong>New Episode</strong>, <strong>Trending</strong>, schedule, milestone and series-state badges</td>
+<td>Applies to web and native posters. A Trending text colour also recolours the rank</td>
+</tr>
+<tr>
+<td><strong>Awards</strong></td>
+<td><strong>IMDb Top 250</strong>, <strong>Certified Fresh</strong>, <strong>Oscar Winner</strong>, <strong>Emmy Winner</strong>, <strong>Letterboxd Top 250</strong></td>
+<td>Bundled logos keep their source colours; the chip background, text and border can change</td>
+</tr>
+<tr>
+<td><strong>Language</strong></td>
+<td><strong>Flag image</strong>, <strong>Language codes</strong>, <strong>Subtitles</strong>, <strong>Dual / Multi</strong>, <strong>Dual</strong>, <strong>Multi</strong>, and individual ISO language codes</td>
+<td>Chips share the quality-chip box and take background, border and text colours. Flag images keep only their border ring; partial flags keep their dashed outline</td>
+</tr>
+<tr>
+<td><strong>Logos</strong></td>
+<td><strong>Provider logo</strong>, <strong>Network / studio logo</strong>, <strong>Name chip</strong></td>
+<td>Colours the pill behind the logo; <strong>Text</strong> colours the name chip</td>
+</tr>
+</tbody>
+</table>
+<p>| <strong>Custom</strong> | Each label of the <strong>Custom tag rules</strong> | The labels follow the rules table as you edit it; rules that share a label share its colours. The icon takes the text colour |</p>
+<p>A tag's colours are worked out field by field: its own colour if you set one, else the group colour, else the preset. <strong>Default</strong> on a row removes that one colour from what you are editing, so it falls back to the group or the preset.</p>
+<h4 id="tag-text">Tag text<a class="headerlink" href="#tag-text" title="Permanent link">&para;</a></h4>
+<p>Quality, genre, status and awards tags also have a <strong>Text</strong> field under their <strong>Hide</strong> switch: choose a tag and type the words its chips should show (for example <strong>Season Finale</strong> becomes <strong>End of Season</strong>). The text replaces the whole chip text for every user, on web posters and on native posters (native genre chips draw only an icon, so a genre text shows on the web only). Leave the field empty to go back to the tag's own words; it saves when you leave the field and offers Undo. Texts are up to 32 characters, apply in Full and Compact density alike, and are not translated: every language shows what you typed. A tile renames every chip it colours, so renaming <strong>Dolby Digital+</strong> replaces <strong>Dolby Digital+ 5.1</strong> and <strong>Dolby Digital+ 2.0</strong> alike.</p>
+<h4 id="hidden-tags">Hidden tags<a class="headerlink" href="#hidden-tags" title="Permanent link">&para;</a></h4>
+<p>Any tag in the editor's tag list can also be hidden: choose it and turn on its <strong>Hide</strong> switch (named after the tag, for example <strong>Hide Drama</strong>). Its chips then never show, on web posters and native posters, for every user. Hidden tiles are dimmed, outlined and marked; the group's tab shows how many it hides; and a <strong>Hidden</strong> line under the list names them, each a shortcut to its switch (with more than four, <strong>Show only the hidden tags</strong> narrows the list to them). <strong>Undo</strong> in the confirmation brings a tag back, as does turning the switch off again. Hidden tags work whether <strong>Use tag colours</strong> is on or off; with colours off the editor stays open for hiding and its colour controls are dimmed.</p>
+<p>Each group on the <strong>Groups</strong> tab says how many of its tags are hidden and links to them (<strong>Hidden Genre tags (Colours and text)</strong>). Turning a group off there only changes what new users start with; hiding a tag applies to everyone.</p>
+<p>A tag hides exactly the chips its colours apply to:</p>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>Hiding a tag hides</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Quality</strong></td>
+<td>That label, whatever its channels (<strong>Dolby Digital+</strong> hides <em>Dolby Digital+ 5.1</em>). Hiding a resolution such as <strong>4K</strong> never shows a lower resolution in its place.</td>
+</tr>
+<tr>
+<td><strong>Age</strong></td>
+<td>Every rating on that colour board (hover the tile for the list).</td>
+</tr>
+<tr>
+<td><strong>Rating</strong></td>
+<td>That score (Community, Critic, User review or a named source).</td>
+</tr>
+<tr>
+<td><strong>Genre</strong></td>
+<td>That genre in every spelling and translation (<strong>Drama</strong> hides <em>Drame</em> and <em>Драма</em>). <strong>Other</strong> hides every genre without an icon of its own, such as <em>Reality</em>, <em>Talk</em> or <em>Anime</em>. The next genres take the hidden ones' places within <strong>Show up to</strong>.</td>
+</tr>
+<tr>
+<td><strong>Status</strong></td>
+<td>That badge.</td>
+</tr>
+<tr>
+<td><strong>Awards</strong></td>
+<td>That ribbon.</td>
+</tr>
+<tr>
+<td><strong>Language</strong></td>
+<td>A language code hides that language's audio and subtitle chips (the Dual/Multi badge still counts it); <strong>Subtitles</strong>, <strong>Dual / Multi</strong>, <strong>Dual</strong> and <strong>Multi</strong> hide those chips. <strong>Flag image</strong> and <strong>Language codes</strong> colour every flag or code and cannot be hidden.</td>
+</tr>
+<tr>
+<td><strong>Logos</strong></td>
+<td>Every logo of that kind: <strong>Provider logo</strong> (streaming services), <strong>Network / studio logo</strong>, or <strong>Name chip</strong> (logos without an image). The next logo takes their place.</td>
+</tr>
+<tr>
+<td><strong>Custom</strong></td>
+<td>Every chip with that label. A hidden label whose rule was removed keeps its tile (<em>Kids (no rule)</em>) until it is shown again, so it never silently hides a later rule with the same label.</td>
+</tr>
+</tbody>
+</table>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/tags/tag-hidden-tags.webp"><img alt="The Genre tab of the colour editor with Drama hidden" src="../../images/tags/tag-hidden-tags.webp" /></a></p>
+<h4 id="genre-colours">Genre colours<a class="headerlink" href="#genre-colours" title="Permanent link">&para;</a></h4>
+<p>Each genre the icons know is its own tag on the <strong>Genre</strong> tab, shown as its icon (with its name where there is room; hover a tile for the name). <strong>Find a genre</strong> narrows the list. With the keyboard the tiles are a single stop: the arrow keys move the selection, <strong>Home</strong> and <strong>End</strong> jump to the first and last tile. A genre and its other spellings and translations share one tag, so colouring <strong>Comedy</strong> also colours <em>Comédie</em> and <em>Komödie</em>. Genres without an icon of their own (for example <em>Anime</em> or <em>Children</em>) use <strong>Other</strong>. Genre names are matched without regard to case.</p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/admin/tag-styles-genre.webp"><img alt="The Genre tab of the Tag Styles editor: Whole group, then one icon tile per genre, with Horror, Comedy and Animation coloured" src="../../images/admin/tag-styles-genre.webp" /></a></p>
+<p><a class="glightbox" data-type="image" data-width="100%" href="../../images/tags/pr-poster-genre-colours.webp"><img alt="The movie grid with the Poster preset and Animation, Comedy and Family genre icons in their own colours" src="../../images/tags/pr-poster-genre-colours.webp" /></a>
+<em>Poster preset with three coloured genres: Animation blue, Family green, Comedy yellow; every other tag takes its poster's colour.</em></p>
+<table>
+<thead>
+<tr>
+<th>Tag</th>
+<th>Key</th>
+<th>Icon</th>
+<th>Also covers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Action</td>
+<td><code>action</code></td>
+<td><code>sports_martial_arts</code></td>
+<td>acción, azione, akció, боевик</td>
+</tr>
+<tr>
+<td>Adventure</td>
+<td><code>adventure</code></td>
+<td><code>explore</code></td>
+<td>aventure, aventura, abenteuer, avventura, eventyr, äventyr, kaland, приключения</td>
+</tr>
+<tr>
+<td>Animation</td>
+<td><code>animation</code></td>
+<td><code>animation</code></td>
+<td>animación, animazione, animációs, мультфильм</td>
+</tr>
+<tr>
+<td>Comedy</td>
+<td><code>comedy</code></td>
+<td><code>mood</code></td>
+<td>comédie, comedia, komödie, commedia, komedie, komedi, vígjáték, комедия</td>
+</tr>
+<tr>
+<td>Crime</td>
+<td><code>crime</code></td>
+<td><code>local_police</code></td>
+<td>crimen, krimi, crimine, brott, bűnügyi, криминал</td>
+</tr>
+<tr>
+<td>Documentary</td>
+<td><code>documentary</code></td>
+<td><code>article</code></td>
+<td>documental, dokumentarfilm, documentario, dokumentar, dokumentär, dokumentum, документальный</td>
+</tr>
+<tr>
+<td>Drama</td>
+<td><code>drama</code></td>
+<td><code>theater_comedy</code></td>
+<td>drame, drammatico, dráma, драма</td>
+</tr>
+<tr>
+<td>Family</td>
+<td><code>family</code></td>
+<td><code>family_restroom</code></td>
+<td>familial, familiar, familienfilm, famiglia, familie, familj, családi, семейный</td>
+</tr>
+<tr>
+<td>Fantasy</td>
+<td><code>fantasy</code></td>
+<td><code>auto_awesome</code></td>
+<td>fantastique, fantasía, fantastico, фэнтези</td>
+</tr>
+<tr>
+<td>History</td>
+<td><code>history</code></td>
+<td><code>history_edu</code></td>
+<td>histoire, historique, historia, geschichte, storico, historie, történelmi, история</td>
+</tr>
+<tr>
+<td>Horror</td>
+<td><code>horror</code></td>
+<td><code>skull</code></td>
+<td>horreur, terror, orrore, gyser, skräck, ужасы</td>
+</tr>
+<tr>
+<td>Music</td>
+<td><code>music</code></td>
+<td><code>music_note</code></td>
+<td>musique, música, musica, musik, zenei, музыка</td>
+</tr>
+<tr>
+<td>Mystery</td>
+<td><code>mystery</code></td>
+<td><code>psychology_alt</code></td>
+<td>mystère, misterio, mistero, mysterie, mysterium, misztikus, детектив</td>
+</tr>
+<tr>
+<td>Romance</td>
+<td><code>romance</code></td>
+<td><code>favorite</code></td>
+<td>liebesfilm, romantico, romantik, romantikus, мелодрама</td>
+</tr>
+<tr>
+<td>Science Fiction</td>
+<td><code>science fiction</code></td>
+<td><code>science</code></td>
+<td>sci-fi, science-fiction, ciencia ficción, fantascienza, фантастика</td>
+</tr>
+<tr>
+<td>TV Movie</td>
+<td><code>tv movie</code></td>
+<td><code>tv</code></td>
+<td>téléfilm, película de tv, fernsehfilm, film per la tv, tv-film, tv film, телевизионный фильм</td>
+</tr>
+<tr>
+<td>Thriller</td>
+<td><code>thriller</code></td>
+<td><code>psychology</code></td>
+<td>suspense, триллер</td>
+</tr>
+<tr>
+<td>War</td>
+<td><code>war</code></td>
+<td><code>military_tech</code></td>
+<td>guerre, bélica, kriegsfilm, guerra, krig, krigs, háborús, военный</td>
+</tr>
+<tr>
+<td>Western</td>
+<td><code>western</code></td>
+<td><code>landscape</code></td>
+<td>вестерн</td>
+</tr>
+<tr>
+<td>Superhero</td>
+<td><code>superhero</code></td>
+<td><code>domino_mask</code></td>
+<td>superhéroes</td>
+</tr>
+<tr>
+<td>Musical</td>
+<td><code>musical</code></td>
+<td><code>music_video</code></td>
+<td>comédie musicale, musikfilm</td>
+</tr>
+<tr>
+<td>Biography</td>
+<td><code>biography</code></td>
+<td><code>menu_book</code></td>
+<td>biographie, biografía, biografico, életrajzi</td>
+</tr>
+<tr>
+<td>Sport</td>
+<td><code>sport</code></td>
+<td><code>sports_soccer</code></td>
+<td>deporte, sportivo</td>
+</tr>
+<tr>
+<td>Game Show</td>
+<td><code>game-show</code></td>
+<td><code>quiz</code></td>
+<td>jeu-concours, concurso, spielshow, game show, spilshow, spelshow, játékshow</td>
+</tr>
+<tr>
+<td>Reality TV</td>
+<td><code>reality-tv</code></td>
+<td><code>live_tv</code></td>
+<td>télé-réalité, telerrealidad, reality tv, valóság-tv, реалити-шоу</td>
+</tr>
+<tr>
+<td>Other</td>
+<td><code>other</code></td>
+<td><code>theaters</code></td>
+<td>Every genre not listed above</td>
+</tr>
+</tbody>
+</table>
+<p>The genre's colours apply to its icon on web cards and native posters alike; on the web, the name that appears beside the icon on hover, in the caption strip and in the Summary and Minimal hover lists, takes them too. Only a genre you colour on its own does that: <strong>Whole group</strong> colours and presets colour every icon but leave the names in their usual dark pill. The preview shows a Horror, a Comedy and an Animation icon. Documents saved before genres had their own tags (one colour for every genre) open with that colour as the <strong>Whole group</strong> colour, so nothing changes until you colour a genre.</p>
+<h3 id="contrast-check">Contrast check<a class="headerlink" href="#contrast-check" title="Permanent link">&para;</a></h3>
+<p>The badge under the colour rows rates the text against the background, both shown over a dark poster:</p>
+<table>
+<thead>
+<tr>
+<th>Badge</th>
+<th>Contrast</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>AA</strong> (green)</td>
+<td>4.5:1 or more</td>
+<td>Easy to read</td>
+</tr>
+<tr>
+<td><strong>AA large only</strong> (amber)</td>
+<td>3:1 to 4.5:1</td>
+<td>Readable for large or bold text only</td>
+</tr>
+<tr>
+<td><strong>Low contrast</strong> (red)</td>
+<td>under 3:1</td>
+<td>Hard to read</td>
+</tr>
+</tbody>
+</table>
+<p>With <strong>Whole group</strong> selected, the badge only appears when a tag reads under 3:1, and names the tag that reads worst. Pick a single tag to see its own rating. Translucent presets also depend on the artwork behind them, so check the preview. Under <strong>Poster</strong>, a tag whose text or background comes from the artwork is rated by the worst case over any artwork, and the badge says so; a tag whose text and background are both set here is rated by those colours, and <strong>Whole group</strong> shows whichever reads worst.</p>
+<h3 id="user-presets">User presets<a class="headerlink" href="#user-presets" title="Permanent link">&para;</a></h3>
+<p>With <strong>Let users pick their own preset</strong> on, users choose <strong>Tag Colours</strong> on the <strong>Colours</strong> tab of <strong>Media Tags</strong> (see <a href="../tags/#the-media-tags-section">The Media Tags section</a>). <strong>Server default</strong> follows your preset; any other choice replaces only the preset, never your group or tag colours. The web applies it right away, and native posters for that user follow the next time they load.</p>
+<p>Styles change colours, not size, shape, position or visibility. For web layout, sizing, hiding and more detailed styling, see <a href="../../advanced/css-customization/">CSS Customization</a>.</p>
+<div class="admonition note">
+<p class="admonition-title">Style requirements</p>
+<p>Native colours need <strong>Native poster tags (experimental)</strong>. Enable the tag feature and supply metadata first: CSS cannot create missing tags or restyle pixels already drawn into an image.</p>
+</div>
+<details class="info">
+<summary>Stored style configuration</summary>
+<p>The saved fields are <code>TagStylesEnabled</code>, <code>TagStyleTarget</code> (<code>both</code>, <code>web</code> or <code>native</code>), <code>TagStylePreset</code> (<code>default</code>, <code>glass</code>, <code>outline</code>, <code>dark</code>, <code>light</code>, <code>mono</code> or <code>poster</code>), <code>TagStylesAllowUserPreset</code>, and <code>TagStyleOverrides</code>: an empty string, or a version 2 document <code>{"v":2,"preset":…,"groups":{…},"labels":{…}}</code> holding only the colours you set. Settings saved before this editor (version 1, with colours per quality label, age board, rating chip and genre) still load and look exactly as before: each tag you had changed keeps the colours it was drawn with, and the preset becomes <strong>Default</strong>, because the old presets were already baked into those colours. They are converted to version 2 on the next save. <code>TagStyleApplyScope</code> is no longer used. Each user's choice is <code>TagStylePreset</code> in their settings (<code>null</code> follows the admin). Saving checks the document, in either version: anything that is not a colour, an unknown group, tag or field, or a document over 40 KB keeps the current styles. See the <a href="../../advanced/api/#style-and-native-preview-contracts">API reference</a> for the full format.</p>
+</details>
+<details class="info">
+<summary>Web CSS behavior</summary>
+<p>Saved Tag Styles use stronger important colour rules than simple CSS recipes, but sufficiently specific important custom CSS can override them. Status chips carry <code>data-je-status</code> (<code>added</code>, <code>newMovie</code>, <code>newSeries</code>, <code>newEpisode</code>, <code>trending</code>, or a schedule/milestone/series-state key such as <code>season_finale</code>) if you want to target one kind yourself. Prefer the corner controls to transforms that can disrupt shared-corner stacking. Genre-name styling requires <strong>Hide tags on hover</strong> off. Hiding a displayed flag with CSS does not make a fourth flag appear.</p>
+</details>
+<details class="info">
+<summary>Style API routes</summary>
+<p>The effective web colours are available through authenticated <code>GET /JellyfinEnhanced/tag-styles</code> (empty when disabled or targeting native posters only; optional <code>preset</code> for a user's own preset). The shipped defaults and preset palettes come from authenticated <code>GET /JellyfinEnhanced/tag-styles/catalog</code> (any signed-in user; it holds only the shipped palettes, no settings).</p>
+</details>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../tags-status/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Status Badges">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Status Badges
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../spoiler-guard/spoiler-guard-features/" class="md-footer__link md-footer__link--next" aria-label="Next: Features">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Features
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  <p class="je-keyhint">
+    Press <kbd>/</kbd> to search, <kbd>P</kbd> or <kbd>N</kbd> for the previous or next page
+  </p>
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy;2026 n00bcodr. Made with 💜 for Jellyfin and the community
+    </div>
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/n00bcodr/Jellyfin-Enhanced" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://discord.gg/EYNFf7y4CG" target="_blank" rel="noopener" title="Jellyfin Community Discord - Jellyfin Enhanced Channel" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      
+<div class="md-progress" data-md-component="progress" role="progressbar" aria-label="Loading"></div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.instant","navigation.instant.progress","navigation.tracking","navigation.tabs","navigation.tabs.sticky","navigation.sections","navigation.indexes","navigation.top","navigation.footer","toc.follow","toc.integrate","search.suggest","search.highlight","search.share","content.code.copy","content.code.annotate","content.tabs.link","announce.dismiss"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"default":"latest","provider":"mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.3cb411a8.min.js"></script>
+      
+        <script src="../../javascripts/extra.js"></script>
+      
+    
+  </body>
+</html>
