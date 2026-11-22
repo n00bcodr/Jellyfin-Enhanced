@@ -138,10 +138,18 @@ test('an account Reclaimerr refuses on its own gets its own card, and everyone e
   assert.deepEqual(lists(out), [{ title: 'Show 2 user(s) with no issues', names: ['server (administrator)', 'Teken → Teken'], unchecked: false }]);
 });
 
-test('with every user set up the audit says so in one line', async (t) => {
-  const h = boot(t, { version: '0.6.16', requestsEnabled: true, issues: [], users: [user('server', 'server', { admin: true }), user('Teken', 'Teken')] });
+test('with every user set up the audit says so in one line, counting the administrators it did not check apart', async (t) => {
+  const h = boot(t, { version: '0.6.16', requestsEnabled: true, issues: [], users: [user('server', 'server', { admin: true }), user('Alba', 'Alba_user'), user('Teken', 'Teken')] });
   const out = await h.run();
-  assert.equal(out.querySelector('.je-audit-summary-title').textContent, 'All 2 user(s) are set up. Reclaimerr 0.6.16.');
+  assert.equal(out.querySelector('.je-audit-summary-title').textContent, 'All 2 user(s) are set up; 1 administrator(s) not checked. Reclaimerr 0.6.16.');
   assert.equal(out.querySelector('.je-audit-summary-chips'), null);
   assert.equal(out.querySelectorAll('.je-audit-card, details').length, 0);
+});
+
+test('a clean audit without administrators, and one with nobody but administrators', async (t) => {
+  const plain = boot(t, { version: '0.6.16', requestsEnabled: true, issues: [], users: [user('Alba', 'Alba_user'), user('Teken', 'Teken')] });
+  assert.equal((await plain.run()).querySelector('.je-audit-summary-title').textContent, 'All 2 user(s) are set up. Reclaimerr 0.6.16.');
+  // Nobody was checked: an administrator without a Reclaimerr account is not "set up", there was nothing to check.
+  const admins = boot(t, { version: null, requestsEnabled: true, issues: [], users: [user('server', null, { admin: true, linked: false })] });
+  assert.equal((await admins.run()).querySelector('.je-audit-summary-title').textContent, 'Nothing to check: all 1 user(s) are administrators.');
 });

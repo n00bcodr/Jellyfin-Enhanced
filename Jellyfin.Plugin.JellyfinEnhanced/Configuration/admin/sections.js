@@ -1488,9 +1488,13 @@ JEAdmin.maintainerr = (function () {
             const unchecked = users.filter((u) => !(u.issues || []).length && u.checked === false);
             const ok = users.filter((u) => !(u.issues || []).length && u.checked !== false);
             const clean = !setup.length && !flagged.length && !unchecked.length;
+            // Administrators are not checked, so a clean result counts them apart from the users who passed.
+            const admins = ok.filter((u) => u.admin).length;
             const summary = node('div', 'je-audit-summary');
             summary.append(node('div', 'je-audit-summary-title', clean
-                ? 'All ' + ok.length + ' user(s) are set up.' + (data.version ? ' Reclaimerr ' + data.version + '.' : '')
+                ? (admins && admins === ok.length ? 'Nothing to check: all ' + admins + ' user(s) are administrators.'
+                    : 'All ' + (ok.length - admins) + ' user(s) are set up' + (admins ? '; ' + admins + ' administrator(s) not checked' : '') + '.')
+                    + (data.version ? ' Reclaimerr ' + data.version + '.' : '')
                 : 'Audit complete' + (data.version ? ' (Reclaimerr ' + data.version + ')' : '') + ', review the items below.'));
             if (!clean) {
                 const chips = node('div', 'je-audit-summary-chips');
