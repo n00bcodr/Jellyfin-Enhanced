@@ -122,7 +122,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Schedule a manual deletion of the whole title on <paramref name="at"/> (administrators), or <see cref="MarkDays"/> days
         /// ahead when no date is given. A movie kept in several versions is scheduled by the version picked only.
         /// </summary>
-        public async Task<MaintainerrItemState> MarkAsync(BaseItem item, PluginConfiguration config, DateTimeOffset? at, string? mediaSourceId, string? actingUser, CancellationToken token)
+        public async Task<MaintainerrItemState> MarkAsync(BaseItem item, PluginConfiguration config, DateTimeOffset? at, string? mediaSourceId, string? actingUser, CancellationToken token, Guid? actingUserId = null)
         {
             var type = MediaType(item) ?? throw new MaintainerrActions.ActionException("Only movies and series can be marked.");
             if (_leaving.CollectionOf(item.Id, config) != null) throw new MaintainerrActions.ActionException("This item is already marked for removal.");
@@ -131,18 +131,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // A movie kept in several versions (1080p and 4K): schedule only the file this item or the picked version is,
             // so the movie and its other copies stay. A single-version movie is scheduled whole (the Radarr entry goes too).
             var versionId = type == "movie" ? VersionId(item, mediaSourceId, media) : null;
-            using (await TokenAsync(config, HttpMethod.Post, "/api/v1/scheduled-deletions", new { media_type = type, media_id = mediaId, movie_version_id = versionId, scheduled_at = Iso(when) }, token).ConfigureAwait(false)) { }
+            using (await ActingTokenAsync(config, actingUserId, HttpMethod.Post, "/api/v1/scheduled-deletions", new { media_type = type, media_id = mediaId, movie_version_id = versionId, scheduled_at = Iso(when) }, token).ConfigureAwait(false)) { }
             _logger.Info($"[Reclaimerr] {actingUser ?? "An administrator"} scheduled '{item.Name}'{(versionId != null ? " (one version)" : string.Empty)} for deletion on {when:yyyy-MM-dd}.");
             return await AfterAsync(item, config, token).ConfigureAwait(false);
         }
 
         /// <summary>Keep the item: protect its candidate, or cancel its scheduled deletion.</summary>
-        public async Task<MaintainerrItemState> UnmarkAsync(BaseItem item, PluginConfiguration config, string? actingUser, CancellationToken token)
+        public async Task<MaintainerrItemState> UnmarkAsync(BaseItem item, PluginConfiguration config, string? actingUser, CancellationToken token, Guid? actingUserId = null)
         {
             if (MediaType(item) == null) throw new MaintainerrActions.ActionException("Only movies and series can be kept.");
             var owner = await OwnerAsync(item, config, token).ConfigureAwait(false);
             var path = owner > 0 ? $"/api/v1/candidates/{owner}/protect" : $"/api/v1/scheduled-deletions/{-owner}/cancel";
-            using (await TokenAsync(config, HttpMethod.Post, path, owner > 0 ? new { reason = "Kept from Jellyfin" } : new { }, token).ConfigureAwait(false)) { }
+            using (await ActingTokenAsync(config, actingUserId, HttpMethod.Post, path, owner > 0 ? new { reason = "Kept from Jellyfin" } : new { }, token).ConfigureAwait(false)) { }
             _logger.Info($"[Reclaimerr] {actingUser ?? "An administrator"} kept '{item.Name}'.");
             return await AfterAsync(item, config, token).ConfigureAwait(false);
         }
@@ -151,7 +151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Move the removal to the exact day <paramref name="until"/>, or later by <paramref name="days"/> (1 to 3650),
         /// or restart a candidate's timer when neither is given.
         /// </summary>
-        public async Task<MaintainerrItemState> PostponeAsync(BaseItem item, int? days, DateTimeOffset? until, PluginConfiguration config, string? actingUser, CancellationToken token)
+        public async Task<MaintainerrItemState> PostponeAsync(BaseItem item, int? days, DateTimeOffset? until, PluginConfiguration config, string? actingUser, CancellationToken token, Guid? actingUserId = null)
         {
             if (MediaType(item) == null) throw new MaintainerrActions.ActionException("Only movies and series can be postponed.");
             if (days is { } d && (d < 1 || d > MaxPostponeDays)) throw new MaintainerrActions.ActionException($"Days must be between 1 and {MaxPostponeDays}.");
@@ -171,7 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             else
             {
                 var to = exact ?? (days is { } n ? (current ?? Now()).AddDays(n) : Now().AddDays(MarkDays));
-                using (await TokenAsync(config, HttpMethod.Post, $"/api/v1/scheduled-deletions/{-owner}/reschedule", new { scheduled_at = Iso(to) }, token).ConfigureAwait(false)) { }
+                using (await ActingTokenAsync(config, actingUserId, HttpMethod.Post, $"/api/v1/scheduled-deletions/{-owner}/reschedule", new { scheduled_at = Iso(to) }, token).ConfigureAwait(false)) { }
             }
 
             _logger.Info(exact is { } e ? $"[Reclaimerr] Postponed '{item.Name}' to {e:yyyy-MM-dd}." : days is { } p ? $"[Reclaimerr] Postponed '{item.Name}' by {p} days." : $"[Reclaimerr] Reset the removal timer of '{item.Name}'.");
@@ -436,7 +436,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// With <paramref name="shownGraceDays"/> (what the administrator was told the grace period is), the grace period is read again first and
         /// nothing is approved when it differs or cannot be read: a period that became 0 would delete at once instead of on the day shown.
         /// </summary>
-        public async Task ReviewRequestAsync(int requestId, bool approve, string? note, string? actingUser, PluginConfiguration config, CancellationToken token, ApprovalTiming timing = ApprovalTiming.GracePeriod, DateTimeOffset? at = null, int? shownGraceDays = null)
+        public async Task ReviewRequestAsync(int requestId, bool approve, string? note, string? actingUser, PluginConfiguration config, CancellationToken token, ApprovalTiming timing = ApprovalTiming.GracePeriod, DateTimeOffset? at = null, int? shownGraceDays = null, Guid? actingUserId = null)
         {
             if (requestId <= 0) throw new MaintainerrActions.ActionException("Unknown request.");
             if (approve && timing == ApprovalTiming.GracePeriod && shownGraceDays is { } shown)
@@ -457,7 +457,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             object body = !approve || timing == ApprovalTiming.GracePeriod ? new { admin_notes = text } : new { admin_notes = text, scheduled_at = when };
             try
             {
-                using (await TokenAsync(config, HttpMethod.Post, $"/api/v1/delete-requests/{requestId}/{(approve ? "approve" : "deny")}", body, token).ConfigureAwait(false)) { }
+                using (await ActingTokenAsync(config, actingUserId, HttpMethod.Post, $"/api/v1/delete-requests/{requestId}/{(approve ? "approve" : "deny")}", body, token).ConfigureAwait(false)) { }
             }
             finally
             {
@@ -1015,6 +1015,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private Task<JsonDocument> TokenAsync(PluginConfiguration config, HttpMethod method, string path, object? body, CancellationToken token)
             => ReclaimerrApi.TokenAsync(_http, config, method, path, body, Timeout, null, token);
+
+        /// <summary>
+        /// A token call that also names the acting Jellyfin user to Reclaimerr (the user header, same as a user's own request), so its
+        /// history credits them instead of the token. Only with "Let users request removals" on; a user with no active linked
+        /// Reclaimerr account, or a lookup that fails, sends no header and the call stays the token's.
+        /// </summary>
+        private async Task<JsonDocument> ActingTokenAsync(PluginConfiguration config, Guid? actingUserId, HttpMethod method, string path, object? body, CancellationToken token)
+        {
+            string? who = null;
+            if (actingUserId is { } id && RequestsEnabled(config))
+            {
+                try { who = await ReclaimerrUserAsync(config, id, token).ConfigureAwait(false); }
+                catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested) { _logger.Warning($"[Reclaimerr] Could not look up the acting user ({MaintainerrHttp.Describe(ex)}); sending the call as the token."); }
+            }
+
+            return await ReclaimerrApi.TokenAsync(_http, config, method, path, body, Timeout, null, token, who).ConfigureAwait(false);
+        }
 
         private async Task<MaintainerrItemState> AfterAsync(BaseItem item, PluginConfiguration config, CancellationToken token)
         {

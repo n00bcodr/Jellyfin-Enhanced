@@ -99,10 +99,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal static string? ReportedVersion(PluginConfiguration config) => Versions.TryGetValue(BaseUrl(config), out var known) ? known.Reported : null;
 
         /// <summary>One call to the token API (<paramref name="path"/> starts <c>/api/v1</c>), after the version check.</summary>
-        internal static async Task<JsonDocument> TokenAsync(IHttpClientFactory http, PluginConfiguration config, HttpMethod method, string path, object? body, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token)
+        internal static async Task<JsonDocument> TokenAsync(IHttpClientFactory http, PluginConfiguration config, HttpMethod method, string path, object? body, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token, string? actingReclaimerrUser = null)
         {
             await EnsureSupportedAsync(http, config, timeout, onRedirect, token).ConfigureAwait(false);
-            return await MaintainerrHttp.SendAsync(http, config, method, BaseUrl(config) + path, body == null ? null : JsonSerializer.Serialize(body), timeout, onRedirect, token).ConfigureAwait(false);
+            // The token still decides what is allowed; the user header only tells Reclaimerr who to credit (it ignores an unknown name).
+            (string, string)? also = string.IsNullOrWhiteSpace(actingReclaimerrUser) || string.IsNullOrWhiteSpace(config.ReclaimerrUserHeader) ? null : (config.ReclaimerrUserHeader.Trim(), actingReclaimerrUser);
+            return await MaintainerrHttp.SendAsync(http, config, method, BaseUrl(config) + path, body == null ? null : JsonSerializer.Serialize(body), timeout, onRedirect, token, null, also).ConfigureAwait(false);
         }
 
         /// <summary>

@@ -43,7 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <param name="onRedirect">Told where a 3xx pointed (the caller logs the host once).</param>
         /// <param name="token">The caller's cancellation.</param>
         /// <param name="asUser">Reclaimerr only: send this user header instead of the token (its trusted-proxy sign-in).</param>
-        internal static async Task<JsonDocument> SendAsync(IHttpClientFactory http, PluginConfiguration config, HttpMethod method, string url, string? body, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token, (string Name, string Value)? asUser = null)
+        internal static async Task<JsonDocument> SendAsync(IHttpClientFactory http, PluginConfiguration config, HttpMethod method, string url, string? body, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token, (string Name, string Value)? asUser = null, (string Name, string Value)? alsoHeader = null)
         {
             if (!await Helpers.ArrUrlGuard.IsAllowedUrlAsync(url, token).ConfigureAwait(false)) throw new UnauthorizedAccessException();
             using var limit = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -63,6 +63,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var key = (config.LeavingSoonMaintainerrApiKey ?? string.Empty).Trim();
                 if (key.Length > 0) request.Headers.TryAddWithoutValidation("X-Api-Key", key);
             }
+            if (alsoHeader is { } extra) request.Headers.TryAddWithoutValidation(extra.Name, extra.Value);
             if (body != null) request.Content = new StringContent(body, Encoding.UTF8, new MediaTypeHeaderValue("application/json"));
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, limit.Token).ConfigureAwait(false);
             if ((int)response.StatusCode is >= 300 and < 400)
