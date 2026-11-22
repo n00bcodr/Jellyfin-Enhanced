@@ -13,7 +13,7 @@ const config = resolve(jsRoot, '../Configuration');
 const html = readFileSync(join(config, 'configPage.html'), 'utf8');
 const DEFAULTS = JSON.parse(readFileSync(resolve(jsRoot, '../../docs/advanced/config-flag-groups.json'), 'utf8')).defaults;
 const PAGE_URL = 'http://jellyfin.test/web/index.html#/configurationpage?name=Jellyfin%20Enhanced';
-const REFUSED = 'Reclaimerr refuses this server\'s trusted-proxy sign-in whoever is named (HTTP 401: Not authenticated), so no user\'s Request permission was checked and Request removal fails for everyone, whatever their account.';
+const REFUSED = 'Reclaimerr answered an account and a name no account can have the same way (HTTP 401: Not authenticated). It does that for every name while its trusted-proxy sign-in is off, so no user\'s Request permission was checked and Request removal fails for everyone, whatever their account.';
 
 /** One user of the audit's answer, as the plugin gives it. */
 const user = (name, account, extra = {}) => ({ jellyfinUsername: name, jellyfinUserId: name.toLowerCase(), admin: false, linked: true, reclaimerrUsername: account, issues: [], checked: true, ...extra });
@@ -21,7 +21,7 @@ const user = (name, account, extra = {}) => ({ jellyfinUsername: name, jellyfinU
 /**
  * Boot the configuration page with Reclaimerr on and the audit answering `audit`.
  * @param {import('node:test').TestContext} t
- * @param {object} audit The body of GET JellyfinEnhanced/reclaimerr/user-audit.
+ * @param {object|Function} audit The body of GET JellyfinEnhanced/reclaimerr/user-audit, or a function that gives a promise of it.
  */
 function boot(t, audit) {
   const server = structuredClone({ ...DEFAULTS, ReclaimerrEnabled: true, ReclaimerrUrl: 'http://reclaimerr.test', ReclaimerrToken: 'rcl_token', ReclaimerrUserRequests: true });
@@ -39,7 +39,7 @@ function boot(t, audit) {
       updatePluginConfiguration: async () => ({}),
       ajax: async (request) => {
         const path = new URL(request.url).pathname;
-        if (path.endsWith('/reclaimerr/user-audit')) { asked.push(request.type); return structuredClone(audit); }
+        if (path.endsWith('/reclaimerr/user-audit')) { asked.push(request.type); return typeof audit === 'function' ? audit() : structuredClone(audit); }
         // Lists (plugins, users, libraries) come back empty; everything else as an empty object.
         return request.type === 'GET' || !request.type ? [] : {};
       },
@@ -93,7 +93,7 @@ function boot(t, audit) {
     assert.equal(button.textContent, 'Run Audit', 'the audit finished');
     return document.getElementById('reclaimerrAuditResult');
   };
-  return { ...h, asked, run };
+  return { ...h, asked, run, settle };
 }
 
 /** The folded name lists of an audit result: each list's title, the names in it, and whether it is drawn as not checked. */
@@ -103,7 +103,7 @@ const lists = (out) => Array.from(out.querySelectorAll('details.je-audit-ok-sect
   unchecked: d.querySelector('ul').classList.contains('je-audit-unchecked-names'),
 }));
 
-test('a sign-in Reclaimerr refuses for everyone is one Setup item: the users are listed as linked and not checked, the administrator as an administrator', async (t) => {
+test('a sign-in Reclaimerr refuses for everyone is one Setup item: the users are listed as linked and not checked, the administrator apart, and nobody as OK', async (t) => {
   const h = boot(t, {
     version: '0.6.16', requestsEnabled: true, issues: [REFUSED],
     users: [user('Alba', 'Alba_user', { checked: false }), user('server', 'server', { admin: true }), user('Teken', 'Teken', { checked: false })],
@@ -111,7 +111,8 @@ test('a sign-in Reclaimerr refuses for everyone is one Setup item: the users are
   const out = await h.run();
   assert.deepEqual(h.asked, ['GET']);
   assert.equal(out.querySelector('.je-audit-summary-title').textContent, 'Audit complete (Reclaimerr 0.6.16), review the items below.');
-  assert.deepEqual(Array.from(out.querySelectorAll('.je-audit-summary-chips .je-audit-chip'), (c) => c.lastChild.textContent), ['1 setup', '2 not checked', '1 OK']);
+  // Nobody was shown to be able to request: the administrator is not checked, so they are not counted as OK (issue 1095).
+  assert.deepEqual(Array.from(out.querySelectorAll('.je-audit-summary-chips .je-audit-chip'), (c) => c.lastChild.textContent), ['1 setup', '2 not checked', '1 administrator(s)']);
   // Only the Setup card: no user has a card of their own for a setting on Reclaimerr.
   const cards = Array.from(out.querySelectorAll('.je-audit-card'));
   assert.equal(cards.length, 1);
@@ -119,7 +120,7 @@ test('a sign-in Reclaimerr refuses for everyone is one Setup item: the users are
   assert.deepEqual(Array.from(cards[0].querySelectorAll('li'), (li) => li.textContent), [REFUSED]);
   assert.deepEqual(lists(out), [
     { title: 'Show 2 linked user(s) whose Request permission was not checked (see Setup)', names: ['Alba → Alba_user', 'Teken → Teken'], unchecked: true },
-    { title: 'Show 1 user(s) with no issues', names: ['server → server (administrator)'], unchecked: false },
+    { title: 'Show 1 administrator(s), not checked: they mark with the API token', names: ['server → server'], unchecked: true },
   ]);
 });
 
@@ -130,12 +131,15 @@ test('an account Reclaimerr refuses on its own gets its own card, and everyone e
     users: [user('Gone', 'gone_user', { issues: [refused] }), user('server', null, { admin: true, linked: false }), user('Teken', 'Teken')],
   });
   const out = await h.run();
-  assert.deepEqual(Array.from(out.querySelectorAll('.je-audit-summary-chips .je-audit-chip'), (c) => c.lastChild.textContent), ['1 with issues', '2 OK']);
+  assert.deepEqual(Array.from(out.querySelectorAll('.je-audit-summary-chips .je-audit-chip'), (c) => c.lastChild.textContent), ['1 with issues', '1 OK', '1 administrator(s)']);
   const cards = Array.from(out.querySelectorAll('.je-audit-card'));
   assert.equal(cards.length, 1);
   assert.equal(cards[0].querySelector('.je-audit-card-user').lastChild.textContent, 'Gone → gone_user');
   assert.deepEqual(Array.from(cards[0].querySelectorAll('.je-audit-card-issues li'), (li) => li.textContent), [refused]);
-  assert.deepEqual(lists(out), [{ title: 'Show 2 user(s) with no issues', names: ['server (administrator)', 'Teken → Teken'], unchecked: false }]);
+  assert.deepEqual(lists(out), [
+    { title: 'Show 1 user(s) with no issues', names: ['Teken → Teken'], unchecked: false },
+    { title: 'Show 1 administrator(s), not checked: they mark with the API token', names: ['server'], unchecked: true },
+  ]);
 });
 
 test('with every user set up the audit says so in one line, counting the administrators it did not check apart', async (t) => {
@@ -152,4 +156,25 @@ test('a clean audit without administrators, and one with nobody but administrato
   // Nobody was checked: an administrator without a Reclaimerr account is not "set up", there was nothing to check.
   const admins = boot(t, { version: null, requestsEnabled: true, issues: [], users: [user('server', null, { admin: true, linked: false })] });
   assert.equal((await admins.run()).querySelector('.je-audit-summary-title').textContent, 'Nothing to check: all 1 user(s) are administrators.');
+});
+
+test('an answer that arrives after the page was drawn again is not put into the new page', async (t) => {
+  let answer;
+  const h = boot(t, () => new Promise((resolve) => { answer = resolve; }));
+  await h.settle();
+  const button = h.document.getElementById('reclaimerrAuditBtn');
+  const out = h.document.getElementById('reclaimerrAuditResult');
+  button.click();
+  await h.settle();
+  assert.equal(button.textContent, 'Running…');
+  // The page is taken down and drawn again while Reclaimerr is asked: a new button under the same id, and the same result box id.
+  const fresh = button.cloneNode(true);
+  fresh.textContent = 'Run Audit';
+  fresh.disabled = false;
+  button.replaceWith(fresh);
+  answer({ version: '0.6.16', requestsEnabled: true, issues: [REFUSED], users: [] });
+  await h.settle();
+  assert.equal(out.textContent, '');
+  assert.equal(out.style.display, 'none');
+  assert.equal(fresh.textContent, 'Run Audit');
 });

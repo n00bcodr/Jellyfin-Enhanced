@@ -206,7 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401)
             {
-                throw new MaintainerrActions.ActionException($"Reclaimerr did not let this server sign in as {who}. An administrator can run the User audit in the plugin's Reclaimerr card to see why: usually Reclaimerr's trusted-proxy sign-in (FORWARD_AUTH_ENABLED) is off, or this server's address is not in FORWARD_AUTH_TRUSTED_PROXIES.");
+                throw new MaintainerrActions.ActionException($"Reclaimerr did not let this server sign in as {who} ({Said(e.Reason)}). An administrator can run the User audit in the plugin's Reclaimerr card to look into it: usually Reclaimerr's trusted-proxy sign-in (FORWARD_AUTH_ENABLED) is off, or this server's address is not in FORWARD_AUTH_TRUSTED_PROXIES.");
             }
             catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 403)
             {
@@ -699,10 +699,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             string? silent = null;
             // Whether Reclaimerr takes this server's trusted-proxy sign-in at all: null until an answer shows it. True once it signs an
-            // account in or turns one down by name (it does either only after trusting this server); false only when it refuses the
-            // server whoever is named. Reclaimerr's own reason for that refusal is kept for the setup issue.
+            // account in or turns one down by name (it does either only after trusting this server). False once an account was refused
+            // without saying why and asking about the server itself (once per audit) did not show it is trusted: the check stops there.
+            // What the setup issue then says is kept: Reclaimerr's reason for refusing the account, whether that and the answer about
+            // the server were both Reclaimerr's plain "Not authenticated" (only then is it known to be Reclaimerr refusing every name),
+            // and why asking about the server failed, when it did.
             bool? trusted = null;
             string? refusedReason = null;
+            var refusedPlainly = false;
+            string? askingFailed = null;
             foreach (var (id, name, admin) in jellyfinUsers.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase))
             {
                 var issues = new List<string>();
@@ -742,7 +747,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         using var me = await ReclaimerrApi.SendAsUserAsync(_http, config, account!, HttpMethod.Get, "/api/account/me", null, Timeout, token).ConfigureAwait(false);
                         var root = me.RootElement;
                         var signedIn = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("username", out var u) && u.ValueKind == JsonValueKind.String ? u.GetString() : null;
-                        if (signedIn == null)
+                        if (string.IsNullOrWhiteSpace(signedIn))
                         {
                             // An empty answer, or something else's: unknown, which is not the same as lacking the permission.
                             issues.Add($"Could not check the Reclaimerr account {account} (Reclaimerr's answer was not an account).");
@@ -787,10 +792,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (unclear && trusted == null)
                     {
-                        // Ask about the server itself, once: what one account was answered cannot tell the two apart.
+                        // Ask about the server itself, once per audit: what one account was answered cannot tell the two apart.
                         try
                         {
-                            trusted = await SignInTrustedAsync(config, token).ConfigureAwait(false);
+                            var (taken, said) = await SignInTrustedAsync(config, token).ConfigureAwait(false);
+                            trusted = taken;
+                            refusedPlainly = !taken && string.Equals(said, PlainRefusal, StringComparison.Ordinal) && string.Equals(unclearReason, PlainRefusal, StringComparison.Ordinal);
                         }
                         catch (OperationCanceledException) when (!token.IsCancellationRequested)
                         {
@@ -799,8 +806,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
-                            // Still unknown: nothing is concluded about the server, and the next unclear refusal asks again.
-                            issues.Add($"Could not check the Reclaimerr account {account} ({MaintainerrHttp.Describe(ex)}).");
+                            // The question failed, so nothing shows the server is trusted: the check stops here, as it did before there
+                            // was a question to ask, and the setup issue says what was and was not found out.
+                            trusted = false;
+                            askingFailed = MaintainerrHttp.Describe(ex);
                         }
                     }
 
@@ -812,8 +821,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                     else if (unclear && trusted == false)
                     {
-                        // Refused whoever is named: said once under Setup, and nobody else is tried.
-                        refusedReason ??= unclearReason;
+                        // Not shown to be about this account: said once under Setup, and nobody else is tried.
+                        refusedReason = unclearReason;
                         done = false;
                     }
                 }
@@ -828,7 +837,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (trusted == false)
             {
-                result.Issues.Insert(0, SignInRefused(refusedReason, config.ReclaimerrUserHeader.Trim()));
+                result.Issues.Insert(0, SignInRefused(refusedReason, refusedPlainly, askingFailed, config.ReclaimerrUserHeader.Trim()));
             }
 
             return result;
@@ -853,6 +862,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         internal const string NoAccountName = "jellyfin-enhanced-sign-in-check-not-an-account";
 
+        /// <summary>Reclaimerr's answer to a request it does not sign in at all: the sign-in is off, the header is not there, or the address is not trusted.</summary>
+        private const string PlainRefusal = "Not authenticated";
+
         /// <summary>
         /// Whether Reclaimerr takes this server's trusted-proxy sign-in at all, asked with <see cref="NoAccountName"/>
         /// (<c>GET /api/account/me</c>, which writes nothing). Reclaimerr turns that name down as a name ("Trusted proxy supplied an
@@ -861,11 +873,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         /// <param name="config">The configuration (address and user header).</param>
         /// <param name="token">The caller's cancellation.</param>
-        /// <returns>True when Reclaimerr trusts this server's sign-in, false when it refuses it whoever is named.</returns>
+        /// <returns>Whether Reclaimerr trusts this server's sign-in (false: it refuses it whoever is named), and the reason it gave, or null.</returns>
         /// <exception cref="OperationCanceledException">Reclaimerr did not answer in time.</exception>
         /// <exception cref="MaintainerrHttp.MaintainerrException">Reclaimerr answered with another failure status: nothing is known.</exception>
         /// <exception cref="FormatException">Something signed the name in: that is not Reclaimerr's sign-in answering.</exception>
-        private async Task<bool> SignInTrustedAsync(PluginConfiguration config, CancellationToken token)
+        private async Task<(bool Trusted, string? Reason)> SignInTrustedAsync(PluginConfiguration config, CancellationToken token)
         {
             try
             {
@@ -873,7 +885,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401)
             {
-                return RefusedForAccountOnly(e.Reason);
+                return (RefusedForAccountOnly(e.Reason), e.Reason);
             }
 
             throw new FormatException("A name that is no account was signed in.");
@@ -885,22 +897,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static string Said(string? reason) => string.IsNullOrWhiteSpace(reason) ? "HTTP 401" : $"HTTP 401: {reason}";
 
         /// <summary>
-        /// The setup issue for a trusted-proxy sign-in Reclaimerr refuses whoever is named (<see cref="SignInTrustedAsync"/>). It
-        /// names no user. For Reclaimerr's plain "Not authenticated" it says when Reclaimerr answers so, what to set, and what its
-        /// log line about an untrusted address tells (the line's absence proves nothing: a proxy may drop the header, or the log may
-        /// not show warnings).
+        /// The setup issue for an account's refusal that asking about the server (<see cref="SignInTrustedAsync"/>) did not show to be
+        /// about the account. It names no user and says what was seen. When the account and <see cref="NoAccountName"/> both got
+        /// Reclaimerr's plain "Not authenticated", that is how Reclaimerr answers every name while it does not take this server's
+        /// sign-in: the issue says so, what to set, and what its log line about an untrusted address tells (the line's absence proves
+        /// nothing: a proxy may drop the header, or the log may not show warnings). With another reason, none, or a question that
+        /// failed (something in between may be answering, or hiding Reclaimerr's answer), it says what to check and no more.
         /// </summary>
-        /// <param name="reason">Reclaimerr's own reason for the refusal, or null when it gave none.</param>
+        /// <param name="reason">Reclaimerr's own reason for refusing the account, or null when it gave none.</param>
+        /// <param name="plainly">Whether the account and the name no account can have both got Reclaimerr's plain "Not authenticated".</param>
+        /// <param name="askingFailed">Why asking about the server failed, or null when it was answered.</param>
         /// <param name="header">The user header the plugin sends.</param>
         /// <returns>The issue text for the audit's setup list.</returns>
-        private static string SignInRefused(string? reason, string header)
+        private static string SignInRefused(string? reason, bool plainly, string? askingFailed, string header)
         {
-            var what = $"Reclaimerr refuses this server's trusted-proxy sign-in whoever is named ({Said(reason)}), so no user's Request permission was checked and Request removal fails for everyone, whatever their account. ";
-            return string.Equals(reason, "Not authenticated", StringComparison.Ordinal)
-                ? what + "It does this while the sign-in is off, reads another header or does not trust this server's address. "
+            if (plainly)
+            {
+                return $"Reclaimerr answered an account and a name no account can have the same way ({Said(reason)}). It does that for every name while its trusted-proxy sign-in is off, reads another header or does not trust this server's address, "
+                    + "so no user's Request permission was checked and Request removal fails for everyone, whatever their account. "
                     + $"On Reclaimerr, set FORWARD_AUTH_ENABLED=true, FORWARD_AUTH_USER_HEADER={header} (the User header here) and FORWARD_AUTH_TRUSTED_PROXIES to the address this server's requests arrive from, then restart it. "
-                    + "If its log has \"authentication header from untrusted peer\", the address after it is the one to trust; if not, check that the sign-in is on, the header name, and that nothing in between drops the header."
-                : what + $"Check FORWARD_AUTH_ENABLED, FORWARD_AUTH_USER_HEADER (the User header here is {header}) and FORWARD_AUTH_TRUSTED_PROXIES on Reclaimerr, and its log.";
+                    + "If its log has \"authentication header from untrusted peer\", the address after it is the one to trust; if not, check that the sign-in is on, the header name, and that nothing in between drops the header.";
+            }
+
+            var seen = askingFailed == null
+                ? $"The trusted-proxy sign-in was refused for an account and for a name no account can have alike ({Said(reason)})"
+                : $"The trusted-proxy sign-in was refused for an account ({Said(reason)}), and asking Reclaimerr whether it takes this server's sign-in at all failed ({askingFailed})";
+            return seen + ", so no user's Request permission was checked. "
+                + $"Check FORWARD_AUTH_ENABLED, FORWARD_AUTH_USER_HEADER (the User header here is {header}) and FORWARD_AUTH_TRUSTED_PROXIES on Reclaimerr, its log, and that anything between this server and Reclaimerr passes the header and Reclaimerr's answers through.";
         }
 
         /// <summary>Jellyfin user id to every Reclaimerr account linked to it (username, active), from <c>/api/v1/users</c>.</summary>
