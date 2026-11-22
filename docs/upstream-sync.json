@@ -3591,6 +3591,69 @@
       ],
       "with": "df9dcdc3b9b9b40309a079220eca19bfb53f4899",
       "notes": "manifest.json is byte-identical to upstream's at 868803ef: the two catalog entries the release workflow added for 12.17.0.0 (the Jellyfin 12 and the Jellyfin 10.11 build). They are release data about artifacts upstream published, not code; their changelog also lists upstream's da3d9ee9 (#1091), which is deferred here (row 97). The rewrite builds for Jellyfin 12 only, and nothing is built or published by this commit."
+    },
+    {
+      "sha": "54a6f418d585fa54440a20dad01a8741f83edb66",
+      "date": "2026-11-22T12:00:45Z",
+      "subject": "feat(reclaimerr): send the acting user's mapped Reclaimerr name on admin calls",
+      "class": "feature",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 4,
+        "insertions": 35,
+        "deletions": 15
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintainerrHttp.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrActions.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrApi.cs"
+      ],
+      "status": "deferred",
+      "rewriteCommits": [],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrApi.cs"
+      ],
+      "reason": "Upstream's change is a delta to the Reclaimerr token API that entry 97 (da3d9ee9, #1091) introduces and that is deferred here. It passes the acting administrator's Jellyfin id into MarkAsync, UnmarkAsync, PostponeAsync and ReviewRequestAsync, which look up that user's linked Reclaimerr account (ReclaimerrUserAsync, #1091's account link) and send it in the configured user header beside the API token (ReclaimerrApi.TokenAsync, and the extra header added to MaintainerrHttp.SendAsync). This tree still runs the service-account model #1091 removes: there is no ReclaimerrApi or ReclaimerrUserAsync, and ReclaimerrActions has only a private TokenAsync (no user header) for its /api/v1/candidates calls. Schedule, cancel, reschedule, approve and deny go through ReclaimerrActions.SessionAsync instead, which already sends them as the administrator's mapped Reclaimerr user through the trusted-proxy sign-in when ReclaimerrActAsUser is on, and otherwise as the service account with the administrator named in a review's note (IntegrationReclaimerrActionsTests: A_review_the_service_account_sends_names_the_administrator_in_the_note_and_one_sent_as_them_does_not). The one call upstream now credits that this tree sends by token alone is Keep of a cleanup candidate (POST /api/v1/candidates/{id}/protect), as upstream did before this commit; crediting it here would mean a user header on a token call, which upstream relies on Reclaimerr 0.6.15 to honour and links by #1091's account link, neither of which is here, so it is not split out by guesswork. No route, action or registration changes.",
+      "needs": "Entry 97 (da3d9ee9) ported. Then port this on top of it in the same run: the acting user's id through the four admin actions and the user header beside the token on their calls (candidate protect included), with upstream's rule that no header is sent when Let users request removals is off, when the user has no active linked Reclaimerr account, or when the lookup fails (the call stays the token's)."
+    },
+    {
+      "sha": "7762f8e17be3483e171f66c9bb518d1a41286149",
+      "date": "2026-11-22T12:05:16Z",
+      "subject": "fix(reclaimerr): user audit no longer reads a refused sign-in as a problem with the users (#1097)",
+      "class": "fix",
+      "features": [
+        "admin",
+        "media-tags"
+      ],
+      "issues": [
+        "#1095",
+        "#1097"
+      ],
+      "release": null,
+      "size": {
+        "files": 7,
+        "insertions": 713,
+        "deletions": 32
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/jeAdmin.css",
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrActions.cs",
+        "docs/advanced/api.md",
+        "docs/enhanced/tags-status.md",
+        "tests/backend/Integrations/IntegrationReclaimerrTests.cs",
+        "tests/frontend/features/features-admin-config-reclaimerr-audit.test.mjs"
+      ],
+      "status": "deferred",
+      "rewriteCommits": [],
+      "reason": "Upstream #1097 (closes #1095) fixes the Reclaimerr User audit and the Request removal messages of the token-API integration that entry 97 (da3d9ee9, #1091) introduces and that is deferred here. The audit (ReclaimerrActions' user audit behind GET reclaimerr/user-audit, and its list in the admin Reclaimerr card) does not exist in this tree, and the Request removal call it changes goes through ReclaimerrApi.SendAsUserAsync, also #1091's. This tree's Request removal still runs the service-account model (ReclaimerrActions.SessionAsync over ReclaimerrSession) with its own 401 handling and service-account fallback, and upstream's new wording sends the user to the User audit, which is not here. Upstream's tests (309 lines in IntegrationReclaimerrTests, the 180-line features-admin-config-reclaimerr-audit.test.mjs) exercise the audit and the token API. No part of the commit applies without #1091.",
+      "needs": "Entry 97 (da3d9ee9) ported, then entry 109 (54a6f418). Then port this on top of them: RefusedForAccountOnly and the one-per-audit server check with the name no account can have (SignInTrustedAsync), the audit's trusted, refused and unchecked bookkeeping and wording, Request removal's two 401 messages, the admin card's muted unchecked names and administrator labels, the docs (docs/advanced/api.md, docs/enhanced/tags-status.md), and upstream's tests re-homed in this tree's folders."
     }
   ]
 }
