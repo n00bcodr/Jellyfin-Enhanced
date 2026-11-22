@@ -89,21 +89,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         [Produces("application/json")]
         public Task<IActionResult> Mark([FromBody] ReclaimerrItemRequest request, CancellationToken token)
-            => RunAsync(request, (item, config) => _reclaimerr.MarkAsync(item, config, request.Date, request.MediaSourceId, CurrentUserName(), token));
+            => RunAsync(request, (item, config) => _reclaimerr.MarkAsync(item, config, request.Date, request.MediaSourceId, CurrentUserName(), token, UserHelper.GetCurrentUserId(User)));
 
         /// <summary>Keep the item: protect its cleanup candidate, or cancel its scheduled deletion. Admin only.</summary>
         [HttpPost("unmark")]
         [Authorize]
         [Produces("application/json")]
         public Task<IActionResult> Unmark([FromBody] ReclaimerrItemRequest request, CancellationToken token)
-            => RunAsync(request, (item, config) => _reclaimerr.UnmarkAsync(item, config, CurrentUserName(), token));
+            => RunAsync(request, (item, config) => _reclaimerr.UnmarkAsync(item, config, CurrentUserName(), token, UserHelper.GetCurrentUserId(User)));
 
         /// <summary>Move the removal to <c>date</c>, or <c>days</c> later, or restart a candidate's timer when neither is given. Admin only.</summary>
         [HttpPost("postpone")]
         [Authorize]
         [Produces("application/json")]
         public Task<IActionResult> Postpone([FromBody] ReclaimerrItemRequest request, CancellationToken token)
-            => RunAsync(request, (item, config) => _reclaimerr.PostponeAsync(item, request.Days, request.Date, config, CurrentUserName(), token));
+            => RunAsync(request, (item, config) => _reclaimerr.PostponeAsync(item, request.Days, request.Date, config, CurrentUserName(), token, UserHelper.GetCurrentUserId(User)));
 
         /// <summary>Ask the administrators to remove the item (any signed-in user who can see it): filed as a Reclaimerr deletion request.</summary>
         [HttpPost("request")]
@@ -164,7 +164,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     "date" => ReclaimerrActions.ApprovalTiming.OnDate,
                     _ => ReclaimerrActions.ApprovalTiming.GracePeriod,
                 };
-                await _reclaimerr.ReviewRequestAsync(requestId, approve, body?.Note, CurrentUserName(), config, token, timing, body?.Date, body?.GraceDays).ConfigureAwait(false);
+                await _reclaimerr.ReviewRequestAsync(requestId, approve, body?.Note, CurrentUserName(), config, token, timing, body?.Date, body?.GraceDays, UserHelper.GetCurrentUserId(User)).ConfigureAwait(false);
                 return Ok(new { id = requestId, approved = approve });
             }
             catch (MaintainerrActions.ActionException ex)
