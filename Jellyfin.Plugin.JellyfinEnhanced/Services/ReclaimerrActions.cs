@@ -645,8 +645,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Check every Jellyfin user against Reclaimerr, read-only: whether a Reclaimerr account is linked to them (and only one, and active),
         /// and, with removal requests on, whether Reclaimerr's trusted-proxy sign-in accepts that account (<c>GET /api/account/me</c> as them,
         /// which writes nothing) and whether it may request. Administrators mark instead of requesting, so nothing about them is an issue. Also
-        /// reports the token scopes the integration uses that the token lacks. A sign-in refused for everyone (the feature off, this server
-        /// not trusted) is said once, and the remaining users are not tried.
+        /// reports the token scopes the integration uses that the token lacks. A sign-in Reclaimerr refuses whoever is named (the feature
+        /// off, another header, this server not trusted) is a setup issue said once, naming no user, and the remaining users are not tried;
+        /// one it refuses for that account alone (see <see cref="RefusedForAccountOnly"/>) is that user's issue, and the rest are still checked.
         /// </summary>
         public async Task<AuditResult> AuditUsersAsync(PluginConfiguration config, IReadOnlyList<(Guid Id, string Name, bool Admin)> jellyfinUsers, CancellationToken token)
         {
@@ -689,7 +690,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return result;
             }
 
-            string? refused = null;
+            var refused = false;
+            string? refusedReason = null;
             string? silent = null;
             foreach (var (id, name, admin) in jellyfinUsers.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase))
             {
@@ -716,7 +718,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     issues.Add($"The linked Reclaimerr account {string.Join(", ", linked)} is disabled.");
                 }
-                else if (requests && (refused != null || silent != null))
+                else if (requests && (refused || silent != null))
                 {
                     done = false;
                 }
@@ -730,9 +732,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         var canRequest = role == "admin" || (root.TryGetProperty("permissions", out var p) && p.ValueKind == JsonValueKind.Array && p.EnumerateArray().Any(x => x.ValueKind == JsonValueKind.String && x.GetString() == "request"));
                         if (!canRequest) issues.Add($"The Reclaimerr account {account} lacks the Request permission, so Request removal is refused.");
                     }
+                    catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401 && RefusedForAccountOnly(e.Reason))
+                    {
+                        // Reclaimerr trusted this server and turned down the name: only this user is stopped, so the others are still checked.
+                        issues.Add($"Reclaimerr's trusted-proxy sign-in refused the account {account} ({e.Reason}), so Request removal is refused for them.");
+                    }
                     catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401)
                     {
-                        refused = account;
+                        // Refused whoever is named: every user gets the same answer, so it is said once under Setup.
+                        refused = true;
+                        refusedReason = e.Reason;
                         done = false;
                     }
                     catch (OperationCanceledException) when (!token.IsCancellationRequested)
@@ -755,12 +764,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 result.Issues.Insert(0, $"Reclaimerr did not answer when checking {silent}, so the remaining users' sign-in and permissions were not checked. Run the audit again.");
             }
 
-            if (refused != null)
+            if (refused)
             {
-                result.Issues.Insert(0, $"Reclaimerr's trusted-proxy sign-in refused {refused}, so users cannot request removals: set FORWARD_AUTH_ENABLED=true in Reclaimerr, with this server's IP in FORWARD_AUTH_TRUSTED_PROXIES and FORWARD_AUTH_USER_HEADER matching the User header here.");
+                result.Issues.Insert(0, SignInRefused(refusedReason, config.ReclaimerrUserHeader.Trim()));
             }
 
             return result;
+        }
+
+        /// <summary>Reclaimerr's reasons for a <c>401</c> that turns down the one account named, after it has trusted this server.</summary>
+        private static readonly string[] AccountOnlyRefusals = { "Trusted proxy user is not configured", "Trusted proxy supplied an invalid username" };
+
+        /// <summary>
+        /// Whether a <c>401</c> from Reclaimerr's trusted-proxy sign-in turned down the one account named, not this server. Reclaimerr
+        /// gives these reasons only after it has accepted the address and read the header; with the feature off, another header or an
+        /// untrusted address it answers "Not authenticated" whoever is named. Any other reason, or none, counts as refusing the server.
+        /// </summary>
+        /// <param name="reason">Reclaimerr's own reason for the refusal (its <c>detail</c>), or null when it gave none.</param>
+        /// <returns>True when only the named account was refused.</returns>
+        internal static bool RefusedForAccountOnly(string? reason)
+            => reason != null && Array.IndexOf(AccountOnlyRefusals, reason) >= 0;
+
+        /// <summary>
+        /// The setup issue for a trusted-proxy sign-in Reclaimerr refuses whoever is named. It names no user (none is at fault), and
+        /// for Reclaimerr's plain "Not authenticated" it says what to set and how Reclaimerr's log tells an untrusted address from the
+        /// feature being off.
+        /// </summary>
+        /// <param name="reason">Reclaimerr's own reason for the refusal, or null when it gave none.</param>
+        /// <param name="header">The user header the plugin sends.</param>
+        /// <returns>The issue text for the audit's setup list.</returns>
+        private static string SignInRefused(string? reason, string header)
+        {
+            var said = string.IsNullOrWhiteSpace(reason) ? "HTTP 401" : $"HTTP 401: {reason}";
+            var what = $"Reclaimerr refused this server's trusted-proxy sign-in ({said}), so Request removal fails for every user, whatever their account. ";
+            return string.Equals(reason, "Not authenticated", StringComparison.Ordinal)
+                ? what + $"On Reclaimerr, set FORWARD_AUTH_ENABLED=true, FORWARD_AUTH_USER_HEADER={header} (the User header here) and FORWARD_AUTH_TRUSTED_PROXIES to the address this server's requests arrive from, then restart it. "
+                    + $"Reclaimerr's log names that address (\"Ignored {header} authentication header from untrusted peer\"); with no such line, the sign-in is off or reads another header."
+                : what + $"Check FORWARD_AUTH_ENABLED, FORWARD_AUTH_USER_HEADER (the User header here is {header}) and FORWARD_AUTH_TRUSTED_PROXIES on Reclaimerr, and its log.";
         }
 
         /// <summary>Jellyfin user id to every Reclaimerr account linked to it (username, active), from <c>/api/v1/users</c>.</summary>

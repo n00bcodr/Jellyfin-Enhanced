@@ -2010,6 +2010,11 @@ body.je-has-kefintweaks  .je-installed-badge[data-plugin="kefintweaks"]  { displ
     font-size: 0.82em;
     word-break: break-word;
 }
+/* Users a check never reached: neither a problem nor known to be fine, so not the green of the checked ones. */
+.je-audit-unchecked-names li {
+    background: rgba(158,158,158,0.18);
+    color: #bdbdbd;
+}
 .je-audit-error {
     color: #f44336;
     padding: 10px 14px;

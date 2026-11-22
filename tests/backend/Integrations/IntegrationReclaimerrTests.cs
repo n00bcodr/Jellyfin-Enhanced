@@ -778,10 +778,18 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         server.Answer("GET /api/account/me", "{\"detail\":\"Not authenticated\"}", 401);
         var (actions, _) = Setup(server);
         var result = await actions.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false), (b, "B", false) }, CancellationToken.None);
-        Assert.Contains("FORWARD_AUTH_ENABLED", Assert.Single(result.Issues));
+        var setup = Assert.Single(result.Issues);
+        Assert.Contains("FORWARD_AUTH_ENABLED", setup);
+        // A setting on Reclaimerr, refused whoever is named (issue 1095): the account the check happened to start with is not named,
+        // and Reclaimerr's reason, the header to set and the log line that names the address to trust are.
+        Assert.DoesNotContain("a_user", setup);
+        Assert.Contains("HTTP 401: Not authenticated", setup);
+        Assert.Contains("FORWARD_AUTH_USER_HEADER=Remote-User", setup);
+        Assert.Contains("\"Ignored Remote-User authentication header from untrusted peer\"", setup);
         Assert.Single(server.Seen, s => s.Path == "/api/account/me");
-        // Neither user is known to be able to request: both are marked not checked, not counted as fine.
+        // Neither user is known to be able to request: both are marked not checked, not counted as fine, and neither has an issue of their own.
         Assert.All(result.Users, u => Assert.False(u.Checked));
+        Assert.All(result.Users, u => Assert.Empty(u.Issues));
 
         // Requests switched on while the item menu is off: no one can request, and the audit says why instead of "all set up".
         using var menuOff = new Reclaimerr();
@@ -803,6 +811,75 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.Empty(calm.Issues);
         Assert.DoesNotContain(quiet.Seen, s => s.Path == "/api/account/me");
     }
+
+    [Fact]
+    public async Task A_sign_in_refused_for_one_account_only_is_that_users_issue_and_the_rest_are_still_checked()
+    {
+        // Reclaimerr 0.6.16 says "Trusted proxy ..." only once it has trusted this server and read the header: the name alone is turned down.
+        var gone = Guid.NewGuid(); var longName = Guid.NewGuid(); var fine = Guid.NewGuid(); var noPerm = Guid.NewGuid();
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1", "{\"granted_scopes\":[\"candidates:manage\",\"scheduled_deletions:manage\",\"delete_requests:manage\",\"media:read\",\"users:manage\"]}");
+        server.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("gone_user", gone, true), ("long_user", longName, true), ("fine_user", fine, true), ("noperm_user", noPerm, true)));
+        server.Routes["GET /api/account/me"] = hit => hit.User switch
+        {
+            "gone_user" => (401, "{\"detail\":\"Trusted proxy user is not configured\"}"),
+            "long_user" => (401, "{\"detail\":\"Trusted proxy supplied an invalid username\"}"),
+            "fine_user" => (200, "{\"username\":\"fine_user\",\"role\":\"user\",\"permissions\":[\"request\"]}"),
+            _ => (200, "{\"username\":\"noperm_user\",\"role\":\"user\",\"permissions\":[]}"),
+        };
+        var (actions, _) = Setup(server);
+        // The refused accounts come first by name, where the old audit stopped and called the sign-in refused for everyone.
+        var users = new List<(Guid, string, bool)> { (gone, "A-Gone", false), (longName, "B-Long", false), (fine, "C-Fine", false), (noPerm, "D-NoPerm", false) };
+        var result = await actions.AuditUsersAsync(Config, users, CancellationToken.None);
+
+        Assert.Empty(result.Issues);
+        IReadOnlyList<string> Issues(string name) => result.Users.Single(u => u.JellyfinUsername == name).Issues;
+        Assert.Equal("Reclaimerr's trusted-proxy sign-in refused the account gone_user (Trusted proxy user is not configured), so Request removal is refused for them.", Assert.Single(Issues("A-Gone")));
+        Assert.Contains("refused the account long_user (Trusted proxy supplied an invalid username)", Assert.Single(Issues("B-Long")));
+        Assert.Empty(Issues("C-Fine"));
+        Assert.Contains("lacks the Request permission", Assert.Single(Issues("D-NoPerm")));
+        Assert.All(result.Users, u => Assert.True(u.Checked));
+        Assert.Equal(new[] { "gone_user", "long_user", "fine_user", "noperm_user" }, server.Seen.Where(s => s.Path == "/api/account/me").Select(s => s.User));
+    }
+
+    [Theory]
+    [InlineData("{\"detail\":\"Trusted proxy supplied multiple username headers\"}", "HTTP 401: Trusted proxy supplied multiple username headers")]
+    [InlineData("{\"detail\":\"Session has expired\"}", "HTTP 401: Session has expired")]
+    [InlineData("{}", "HTTP 401)")]
+    [InlineData("<html>401 Authorization Required</html>", "HTTP 401)")]
+    public async Task A_401_with_any_other_reason_or_none_still_counts_as_refusing_this_server(string body, string said)
+    {
+        // Only Reclaimerr's two reasons about the named account are that user's own; anything else is said once and stops the check, as before.
+        var a = Guid.NewGuid(); var b = Guid.NewGuid();
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1", "{\"granted_scopes\":[\"candidates:manage\",\"scheduled_deletions:manage\",\"delete_requests:manage\",\"media:read\",\"users:manage\"]}");
+        server.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("a_user", a, true), ("b_user", b, true)));
+        server.Answer("GET /api/account/me", body, 401);
+        var (actions, _) = Setup(server);
+        var result = await actions.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false), (b, "B", false) }, CancellationToken.None);
+
+        var setup = Assert.Single(result.Issues);
+        Assert.Contains("FORWARD_AUTH_ENABLED", setup);
+        Assert.Contains(said, setup);
+        Assert.DoesNotContain("a_user", setup);
+        // What to look for in Reclaimerr's log is only said for its plain "Not authenticated", where it is known to hold.
+        Assert.DoesNotContain("untrusted peer", setup);
+        Assert.Single(server.Seen, s => s.Path == "/api/account/me");
+        Assert.All(result.Users, u => Assert.False(u.Checked));
+        Assert.All(result.Users, u => Assert.Empty(u.Issues));
+    }
+
+    [Theory]
+    [InlineData("Trusted proxy user is not configured", true)]
+    [InlineData("Trusted proxy supplied an invalid username", true)]
+    [InlineData("Trusted proxy supplied multiple username headers", false)]
+    [InlineData("Not authenticated", false)]
+    [InlineData("trusted proxy user is not configured", false)]
+    [InlineData("Trusted proxy user is not configured, sorry", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void Only_Reclaimerrs_two_reasons_about_the_named_account_count_as_refusing_that_account_alone(string? reason, bool accountOnly)
+        => Assert.Equal(accountOnly, ReclaimerrActions.RefusedForAccountOnly(reason));
 
     [Fact]
     public async Task Importing_carries_on_when_another_Jellyfin_server_Reclaimerr_knows_is_down()

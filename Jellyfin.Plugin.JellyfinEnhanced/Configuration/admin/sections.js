@@ -1290,7 +1290,7 @@ JEAdmin.define({
                   init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireImportUsers() }
             ] },
             { type: 'group', title: 'User audit', open: false, showIf: 'ReclaimerrEnabled', items: [
-                { type: 'note', html: 'Checks each Jellyfin user\'s linked Reclaimerr account and, with requests on, whether they can request removals. Also lists token scopes that are missing. Save the Reclaimerr settings first.' },
+                { type: 'note', html: 'Checks each Jellyfin user\'s linked Reclaimerr account and, with requests on, whether they can request removals. Administrators mark for removal with the API token instead of requesting, so only their link is shown. Also lists token scopes that are missing. Save the Reclaimerr settings first.' },
                 { type: 'custom', html: '<div class="inputContainer"><div class="jea-row"><button type="button" id="reclaimerrAuditBtn" class="jea-btn">Run Audit</button></div>'
                     + '<div id="reclaimerrAuditResult" style="display:none;margin-top:1em"></div></div>',
                   init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireUserAudit() }
@@ -1459,9 +1459,10 @@ JEAdmin.maintainerr = (function () {
     }
     /**
      * Reclaimerr user audit: the token's missing scopes and setup problems first, then a card for each user with issues (in the
-     * Seerr permission audit's style), users the sign-in check never reached, and the users with none folded away. Built with
-     * textContent only: names and reasons come from Jellyfin and Reclaimerr. Drawn into the card and into its Services-tab copy
-     * alike: the copy only follows a plain-text box, and this one holds elements.
+     * Seerr permission audit's style), users the sign-in check never reached (in grey: their link is fine, only their Request
+     * permission is unknown), and the users with none folded away, administrators named as such since they are not checked. Built
+     * with textContent only: names and reasons come from Jellyfin and Reclaimerr. Drawn into the card and into its Services-tab
+     * copy alike: the copy only follows a plain-text box, and this one holds elements.
      */
     function wireUserAudit() {
         const button = el('reclaimerrAuditBtn');
@@ -1471,11 +1472,11 @@ JEAdmin.maintainerr = (function () {
         const icon = (name) => { const i = node('i', 'material-icons', name); i.setAttribute('aria-hidden', 'true'); return i; };
         const chip = (kind, iconName, text) => { const c = node('span', 'je-audit-chip je-audit-chip-' + kind); c.append(icon(iconName), document.createTextNode(text)); return c; };
         const boxes = () => [el('reclaimerrAuditResult'), el('reclaimerrAuditResult--mirror')].filter(Boolean);
-        const label = (u) => u.jellyfinUsername + (u.reclaimerrUsername ? ' \u2192 ' + u.reclaimerrUsername : '');
-        const names = (title, list) => {
+        const label = (u) => u.jellyfinUsername + (u.reclaimerrUsername ? ' \u2192 ' + u.reclaimerrUsername : '') + (u.admin ? ' (administrator)' : '');
+        const names = (title, list, kind) => {
             const details = node('details', 'je-audit-ok-section');
             details.append(node('summary', null, title));
-            const ul = node('ul', 'je-audit-ok-names');
+            const ul = node('ul', 'je-audit-ok-names' + (kind ? ' je-audit-' + kind + '-names' : ''));
             for (const u of list) ul.append(node('li', null, label(u)));
             details.append(ul);
             return details;
@@ -1523,8 +1524,8 @@ JEAdmin.maintainerr = (function () {
                 cards.append(card);
             }
             if (cards.childNodes.length) out.append(cards);
-            // Not reached by the sign-in check (see Setup): neither a problem nor known to be fine.
-            if (unchecked.length) out.append(names('Show ' + unchecked.length + ' user(s) not checked (see Setup)', unchecked));
+            // Not reached by the sign-in check (see Setup): linked to one active account, but whether they may request is unknown.
+            if (unchecked.length) out.append(names('Show ' + unchecked.length + ' linked user(s) whose Request permission was not checked (see Setup)', unchecked, 'unchecked'));
             if (ok.length && !clean) out.append(names('Show ' + ok.length + ' user(s) with no issues', ok));
         }
         button.addEventListener('click', async () => {
