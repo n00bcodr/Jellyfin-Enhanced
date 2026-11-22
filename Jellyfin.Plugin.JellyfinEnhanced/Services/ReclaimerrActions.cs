@@ -928,8 +928,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 : string.Equals(reason, serverReason, StringComparison.Ordinal)
                     ? $"The trusted-proxy sign-in was refused for an account and for a name no account can have alike ({Said(reason)})"
                     : $"The trusted-proxy sign-in was refused for an account ({Said(reason)}) and for a name no account can have ({Said(serverReason)})";
+            // A question that failed may work the next time: say so before what to look at.
             return seen + ", so no user's Request permission was checked. "
-                + $"Check FORWARD_AUTH_ENABLED, FORWARD_AUTH_USER_HEADER (the User header here is {header}) and FORWARD_AUTH_TRUSTED_PROXIES on Reclaimerr, its log, and that anything between this server and Reclaimerr passes the header and Reclaimerr's answers through.";
+                + (askingFailed != null ? "Run the audit again; if that keeps failing, check " : "Check ")
+                + $"FORWARD_AUTH_ENABLED, FORWARD_AUTH_USER_HEADER (the User header here is {header}) and FORWARD_AUTH_TRUSTED_PROXIES on Reclaimerr, its log, and that anything between this server and Reclaimerr passes the header and Reclaimerr's answers through.";
         }
 
         /// <summary>Jellyfin user id to every Reclaimerr account linked to it (username, active), from <c>/api/v1/users</c>.</summary>

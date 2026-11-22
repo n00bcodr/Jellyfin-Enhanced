@@ -946,6 +946,8 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         var unsettled = Assert.Single(result.Issues);
         Assert.Contains("refused for an account (HTTP 401: Not authenticated), and asking Reclaimerr whether it takes this server's sign-in at all failed (Internal Server Error)", unsettled);
         Assert.Contains("no user's Request permission was checked", unsettled);
+        // A failed question may be a passing fault: the issue says to try again before anything else.
+        Assert.Contains("Run the audit again; if that keeps failing, check FORWARD_AUTH_ENABLED", unsettled);
         Assert.DoesNotContain("fails for everyone", unsettled);
         Assert.DoesNotContain("a_user", unsettled);
         Assert.All(result.Users, u => Assert.False(u.Checked));
