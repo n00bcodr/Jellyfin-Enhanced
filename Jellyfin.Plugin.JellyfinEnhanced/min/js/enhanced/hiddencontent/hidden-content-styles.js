@@ -1,6 +1,9 @@
 (() => {
 "use strict";(()=>{var a=window;if(!a.JellyfinEnhanced||!a.ApiClient)throw new Error("Hidden Content host unavailable");var c={JellyfinEnhanced:a.JellyfinEnhanced,Dashboard:a.Dashboard,Emby:a.Emby};function l(n,t){let e=n.internals??(n.internals={});if(t==="features")return e.features??(e.features={});if(t==="hiddenContentPage")return e.hiddenContentPage??(e.hiddenContentPage={});let s=e.hiddenContent??(e.hiddenContent={});return new Proxy(s,{get(i,o){if(typeof o!="string")return Reflect.get(i,o);let d=Reflect.get(i,o);if(d===void 0)throw new Error(`Missing hidden-content loader dependency: ${o}`);return d}})}function g(n){let t=n.internals??(n.internals={});if(t.hiddenContentRuntime)return t.hiddenContentRuntime;let e={modules:new Set,view:0,policy:0,queues:new Map,cleanups:new Set,identityCleanups:new Set};t.hiddenContentRuntime=e;let s=location.href,i=()=>{s=location.href,e.view++;for(let r of[...e.cleanups])r()},o=()=>{location.href!==s&&i()};window.addEventListener("hashchange",o),window.addEventListener("popstate",o),document.addEventListener("viewhide",i);let d=()=>{i();for(let r of[...e.identityCleanups])r()};return window.addEventListener("pagehide",r=>{(r.target===window||r.target===document)&&!r.persisted&&d()}),n.session?.onUserChange("hidden-content-runtime",d),e}function u(n,t){let e=g(n).modules;return e.has(t)?!1:(e.add(t),!0)}var p=`
             .je-hidden { display: none !important; }
+            /* A row whose every card is hidden would otherwise leave its heading behind (#1096). Without :has() (Chrome
+               before 105, Firefox before 121) the browser drops this rule alone and the heading stays, as before. */
+            .verticalSection:has(.card.je-hidden):not(:has(.card:not(.je-hidden))) { display: none !important; }
             .je-hide-btn {
                 --je-danger-rgb: 220, 50, 50;
                 position: absolute;
