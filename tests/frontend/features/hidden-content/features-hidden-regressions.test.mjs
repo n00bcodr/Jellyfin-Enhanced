@@ -366,3 +366,20 @@ test('#1096 hiding the last visible card of a home row hides the row heading too
  assert.equal(shown('Recently Added in Anime'),true,'unhiding a card brings its row back');
  await h.api.flushPendingSave();
 });
+// Upstream e16cc10b's test of the same rule: the row follows filtering turned off and on again, and a card restored
+// to view brings its row back.
+test('#1096 a home row whose every card is hidden follows filtering off and on, and comes back when one card is shown again',t=>{
+ const h=setup(t,{items:{a:{itemId:'a'},b:{itemId:'b'},c:{itemId:'c'}},html:`<div class="homeSectionsContainer"><div class="section6">${latestRow('Recently Added in Anime',['a','b'])}${latestRow('Recently Added in Movies',['c','d'])}</div></div>`});
+ h.JE.helpers.addCSS=(id,css)=>{const style=h.document.createElement('style');style.id=id;style.textContent=css;h.document.head.append(style);};
+ h.internal.injectCSS();
+ const shown=title=>{for(let el=[...h.document.querySelectorAll('.sectionTitle')].find(e=>e.textContent===title);el;el=el.parentElement)if(h.window.getComputedStyle(el).display==='none')return false;return true;};
+ h.api.filterNativeCards();h.frames();
+ assert.equal(shown('Recently Added in Anime'),false,'every card of the row is hidden, so its heading must go too');
+ assert.equal(shown('Recently Added in Movies'),true,'a row with a visible card keeps its heading');
+ h.internal.getHiddenData().settings.enabled=false;h.internal.refreshNativeCardVisibility();h.frames();
+ assert.equal(shown('Recently Added in Anime'),true,'turning filtering off brings the row back');
+ h.internal.getHiddenData().settings.enabled=true;h.internal.refreshNativeCardVisibility();h.frames();
+ assert.equal(shown('Recently Added in Anime'),false,'and turning it on hides the row again');
+ h.internal.restoreNativeCardsForIds(new Set(['b']));
+ assert.equal(shown('Recently Added in Anime'),true,'showing one card again brings its row back');
+});
