@@ -1290,7 +1290,7 @@ JEAdmin.define({
                   init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireImportUsers() }
             ] },
             { type: 'group', title: 'User audit', open: false, showIf: 'ReclaimerrEnabled', items: [
-                { type: 'note', html: 'Checks each Jellyfin user\'s linked Reclaimerr account and, with requests on, whether they can request removals. Administrators mark for removal with the API token instead of requesting, so only their link is shown. Also lists token scopes that are missing. Save the Reclaimerr settings first.' },
+                { type: 'note', html: 'Checks each Jellyfin user\'s linked Reclaimerr account and, with requests on, whether they can request removals. Administrators mark for removal with the API token instead of requesting, so they are not checked. Also lists token scopes that are missing. Save the Reclaimerr settings first.' },
                 { type: 'custom', html: '<div class="inputContainer"><div class="jea-row"><button type="button" id="reclaimerrAuditBtn" class="jea-btn">Run Audit</button></div>'
                     + '<div id="reclaimerrAuditResult" style="display:none;margin-top:1em"></div></div>',
                   init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireUserAudit() }

@@ -1067,6 +1067,26 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.All(result.Users, u => Assert.Empty(u.Issues));
     }
 
+    [Fact]
+    public async Task Two_refusals_that_differ_are_each_quoted_as_they_came()
+    {
+        // The account gets Reclaimerr's plain refusal, the name no account can have a 401 without a reason (something in between
+        // answered it): the issue does not put Reclaimerr's words on the second answer, and does not say everyone is refused.
+        var a = Guid.NewGuid();
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1", "{\"granted_scopes\":[\"candidates:manage\",\"scheduled_deletions:manage\",\"delete_requests:manage\",\"media:read\",\"users:manage\"]}");
+        server.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("a_user", a, true)));
+        server.Routes["GET /api/account/me"] = hit => hit.User == ReclaimerrActions.NoAccountName ? (401, string.Empty) : (401, "{\"detail\":\"Not authenticated\"}");
+        var (actions, _) = Setup(server);
+        var result = await actions.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false) }, CancellationToken.None);
+
+        var setup = Assert.Single(result.Issues);
+        Assert.Contains("refused for an account (HTTP 401: Not authenticated) and for a name no account can have (HTTP 401), so no user's Request permission was checked", setup);
+        Assert.DoesNotContain("alike", setup);
+        Assert.DoesNotContain("fails for everyone", setup);
+        Assert.False(Assert.Single(result.Users).Checked);
+    }
+
     [Theory]
     [InlineData("Trusted proxy user is not configured", true)]
     [InlineData("Trusted proxy supplied an invalid username", true)]
