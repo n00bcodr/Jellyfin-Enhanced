@@ -787,31 +787,22 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         var result = await actions.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false), (b, "B", false), (c, "C", false) }, CancellationToken.None);
         var setup = Assert.Single(result.Issues);
         Assert.Contains("FORWARD_AUTH_ENABLED", setup);
-        // A setting on Reclaimerr, refused whoever is named (issue 1095): the accounts the check happened to start with are not named,
+        // A setting on Reclaimerr, refused whoever is named (issue 1095): the account the check happened to start with is not named,
         // and Reclaimerr's reason, the header to set and the log line that names the address to trust are.
         Assert.DoesNotContain("a_user", setup);
-        Assert.DoesNotContain("b_user", setup);
+        Assert.Contains("whoever is named", setup);
         Assert.Contains("HTTP 401: Not authenticated", setup);
         Assert.Contains("no user's Request permission was checked", setup);
         Assert.Contains("FORWARD_AUTH_USER_HEADER=Remote-User", setup);
         // Quoted without the header's name: Reclaimerr logs its own spelling of it ("remote-user"), which may differ from the plugin's.
         Assert.Contains("\"authentication header from untrusted peer\"", setup);
-        // A second account confirms the refusal is not about the first one; after that nobody else is tried.
-        Assert.Equal(new[] { "a_user", "b_user" }, server.Seen.Where(s => s.Path == "/api/account/me").Select(s => s.User));
+        // The first account's refusal does not say whom it is about, so the server is asked once, with a name no account can have.
+        // It is refused the same way: nobody else is tried.
+        Assert.Equal(new[] { "a_user", ReclaimerrActions.NoAccountName }, server.Seen.Where(s => s.Path == "/api/account/me").Select(s => s.User));
+        Assert.True(ReclaimerrActions.NoAccountName.Length > 32);
         // No user is known to be able to request: all are marked not checked, not counted as fine, and none has an issue of their own.
         Assert.All(result.Users, u => Assert.False(u.Checked));
         Assert.All(result.Users, u => Assert.Empty(u.Issues));
-
-        // The only account there is to try: its refusal is said the same way, after the one attempt.
-        using var lone = new Reclaimerr();
-        lone.Answer("GET /api/v1", "{\"granted_scopes\":[\"candidates:manage\",\"scheduled_deletions:manage\",\"delete_requests:manage\",\"media:read\",\"users:manage\"]}");
-        lone.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("a_user", a, true)));
-        lone.Answer("GET /api/account/me", "{\"detail\":\"Not authenticated\"}", 401);
-        var (alone, _) = Setup(lone);
-        var single = await alone.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false) }, CancellationToken.None);
-        Assert.Contains("FORWARD_AUTH_ENABLED", Assert.Single(single.Issues));
-        Assert.Single(lone.Seen, s => s.Path == "/api/account/me");
-        Assert.False(Assert.Single(single.Users).Checked);
 
         // Requests switched on while the item menu is off: no one can request, and the audit says why instead of "all set up".
         using var menuOff = new Reclaimerr();
@@ -882,39 +873,97 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.Empty(result.Issues);
         IReadOnlyList<string> Issues(string name) => result.Users.Single(u => u.JellyfinUsername == name).Issues;
         Assert.Empty(Issues("A"));
-        Assert.Equal("Reclaimerr's trusted-proxy sign-in accepted other accounts but refused b_user (HTTP 401: Not authenticated), so Request removal is refused for them.", Assert.Single(Issues("B")));
+        Assert.Equal("Reclaimerr trusts this server's sign-in but refused the account b_user (HTTP 401: Not authenticated), so Request removal is refused for them.", Assert.Single(Issues("B")));
         Assert.Empty(Issues("C"));
         Assert.All(result.Users, u => Assert.True(u.Checked));
+        // Reclaimerr had already signed an account in, so the server was not asked about.
         Assert.Equal(new[] { "a_user", "b_user", "c_user" }, server.Seen.Where(s => s.Path == "/api/account/me").Select(s => s.User));
     }
 
-    [Theory]
-    [InlineData("{\"username\":\"b_user\",\"role\":\"user\",\"permissions\":[\"request\"]}", 200)]
-    [InlineData("{\"detail\":\"Trusted proxy supplied an invalid username\"}", 401)]
-    public async Task A_plain_refusal_of_the_first_account_tried_is_its_own_once_the_next_account_is_accepted(string next, int status)
+    /// <summary>Reclaimerr's answer to a name no account can have when it trusts this server's sign-in.</summary>
+    private const string TrustedAnswer = "{\"detail\":\"Trusted proxy supplied an invalid username\"}";
+
+    [Fact]
+    public async Task A_plain_refusal_is_settled_by_asking_about_the_server_not_by_which_account_came_first()
     {
-        // The refusal alone could be about this server, so one more account is tried. Reclaimerr answers that one as only a
-        // server it trusts is answered, so the first refusal was about the first account: nobody is left unchecked for it.
+        // Reclaimerr with its local fallback on: a name it does not know gets the plain "Not authenticated" a refused server gets.
+        // Here two such accounts come first. Asked with a name no account can have, Reclaimerr turns it down as a name, which it
+        // only does for a server it trusts: so both refusals are those accounts' own, and the third user is still checked.
         var a = Guid.NewGuid(); var b = Guid.NewGuid(); var c = Guid.NewGuid();
         using var server = new Reclaimerr();
         server.Answer("GET /api/v1", "{\"granted_scopes\":[\"candidates:manage\",\"scheduled_deletions:manage\",\"delete_requests:manage\",\"media:read\",\"users:manage\"]}");
         server.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("a_user", a, true), ("b_user", b, true), ("c_user", c, true)));
         server.Routes["GET /api/account/me"] = hit => hit.User switch
         {
-            "a_user" => (401, "{\"detail\":\"Not authenticated\"}"),
-            "b_user" => (status, next),
-            _ => (200, "{\"username\":\"c_user\",\"role\":\"user\",\"permissions\":[\"request\"]}"),
+            ReclaimerrActions.NoAccountName => (401, TrustedAnswer),
+            "c_user" => (200, "{\"username\":\"c_user\",\"role\":\"user\",\"permissions\":[\"request\"]}"),
+            _ => (401, "{\"detail\":\"Not authenticated\"}"),
         };
         var (actions, _) = Setup(server);
         var result = await actions.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false), (b, "B", false), (c, "C", false) }, CancellationToken.None);
 
         Assert.Empty(result.Issues);
         IReadOnlyList<string> Issues(string name) => result.Users.Single(u => u.JellyfinUsername == name).Issues;
-        Assert.Equal("Reclaimerr's trusted-proxy sign-in accepted other accounts but refused a_user (HTTP 401: Not authenticated), so Request removal is refused for them.", Assert.Single(Issues("A")));
-        Assert.Equal(status == 200 ? 0 : 1, Issues("B").Count);
+        Assert.Equal("Reclaimerr trusts this server's sign-in but refused the account a_user (HTTP 401: Not authenticated), so Request removal is refused for them.", Assert.Single(Issues("A")));
+        Assert.Contains("but refused the account b_user", Assert.Single(Issues("B")));
         Assert.Empty(Issues("C"));
         Assert.All(result.Users, u => Assert.True(u.Checked));
-        Assert.Equal(new[] { "a_user", "b_user", "c_user" }, server.Seen.Where(s => s.Path == "/api/account/me").Select(s => s.User));
+        // The server is asked about once, after the first refusal.
+        Assert.Equal(new[] { "a_user", ReclaimerrActions.NoAccountName, "b_user", "c_user" }, server.Seen.Where(s => s.Path == "/api/account/me").Select(s => s.User));
+
+        // The only account there is: the same answer about the server makes its refusal its own, not a setup problem.
+        using var lone = new Reclaimerr();
+        lone.Answer("GET /api/v1", "{\"granted_scopes\":[\"candidates:manage\",\"scheduled_deletions:manage\",\"delete_requests:manage\",\"media:read\",\"users:manage\"]}");
+        lone.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("a_user", a, true)));
+        lone.Routes["GET /api/account/me"] = hit => hit.User == ReclaimerrActions.NoAccountName ? (401, TrustedAnswer) : (401, "{\"detail\":\"Not authenticated\"}");
+        var (alone, _) = Setup(lone);
+        var single = await alone.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false) }, CancellationToken.None);
+        Assert.Empty(single.Issues);
+        Assert.Contains("but refused the account a_user", Assert.Single(Assert.Single(single.Users).Issues));
+        Assert.True(Assert.Single(single.Users).Checked);
+    }
+
+    [Fact]
+    public async Task When_the_server_cannot_be_asked_about_nothing_is_concluded_about_it()
+    {
+        var a = Guid.NewGuid(); var b = Guid.NewGuid();
+        const string scopes = "{\"granted_scopes\":[\"candidates:manage\",\"scheduled_deletions:manage\",\"delete_requests:manage\",\"media:read\",\"users:manage\"]}";
+        var users = new List<(Guid, string, bool)> { (a, "A", false), (b, "B", false) };
+
+        // The question about the server fails (a 500): the first account could not be checked, and the audit carries on. The next
+        // account is signed in, which shows the server is trusted after all.
+        using var broken = new Reclaimerr();
+        broken.Answer("GET /api/v1", scopes);
+        broken.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("a_user", a, true), ("b_user", b, true)));
+        broken.Routes["GET /api/account/me"] = hit => hit.User switch
+        {
+            ReclaimerrActions.NoAccountName => (500, "{\"detail\":\"Internal Server Error\"}"),
+            "b_user" => (200, "{\"username\":\"b_user\",\"role\":\"user\",\"permissions\":[\"request\"]}"),
+            _ => (401, "{\"detail\":\"Not authenticated\"}"),
+        };
+        var (first, _) = Setup(broken);
+        var result = await first.AuditUsersAsync(Config, users, CancellationToken.None);
+        Assert.Empty(result.Issues);
+        Assert.Equal("Could not check the Reclaimerr account a_user (Internal Server Error).", Assert.Single(result.Users.Single(u => u.JellyfinUsername == "A").Issues));
+        Assert.Empty(result.Users.Single(u => u.JellyfinUsername == "B").Issues);
+        Assert.All(result.Users, u => Assert.True(u.Checked));
+
+        // The question about the server gets no answer: that is said, the sign-in is not called refused, and nobody else is tried.
+        using var slow = new Reclaimerr();
+        slow.Answer("GET /api/v1", scopes);
+        slow.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("a_user", a, true), ("b_user", b, true)));
+        slow.Routes["GET /api/account/me"] = hit =>
+        {
+            if (hit.User == ReclaimerrActions.NoAccountName) Thread.Sleep(1500);
+            return (401, "{\"detail\":\"Not authenticated\"}");
+        };
+        var (second, _) = Setup(slow);
+        second.Timeout = TimeSpan.FromMilliseconds(500);
+        var quiet = await second.AuditUsersAsync(Config, users, CancellationToken.None);
+        Assert.Contains("did not answer", Assert.Single(quiet.Issues));
+        Assert.DoesNotContain("FORWARD_AUTH_ENABLED", quiet.Issues[0]);
+        Assert.All(quiet.Users, u => Assert.False(u.Checked));
+        Assert.DoesNotContain(slow.Seen, s => s.User == "b_user");
     }
 
     [Fact]
@@ -964,12 +1013,14 @@ public sealed class IntegrationReclaimerrTests : IDisposable
 
         IReadOnlyList<string> Issues(string name) => result.Users.Single(u => u.JellyfinUsername == name).Issues;
         Assert.Equal("Could not check the Reclaimerr account empty_user (Reclaimerr's answer was not an account).", Assert.Single(Issues("A-Empty")));
-        Assert.Equal("Reclaimerr signed in as someone_else instead of the linked account swapped_user, so their requests would be filed as that account.", Assert.Single(Issues("B-Swapped")));
+        Assert.Equal("Reclaimerr signed in as someone_else instead of the linked account swapped_user: a request of theirs that Reclaimerr accepts would be filed as someone_else.", Assert.Single(Issues("B-Swapped")));
         // Reclaimerr signed someone in for B, so C's plain refusal is C's own; the empty answer for A alone would not have shown that.
-        Assert.Contains("accepted other accounts but refused last_user", Assert.Single(Issues("C-Last")));
+        Assert.Contains("but refused the account last_user", Assert.Single(Issues("C-Last")));
         Assert.Empty(result.Issues);
+        Assert.DoesNotContain(server.Seen, s => s.User == ReclaimerrActions.NoAccountName);
 
-        // An answer that is not an account does not show Reclaimerr trusts this server: the two plain refusals after it still stop the check.
+        // An answer that is not an account does not show Reclaimerr trusts this server: the plain refusal after it has the server asked
+        // about, and with that refused too the check stops.
         server.Routes["GET /api/account/me"] = hit => hit.User == "empty_user" ? (200, "{}") : (401, "{\"detail\":\"Not authenticated\"}");
         var again = await actions.AuditUsersAsync(Config, users, CancellationToken.None);
         Assert.Contains("FORWARD_AUTH_ENABLED", Assert.Single(again.Issues));
@@ -1000,7 +1051,7 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.DoesNotContain("a_user", setup);
         // What to look for in Reclaimerr's log is only said for its plain "Not authenticated", where it is known to hold.
         Assert.DoesNotContain("untrusted peer", setup);
-        Assert.Equal(new[] { "a_user", "b_user" }, server.Seen.Where(s => s.Path == "/api/account/me").Select(s => s.User));
+        Assert.Equal(new[] { "a_user", ReclaimerrActions.NoAccountName }, server.Seen.Where(s => s.Path == "/api/account/me").Select(s => s.User));
         Assert.All(result.Users, u => Assert.False(u.Checked));
         Assert.All(result.Users, u => Assert.Empty(u.Issues));
     }
