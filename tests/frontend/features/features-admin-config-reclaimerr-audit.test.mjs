@@ -13,7 +13,7 @@ const config = resolve(jsRoot, '../Configuration');
 const html = readFileSync(join(config, 'configPage.html'), 'utf8');
 const DEFAULTS = JSON.parse(readFileSync(resolve(jsRoot, '../../docs/advanced/config-flag-groups.json'), 'utf8')).defaults;
 const PAGE_URL = 'http://jellyfin.test/web/index.html#/configurationpage?name=Jellyfin%20Enhanced';
-const REFUSED = 'Reclaimerr refused this server\'s trusted-proxy sign-in (HTTP 401: Not authenticated), so Request removal fails for every user, whatever their account.';
+const REFUSED = 'Reclaimerr refused this server\'s trusted-proxy sign-in (HTTP 401: Not authenticated), so no user\'s Request permission was checked.';
 
 /** One user of the audit's answer, as the plugin gives it. */
 const user = (name, account, extra = {}) => ({ jellyfinUsername: name, jellyfinUserId: name.toLowerCase(), admin: false, linked: true, reclaimerrUsername: account, issues: [], checked: true, ...extra });

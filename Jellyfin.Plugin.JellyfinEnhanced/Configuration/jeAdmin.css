@@ -2013,7 +2013,7 @@ body.je-has-kefintweaks  .je-installed-badge[data-plugin="kefintweaks"]  { displ
 /* Users a check never reached: neither a problem nor known to be fine, so not the green of the checked ones. */
 .je-audit-unchecked-names li {
     background: rgba(158,158,158,0.18);
-    color: #bdbdbd;
+    color: var(--je-text-muted);
 }
 .je-audit-error {
     color: #f44336;
