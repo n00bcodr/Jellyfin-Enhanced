@@ -206,7 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401)
             {
-                throw new MaintainerrActions.ActionException($"Reclaimerr did not let this server sign in as {who}: turn on its trusted-proxy sign-in (FORWARD_AUTH_ENABLED) with this server's address in FORWARD_AUTH_TRUSTED_PROXIES.");
+                throw new MaintainerrActions.ActionException($"Reclaimerr did not let this server sign in as {who}. An administrator can run the User audit in the plugin's Reclaimerr card to see why: usually Reclaimerr's trusted-proxy sign-in (FORWARD_AUTH_ENABLED) is off, or this server's address is not in FORWARD_AUTH_TRUSTED_PROXIES.");
             }
             catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 403)
             {
@@ -770,8 +770,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             Accept();
                             var role = root.TryGetProperty("role", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null;
-                            var canRequest = role == "admin" || (root.TryGetProperty("permissions", out var p) && p.ValueKind == JsonValueKind.Array && p.EnumerateArray().Any(x => x.ValueKind == JsonValueKind.String && x.GetString() == "request"));
-                            if (!canRequest) issues.Add($"The Reclaimerr account {account} lacks the Request permission, so Request removal is refused.");
+                            var listed = root.TryGetProperty("permissions", out var p) && p.ValueKind == JsonValueKind.Array;
+                            var canRequest = role == "admin" || (listed && p.EnumerateArray().Any(x => x.ValueKind == JsonValueKind.String && x.GetString() == "request"));
+                            // An answer without the permission list says nothing about the permission: unknown, not "lacks it".
+                            if (!canRequest) issues.Add(listed ? $"The Reclaimerr account {account} lacks the Request permission, so Request removal is refused." : $"Could not check the Reclaimerr account {account} (Reclaimerr's answer did not list its permissions).");
                         }
                     }
                     catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401 && RefusedForAccountOnly(e.Reason))
@@ -863,7 +865,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return string.Equals(reason, "Not authenticated", StringComparison.Ordinal)
                 ? what + "It answers every user this way while the sign-in is off, reads another header or does not trust this server's address, and Request removal then fails for everyone, whatever their account. "
                     + $"On Reclaimerr, set FORWARD_AUTH_ENABLED=true, FORWARD_AUTH_USER_HEADER={header} (the User header here) and FORWARD_AUTH_TRUSTED_PROXIES to the address this server's requests arrive from, then restart it. "
-                    + $"If its log has \"Ignored {header} authentication header from untrusted peer\", the address after it is the one to trust; if not, check that the sign-in is on, the header name, and that nothing in between drops the header."
+                    + "If its log has \"authentication header from untrusted peer\", the address after it is the one to trust; if not, check that the sign-in is on, the header name, and that nothing in between drops the header."
                 : what + $"Check FORWARD_AUTH_ENABLED, FORWARD_AUTH_USER_HEADER (the User header here is {header}) and FORWARD_AUTH_TRUSTED_PROXIES on Reclaimerr, and its log.";
         }
 

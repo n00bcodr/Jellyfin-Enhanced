@@ -650,6 +650,8 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.Empty(server.Calls("POST"));
         var refused = await Assert.ThrowsAsync<MaintainerrActions.ActionException>(() => actions.RequestRemovalAsync(movie, sam, "Sam", null, Config, CancellationToken.None));
         Assert.Contains("FORWARD_AUTH_ENABLED", refused.Message);
+        // The user cannot tell a refused server from a refused account (Reclaimerr's local fallback answers both the same way): the audit can.
+        Assert.Contains("run the User audit", refused.Message);
 
         // Reclaimerr trusted this server and turned down the account itself: the user is not sent to the sign-in's setup, which works.
         server.Answer("POST /api/delete-requests", "{\"detail\":\"Trusted proxy user is not configured\"}", 401);
@@ -792,7 +794,8 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.Contains("HTTP 401: Not authenticated", setup);
         Assert.Contains("no user's Request permission was checked", setup);
         Assert.Contains("FORWARD_AUTH_USER_HEADER=Remote-User", setup);
-        Assert.Contains("\"Ignored Remote-User authentication header from untrusted peer\"", setup);
+        // Quoted without the header's name: Reclaimerr logs its own spelling of it ("remote-user"), which may differ from the plugin's.
+        Assert.Contains("\"authentication header from untrusted peer\"", setup);
         // A second account confirms the refusal is not about the first one; after that nobody else is tried.
         Assert.Equal(new[] { "a_user", "b_user" }, server.Seen.Where(s => s.Path == "/api/account/me").Select(s => s.User));
         // No user is known to be able to request: all are marked not checked, not counted as fine, and none has an issue of their own.
@@ -912,6 +915,32 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.Empty(Issues("C"));
         Assert.All(result.Users, u => Assert.True(u.Checked));
         Assert.Equal(new[] { "a_user", "b_user", "c_user" }, server.Seen.Where(s => s.Path == "/api/account/me").Select(s => s.User));
+    }
+
+    [Fact]
+    public async Task An_answer_without_the_permission_list_is_not_read_as_lacking_the_permission()
+    {
+        var bare = Guid.NewGuid(); var boss = Guid.NewGuid(); var none = Guid.NewGuid();
+        using var server = new Reclaimerr();
+        server.Answer("GET /api/v1", "{\"granted_scopes\":[\"candidates:manage\",\"scheduled_deletions:manage\",\"delete_requests:manage\",\"media:read\",\"users:manage\"]}");
+        server.Answer("GET /api/v1/users?limit=1000&offset=0", AuditUsers(("bare_user", bare, true), ("boss_user", boss, true), ("none_user", none, true)));
+        server.Routes["GET /api/account/me"] = hit => hit.User switch
+        {
+            // The account, but nothing about what it may do: unknown.
+            "bare_user" => (200, "{\"username\":\"bare_user\",\"role\":\"user\"}"),
+            // A Reclaimerr administrator may request whatever the list says, so its absence does not matter.
+            "boss_user" => (200, "{\"username\":\"boss_user\",\"role\":\"admin\"}"),
+            // The list is there and lacks it: that is a no.
+            _ => (200, "{\"username\":\"none_user\",\"role\":\"user\",\"permissions\":[\"manage_requests\"]}"),
+        };
+        var (actions, _) = Setup(server);
+        var result = await actions.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (bare, "Bare", false), (boss, "Boss", false), (none, "None", false) }, CancellationToken.None);
+
+        IReadOnlyList<string> Issues(string name) => result.Users.Single(u => u.JellyfinUsername == name).Issues;
+        Assert.Equal("Could not check the Reclaimerr account bare_user (Reclaimerr's answer did not list its permissions).", Assert.Single(Issues("Bare")));
+        Assert.Empty(Issues("Boss"));
+        Assert.Equal("The Reclaimerr account none_user lacks the Request permission, so Request removal is refused.", Assert.Single(Issues("None")));
+        Assert.Empty(result.Issues);
     }
 
     [Fact]
