@@ -876,7 +876,7 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.Empty(result.Issues);
         IReadOnlyList<string> Issues(string name) => result.Users.Single(u => u.JellyfinUsername == name).Issues;
         Assert.Empty(Issues("A"));
-        Assert.Equal("Reclaimerr trusts this server's sign-in but refused the account b_user (HTTP 401: Not authenticated), so Request removal is refused for them.", Assert.Single(Issues("B")));
+        Assert.Equal("Reclaimerr showed in this audit that it takes this server's sign-in, but it refused the account b_user (HTTP 401: Not authenticated), so Request removal is refused for them.", Assert.Single(Issues("B")));
         Assert.Empty(Issues("C"));
         Assert.All(result.Users, u => Assert.True(u.Checked));
         // Reclaimerr had already signed an account in, so the server was not asked about.
@@ -907,8 +907,8 @@ public sealed class IntegrationReclaimerrTests : IDisposable
 
         Assert.Empty(result.Issues);
         IReadOnlyList<string> Issues(string name) => result.Users.Single(u => u.JellyfinUsername == name).Issues;
-        Assert.Equal("Reclaimerr trusts this server's sign-in but refused the account a_user (HTTP 401: Not authenticated), so Request removal is refused for them.", Assert.Single(Issues("A")));
-        Assert.Contains("but refused the account b_user", Assert.Single(Issues("B")));
+        Assert.Equal("Reclaimerr showed in this audit that it takes this server's sign-in, but it refused the account a_user (HTTP 401: Not authenticated), so Request removal is refused for them.", Assert.Single(Issues("A")));
+        Assert.Contains("but it refused the account b_user", Assert.Single(Issues("B")));
         Assert.Empty(Issues("C"));
         Assert.All(result.Users, u => Assert.True(u.Checked));
         // The server is asked about once, after the first refusal.
@@ -922,7 +922,7 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         var (alone, _) = Setup(lone);
         var single = await alone.AuditUsersAsync(Config, new List<(Guid, string, bool)> { (a, "A", false) }, CancellationToken.None);
         Assert.Empty(single.Issues);
-        Assert.Contains("but refused the account a_user", Assert.Single(Assert.Single(single.Users).Issues));
+        Assert.Contains("but it refused the account a_user", Assert.Single(Assert.Single(single.Users).Issues));
         Assert.True(Assert.Single(single.Users).Checked);
     }
 
@@ -966,8 +966,8 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         var (second, _) = Setup(slow);
         second.Timeout = TimeSpan.FromMilliseconds(500);
         var quiet = await second.AuditUsersAsync(Config, users, CancellationToken.None);
-        Assert.Contains("did not answer", Assert.Single(quiet.Issues));
-        Assert.DoesNotContain("FORWARD_AUTH_ENABLED", quiet.Issues[0]);
+        // Reclaimerr did answer the account (with a refusal): what got no answer was the question about the server, and that is what is said.
+        Assert.Equal("Reclaimerr refused the trusted-proxy sign-in for an account (HTTP 401: Not authenticated) and then did not answer when asked whether it takes this server's sign-in at all, so no user's Request permission was checked. Run the audit again.", Assert.Single(quiet.Issues));
         Assert.All(quiet.Users, u => Assert.False(u.Checked));
         Assert.DoesNotContain(slow.Seen, s => s.User == "b_user");
     }
@@ -1021,7 +1021,7 @@ public sealed class IntegrationReclaimerrTests : IDisposable
         Assert.Equal("Could not check the Reclaimerr account empty_user (Reclaimerr's answer was not an account).", Assert.Single(Issues("A-Empty")));
         Assert.Equal("Reclaimerr signed in as someone_else instead of the linked account swapped_user: a request of theirs that Reclaimerr accepts would be filed as someone_else.", Assert.Single(Issues("B-Swapped")));
         // Reclaimerr signed someone in for B, so C's plain refusal is C's own; the empty answer for A alone would not have shown that.
-        Assert.Contains("but refused the account last_user", Assert.Single(Issues("C-Last")));
+        Assert.Contains("but it refused the account last_user", Assert.Single(Issues("C-Last")));
         Assert.Empty(result.Issues);
         Assert.DoesNotContain(server.Seen, s => s.User == ReclaimerrActions.NoAccountName);
 

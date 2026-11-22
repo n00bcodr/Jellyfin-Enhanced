@@ -709,6 +709,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             string? serverReason = null;
             var refusedPlainly = false;
             string? askingFailed = null;
+            var askingUnanswered = false;
             foreach (var (id, name, admin) in jellyfinUsers.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase))
             {
                 var issues = new List<string>();
@@ -803,7 +804,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
                         catch (OperationCanceledException) when (!token.IsCancellationRequested)
                         {
+                            // Reclaimerr answered the account and then went quiet on the question about the server: the check stops, and
+                            // what is said is that, not that the account got no answer.
                             silent = account;
+                            askingUnanswered = true;
+                            refusedReason = unclearReason;
                             done = false;
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -817,9 +822,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (unclear && trusted == true)
                     {
-                        // Reclaimerr takes this server's sign-in, so the refusal is about this account (with its
-                        // FORWARD_AUTH_ALLOW_LOCAL_FALLBACK on, a name it does not know gets its plain "Not authenticated").
-                        issues.Add($"Reclaimerr trusts this server's sign-in but refused the account {account} ({Said(unclearReason)}), so Request removal is refused for them.");
+                        // Reclaimerr took this server's sign-in in this audit, so the refusal is about this account (with its
+                        // FORWARD_AUTH_ALLOW_LOCAL_FALLBACK on, a name it does not know gets its plain "Not authenticated"). Said as
+                        // the two things that were seen: what Reclaimerr does a moment later is not known.
+                        issues.Add($"Reclaimerr showed in this audit that it takes this server's sign-in, but it refused the account {account} ({Said(unclearReason)}), so Request removal is refused for them.");
                     }
                     else if (unclear && trusted == false)
                     {
@@ -834,7 +840,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (silent != null)
             {
-                result.Issues.Insert(0, $"Reclaimerr did not answer when checking {silent}, so the remaining users' sign-in and permissions were not checked. Run the audit again.");
+                result.Issues.Insert(0, askingUnanswered
+                    ? $"Reclaimerr refused the trusted-proxy sign-in for an account ({Said(refusedReason)}) and then did not answer when asked whether it takes this server's sign-in at all, so no user's Request permission was checked. Run the audit again."
+                    : $"Reclaimerr did not answer when checking {silent}, so the remaining users' sign-in and permissions were not checked. Run the audit again.");
             }
 
             if (trusted == false)
