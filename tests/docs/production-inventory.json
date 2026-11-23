@@ -490,7 +490,7 @@
       "category": "Features"
     },
     {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/ReclaimerrSession.cs",
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/ReclaimerrApi.cs",
       "category": "Features"
     },
     {
@@ -3205,8 +3205,8 @@
     },
     {
       "verb": "POST",
-      "path": "/JellyfinEnhanced/reclaimerr/service-account",
-      "method": "CreateReclaimerrServiceAccount",
+      "path": "/JellyfinEnhanced/reclaimerr/import-users",
+      "method": "ImportReclaimerrUsers",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/JeMediaTagsController.Reclaimerr.cs",
       "following_attributes": [
         "Authorize",
@@ -3214,9 +3214,9 @@
       ]
     },
     {
-      "verb": "POST",
-      "path": "/JellyfinEnhanced/reclaimerr/create-users",
-      "method": "CreateReclaimerrUsers",
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/reclaimerr/user-audit",
+      "method": "GetReclaimerrUserAudit",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/JeMediaTagsController.Reclaimerr.cs",
       "following_attributes": [
         "Authorize",
@@ -6077,17 +6077,9 @@
     },
     {
       "class": "PluginConfiguration",
-      "name": "ReclaimerrUsername",
-      "type": "string",
-      "initializer": "string.Empty",
-      "constructor_assignment": null,
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
-    },
-    {
-      "class": "PluginConfiguration",
-      "name": "ReclaimerrActAsUser",
+      "name": "ReclaimerrUserRequests",
       "type": "bool",
-      "initializer": "true",
+      "initializer": "false",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
@@ -6096,22 +6088,6 @@
       "name": "ReclaimerrUserHeader",
       "type": "string",
       "initializer": "\"Remote-User\"",
-      "constructor_assignment": null,
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
-    },
-    {
-      "class": "PluginConfiguration",
-      "name": "ReclaimerrUserMap",
-      "type": "string",
-      "initializer": "string.Empty",
-      "constructor_assignment": null,
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
-    },
-    {
-      "class": "PluginConfiguration",
-      "name": "ReclaimerrPassword",
-      "type": "string",
-      "initializer": "string.Empty",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
@@ -10915,7 +10891,7 @@
     },
     {
       "literal": "/openapi.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/ReclaimerrActions.cs"
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/ReclaimerrApi.cs"
     },
     {
       "literal": "settings.json",
@@ -11366,7 +11342,7 @@
     "build_targets": 1,
     "files": 570,
     "routes": 228,
-    "configuration_properties": 793,
+    "configuration_properties": 790,
     "storage_references": 100,
     "scheduled_tasks": 17,
     "locales": 33

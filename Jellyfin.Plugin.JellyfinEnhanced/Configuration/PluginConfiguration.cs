@@ -975,25 +975,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ReclaimerrEnabled { get; set; } = false;
         /// <summary>Reclaimerr base URL (http/https).</summary>
         public string ReclaimerrUrl { get; set; } = string.Empty;
-        /// <summary>Reclaimerr API token (<c>rcl_...</c>, read and manage candidates). A secret: never in public config, responses, logs or exports.</summary>
-        public string ReclaimerrToken { get; set; } = string.Empty;
-        /// <summary>Reclaimerr service account used for what the token API cannot do (mark, requests).</summary>
-        public string ReclaimerrUsername { get; set; } = string.Empty;
         /// <summary>
-        /// Act in Reclaimerr as the Jellyfin user who clicked (their requests and schedules carry their own name), through
-        /// Reclaimerr's trusted-proxy sign-in (<c>FORWARD_AUTH_*</c>, the header below, from an address it trusts). When it
-        /// cannot (the feature is off in Reclaimerr, the user has no Reclaimerr account), the service account is the fallback.
+        /// Reclaimerr API token (<c>rcl_...</c>) for everything the plugin reads and does in Reclaimerr 0.6.15 or newer: the
+        /// <c>candidates:manage</c>, <c>scheduled_deletions:manage</c>, <c>delete_requests:manage</c>, <c>media:read</c> and
+        /// <c>users:manage</c> scopes. A secret: never in public config, responses, logs or exports.
         /// </summary>
-        public bool ReclaimerrActAsUser { get; set; } = true;
+        public string ReclaimerrToken { get; set; } = string.Empty;
+        /// <summary>
+        /// Let users request removals: a request is filed as the Jellyfin user's own Reclaimerr account (the one linked to
+        /// them, found by their Jellyfin user id) through Reclaimerr's trusted-proxy sign-in (<c>FORWARD_AUTH_*</c>, the header
+        /// below, from an address it trusts), because Reclaimerr's token API cannot file a request for someone else.
+        /// A new name, off by default: the earlier "act as the user" switch defaulted on while requests also needed a service
+        /// account, so its saved value is no opt-in to this.
+        /// </summary>
+        public bool ReclaimerrUserRequests { get; set; } = false;
         /// <summary>The header Reclaimerr reads the user name from (its <c>FORWARD_AUTH_USER_HEADER</c>, default <c>Remote-User</c>).</summary>
         public string ReclaimerrUserHeader { get; set; } = "Remote-User";
-        /// <summary>
-        /// Jellyfin user names that have a different Reclaimerr username: one <c>Jellyfin name = Reclaimerr name</c> per
-        /// line. A Jellyfin user not listed is looked up by the same name.
-        /// </summary>
-        public string ReclaimerrUserMap { get; set; } = string.Empty;
-        /// <summary>That account's password. A secret: never in public config, responses, logs or exports.</summary>
-        public string ReclaimerrPassword { get; set; } = string.Empty;
         /// <summary>Existing Jellyfin collection names (one per line or comma separated) whose members count as leaving.</summary>
         public string LeavingSoonCollections { get; set; } = string.Empty;
         /// <summary>Hours between Leaving soon refreshes (1-168).</summary>

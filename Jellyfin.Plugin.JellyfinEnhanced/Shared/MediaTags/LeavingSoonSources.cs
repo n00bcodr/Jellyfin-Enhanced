@@ -66,13 +66,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
         public static bool ReclaimerrActionsEnabled(PluginConfiguration? config)
             => config != null && config.LeavingSoonMaintainerrActions && UsesReclaimerr(config) && ApiConfigured(config);
 
-        /// <summary>Whether a Reclaimerr service account is set (a username; its password is only for Reclaimerr's local login).</summary>
-        public static bool HasReclaimerrAccount(PluginConfiguration? config)
-            => config != null && !string.IsNullOrWhiteSpace(config.ReclaimerrUsername);
+        /// <summary>
+        /// Whether users can file removal requests as themselves (upstream da3d9ee9): Let users request removals and a user header for
+        /// Reclaimerr's trusted-proxy sign-in, the only way Reclaimerr takes a request for a user.
+        /// </summary>
+        public static bool ReclaimerrRequestsAsUser(PluginConfiguration? config)
+            => config != null && config.ReclaimerrUserRequests && !string.IsNullOrWhiteSpace(config.ReclaimerrUserHeader);
 
-        /// <summary>Whether signed-in users who are not administrators can request removals: the Reclaimerr actions and a service account.</summary>
+        /// <summary>Whether signed-in users who are not administrators can request removals: the Reclaimerr actions and requests as the user.</summary>
         public static bool RemovalRequestsEnabled(PluginConfiguration? config)
-            => ReclaimerrActionsEnabled(config) && HasReclaimerrAccount(config);
+            => ReclaimerrActionsEnabled(config) && ReclaimerrRequestsAsUser(config);
 
         /// <summary>Whether the Leaving soon Home Screen Sections row is wanted: its switch and a removal tool that can be read.</summary>
         public static bool HomeRowWanted(PluginConfiguration? config)
@@ -114,17 +117,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Shared.MediaTags
             if (reclaimerr.Length == 0 || IsMaintainerrUrl(reclaimerr)) incoming.ReclaimerrUrl = reclaimerr;
             else { incoming.ReclaimerrUrl = current?.ReclaimerrUrl ?? string.Empty; problems.Add("Reclaimerr URL is not an http(s) address without credentials, query or fragment"); }
 
+            // The trusted-proxy header's name: an HTTP token (letters, digits and !#$%&'*+.^_`|~-), else the stored one.
+            var header = (incoming.ReclaimerrUserHeader ?? string.Empty).Trim();
+            if (header.Length == 0) incoming.ReclaimerrUserHeader = "Remote-User";
+            else if (header.Length <= 64 && header.All(c => char.IsAsciiLetterOrDigit(c) || "!#$%&'*+.^_`|~-".Contains(c))) incoming.ReclaimerrUserHeader = header;
+            else { incoming.ReclaimerrUserHeader = current?.ReclaimerrUserHeader is { Length: > 0 } kept ? kept : "Remote-User"; problems.Add("Reclaimerr user header is not a valid HTTP header name"); }
+
             var token = (incoming.ReclaimerrToken ?? string.Empty).Trim();
             if (token.Length <= 256 && token.All(c => c > ' ' && c < '\u007f')) incoming.ReclaimerrToken = token;
             else { incoming.ReclaimerrToken = current?.ReclaimerrToken ?? string.Empty; problems.Add("Reclaimerr token is not printable ASCII without spaces (256 characters at most)"); }
-
-            var account = (incoming.ReclaimerrUsername ?? string.Empty).Trim();
-            if (account.Length <= 64 && account.All(c => c >= ' ' && c != '\u007f')) incoming.ReclaimerrUsername = account;
-            else { incoming.ReclaimerrUsername = current?.ReclaimerrUsername ?? string.Empty; problems.Add("Reclaimerr username is over 64 characters or has control characters"); }
-
-            var password = incoming.ReclaimerrPassword ?? string.Empty;
-            if (password.Length <= 256 && password.All(c => c >= ' ' && c != '\u007f')) incoming.ReclaimerrPassword = password;
-            else { incoming.ReclaimerrPassword = current?.ReclaimerrPassword ?? string.Empty; problems.Add("Reclaimerr password is over 256 characters or has control characters"); }
 
             incoming.LeavingSoonRefreshHours = Math.Clamp(incoming.LeavingSoonRefreshHours, 1, 168);
             return problems;

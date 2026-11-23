@@ -350,7 +350,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 // Whether administrators can mark, keep and postpone removals from the item menu (the actions
                 // switch and a Maintainerr or Reclaimerr address); the rows themselves are admin-only on the server.
                 MaintainerrActionsAvailable = LeavingSoonSources.MaintainerrActionsEnabled(config) || LeavingSoonSources.ReclaimerrActionsEnabled(config),
-                // Whether anyone signed in can ask for a removal (Reclaimerr with a service account).
+                // Whether anyone signed in can ask for a removal (Reclaimerr, as their linked account through its trusted-proxy sign-in).
                 RemovalRequestsAvailable = LeavingSoonSources.RemovalRequestsEnabled(config),
                 LeavingSoonProvider = LeavingSoonSources.UsesReclaimerr(config) ? "reclaimerr" : "maintainerr",
                 StatusTagsOnCollections = config.StatusTagsOnCollections,

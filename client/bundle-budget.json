@@ -2,7 +2,7 @@
   "description": "Budget for the served component bundle, GET /JellyfinEnhanced/bundle.js (Features/Platform/Services/ClientScriptBundle.cs), as an identity (uncompressed) body. rawBytes: its length. gzipBytes: its length after gzip at level 9 (zlib level 9; `gzip -9 -n`, .NET CompressionLevel.SmallestSize). Checked by tests/backend/Api/BundleBudgetTests.cs (gate T) and `scripts/restructure-gates.sh size`. It is a ratchet: lowering a limit needs no reason; a history entry that raises either limit must give one. `limits` is always the last history entry's.",
   "limits": {
     "rawBytes": 2772818,
-    "gzipBytes": 758272
+    "gzipBytes": 758310
   },
   "history": [
     {
@@ -147,6 +147,19 @@
         "gzipBytes": 758272
       },
       "reason": "Raised by exactly what the port adds, so the headroom left before it stays as it was. The bundle served without g is the whole manifest, so it carries every part of the port: the status tag painter, tags/status-tag-backdrop.js (+28,491 raw, a module of its own, loaded on demand under g); core/tag-layout.js +25,215 (the resting flow layout, the whole-pixel pass that replaces layout containment, the custom CSS check in idle time); tags/tag-layout-styles.js +4,181, tags/tag-direct-play.js +3,056, tags/statustags.js +3,054 (observers that let answered cards go; asking for the painter); copies of shared modules in scripts whose component group can load without the module's provider (now-playing, the playback rating badge, subtitles, the details-page link helpers in five details groups: about +11,000 in all); under 1 KB each elsewhere. Measured with BundleBudgetTests (gate T's own measure, .NET SmallestSize) with the limits set out of the way: 2,671,672 raw / 729,898 gzip-9 bytes on 6d5dfdc5 (unchanged on 1651839c, the base), 2,749,476 / 758,266 with the port (+77,804 / +28,368). A page now loads only the groups it needs (scripts/bundle-budgets.json budgets a cold Home load)."
+    },
+    {
+      "date": "2026-11-23",
+      "change": "upstream sync: ports of upstream da3d9ee9 (#1091), 54a6f418 and 7762f8e1 (#1097), branch sync/reclaimerr-da3d9ee9",
+      "measured": {
+        "rawBytes": 2749202,
+        "gzipBytes": 758279
+      },
+      "limits": {
+        "rawBytes": 2772818,
+        "gzipBytes": 758310
+      },
+      "reason": "gzip-9 raised by exactly what the ports add, so the headroom left before them stays as it was (31 bytes); raw stays (its headroom covers the port). The bundle carries tags/tag-item-menu.js, where the Leaving soon page now always offers when to delete, sends the list's source and the grace period shown with a review, gives administrators Reclaimerr's reason when the requests could not be read, and drops the leave date of a kept or completed schedule. Measured with BundleBudgetTests (gate T's own measure) with the limits set out of the way: 2,748,975 raw / 758,241 gzip-9 bytes on ba6cdbdf8 (the base), 2,749,202 / 758,279 with the ports (+227 / +38)."
     }
   ]
 }

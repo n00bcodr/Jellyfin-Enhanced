@@ -873,7 +873,13 @@ test('Maintainerr and Reclaimerr are one choice: turning one on turns the other 
   await settle(h.window, 5);
   assert.equal($('LeavingSoonMaintainerrEnabled').checked, false, 'turning Reclaimerr on turns Maintainerr off');
   assert.equal(hidden('ReclaimerrUrl'), false);
-  assert.equal(hidden('ReclaimerrUserHeader'), false, 'Act as the Jellyfin user is on by default');
+  // Upstream da3d9ee9: Let users request removals is off by default, and the header is only for it.
+  assert.equal($('ReclaimerrUserRequests').checked, false, 'Let users request removals is off by default');
+  assert.equal(hidden('ReclaimerrUserHeader'), true, 'the user header folds while requests are off');
+  flip('ReclaimerrUserRequests', true);
+  await settle(h.window, 5);
+  assert.equal(hidden('ReclaimerrUserHeader'), false);
+  for (const gone of ['ReclaimerrActAsUser', 'ReclaimerrUserMap', 'ReclaimerrUsername', 'ReclaimerrPassword', 'reclaimerrCreateAccountBtn']) assert.equal($(gone), null, gone + ' is gone with the service account');
   assert.equal(hidden('LeavingSoonMaintainerrUrl'), true);
   assert.equal($('ReclaimerrUrl').value, 'http://reclaimerr:8000');
   assert.equal($('LeavingSoonMaintainerrUrl').value, 'http://maintainerr:6246', 'the other tool keeps its settings');
@@ -892,36 +898,14 @@ test('Maintainerr and Reclaimerr are one choice: turning one on turns the other 
   assert.ok(dashboard(), 'the Overview lists the removal tool');
 });
 
-test('Create service account signs in once as the named Reclaimerr administrator and puts the new login in the form', async t => {
+// Upstream da3d9ee9: Import Jellyfin users runs Reclaimerr's own import through the token; nothing goes into the form.
+test('Import Jellyfin users sends the ticked permissions and pages, from either copy of the card, and says what Reclaimerr did', async t => {
+  let answer = { created: ['Sam'], alreadyLinked: 2, needsReview: ['Pat'], skipped: ['Lee: no email'] };
   const h = await loadedPage(t, {
     saved: { JellyseerrEnabled: true, JellyseerrUrls: 'http://seerr.test', JellyseerrApiKey: 'k', TMDB_API_KEY: 'stored', ReclaimerrEnabled: true, LeavingSoonMaintainerrEnabled: false, ReclaimerrUrl: 'http://reclaimerr:8000', ReclaimerrToken: 'rcl_x' },
     ajax: (request) => {
       if (request.url.includes('/admin/leaving-soon')) return { Configured: true, Maintainerr: true, Provider: 'reclaimerr', HomeRow: 'off', Items: 0, Dated: 0 };
-      if (request.url.includes('/reclaimerr/service-account')) return { username: 'jellyfin-enhanced', password: 'new-random' };
-      return undefined;
-    },
-  });
-  await settle(h.window, 20);
-  const answers = ['admin', ''];
-  h.window.prompt = () => answers.shift();
-  h.document.getElementById('reclaimerrCreateAccountBtn').click();
-  await settle(h.window, 20);
-  const call = h.calls.ajax.find(r => r.url.includes('/reclaimerr/service-account'));
-  assert.equal(call.type, 'POST');
-  assert.deepEqual(JSON.parse(call.data), { adminUsername: 'admin', adminPassword: '' });
-  assert.equal(h.document.getElementById('ReclaimerrUsername').value, 'jellyfin-enhanced');
-  assert.equal(h.document.getElementById('ReclaimerrPassword').value, 'new-random', 'Save writes the field back, so it holds the new password');
-  assert.match(h.document.getElementById('reclaimerrCreateAccountLine').textContent, /^Created and saved: jellyfin-enhanced\.$/);
-});
-
-// Upstream 3ada0a4e: one button makes a Reclaimerr account for every Jellyfin user who has none.
-test('Create accounts for all Jellyfin users sends the ticked permissions and pages, from either copy of the card, and puts the new user map in the form', async t => {
-  let answer = { created: ['Sam', 'Jane Doe'], existing: 2, skipped: ['Someone with a very long name indeed: Reclaimerr allows at most 32 characters'], userMap: 'Mapped = m\nSam = Sam_user\nJane Doe = Jane_Doe' };
-  const h = await loadedPage(t, {
-    saved: { JellyseerrEnabled: true, JellyseerrUrls: 'http://seerr.test', JellyseerrApiKey: 'k', TMDB_API_KEY: 'stored', ReclaimerrEnabled: true, LeavingSoonMaintainerrEnabled: false, ReclaimerrUrl: 'http://reclaimerr:8000', ReclaimerrToken: 'rcl_x', ReclaimerrUsername: 'jellyfin-enhanced', ReclaimerrUserMap: 'Mapped = m' },
-    ajax: (request) => {
-      if (request.url.includes('/admin/leaving-soon')) return { Configured: true, Maintainerr: true, Provider: 'reclaimerr', HomeRow: 'off', Items: 0, Dated: 0 };
-      if (request.url.includes('/reclaimerr/create-users')) {
+      if (request.url.includes('/reclaimerr/import-users')) {
         if (answer instanceof Error) throw answer;
         return answer;
       }
@@ -931,11 +915,12 @@ test('Create accounts for all Jellyfin users sends the ticked permissions and pa
   await settle(h.window, 20);
   const $ = id => h.document.getElementById(id);
   const ticks = (id) => [...h.document.querySelectorAll('#' + id + ' input')].filter(box => box.checked).map(box => box.value);
-  const sent = () => h.calls.ajax.filter(r => r.url.includes('/reclaimerr/create-users'));
+  const sent = () => h.calls.ajax.filter(r => r.url.includes('/reclaimerr/import-users'));
   const box = (id, value) => [...h.document.querySelectorAll('#' + id + ' input')].find(input => input.value === value);
   const set = (id, value, on) => { const input = box(id, value); input.checked = on; input.dispatchEvent(new h.window.Event('change', { bubbles: true })); };
-  assert.equal($('reclaimerrCreateUsersBtn').closest('details').querySelector('summary').textContent, 'Create Reclaimerr accounts for Jellyfin users');
+  assert.equal($('reclaimerrImportUsersBtn').closest('details').querySelector('summary').textContent, 'Import Jellyfin users into Reclaimerr');
   assert.deepEqual([...h.document.querySelectorAll('#reclaimerrNewPerms input')].map(box => box.value), ['request', 'auto_approve', 'manage_requests', 'manage_protection', 'manage_reclaim']);
+  assert.deepEqual([...h.document.querySelectorAll('#reclaimerrNewPerms input, #reclaimerrNewPages input')].filter(input => input.id), [], 'the boxes are not settings, so they have no ids');
   assert.deepEqual(ticks('reclaimerrNewPerms'), ['request']);
   assert.deepEqual(ticks('reclaimerrNewPages'), ['requests', 'candidates', 'settings']);
 
@@ -943,26 +928,25 @@ test('Create accounts for all Jellyfin users sends the ticked permissions and pa
   for (const page of ['requests', 'candidates', 'settings']) set('reclaimerrNewPages', page, false);
   let asked = 0;
   h.window.confirm = () => { asked++; return false; };
-  $('reclaimerrCreateUsersBtn').click();
+  $('reclaimerrImportUsersBtn').click();
   await settle(h.window, 10);
-  assert.equal($('reclaimerrCreateUsersLine').textContent, 'Pick at least one page.');
+  assert.equal($('reclaimerrImportUsersLine').textContent, 'Pick at least one page.');
   assert.equal(asked, 0);
   // A page ticked but the confirmation declined: still nothing sent.
   set('reclaimerrNewPages', 'requests', true);
-  $('reclaimerrCreateUsersBtn').click();
+  $('reclaimerrImportUsersBtn').click();
   await settle(h.window, 10);
   assert.equal(asked, 1);
   assert.equal(sent().length, 0);
 
   h.window.confirm = () => true;
-  $('reclaimerrCreateUsersBtn').click();
+  $('reclaimerrImportUsersBtn').click();
   await settle(h.window, 20);
   assert.equal(sent().length, 1);
   assert.equal(sent()[0].type, 'POST');
   assert.deepEqual(JSON.parse(sent()[0].data), { permissions: ['request'], pages: ['requests'] });
-  assert.equal($('ReclaimerrUserMap').value, 'Mapped = m\nSam = Sam_user\nJane Doe = Jane_Doe', 'Save writes the field back, so it holds the new lines');
-  assert.equal($('reclaimerrCreateUsersLine').textContent, 'Created 2, already had an account: 2, not created: Someone with a very long name indeed: Reclaimerr allows at most 32 characters.');
-  assert.equal($('reclaimerrCreateUsersBtn').disabled, false);
+  assert.equal($('reclaimerrImportUsersLine').textContent, 'Created 1, already linked 2, to confirm in Reclaimerr: Pat, not imported: Lee: no email.');
+  assert.equal($('reclaimerrImportUsersBtn').disabled, false);
 
   // The Services tab's copy of the card shows the same ticks, and what is ticked there is what is sent.
   h.document.querySelector('.jellyfin-tab-button[data-tab="services"]').click();
@@ -973,12 +957,67 @@ test('Create accounts for all Jellyfin users sends the ticked permissions and pa
   set('reclaimerrNewPages--mirror', 'history', true);
   assert.deepEqual(ticks('reclaimerrNewPerms'), ['request', 'auto_approve']);
   assert.deepEqual(ticks('reclaimerrNewPages'), ['requests', 'history']);
-  answer = Object.assign(new Error('Bad Request'), { status: 400, responseText: '{"error":"Create the service account first."}' });
-  $('reclaimerrCreateUsersBtn--mirror').click();
+  answer = Object.assign(new Error('Bad Request'), { status: 400, responseText: '{"error":"Turn on Use Reclaimerr and save its URL and API token first."}' });
+  $('reclaimerrImportUsersBtn--mirror').click();
   await settle(h.window, 20);
   assert.deepEqual(JSON.parse(sent().at(-1).data), { permissions: ['request', 'auto_approve'], pages: ['requests', 'history'] });
-  assert.equal($('reclaimerrCreateUsersLine').textContent, 'Could not create the accounts: Create the service account first.');
-  assert.equal($('ReclaimerrUserMap').value, 'Mapped = m\nSam = Sam_user\nJane Doe = Jane_Doe', 'a refusal leaves the map as it was');
+  assert.equal($('reclaimerrImportUsersLine').textContent, 'Could not import the users: Turn on Use Reclaimerr and save its URL and API token first.');
+});
+
+// Upstream da3d9ee9: the User audit lists setup issues, each user with issues, the users the check did not reach and the rest,
+// into the card and its Services-tab copy alike, as text (names and reasons come from Jellyfin and Reclaimerr).
+test('the User audit draws its answer as text into both copies of the Reclaimerr card, and a refusal as the server words it', async t => {
+  let answer = {
+    version: '0.6.15', requestsEnabled: true,
+    issues: ['The API token lacks users:manage: Request removal, Import Jellyfin users and this audit cannot read Reclaimerr\'s accounts.'],
+    users: [
+      { jellyfinUsername: '<b>Ana</b>', jellyfinUserId: 'a', admin: false, linked: false, reclaimerrUsername: null, issues: ['No Reclaimerr account is linked to this user.'], checked: true },
+      { jellyfinUsername: 'Bo', jellyfinUserId: 'b', admin: false, linked: true, reclaimerrUsername: 'bo_user', issues: [], checked: false },
+      { jellyfinUsername: 'Cy', jellyfinUserId: 'c', admin: true, linked: true, reclaimerrUsername: 'cy', issues: [], checked: true },
+    ],
+  };
+  const h = await loadedPage(t, {
+    saved: { JellyseerrEnabled: true, JellyseerrUrls: 'http://seerr.test', JellyseerrApiKey: 'k', TMDB_API_KEY: 'stored', ReclaimerrEnabled: true, LeavingSoonMaintainerrEnabled: false, ReclaimerrUrl: 'http://reclaimerr:8000', ReclaimerrToken: 'rcl_x' },
+    ajax: (request) => {
+      if (request.url.includes('/admin/leaving-soon')) return { Configured: true, Maintainerr: true, Provider: 'reclaimerr', HomeRow: 'off', Items: 0, Dated: 0 };
+      if (request.url.includes('/reclaimerr/user-audit')) {
+        if (answer instanceof Error) throw answer;
+        return answer;
+      }
+      return undefined;
+    },
+  });
+  await settle(h.window, 20);
+  const $ = id => h.document.getElementById(id);
+  assert.equal($('reclaimerrAuditBtn').closest('details').querySelector('summary').textContent, 'User audit');
+  assert.equal($('reclaimerrAuditResult').style.display, 'none');
+  $('reclaimerrAuditBtn').click();
+  await settle(h.window, 20);
+  const call = h.calls.ajax.find(r => r.url.includes('/reclaimerr/user-audit'));
+  assert.equal(call.type, 'GET');
+  for (const id of ['reclaimerrAuditResult', 'reclaimerrAuditResult--mirror']) {
+    const out = $(id);
+    assert.equal(out.style.display, 'block', id);
+    assert.equal(out.querySelector('.je-audit-summary-title').textContent, 'Audit complete (Reclaimerr 0.6.15), review the items below.');
+    // Upstream 7762f8e1: the administrator is not checked, so not counted as OK but apart.
+    assert.deepEqual([...out.querySelectorAll('.je-audit-summary-chips .je-audit-chip')].map(c => c.textContent), ['settings1 setup', 'warning1 with issues', 'help1 not checked', 'admin_panel_settings1 administrator(s)']);
+    const cards = [...out.querySelectorAll('.je-audit-card')];
+    assert.equal(cards.length, 2);
+    assert.match(cards[0].textContent, /lacks users:manage/);
+    assert.equal(cards[1].querySelector('.je-audit-card-user').textContent, 'person_off<b>Ana</b>', 'a name is text, never markup');
+    assert.equal(out.querySelector('b'), null);
+    assert.deepEqual([...out.querySelectorAll('.je-audit-ok-section summary')].map(s => s.textContent), ['Show 1 linked user(s) whose Request permission was not checked (see Setup)', 'Show 1 administrator(s), not checked: they mark with the API token']);
+    assert.deepEqual([...out.querySelectorAll('.je-audit-ok-names li')].map(li => li.textContent), ['Bo \u2192 bo_user', 'Cy \u2192 cy']);
+  }
+  assert.equal($('reclaimerrAuditBtn').textContent, 'Run Audit');
+  assert.equal($('reclaimerrAuditBtn').disabled, false);
+
+  answer = Object.assign(new Error('Bad Request'), { status: 400, responseText: '{"error":"Turn on Use Reclaimerr and save its URL and API token first."}' });
+  $('reclaimerrAuditBtn--mirror').click();
+  await settle(h.window, 20);
+  for (const id of ['reclaimerrAuditResult', 'reclaimerrAuditResult--mirror']) {
+    assert.equal($(id).textContent, 'Audit failed: Turn on Use Reclaimerr and save its URL and API token first.', id);
+  }
 });
 
 // The Custom Tabs link stays inside the web client, so it keeps a reverse proxy's base path.

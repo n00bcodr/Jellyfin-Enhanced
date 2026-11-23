@@ -118,8 +118,8 @@ define({
     // off (page/service-status.ts), and the settings of the one that is off are kept and collapse. The options both
     // share (the live state, the item menu, the home row, the refresh interval) are in the Leaving soon card. The cards
     // live here, the Services tab shows linked copies, and the Media Tags tab (Status badges > Leaving soon) shows the
-    // live status and links here. The status line, Refresh now, Create service account and the Overview's Service Status
-    // card are wired by page/service-status.ts. Setup cards (data-dep-setup), like Bazarr's and Shoko's: neither tool
+    // live status and links here. The status line, Refresh now, Import Jellyfin users, the User audit and the Overview's
+    // Service Status card are wired by page/service-status.ts. Setup cards (data-dep-setup), like Bazarr's and Shoko's: neither tool
     // needs Sonarr or Radarr here, so the tab's lock skips them.
     'arr-maintainerr': {
         title: 'Maintainerr', iconImg: 'selfhst/svg/maintainerr.svg', attrs: { 'data-dep-setup': '' },
@@ -136,33 +136,22 @@ define({
     'arr-reclaimerr': {
         title: 'Reclaimerr', iconImg: 'selfhst/svg/reclaimerr.svg', attrs: { 'data-dep-setup': '' },
         items: [
-            { type: 'note', html: 'Reclaimerr decides which items leave your library, like Maintainerr. Jellyfin Enhanced reads its cleanup candidates and scheduled deletions for the <strong>Leaving soon</strong> tag and home row. Administrators can <strong>mark, keep and postpone</strong> from an item\'s &#8942; menu (pick an exact day), and any signed-in user can <strong>request a removal</strong>, which lands in Reclaimerr as a deletion request for an administrator to approve. The shared options are in the <strong>Leaving soon</strong> card.' },
+            { type: 'note', html: 'Reclaimerr decides which items leave your library, like Maintainerr. Needs <strong>Reclaimerr 0.6.15 or newer</strong> (development builds such as <code>0.6.15-dev.1</code> count). Jellyfin Enhanced reads what Reclaimerr will remove (cleanup candidates, scheduled deletions and approved requests waiting for their day) for the <strong>Leaving soon</strong> tag, page and home row. Administrators can <strong>mark, keep and postpone</strong> from an item\'s &#8942; menu and approve or deny removal requests on the Leaving soon page, and users can <strong>request a removal</strong>. The shared options are in the <strong>Leaving soon</strong> card.' },
             { id: 'ReclaimerrEnabled', prop: 'ReclaimerrEnabled', type: 'toggle', default: false, label: 'Use Reclaimerr',
               desc: 'Turning this on turns Maintainerr off (and the other way round). Its settings below are kept either way.' },
             { id: 'ReclaimerrUrl', prop: 'ReclaimerrUrl', type: 'text', label: 'Reclaimerr URL', placeholder: 'http://reclaimerr:8000', showIf: 'ReclaimerrEnabled',
-              desc: 'The address this server reaches Reclaimerr at (<code>http://</code> or <code>https://</code>, no credentials or query). Redirects are not followed.' },
+              desc: 'Where this server reaches Reclaimerr: <code>http://</code> or <code>https://</code>, with no credentials, query or redirect.' },
             { id: 'ReclaimerrApiKey', prop: 'ReclaimerrToken', type: 'text', label: 'Reclaimerr API token', showIf: 'ReclaimerrEnabled',
               toConfig: (v) => String(v || '').trim(), fromConfig: (v) => String(v || ''),
-              desc: 'Create it in Reclaimerr under <em>Settings &gt; Integrations</em> with the candidates (manage), protections (manage), media (read) and system (read) scopes. Used for reading and for Keep and Postpone.' },
-            { id: 'ReclaimerrActAsUser', prop: 'ReclaimerrActAsUser', type: 'toggle', default: true, label: 'Act as the Jellyfin user', showIf: 'ReclaimerrEnabled',
-              desc: 'Requests and schedules carry the name of the Jellyfin user who made them (<strong>Request removal</strong>, <strong>Mark for removal</strong>, cancelling or moving a scheduled deletion), through Reclaimerr\'s trusted-proxy sign-in. Turn on <code>FORWARD_AUTH_ENABLED</code> in Reclaimerr with this server\'s address in <code>FORWARD_AUTH_TRUSTED_PROXIES</code>, and the user needs a Reclaimerr account: when they sign in to Reclaimerr with their Jellyfin login (media sign-in), Reclaimerr creates one (for example <code>sam_user</code>) and links it to them, and the plugin finds it through that link, so nothing has to be created or mapped by hand. Where that does not work, the service account below is used instead.' },
-            { id: 'ReclaimerrUserHeader', prop: 'ReclaimerrUserHeader', type: 'text', default: 'Remote-User', label: 'User header', showIf: 'ReclaimerrActAsUser',
+              desc: 'Create it in Reclaimerr under <em>Settings &gt; Integrations</em> with manage access to <strong>candidates</strong>, <strong>scheduled deletions</strong>, <strong>delete requests</strong> and <strong>users</strong>, and read access to <strong>media</strong>.' },
+            { id: 'ReclaimerrUserRequests', prop: 'ReclaimerrUserRequests', type: 'toggle', default: false, label: 'Let users request removals', showIf: 'ReclaimerrEnabled',
+              desc: 'Adds <strong>Request removal</strong> to the &#8942; menu (needs <strong>Mark, keep and postpone from the item menu</strong> on), filed as the user\'s linked Reclaimerr account. In Reclaimerr, set <code>FORWARD_AUTH_ENABLED=true</code> and add this server\'s IP to <code>FORWARD_AUTH_TRUSTED_PROXIES</code>. Anything that reaches Reclaimerr from that IP can sign in as any Reclaimerr user, so use one only this server uses.' },
+            { id: 'ReclaimerrUserHeader', prop: 'ReclaimerrUserHeader', type: 'text', default: 'Remote-User', label: 'User header', showIf: 'ReclaimerrUserRequests',
               toConfig: (v) => String(v || '').trim() || 'Remote-User',
               desc: 'The header Reclaimerr reads the user from: its <code>FORWARD_AUTH_USER_HEADER</code> (default <code>Remote-User</code>).' },
-            { id: 'ReclaimerrUserMap', prop: 'ReclaimerrUserMap', type: 'textarea', rows: 3, placeholder: 'sam = samuel', label: 'Jellyfin user to Reclaimerr user', showIf: 'ReclaimerrActAsUser',
-              toConfig: (v) => String(v || '').trim(),
-              desc: 'Normally empty: the plugin finds each user\'s Reclaimerr account through the link Reclaimerr made when they signed in with Jellyfin (needs the service account to read it), else by the same name. List a user here only to point them at a different Reclaimerr account: one <code>Jellyfin name = Reclaimerr name</code> per line. This wins over the link.' },
-            { id: 'ReclaimerrUsername', prop: 'ReclaimerrUsername', type: 'text', label: 'Service account username (fallback)', showIf: 'ReclaimerrEnabled',
-              toConfig: (v) => String(v || '').trim(),
-              desc: 'A dedicated Reclaimerr admin account, <strong>the fallback</strong> when the plugin cannot act as the user (Reclaimerr\'s trusted-proxy sign-in is off, or the user has no Reclaimerr account), and what reads scheduled deletions. Without acting as the user it is needed for <strong>Mark for removal</strong> and <strong>Request removal</strong>. Use <strong>Create service account</strong> below to make one (it asks for a Reclaimerr administrator\'s name, and a password only if their trusted sign-in is not available). Reading candidates, Keep and Postpone work with the token alone.' },
-            { id: 'ReclaimerrPassword', prop: 'ReclaimerrPassword', type: 'text', label: 'Service account password (only for local login)', showIf: 'ReclaimerrEnabled',
-              toConfig: (v) => String(v || ''), fromConfig: (v) => String(v || ''),
-              desc: 'Optional. With <strong>Act as the Jellyfin user</strong> on and Reclaimerr\'s trusted-proxy sign-in working, the service account signs in by name alone, so this can stay empty (and Reclaimerr\'s local login can be switched off). It is used only when that does not work.' },
-            { type: 'custom', showIf: 'ReclaimerrEnabled', html: '<div class="inputContainer jea-row"><button type="button" id="reclaimerrCreateAccountBtn" class="jea-btn">Create service account</button>'
-                + '<div id="reclaimerrCreateAccountLine" class="jea-hint">Asks for a Reclaimerr administrator\'s name once (and a password only if their trusted sign-in is not available; not stored), creates a <code>jellyfin-enhanced</code> admin account with a random password and saves it here. Save the Reclaimerr URL first.</div></div>' },
-            // Upstream 3ada0a4e. The boxes have no ids (they are not settings); page/service-status.ts keeps this card's two copies' ticks the same.
-            { type: 'group', title: 'Create Reclaimerr accounts for Jellyfin users', open: true, showIf: 'ReclaimerrEnabled', items: [
-                { type: 'note', html: 'Creates a Reclaimerr account for every Jellyfin user who has none, so each person\'s requests carry their own name and they can see them under <strong>My requests</strong>. They sign in through the trusted-proxy sign-in, so there is no password to know. Needs the service account above. Existing accounts are left as they are. Names shorter than 5 characters get <code>_user</code> added (Reclaimerr\'s minimum), and other characters become <code>_</code>.' },
+            // Upstream da3d9ee9. The boxes have no ids (they are not settings); page/service-status.ts keeps this card's two copies' ticks the same.
+            { type: 'group', title: 'Import Jellyfin users into Reclaimerr', open: true, showIf: 'ReclaimerrEnabled', items: [
+                { type: 'note', html: 'Creates and links a Reclaimerr account for each Jellyfin user without one. Users Reclaimerr matches to an existing account are listed for you to confirm in Reclaimerr.' },
                 { type: 'custom', html: '<div class="inputContainer">'
                     + '<div><strong>What the new accounts may do</strong></div>'
                     + '<div id="reclaimerrNewPerms" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
@@ -170,8 +159,13 @@ define({
                     + '<div><strong>Reclaimerr pages they can open</strong></div>'
                     + '<div id="reclaimerrNewPages" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
                     + RECLAIMERR_NEW_PAGES.map(value => '<label><input type="checkbox" value="' + value + '"> ' + value.charAt(0).toUpperCase() + value.slice(1) + '</label>').join('') + '</div>'
-                    + '<div class="jea-row"><button type="button" id="reclaimerrCreateUsersBtn" class="jea-btn">Create accounts for all Jellyfin users</button></div>'
-                    + '<div id="reclaimerrCreateUsersLine" class="jea-hint"></div></div>' }
+                    + '<div class="jea-row"><button type="button" id="reclaimerrImportUsersBtn" class="jea-btn">Import Jellyfin users</button></div>'
+                    + '<div id="reclaimerrImportUsersLine" class="jea-hint"></div></div>' }
+            ] },
+            { type: 'group', title: 'User audit', open: false, showIf: 'ReclaimerrEnabled', items: [
+                { type: 'note', html: 'Checks each Jellyfin user\'s linked Reclaimerr account and, with requests on, whether they can request removals. Administrators mark for removal with the API token instead of requesting, so they are not checked. Also lists token scopes that are missing. Save the Reclaimerr settings first.' },
+                { type: 'custom', html: '<div class="inputContainer"><div class="jea-row"><button type="button" id="reclaimerrAuditBtn" class="jea-btn">Run Audit</button></div>'
+                    + '<div id="reclaimerrAuditResult" style="display:none;margin-top:1em"></div></div>' }
             ] }
         ]
     },

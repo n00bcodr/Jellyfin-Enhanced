@@ -411,47 +411,12 @@ export function createServiceStatus(m: ServiceStatusDeps) {
         function updateStatusDashboard() : void { renderServiceStatusDashboard(); }
 
     /**
-     * Create service account (upstream da0ea773): one Reclaimerr administrator login, used once, makes the plugin's own
-     * Reclaimerr account. The server saves it; the page's fields take the new name and password too, because the page's
-     * Save writes them back.
+     * Import Jellyfin users (upstream da3d9ee9): Reclaimerr's own import through the token, so every Jellyfin user without a
+     * Reclaimerr account gets one, linked to them, with the ticked permissions and pages. Nothing is stored here: Reclaimerr
+     * keeps the link.
      */
-    function wireCreateAccount(): void {
-        var button = asControl(document.getElementById('reclaimerrCreateAccountBtn'));
-        if (!button) return;
-        var target = button;
-        target.addEventListener('click', function() {
-            var line = asHtml(document.getElementById('reclaimerrCreateAccountLine'));
-            var adminUsername = window.prompt('Reclaimerr administrator username (used once, not stored):');
-            if (!adminUsername) return;
-            // Empty is fine: the plugin then acts as that administrator by name (trusted-proxy sign-in), no password needed.
-            var adminPassword = window.prompt('Password for ' + adminUsername + ' (leave empty to sign in by name through Reclaimerr\'s trusted-proxy sign-in; used once, never stored):') || '';
-            target.disabled = true;
-            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/service-account'), data: JSON.stringify({ adminUsername: adminUsername, adminPassword: adminPassword }), contentType: 'application/json', dataType: 'json' }).then(function(answer) {
-                if (m.context.lifecycle.disposed) return;
-                var created = asObject(answer);
-                var name = typeof created?.username === 'string' ? created.username : '';
-                var user = asInput(document.getElementById('ReclaimerrUsername'));
-                if (user && name) user.value = name;
-                var pass = asInput(document.getElementById('ReclaimerrPassword'));
-                if (pass && typeof created?.password === 'string' && created.password) pass.value = created.password;
-                if (line) line.textContent = 'Created and saved: ' + name + '.';
-            }, function(err: unknown) {
-                return requestFailureWithBody(err).then(function(failure) {
-                    if (m.context.lifecycle.disposed || !line) return;
-                    var reason = typeof failure.body?.error === 'string' ? failure.body.error : '';
-                    line.textContent = 'Could not create it: ' + (reason || failure.status || failure.message || 'request failed');
-                });
-            }).then(function() { target.disabled = false; });
-        }, { signal: m.context.lifecycle.signal });
-    }
-
-    /**
-     * Create accounts for all Jellyfin users (upstream 3ada0a4e): through the service account, a Reclaimerr account for every
-     * Jellyfin user who has none, with the ticked permissions and pages, mapped to its Jellyfin user. The server saves the
-     * map; the page's field takes it too, because the page's Save writes it back.
-     */
-    function wireCreateUsers(): void {
-        var button = asControl(document.getElementById('reclaimerrCreateUsersBtn'));
+    function wireImportUsers(): void {
+        var button = asControl(document.getElementById('reclaimerrImportUsersBtn'));
         if (!button) return;
         var target = button;
         var boxesIn = function(id: string): HTMLInputElement[] {
@@ -478,28 +443,153 @@ export function createServiceStatus(m: ServiceStatusDeps) {
         var ticked = function(id: string): string[] {
             return boxesIn(id).filter(function(box) { return box.checked; }).map(function(box) { return box.value; });
         };
+        var names = function(value: unknown): string[] {
+            return Array.isArray(value) ? value.filter(function(s): s is string { return typeof s === 'string'; }) : [];
+        };
         target.addEventListener('click', function() {
-            var line = asHtml(document.getElementById('reclaimerrCreateUsersLine'));
+            var line = asHtml(document.getElementById('reclaimerrImportUsersLine'));
             var pages = ticked('reclaimerrNewPages');
             if (!pages.length) { if (line) line.textContent = 'Pick at least one page.'; return; }
-            if (!window.confirm('Create a Reclaimerr account for every Jellyfin user who has none?')) return;
+            if (!window.confirm('Create and link a Reclaimerr account for every Jellyfin user who has none?')) return;
             target.disabled = true;
-            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/create-users'), data: JSON.stringify({ permissions: ticked('reclaimerrNewPerms'), pages: pages }), contentType: 'application/json', dataType: 'json' }).then(function(answer) {
+            if (line) line.textContent = 'Importing\u2026';
+            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/import-users'), data: JSON.stringify({ permissions: ticked('reclaimerrNewPerms'), pages: pages }), contentType: 'application/json', dataType: 'json' }).then(function(answer) {
                 if (m.context.lifecycle.disposed) return;
                 var result = asObject(answer);
-                var map = asControl(document.getElementById('ReclaimerrUserMap'));
-                if (map && typeof result.userMap === 'string') map.value = result.userMap;
-                var created = Array.isArray(result.created) ? result.created.length : 0;
-                var existing = typeof result.existing === 'number' ? result.existing : 0;
-                var skipped = Array.isArray(result.skipped) ? result.skipped.filter(function(s): s is string { return typeof s === 'string'; }) : [];
-                if (line) line.textContent = 'Created ' + created + ', already had an account: ' + existing + (skipped.length ? ', not created: ' + skipped.join('; ') : '') + '.';
+                var review = names(result.needsReview), skipped = names(result.skipped);
+                var parts = ['Created ' + names(result.created).length, 'already linked ' + (typeof result.alreadyLinked === 'number' ? result.alreadyLinked : 0)];
+                if (review.length) parts.push('to confirm in Reclaimerr: ' + review.join(', '));
+                if (skipped.length) parts.push('not imported: ' + skipped.join('; '));
+                if (line) line.textContent = parts.join(', ') + '.';
             }, function(err: unknown) {
                 return requestFailureWithBody(err).then(function(failure) {
                     if (m.context.lifecycle.disposed || !line) return;
                     var reason = typeof failure.body?.error === 'string' ? failure.body.error : '';
-                    line.textContent = 'Could not create the accounts: ' + (reason || failure.status || failure.message || 'request failed');
+                    line.textContent = 'Could not import the users: ' + (reason || failure.status || failure.message || 'request failed');
                 });
             }).then(function() { target.disabled = false; });
+        }, { signal: m.context.lifecycle.signal });
+    }
+
+    /**
+     * Reclaimerr user audit (upstream da3d9ee9): the token's missing scopes and setup problems first, then a card for each user
+     * with issues (in the Seerr permission audit's style), the users the sign-in check never reached (in grey: their link is
+     * fine, only their Request permission is unknown), the users with none folded away, and the administrators apart (in grey
+     * too: they are not checked, so they are not counted as OK; upstream 7762f8e1). Built with textContent only: names and
+     * reasons come from Jellyfin and Reclaimerr. Drawn into the card and into its Services-tab copy alike: the copy only follows
+     * a box that holds plain text, and this one holds elements.
+     */
+    function wireUserAudit(): void {
+        var button = asControl(document.getElementById('reclaimerrAuditBtn'));
+        if (!button) return;
+        var target = button;
+        var node = function(tag: string, cls: string | null, text?: string): HTMLElement {
+            var n = document.createElement(tag);
+            if (cls) n.className = cls;
+            if (text != null) n.textContent = text;
+            return n;
+        };
+        var icon = function(name: string): HTMLElement { var i = node('i', 'material-icons', name); i.setAttribute('aria-hidden', 'true'); return i; };
+        var chip = function(kind: string, iconName: string, text: string): HTMLElement {
+            var c = node('span', 'je-audit-chip je-audit-chip-' + kind);
+            c.append(icon(iconName), document.createTextNode(text));
+            return c;
+        };
+        var boxes = function(): HTMLElement[] {
+            return [asHtml(document.getElementById('reclaimerrAuditResult')), asHtml(document.getElementById('reclaimerrAuditResult' + MIRROR))].filter(function(b): b is HTMLElement { return b !== null; });
+        };
+        var text = function(value: unknown): string { return typeof value === 'string' ? value : ''; };
+        var issuesOf = function(u: JsonObject): string[] {
+            return Array.isArray(u.issues) ? u.issues.filter(function(i): i is string { return typeof i === 'string'; }) : [];
+        };
+        var label = function(u: JsonObject): string { return text(u.jellyfinUsername) + (text(u.reclaimerrUsername) ? ' \u2192 ' + text(u.reclaimerrUsername) : ''); };
+        var folded = function(title: string, list: JsonObject[], kind?: string): HTMLElement {
+            var details = node('details', 'je-audit-ok-section');
+            details.append(node('summary', null, title));
+            var ul = node('ul', 'je-audit-ok-names' + (kind ? ' je-audit-' + kind + '-names' : ''));
+            list.forEach(function(u) { ul.append(node('li', null, label(u))); });
+            details.append(ul);
+            return details;
+        };
+        function paint(out: HTMLElement, data: JsonObject): void {
+            var users = Array.isArray(data.users) ? data.users.map(asObject) : [];
+            var setup = issuesOf(data);
+            var version = text(data.version);
+            var flagged = users.filter(function(u) { return issuesOf(u).length > 0; });
+            var unchecked = users.filter(function(u) { return !issuesOf(u).length && u.checked === false; });
+            var fine = users.filter(function(u) { return !issuesOf(u).length && u.checked !== false; });
+            // Administrators are not checked (they mark with the API token): neither a problem nor counted with the users who passed.
+            var admins = fine.filter(function(u) { return u.admin === true; });
+            var ok = fine.filter(function(u) { return u.admin !== true; });
+            var clean = !setup.length && !flagged.length && !unchecked.length;
+            var summary = node('div', 'je-audit-summary');
+            summary.append(node('div', 'je-audit-summary-title', clean
+                ? (admins.length && !ok.length ? 'Nothing to check: all ' + admins.length + ' user(s) are administrators.'
+                    : 'All ' + ok.length + ' user(s) are set up' + (admins.length ? '; ' + admins.length + ' administrator(s) not checked' : '') + '.')
+                    + (version ? ' Reclaimerr ' + version + '.' : '')
+                : 'Audit complete' + (version ? ' (Reclaimerr ' + version + ')' : '') + ', review the items below.'));
+            if (!clean) {
+                var chips = node('div', 'je-audit-summary-chips');
+                if (setup.length) chips.append(chip('warn', 'settings', setup.length + ' setup'));
+                if (flagged.length) chips.append(chip('warn', 'warning', flagged.length + ' with issues'));
+                if (unchecked.length) chips.append(chip('unlinked', 'help', unchecked.length + ' not checked'));
+                if (ok.length) chips.append(chip('ok', 'check_circle', ok.length + ' OK'));
+                if (admins.length) chips.append(chip('unlinked', 'admin_panel_settings', admins.length + ' administrator(s)'));
+                summary.append(chips);
+            }
+            out.append(summary);
+            var cards = node('div', 'je-audit-cards');
+            if (setup.length) {
+                var card = node('div', 'je-audit-card je-audit-card-warn');
+                var head = node('div', 'je-audit-card-header');
+                var who = node('span', 'je-audit-card-user');
+                who.append(icon('settings'), document.createTextNode('Setup'));
+                head.append(who);
+                var list = node('ul', 'je-audit-card-issues');
+                setup.forEach(function(issue) { list.append(node('li', null, issue)); });
+                card.append(head, list);
+                cards.append(card);
+            }
+            flagged.forEach(function(u) {
+                var linked = u.linked === true;
+                var userCard = node('div', 'je-audit-card ' + (linked ? 'je-audit-card-warn' : 'je-audit-card-unlinked'));
+                var userHead = node('div', 'je-audit-card-header');
+                var name = node('span', 'je-audit-card-user');
+                name.append(icon(linked ? 'person' : 'person_off'), document.createTextNode(label(u)));
+                userHead.append(name, linked ? chip('warn', 'warning', 'Needs attention') : chip('unlinked', 'link_off', 'Not linked'));
+                var userIssues = node('ul', 'je-audit-card-issues');
+                issuesOf(u).forEach(function(issue) { userIssues.append(node('li', null, issue)); });
+                userCard.append(userHead, userIssues);
+                cards.append(userCard);
+            });
+            if (cards.childNodes.length) out.append(cards);
+            // Not reached by the sign-in check (see Setup): linked to one active account, but whether they may request is unknown.
+            if (unchecked.length) out.append(folded('Show ' + unchecked.length + ' linked user(s) whose Request permission was not checked (see Setup)', unchecked, 'unchecked'));
+            if (ok.length && !clean) out.append(folded('Show ' + ok.length + ' user(s) with no issues', ok));
+            if (admins.length && !clean) out.append(folded('Show ' + admins.length + ' administrator(s), not checked: they mark with the API token', admins, 'unchecked'));
+        }
+        target.addEventListener('click', function() {
+            if (!boxes().length) return;
+            target.disabled = true;
+            target.textContent = 'Running\u2026';
+            boxes().forEach(function(out) { out.style.display = 'none'; out.textContent = ''; });
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/user-audit'), dataType: 'json' }).then(function(answer) {
+                return { data: asObject(answer), failure: '' };
+            }, function(err: unknown) {
+                return requestFailureWithBody(err).then(function(failure) {
+                    var reason = typeof failure.body?.error === 'string' ? failure.body.error : '';
+                    return { data: null, failure: 'Audit failed: ' + (reason || failure.status || failure.message || 'request failed') };
+                });
+            }).then(function(result) {
+                if (m.context.lifecycle.disposed) return;
+                boxes().forEach(function(out) {
+                    out.textContent = '';
+                    if (result.data) paint(out, result.data); else out.append(node('div', 'je-audit-error', result.failure));
+                    out.style.display = 'block';
+                });
+                target.disabled = false;
+                target.textContent = 'Run Audit';
+            });
         }, { signal: m.context.lifecycle.signal });
     }
 
@@ -512,8 +602,8 @@ export function createServiceStatus(m: ServiceStatusDeps) {
             var other = asInput(document.getElementById(target.id === 'ReclaimerrEnabled' ? 'LeavingSoonMaintainerrEnabled' : 'ReclaimerrEnabled'));
             if (other && other.checked) { other.checked = false; other.dispatchEvent(new Event('change', { bubbles: true })); }
         }, { signal: m.context.lifecycle.signal });
-        wireCreateAccount();
-        wireCreateUsers();
+        wireImportUsers();
+        wireUserAudit();
         // The Maintainerr card: Refresh now, and a fresh read whenever the Services tab (its linked copy) is opened,
         // since the server's answer changes while the page is open (schedule, other administrators).
         var refreshButton = asControl(document.getElementById('maintainerrRefreshBtn'));

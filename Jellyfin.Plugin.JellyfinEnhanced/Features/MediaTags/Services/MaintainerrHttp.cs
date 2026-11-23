@@ -17,9 +17,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
     /// reads (<see cref="LeavingSoonService"/>) and the item-menu actions
     /// (<see cref="MaintainerrActions"/>, <see cref="ReclaimerrActions"/>): the address guard,
     /// the named client that never follows a redirect, the request timeout, the answer size
-    /// cap and the credential (Maintainerr's <c>X-Api-Key</c>, Reclaimerr's bearer token, a
-    /// Reclaimerr session cookie or its trusted-proxy user header). No credential and no URL is
-    /// ever logged (a path may carry a token).
+    /// cap and the credential (Maintainerr's <c>X-Api-Key</c>, Reclaimerr's bearer token or its
+    /// trusted-proxy user header). No credential and no URL is ever logged (a path may carry a token).
     /// </summary>
     internal static class MaintainerrHttp
     {
@@ -46,10 +45,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         /// <param name="timeout">The request timeout.</param>
         /// <param name="onRedirect">Told where a 3xx pointed (the caller logs the host once).</param>
         /// <param name="token">The caller's cancellation.</param>
-        /// <param name="cookie">A Reclaimerr session cookie to send instead of the key or token (empty: no credential, for its login).</param>
-        /// <param name="onSetCookie">Told the <c>access_token</c> cookie an answer sets (Reclaimerr's login).</param>
-        /// <param name="asUser">Reclaimerr's trusted-proxy user header (name and user) to send instead of any other credential.</param>
-        internal static async Task<JsonDocument> SendAsync(IHttpClientFactory http, PluginConfiguration config, HttpMethod method, string url, string? body, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token, string? cookie = null, Action<string>? onSetCookie = null, (string Name, string Value)? asUser = null)
+        /// <param name="asUser">Reclaimerr only: send this user header instead of the token (its trusted-proxy sign-in).</param>
+        /// <param name="alsoHeader">Reclaimerr only: one more header sent beside the credential (the acting user's name beside the token; upstream 54a6f418).</param>
+        internal static async Task<JsonDocument> SendAsync(IHttpClientFactory http, PluginConfiguration config, HttpMethod method, string url, string? body, TimeSpan timeout, Action<Uri, Uri?>? onRedirect, CancellationToken token, (string Name, string Value)? asUser = null, (string Name, string Value)? alsoHeader = null)
         {
             if (!await Shared.Arr.ArrUrlGuard.IsAllowedUrlAsync(url, token).ConfigureAwait(false)) throw new UnauthorizedAccessException();
             using var limit = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -59,7 +57,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             using var request = new HttpRequestMessage(method, target);
             request.Headers.Accept.ParseAdd("application/json");
             if (asUser is { } who) request.Headers.TryAddWithoutValidation(who.Name, who.Value);
-            else if (cookie != null) { if (cookie.Length > 0) request.Headers.TryAddWithoutValidation("Cookie", cookie); }
             else if (LeavingSoonSources.UsesReclaimerr(config))
             {
                 var bearer = (config.ReclaimerrToken ?? string.Empty).Trim();
@@ -71,17 +68,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
                 if (key.Length > 0) request.Headers.TryAddWithoutValidation("X-Api-Key", key);
             }
 
+            if (alsoHeader is { } extra) request.Headers.TryAddWithoutValidation(extra.Name, extra.Value);
             if (body != null) request.Content = new StringContent(body, Encoding.UTF8, new MediaTypeHeaderValue("application/json"));
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, limit.Token).ConfigureAwait(false);
-            if (onSetCookie != null && response.Headers.TryGetValues("Set-Cookie", out var cookies))
-            {
-                foreach (var line in cookies)
-                {
-                    var pair = line.Split(';', 2)[0].Trim();
-                    if (pair.StartsWith("access_token=", StringComparison.Ordinal)) onSetCookie(pair);
-                }
-            }
-
             if ((int)response.StatusCode is >= 300 and < 400)
             {
                 onRedirect?.Invoke(target, response.Headers.Location);
@@ -131,6 +120,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         internal static string Describe(Exception ex) => ex switch
         {
             MaintainerrException m => m.Reason ?? ("HTTP " + m.Status.ToString(CultureInfo.InvariantCulture)),
+            ReclaimerrApi.VersionException v => v.Message,
             HttpRequestException { StatusCode: { } code } => "HTTP " + ((int)code).ToString(CultureInfo.InvariantCulture),
             HttpRequestException => "not reachable",
             TaskCanceledException or TimeoutException => "timed out",

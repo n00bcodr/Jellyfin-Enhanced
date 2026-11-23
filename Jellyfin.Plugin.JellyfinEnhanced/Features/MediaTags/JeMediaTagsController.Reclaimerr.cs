@@ -1,8 +1,8 @@
 using System;
 using System.Linq;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Data;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Models;
 using Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services;
@@ -15,12 +15,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
 {
-    // Reclaimerr's item-menu actions and its service account (upstream da0ea773's ReclaimerrController, here as a
-    // partial of the feature's one controller). item answers the administrator or, for anyone who can see the item,
-    // whether they may request a removal; mark, unmark, postpone, the request reviews, the service account and the
-    // accounts for Jellyfin users (create-users) are administrator-only; request is any signed-in user who can see the item. Answers 404 while Reclaimerr is not the
-    // tool in use, 400 with {error} for a refusal and 502 with {error} when Reclaimerr failed. The Reclaimerr address,
-    // token and service account stay on the server. Maintainerr keeps its own routes (JeMediaTagsController.Maintainerr.cs).
+    // Reclaimerr's item-menu actions, request reviews, user import and user audit (upstream da0ea773's and da3d9ee9's
+    // ReclaimerrController, here as a partial of the feature's one controller). item answers the administrator or, for
+    // anyone who can see the item, whether they may request a removal; mark, unmark, postpone, the request reviews,
+    // import-users and user-audit are administrator-only; request is any signed-in user who can open the item. Answers 404
+    // while Reclaimerr is not the tool in use (import-users and user-audit: 400 while it is not set up), 400 with {error}
+    // for a refusal and 502 with {error} when Reclaimerr failed. The Reclaimerr address and token stay on the server.
+    // Maintainerr keeps its own routes (JeMediaTagsController.Maintainerr.cs).
     public partial class JeMediaTagsController
     {
         /// <summary>The item's state as of the last read. Administrators; anyone else who can see the item only learns whether they may request.</summary>
@@ -52,7 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
         [Authorize]
         [Produces("application/json")]
         public Task<IActionResult> MarkForReclaimerrRemoval([FromBody] ReclaimerrItemRequest request, [FromServices] ReclaimerrActions reclaimerr, CancellationToken token)
-            => RunReclaimerrAction(request, (item, config) => reclaimerr.MarkAsync(item, config, request.Date, request.MediaSourceId, CallerName(), token));
+            => RunReclaimerrAction(request, (item, config) => reclaimerr.MarkAsync(item, config, request.Date, request.MediaSourceId, CallerName(), token, CallerUser()?.Id));
 
         /// <summary>Keep the item: protect its cleanup candidate, or cancel its scheduled deletion. Admin only.</summary>
         /// <param name="request">The item.</param>
@@ -63,7 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
         [Authorize]
         [Produces("application/json")]
         public Task<IActionResult> KeepFromReclaimerrRemoval([FromBody] ReclaimerrItemRequest request, [FromServices] ReclaimerrActions reclaimerr, CancellationToken token)
-            => RunReclaimerrAction(request, (item, config) => reclaimerr.UnmarkAsync(item, config, CallerName(), token));
+            => RunReclaimerrAction(request, (item, config) => reclaimerr.UnmarkAsync(item, config, CallerName(), token, CallerUser()?.Id));
 
         /// <summary>Move the removal to <c>date</c>, or <c>days</c> later, or restart a candidate's timer when neither is given. Admin only.</summary>
         /// <param name="request">The item, and the day or the days.</param>
@@ -74,9 +75,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
         [Authorize]
         [Produces("application/json")]
         public Task<IActionResult> PostponeReclaimerrRemoval([FromBody] ReclaimerrItemRequest request, [FromServices] ReclaimerrActions reclaimerr, CancellationToken token)
-            => RunReclaimerrAction(request, (item, config) => reclaimerr.PostponeAsync(item, request.Days, request.Date, config, CallerName(), token));
+            => RunReclaimerrAction(request, (item, config) => reclaimerr.PostponeAsync(item, request.Days, request.Date, config, CallerName(), token, CallerUser()?.Id));
 
-        /// <summary>Ask the administrators to remove the item (any signed-in user who can see it): filed as a Reclaimerr deletion request.</summary>
+        /// <summary>
+        /// Ask the administrators to remove the item (any signed-in user who can open it): filed as a Reclaimerr deletion request, as the
+        /// Reclaimerr account linked to the caller's Jellyfin user.
+        /// </summary>
         /// <param name="request">The item and an optional note.</param>
         /// <param name="reclaimerr">The Reclaimerr actions.</param>
         /// <param name="token">The request's cancellation.</param>
@@ -90,10 +94,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
             if (!ReclaimerrActions.RequestsEnabled(config)) return NotFound();
             var item = request?.ItemId is { } id ? FindMaintainerrItem(id) : null;
             if (item == null || !CallerCanSee(item)) return BadRequest(new { error = "Unknown item." });
-            var name = CallerName() ?? "a user";
+            var caller = CallerUser();
+            if (caller == null || caller.Id == Guid.Empty) return Forbid();
             try
             {
-                var (state, existing) = await reclaimerr.RequestRemovalAsync(item, name, request!.Reason, config!, token).ConfigureAwait(false);
+                var (state, existing) = await reclaimerr.RequestRemovalAsync(item, caller.Id, caller.Username ?? "a user", request!.Reason, config!, token).ConfigureAwait(false);
                 // An earlier request still waiting is an answer, not an error: AlreadyRequested says whose it is ("mine" or "other").
                 return Ok(new { state.ItemId, state.Marked, state.CollectionId, state.CollectionName, state.DeleteAt, state.Supported, AlreadyRequested = existing });
             }
@@ -135,32 +140,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
         public Task<IActionResult> DenyReclaimerrRequest([FromRoute] int requestId, [FromBody] ReclaimerrReviewRequest? body, [FromServices] ReclaimerrActions reclaimerr, CancellationToken token)
             => ReviewReclaimerrRequest(requestId, false, body, reclaimerr, token);
 
+        /// <summary>What the import and the audit say while Reclaimerr is not set up (they do not need the item-menu actions).</summary>
+        private const string ReclaimerrSetUpFirst = "Turn on Use Reclaimerr and save its URL and API token first.";
+
         /// <summary>
-        /// Create the plugin's Reclaimerr service account (<c>jellyfin-enhanced</c>, admin, random password) by signing in
-        /// once as a Reclaimerr administrator, and save its login in the configuration. Administrators only; the
-        /// administrator's password is used for this call only. Answers <c>{username, password}</c> (the page's Save writes
-        /// the password field back, so it must hold the new one).
+        /// Import this server's users into Reclaimerr through its token API (upstream da3d9ee9): every Jellyfin user without a
+        /// Reclaimerr account gets one, with the permissions and pages picked, linked to them. Administrators only. Answers
+        /// <c>{created, alreadyLinked, needsReview, skipped}</c> (Jellyfin user names; <c>needsReview</c> are matched to an existing
+        /// Reclaimerr account, which an administrator confirms in Reclaimerr), or 400 while Reclaimerr is not set up.
         /// </summary>
-        /// <param name="request">The Reclaimerr administrator.</param>
-        /// <param name="http">The client factory.</param>
+        /// <param name="request">The permissions and pages the new accounts get.</param>
+        /// <param name="reclaimerr">The Reclaimerr actions.</param>
         /// <param name="token">The request's cancellation.</param>
-        /// <returns>The new account.</returns>
-        [HttpPost("reclaimerr/service-account")]
+        /// <returns>The Jellyfin users given an account, how many were already linked, the ones to confirm in Reclaimerr and the ones skipped.</returns>
+        [HttpPost("reclaimerr/import-users")]
         [Authorize]
         [Produces("application/json")]
-        public async Task<IActionResult> CreateReclaimerrServiceAccount([FromBody] ReclaimerrServiceAccountRequest request, [FromServices] IHttpClientFactory http, CancellationToken token)
+        public async Task<IActionResult> ImportReclaimerrUsers([FromBody] ReclaimerrImportUsersRequest? request, [FromServices] ReclaimerrActions reclaimerr, CancellationToken token)
         {
             if (!IsAdminUser()) return Forbid();
-            var plugin = JellyfinEnhanced.Instance;
-            var config = plugin?.Configuration;
-            if (plugin == null || config == null || !LeavingSoonSources.IsMaintainerrUrl(config.ReclaimerrUrl)) return BadRequest(new { error = "Save the Reclaimerr URL first." });
-            if (string.IsNullOrWhiteSpace(request?.AdminUsername)) return BadRequest(new { error = "Enter a Reclaimerr administrator's username." });
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !LeavingSoonSources.UsesReclaimerr(config) || !LeavingSoonSources.ApiConfigured(config)) return BadRequest(new { error = ReclaimerrSetUpFirst });
             try
             {
-                var (username, password) = await ReclaimerrSession.CreateServiceAccountAsync(http, config, request.AdminUsername!, request.AdminPassword ?? string.Empty, TimeSpan.FromSeconds(30), token).ConfigureAwait(false);
-                plugin.UpdateConfiguration(c => { c.ReclaimerrUsername = username; c.ReclaimerrPassword = password; return c; }, fullSave: false);
-                ReclaimerrSession.Forget(plugin.Configuration);
-                return Ok(new { username, password });
+                var users = _userManager.GetAllUsers().ToDictionary(u => u.Id, u => u.Username);
+                var result = await reclaimerr.ImportUsersAsync(config, users, request?.Permissions ?? Array.Empty<string>(), request?.Pages ?? Array.Empty<string>(), token).ConfigureAwait(false);
+                return Ok(new { created = result.Created, alreadyLinked = result.AlreadyLinked, needsReview = result.NeedsReview, skipped = result.Skipped });
+            }
+            catch (MaintainerrActions.ActionException ex)
+            {
+                return BadRequest(new { error = ex.Message });
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
@@ -173,40 +182,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
         }
 
         /// <summary>
-        /// Create a Reclaimerr account for every Jellyfin user that has none, with the permissions and pages picked, through the
-        /// service account, and map each new account to its Jellyfin user. Administrators only. Answers
-        /// <c>{created, existing, skipped, userMap}</c>; the page puts <c>userMap</c> in its field, since its Save writes the
-        /// field back.
+        /// Audit every Jellyfin user against Reclaimerr, read-only (upstream da3d9ee9): the linked account, and with removal requests
+        /// on whether Reclaimerr's trusted-proxy sign-in accepts it and whether it may request; plus the token scopes the integration
+        /// uses that the token lacks. Administrators only. Answers <c>{version, requestsEnabled, issues[], users[]}</c>, or 400 while
+        /// Reclaimerr is not set up.
         /// </summary>
-        /// <param name="request">The permissions and pages the new accounts get.</param>
         /// <param name="reclaimerr">The Reclaimerr actions.</param>
         /// <param name="token">The request's cancellation.</param>
-        /// <returns>The Jellyfin users given an account, how many already had one, the ones skipped and the new user map.</returns>
-        [HttpPost("reclaimerr/create-users")]
+        /// <returns>The audit.</returns>
+        [HttpGet("reclaimerr/user-audit")]
         [Authorize]
         [Produces("application/json")]
-        public async Task<IActionResult> CreateReclaimerrUsers([FromBody] ReclaimerrCreateUsersRequest? request, [FromServices] ReclaimerrActions reclaimerr, CancellationToken token)
+        public async Task<IActionResult> GetReclaimerrUserAudit([FromServices] ReclaimerrActions reclaimerr, CancellationToken token)
         {
             if (!IsAdminUser()) return Forbid();
-            var plugin = JellyfinEnhanced.Instance;
-            var config = plugin?.Configuration;
-            if (plugin == null || config == null || !ReclaimerrActions.Enabled(config)) return NotFound();
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !LeavingSoonSources.UsesReclaimerr(config) || !LeavingSoonSources.ApiConfigured(config)) return BadRequest(new { error = ReclaimerrSetUpFirst });
             try
             {
-                var names = _userManager.GetAllUsers().Select(u => u.Username).ToList();
-                var result = await reclaimerr.CreateAccountsAsync(config, names, request?.Permissions ?? Array.Empty<string>(), request?.Pages ?? Array.Empty<string>(), token).ConfigureAwait(false);
-                if (result.Created.Count > 0)
-                {
-                    // The plugin acts as a user only through a mapping or link (it never guesses by name), so record each new account.
-                    var lines = string.Concat(result.Created.Select(c => $"\n{c.Jellyfin} = {c.Reclaimerr}"));
-                    plugin.UpdateConfiguration(c => { c.ReclaimerrUserMap = ((c.ReclaimerrUserMap ?? string.Empty).TrimEnd() + lines).Trim(); return c; }, fullSave: false);
-                }
-
-                return Ok(new { created = result.Created.Select(c => c.Jellyfin).ToList(), existing = result.Existing, skipped = result.Skipped, userMap = plugin.Configuration.ReclaimerrUserMap });
-            }
-            catch (MaintainerrActions.ActionException ex)
-            {
-                return BadRequest(new { error = ex.Message });
+                var users = _userManager.GetAllUsers().Select(u => (u.Id, u.Username, u.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator))).ToList();
+                return Ok(await reclaimerr.AuditUsersAsync(config, users, token).ConfigureAwait(false));
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
@@ -223,6 +218,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
             if (!IsAdminUser()) return Forbid();
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.LeavingSoonPageEnabled || !ReclaimerrActions.Enabled(config)) return NotFound();
+            // A card read from one Reclaimerr is never reviewed at another (upstream da3d9ee9).
+            if (!string.IsNullOrEmpty(body?.Source) && !string.Equals(body.Source, ReclaimerrApi.SourceId(config), StringComparison.Ordinal))
+                return Conflict(new { error = "The Reclaimerr address changed since this list was read. Reload it." });
             try
             {
                 // When an approval is deleted (upstream 1de354c0): Reclaimerr's grace period unless the body asks for now or a day.
@@ -232,7 +230,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                     "date" => ReclaimerrActions.ApprovalTiming.OnDate,
                     _ => ReclaimerrActions.ApprovalTiming.GracePeriod,
                 };
-                await reclaimerr.ReviewRequestAsync(requestId, approve, body?.Note, CallerName(), config, token, timing, body?.Date).ConfigureAwait(false);
+                await reclaimerr.ReviewRequestAsync(requestId, approve, body?.Note, CallerName(), config, token, timing, body?.Date, body?.GraceDays, CallerUser()?.Id).ConfigureAwait(false);
                 return Ok(new { id = requestId, approved = approve });
             }
             catch (MaintainerrActions.ActionException ex)
@@ -288,13 +286,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
         /// <summary>The signed-in Jellyfin user's name (null for an API key), the identity Reclaimerr actions are attributed to.</summary>
         private string? CallerName() => CallerUser()?.Username;
 
-        /// <summary>Whether the signed-in user can see the item.</summary>
+        /// <summary>Whether the signed-in user may open the item: its rating and tags, and the library it is in (standalone visibility; upstream da3d9ee9).</summary>
         private bool CallerCanSee(BaseItem item)
         {
             try
             {
                 var user = CallerUser();
-                return user != null && item.IsVisible(user);
+                return user != null && item.IsVisibleStandalone(user);
             }
             catch { return false; }
         }

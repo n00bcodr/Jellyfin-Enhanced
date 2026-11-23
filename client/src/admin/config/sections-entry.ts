@@ -231,11 +231,8 @@ import { defineAllSections } from './sections';
  *  { id: 'ReclaimerrEnabled', type: 'toggle' }
  *  { id: 'ReclaimerrUrl', type: 'text' }
  *  { id: 'ReclaimerrApiKey', type: 'text' }
- *  { id: 'ReclaimerrActAsUser', type: 'toggle' }
+ *  { id: 'ReclaimerrUserRequests', type: 'toggle' }
  *  { id: 'ReclaimerrUserHeader', type: 'text' }
- *  { id: 'ReclaimerrUserMap', type: 'textarea' }
- *  { id: 'ReclaimerrUsername', type: 'text' }
- *  { id: 'ReclaimerrPassword', type: 'text' }
  *  { id: 'LeavingSoonMaintainerrActions', type: 'toggle' }
  *  { id: 'LeavingSoonHomeRow', type: 'toggle' }
  *  { id: 'LeavingSoonHideWatched', type: 'toggle' }

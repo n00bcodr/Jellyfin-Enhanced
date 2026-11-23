@@ -246,67 +246,18 @@ public sealed class LeavingSoonTests : IDisposable
     }
 
     [Fact]
-    public void Reclaimerr_candidates_keep_only_whole_titles_and_movie_files_with_running_auto_delete_and_use_postponed_date_first()
+    public void The_Reclaimerr_user_header_must_be_a_header_name_or_the_stored_one_is_kept()
     {
-        var json = """
-        [
-          {"id":1,"scope":"movie","tmdb_id":550,"auto_delete_state":"scheduled","auto_delete_eligible_at":"2026-12-01T00:00:00Z","auto_delete_postponed_until":null},
-          {"id":2,"scope":"series","tmdb_id":1399,"auto_delete_state":"postponed","auto_delete_eligible_at":"2026-12-01T00:00:00Z","auto_delete_postponed_until":"2026-12-20T00:00:00Z"},
-          {"id":3,"scope":"episode","tmdb_id":551,"auto_delete_state":"scheduled","auto_delete_eligible_at":"2026-12-01T00:00:00Z"},
-          {"id":4,"scope":"movie","tmdb_id":552,"auto_delete_state":"disabled","auto_delete_eligible_at":"2026-12-01T00:00:00Z"},
-          {"id":5,"scope":"movie","tmdb_id":553,"auto_delete_state":"canceled","auto_delete_eligible_at":"2026-12-01T00:00:00Z"},
-          {"id":6,"scope":"movie","tmdb_id":null,"auto_delete_state":"eligible","auto_delete_eligible_at":"2026-12-01T00:00:00Z"}
-        ]
-        """;
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        var members = LeavingSoonService.ParseReclaimerrCandidates(doc.RootElement, new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero));
-        Assert.Equal(2, members.Count);
-        Assert.Equal(("550", "movie", 1), (members[0].TmdbId, members[0].Type, members[0].CollectionId));
-        Assert.Equal(new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds(), members[0].DeleteAt);
-        Assert.Equal(("1399", "show", 2), (members[1].TmdbId, members[1].Type, members[1].CollectionId));
-        Assert.Equal(new DateTimeOffset(2026, 12, 20, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds(), members[1].DeleteAt);
-    }
-
-    [Fact]
-    public void A_cleanup_candidate_of_one_movie_file_is_flagged_as_one_version()
-    {
-        var json = "[{\"id\":8,\"scope\":\"version\",\"tmdb_id\":1234139,\"auto_delete_state\":\"eligible\",\"auto_delete_eligible_at\":\"2026-12-01T00:00:00Z\"},"
-            + "{\"id\":9,\"scope\":\"movie\",\"tmdb_id\":550,\"auto_delete_state\":\"eligible\",\"auto_delete_eligible_at\":\"2026-12-01T00:00:00Z\"}]";
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        var members = LeavingSoonService.ParseReclaimerrCandidates(doc.RootElement, new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero));
-        Assert.Equal(new[] { true, false }, members.Select(m => m.OneVersion).ToArray());
-        var jailer = Guid.NewGuid(); var fightClub = Guid.NewGuid();
-        var flagged = new HashSet<string>();
-        LeavingSoonService.ToItems(members, (type, tmdb) => tmdb == "1234139" ? new[] { jailer } : new[] { fightClub }, out _, null, null, flagged);
-        Assert.Equal(new[] { jailer.ToString("N") }, flagged.ToArray());
-    }
-
-    [Fact]
-    public void A_scheduled_version_is_flagged_as_one_version_even_without_its_path()
-    {
-        var json = "[{\"id\":7,\"state\":\"scheduled\",\"scheduled_at\":\"2026-12-15T12:00:00Z\",\"target\":{\"media_type\":\"movie\",\"scope\":\"version\",\"tmdb_id\":1234139}},"
-            + "{\"id\":8,\"state\":\"scheduled\",\"scheduled_at\":\"2026-12-15T12:00:00Z\",\"target\":{\"media_type\":\"movie\",\"scope\":\"movie\",\"tmdb_id\":550}}]";
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        var members = LeavingSoonService.ParseReclaimerrSchedules(doc.RootElement, new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero));
-        Assert.Equal(new[] { true, false }, members.Select(m => m.OneVersion).ToArray());
-    }
-
-    [Fact]
-    public void Reclaimerr_scheduled_deletions_keep_whole_titles_still_scheduled_and_negate_the_id()
-    {
-        var json = """
-        [
-          {"id":7,"state":"scheduled","scheduled_at":"2026-12-15T12:00:00Z","target":{"media_type":"movie","scope":"version","version_path":"/m/4k.mkv","tmdb_id":1234139}},
-          {"id":8,"state":"scheduled","scheduled_at":"2026-12-15T12:00:00Z","target":{"media_type":"series","scope":"season","tmdb_id":4242}},
-          {"id":9,"state":"canceled","scheduled_at":"2026-12-15T12:00:00Z","target":{"media_type":"series","scope":"series","tmdb_id":1399}},
-          {"id":10,"state":"scheduled","scheduled_at":"2026-12-20T00:00:00Z","target":{"media_type":"series","scope":"series","tmdb_id":1399}}
-        ]
-        """;
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        var members = LeavingSoonService.ParseReclaimerrSchedules(doc.RootElement, new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero));
-        Assert.Equal(2, members.Count);
-        Assert.Equal(("1234139", "movie", -7, "/m/4k.mkv"), (members[0].TmdbId, members[0].Type, members[0].CollectionId, members[0].Path));
-        Assert.Equal(("1399", "show", -10), (members[1].TmdbId, members[1].Type, members[1].CollectionId));
+        var stored = new PluginConfiguration { ReclaimerrUserHeader = "X-Remote-User" };
+        var bad = new PluginConfiguration { ReclaimerrUserHeader = "Remote User\r\nX: y" };
+        Assert.NotEmpty(LeavingSoonSources.NormalizeSource(bad, stored));
+        Assert.Equal("X-Remote-User", bad.ReclaimerrUserHeader);
+        var good = new PluginConfiguration { ReclaimerrUserHeader = "  Remote-User  " };
+        Assert.Empty(LeavingSoonSources.NormalizeSource(good, stored));
+        Assert.Equal("Remote-User", good.ReclaimerrUserHeader);
+        var empty = new PluginConfiguration { ReclaimerrUserHeader = "" };
+        LeavingSoonSources.NormalizeSource(empty, stored);
+        Assert.Equal("Remote-User", empty.ReclaimerrUserHeader);
     }
 
     [Fact]
@@ -331,44 +282,6 @@ public sealed class LeavingSoonTests : IDisposable
     }
 
     [Fact]
-    public void A_scheduled_movie_file_marks_only_the_library_item_holding_that_file()
-    {
-        var hd = Guid.NewGuid(); var uhd = Guid.NewGuid();
-        var paths = new Dictionary<Guid, string> { [hd] = "/media/Regional/Jailer 2/Jailer 2 - 1080p.mkv", [uhd] = "/media/Movies4K/Jailer 2/Jailer 2 - 2160p.mkv" };
-        IReadOnlyList<Guid> Lookup(string type, string tmdb) => new[] { hd, uhd };
-        var wholeTitle = new[] { new LeavingSoonService.MaintainerrMember(null, "1234139", "movie", 1000, -7, null) };
-        Assert.Equal(2, LeavingSoonService.ToItems(wholeTitle, Lookup, out _, id => paths[id]).Count);
-        var file = new[] { new LeavingSoonService.MaintainerrMember(null, "1234139", "movie", 1000, -7, "/MEDIA/movies4k/jailer 2/jailer 2 - 2160p.mkv") };
-        var items = LeavingSoonService.ToItems(file, Lookup, out var owners, id => paths[id]);
-        Assert.Equal(new[] { uhd.ToString("N") }, items.Keys);
-        Assert.Equal(-7, owners[uhd.ToString("N")]);
-        // Only that file is leaving, so the item is flagged as one version; a whole-title schedule is not.
-        var oneVersion = new HashSet<string>();
-        LeavingSoonService.ToItems(file, Lookup, out _, id => paths[id], null, oneVersion);
-        Assert.Equal(new[] { uhd.ToString("N") }, oneVersion);
-        var wholeFlags = new HashSet<string>();
-        LeavingSoonService.ToItems(wholeTitle, Lookup, out _, id => paths[id], null, wholeFlags);
-        Assert.Empty(wholeFlags);
-        // A path no item holds, with several copies, marks none (it could be the staying copy).
-        var unknown = new[] { new LeavingSoonService.MaintainerrMember(null, "1234139", "movie", 1000, -7, "/elsewhere.mkv") };
-        Assert.Empty(LeavingSoonService.ToItems(unknown, Lookup, out _, id => paths[id]));
-    }
-
-    [Fact]
-    public void A_Jellyfin_user_maps_to_a_Reclaimerr_user_by_the_list_else_by_the_same_name()
-    {
-        var config = new PluginConfiguration { ReclaimerrUserMap = "Pat = Samuel\n  sam=SamJones \nbroken line\n=nothing\nAmy =" };
-        Assert.Equal("Samuel", ReclaimerrSession.UserFor(config, "Pat"));
-        Assert.Equal("Samuel", ReclaimerrSession.UserFor(config, "pat"));
-        Assert.Equal("SamJones", ReclaimerrSession.UserFor(config, "Sam"));
-        Assert.Equal("Sunil", ReclaimerrSession.UserFor(config, "Sunil"));
-        Assert.Equal("Amy", ReclaimerrSession.UserFor(config, "Amy"));
-        Assert.True(ReclaimerrSession.ActsAsUser(config));
-        config.ReclaimerrActAsUser = false;
-        Assert.False(ReclaimerrSession.ActsAsUser(config));
-    }
-
-    [Fact]
     public void A_request_row_serializes_with_the_lower_case_names_the_page_reads()
     {
         var row = new ReclaimerrRequestRow(7, "12th Fail", 2023, "movie", "sam_user", "why", "pending", "2026-11-16T10:00:00Z", null);
@@ -381,25 +294,14 @@ public sealed class LeavingSoonTests : IDisposable
     public void A_leaving_alternate_version_also_marks_the_primary_item_the_library_shows()
     {
         var primary = Guid.NewGuid(); var alt = Guid.NewGuid();
-        IReadOnlyList<Guid> Lookup(string type, string tmdb) => new[] { alt };
-        var members = new[] { new LeavingSoonService.MaintainerrMember(null, "1234139", "movie", 1000, -7, null) };
-        var items = LeavingSoonService.ToItems(members, Lookup, out var owners, null, id => id == alt ? primary : null);
+        var members = new[] { new LeavingSoonService.MaintainerrMember(alt, null, "movie", 1000, -7, true, 3) };
+        var oneVersion = new HashSet<string>();
+        var sizes = new Dictionary<string, long>();
+        var items = LeavingSoonService.ToItems(members, null, out var owners, id => id == alt ? primary : null, oneVersion, sizes);
         Assert.Equal(new[] { alt.ToString("N"), primary.ToString("N") }.Order(), items.Keys.Order());
         Assert.Equal(-7, owners[primary.ToString("N")]);
-    }
-
-    [Theory]
-    [InlineData("Requested by Sam from Jellyfin", "Sam", null)]
-    [InlineData("Requested by Sam Jones from Jellyfin: not my taste", "Sam Jones", "not my taste")]
-    [InlineData("Requested by Pat from Jellyfin:   ", "Pat", null)]
-    [InlineData("just a note", null, "just a note")]
-    [InlineData("Requested by  from Jellyfin", null, "Requested by  from Jellyfin")]
-    [InlineData("", null, null)]
-    public void A_request_reason_names_the_Jellyfin_person_and_keeps_the_note(string reason, string? person, string? note)
-    {
-        var (p, n) = JeMediaTagsController.ParseLeavingSoonReason(reason);
-        Assert.Equal(person, p);
-        Assert.Equal(note, n);
+        Assert.Equal(items.Keys.Order(), oneVersion.Order());
+        Assert.Equal(3, sizes[primary.ToString("N")]);
     }
 
     [Fact]
@@ -446,9 +348,12 @@ public sealed class LeavingSoonTests : IDisposable
         Assert.True(LeavingSoonService.Consumed(reclaimerr, () => false), "so do Reclaimerr's item-menu actions");
         Assert.True(ReclaimerrActions.Enabled(reclaimerr));
         Assert.False(MaintainerrActions.Enabled(reclaimerr));
-        Assert.False(ReclaimerrActions.RequestsEnabled(reclaimerr), "requests need a service account");
-        reclaimerr.ReclaimerrUsername = "svc";
+        Assert.False(ReclaimerrActions.RequestsEnabled(reclaimerr), "requests need Let users request removals (upstream da3d9ee9), off by default");
+        reclaimerr.ReclaimerrUserRequests = true;
         Assert.True(ReclaimerrActions.RequestsEnabled(reclaimerr));
+        reclaimerr.ReclaimerrUserHeader = " ";
+        Assert.False(ReclaimerrActions.RequestsEnabled(reclaimerr), "and a user header for the trusted-proxy sign-in");
+        reclaimerr.ReclaimerrUserHeader = "Remote-User";
         reclaimerr.LeavingSoonHomeRow = true;
         Assert.True(LeavingSoonSources.HomeRowWanted(reclaimerr), "the home row follows Reclaimerr too");
         reclaimerr.ReclaimerrToken = " ";
@@ -457,45 +362,34 @@ public sealed class LeavingSoonTests : IDisposable
     }
 
     [Theory]
-    [InlineData("ftp://r", "rcl_x", "svc", "pw", false, "Reclaimerr URL")]
-    [InlineData("http://r:8000", "has space", "svc", "pw", false, "Reclaimerr token")]
-    [InlineData("http://r:8000", "rcl_x", "bad\u0001name", "pw", false, "Reclaimerr username")]
-    [InlineData("http://r:8000", "rcl_x", "svc", "bad\u0007pw", false, "Reclaimerr password")]
-    [InlineData(" http://r:8000 ", " rcl_x ", " svc ", "p w", true, null)]
-    public void A_save_keeps_the_stored_Reclaimerr_value_for_one_that_breaks_its_contract(string url, string token, string user, string password, bool ok, string? problem)
+    [InlineData("ftp://r", "rcl_x", "Remote-User", false, "Reclaimerr URL")]
+    [InlineData("http://r:8000", "has space", "Remote-User", false, "Reclaimerr token")]
+    [InlineData("http://r:8000", "rcl_x", "Remote User", false, "Reclaimerr user header")]
+    [InlineData(" http://r:8000 ", " rcl_x ", " X-Forwarded-User ", true, null)]
+    public void A_save_keeps_the_stored_Reclaimerr_value_for_one_that_breaks_its_contract(string url, string token, string header, bool ok, string? problem)
     {
-        var stored = new PluginConfiguration { ReclaimerrUrl = "http://stored", ReclaimerrToken = "stored-token", ReclaimerrUsername = "stored-user", ReclaimerrPassword = "stored-pw" };
-        var incoming = new PluginConfiguration { ReclaimerrUrl = url, ReclaimerrToken = token, ReclaimerrUsername = user, ReclaimerrPassword = password };
+        var stored = new PluginConfiguration { ReclaimerrUrl = "http://stored", ReclaimerrToken = "stored-token", ReclaimerrUserHeader = "Stored-User" };
+        var incoming = new PluginConfiguration { ReclaimerrUrl = url, ReclaimerrToken = token, ReclaimerrUserHeader = header };
         var problems = LeavingSoonSources.NormalizeSource(incoming, stored);
         if (ok)
         {
             Assert.Empty(problems);
-            Assert.Equal(("http://r:8000", "rcl_x", "svc", "p w"), (incoming.ReclaimerrUrl, incoming.ReclaimerrToken, incoming.ReclaimerrUsername, incoming.ReclaimerrPassword));
+            Assert.Equal(("http://r:8000", "rcl_x", "X-Forwarded-User"), (incoming.ReclaimerrUrl, incoming.ReclaimerrToken, incoming.ReclaimerrUserHeader));
             return;
         }
 
         var said = Assert.Single(problems);
         Assert.StartsWith(problem!, said);
         Assert.DoesNotContain(token, said);
-        Assert.DoesNotContain(password, said);
-        Assert.True(incoming.ReclaimerrUrl == "http://stored" || incoming.ReclaimerrToken == "stored-token" || incoming.ReclaimerrUsername == "stored-user" || incoming.ReclaimerrPassword == "stored-pw");
+        Assert.True(incoming.ReclaimerrUrl == "http://stored" || incoming.ReclaimerrToken == "stored-token" || incoming.ReclaimerrUserHeader == "Stored-User");
     }
 
     [Fact]
-    public void The_Reclaimerr_token_and_password_are_secrets_of_the_portable_export()
+    public void The_Reclaimerr_token_is_a_secret_of_the_portable_export_and_a_left_over_password_still_counts_as_one()
     {
         Assert.Contains("ReclaimerrToken", MediaTagsPortable.Secrets);
-        Assert.Contains("ReclaimerrPassword", MediaTagsPortable.Secrets);
-    }
-
-    [Fact]
-    public void A_scheduled_deletion_too_far_away_is_skipped_but_a_candidate_too_far_away_refuses_the_answer()
-    {
-        var now = new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero);
-        using var schedules = JsonDocument.Parse("[{\"id\":1,\"state\":\"scheduled\",\"scheduled_at\":\"2099-01-01T00:00:00Z\",\"target\":{\"media_type\":\"movie\",\"scope\":\"movie\",\"tmdb_id\":5}}]");
-        Assert.Empty(LeavingSoonService.ParseReclaimerrSchedules(schedules.RootElement, now));
-        using var candidates = JsonDocument.Parse("[{\"id\":1,\"scope\":\"movie\",\"tmdb_id\":5,\"auto_delete_state\":\"eligible\",\"auto_delete_eligible_at\":\"2099-01-01T00:00:00Z\"}]");
-        Assert.Throws<LeavingSoonService.DateRangeException>(() => LeavingSoonService.ParseReclaimerrCandidates(candidates.RootElement, now));
+        // Upstream da3d9ee9 drops the service account: an old export naming its password is still never read.
+        Assert.True(MediaTagsPortable.IsSecret("ReclaimerrPassword"));
     }
 
     [Fact]

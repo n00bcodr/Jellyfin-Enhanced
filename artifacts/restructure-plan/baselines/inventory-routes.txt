@@ -137,15 +137,15 @@ GET /JellyfinEnhanced/person/{personId}
 GET /JellyfinEnhanced/private-config
 GET /JellyfinEnhanced/proxy/avatar
 GET /JellyfinEnhanced/public-config
-POST /JellyfinEnhanced/reclaimerr/create-users
+POST /JellyfinEnhanced/reclaimerr/import-users
 GET /JellyfinEnhanced/reclaimerr/item/{itemId}
 POST /JellyfinEnhanced/reclaimerr/mark
 POST /JellyfinEnhanced/reclaimerr/postpone
 POST /JellyfinEnhanced/reclaimerr/request
 POST /JellyfinEnhanced/reclaimerr/requests/{requestId:int}/approve
 POST /JellyfinEnhanced/reclaimerr/requests/{requestId:int}/deny
-POST /JellyfinEnhanced/reclaimerr/service-account
 POST /JellyfinEnhanced/reclaimerr/unmark
+GET /JellyfinEnhanced/reclaimerr/user-audit
 POST /JellyfinEnhanced/reset-all-users-settings
 GET /JellyfinEnhanced/reviews/admin/all
 DELETE /JellyfinEnhanced/reviews/admin/{userIdN}/{mediaType}/{tmdbId}

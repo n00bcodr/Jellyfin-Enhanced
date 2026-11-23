@@ -2010,6 +2010,11 @@ body.je-has-kefintweaks  .je-installed-badge[data-plugin="kefintweaks"]  { displ
     font-size: 0.82em;
     word-break: break-word;
 }
+/* Users a check never reached: neither a problem nor known to be fine, so not the green of the checked ones. */
+.je-audit-unchecked-names li {
+    background: rgba(158,158,158,0.18);
+    color: var(--je-text-muted);
+}
 .je-audit-error {
     color: #f44336;
     padding: 10px 14px;
@@ -2843,11 +2848,9 @@ div#bazarrMappingsValidationResult {
 /* API keys: masked while idle, shown on hover or while editing (plain text fields, so browsers do not offer to save them as passwords) */
 #JellyfinEnhancedForm input[id$="ApiKey"], #JellyfinEnhancedForm input[id$="API_KEY"],
 #JellyfinEnhancedForm input[id$="ApiKey--mirror"], #JellyfinEnhancedForm input[id$="API_KEY--mirror"],
-#JellyfinEnhancedForm input[id="ReclaimerrPassword"], #JellyfinEnhancedForm input[id="ReclaimerrPassword--mirror"],
 .je-api-input, .arr-instance-apikey { -webkit-text-security: disc; text-security: disc; }
 #JellyfinEnhancedForm input[id$="ApiKey"]:is(:hover, :focus), #JellyfinEnhancedForm input[id$="API_KEY"]:is(:hover, :focus),
 #JellyfinEnhancedForm input[id$="ApiKey--mirror"]:is(:hover, :focus), #JellyfinEnhancedForm input[id$="API_KEY--mirror"]:is(:hover, :focus),
-#JellyfinEnhancedForm input[id="ReclaimerrPassword"]:is(:hover, :focus), #JellyfinEnhancedForm input[id="ReclaimerrPassword--mirror"]:is(:hover, :focus),
 .je-api-input:is(:hover, :focus), .arr-instance-apikey:is(:hover, :focus) { -webkit-text-security: none; text-security: none; }
 
 /* ===== Stable layout: cards sit in a grid, so toggling a feature only grows that card (balanced columns reshuffled every card) ===== */

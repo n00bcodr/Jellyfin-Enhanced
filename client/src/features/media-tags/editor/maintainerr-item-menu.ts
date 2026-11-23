@@ -7,7 +7,7 @@ import CSS from './maintainerr-item-menu.css';
 // Reclaimerr, upstream da0ea773). Administrators get "Mark for removal" on an
 // item the tool does not list, and "Keep" plus "Postpone removal" (Reclaimerr:
 // "Change removal date") on one it does; movies, series and seasons (seasons:
-// upstream 8f902bf7). With Reclaimerr and a service account, anyone signed in
+// upstream 8f902bf7). With Reclaimerr and Let users request removals, anyone signed in
 // gets "Request removal" instead, filed as a Reclaimerr deletion request. The
 // rows call the plugin's /JellyfinEnhanced/maintainerr or /reclaimerr routes,
 // whichever tool is on; the tool's address and key never reach the browser,
@@ -445,7 +445,7 @@ export function createMaintainerrMenu(JE: TagRuntimeBridge): MaintainerrMenuPart
         context = null;
         const lease = JE.session?.createLease?.();
         const admin = await isAdmin();
-        // Anyone signed in may ask for a removal (Reclaimerr with a service account); the rest is administrators only.
+        // Anyone signed in may ask for a removal (Reclaimerr, as their linked account); the rest is administrators only.
         if (!admin && JE.pluginConfig?.RemovalRequestsAvailable !== true) return;
         let state: MaintainerrItemState | null = null;
         try {

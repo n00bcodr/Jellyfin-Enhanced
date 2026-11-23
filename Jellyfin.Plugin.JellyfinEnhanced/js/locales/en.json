@@ -481,6 +481,7 @@
     "leavingsoon_status_failed": "Deletion failed",
     "leavingsoon_status_deferred": "Held back: being watched",
     "leavingsoon_requests_unavailable": "Removal requests could not be loaded right now. Refresh to try again.",
+    "leavingsoon_requests_unavailable_reason": "Removal requests could not be loaded: {reason}",
     "leavingsoon_when_default": "Use Reclaimerr's grace period",
     "leavingsoon_when_default_days": "Use Reclaimerr's grace period ({days} days)",
     "leavingsoon_when_date": "Choose a date",

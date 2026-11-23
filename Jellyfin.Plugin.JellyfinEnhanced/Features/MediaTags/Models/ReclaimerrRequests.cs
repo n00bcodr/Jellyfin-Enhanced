@@ -44,22 +44,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Models
         /// <summary>Gets or sets, for approve with <c>when</c> <c>date</c>, the moment it is deleted (ISO 8601, in the future).</summary>
         [JsonPropertyName("date")]
         public DateTimeOffset? Date { get; set; }
+
+        /// <summary>
+        /// Gets or sets the <c>source</c> of the list the request was shown in (<c>leaving-soon/list</c>; upstream da3d9ee9): the
+        /// review is refused (409) when the Reclaimerr address changed since.
+        /// </summary>
+        [JsonPropertyName("source")]
+        public string? Source { get; set; }
+
+        /// <summary>
+        /// Gets or sets, for approve with the grace period, the days the administrator was shown (upstream da3d9ee9): nothing is
+        /// approved when Reclaimerr's setting differs now or cannot be read.
+        /// </summary>
+        [JsonPropertyName("graceDays")]
+        public int? GraceDays { get; set; }
     }
 
-    /// <summary>Body of the service-account route: a Reclaimerr administrator, used for this one call and never stored.</summary>
-    public class ReclaimerrServiceAccountRequest
-    {
-        /// <summary>Gets or sets the Reclaimerr administrator's username.</summary>
-        [JsonPropertyName("adminUsername")]
-        public string? AdminUsername { get; set; }
-
-        /// <summary>Gets or sets that administrator's password; empty signs in by name through Reclaimerr's trusted-proxy sign-in.</summary>
-        [JsonPropertyName("adminPassword")]
-        public string? AdminPassword { get; set; }
-    }
-
-    /// <summary>Body of the create-users route: what every new Reclaimerr account gets.</summary>
-    public class ReclaimerrCreateUsersRequest
+    /// <summary>Body of the import-users route (upstream da3d9ee9): what every new Reclaimerr account gets.</summary>
+    public class ReclaimerrImportUsersRequest
     {
         /// <summary>Gets or sets the permissions every new account gets (only the grantable ones are used).</summary>
         [JsonPropertyName("permissions")]

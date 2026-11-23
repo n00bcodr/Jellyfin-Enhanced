@@ -1,7 +1,7 @@
 {
   "description": "Budget for what the plugin assembly, Jellyfin.Plugin.JellyfinEnhanced.dll, embeds (client assets, pages, tag assets). embeddedBytes: the summed length of its manifest resources as embedded (a packed one at its packed length). The DLL is these plus about 3.1 MB of code. The budget counts the resources, not the DLL file, because gate T runs with coverage and the file on disk is then the instrumented copy (0.65 MB longer); the resources are the same bytes either way. Checked by tests/backend/Api/PackedResourcesTests.cs (gate T). It is a ratchet: lowering the limit needs no reason; a history entry that raises it must give one. `limits` is always the last history entry's.",
   "limits": {
-    "embeddedBytes": 12368769
+    "embeddedBytes": 12384726
   },
   "history": [
     {
@@ -114,6 +114,17 @@
         "embeddedBytes": 12368769
       },
       "reason": "Raised by exactly what the ports add, so the headroom left before them stays as it was (1,926 bytes). Measured with PackedResourcesTests with the limit set to 1: 12,339,577 bytes on 0616ffa8 (the base); 12,338,123 on ab87736e (-1,454: fc9b58ea drops the removal date dialog's footer from tags/tag-item-menu.js, its minified twin and maps, and one string from every locale; 26b62383 is tests only); 12,368,894 with 65161c52 (ca2aa651, +30,771: 72 translated Leaving soon and discovery filter strings in each of the 32 locales, packed); 12,366,843 on 90e39853 (-2,051: 961b67bd drops four unused discovery filter strings from every locale). +27,266 in all."
+    },
+    {
+      "date": "2026-11-23",
+      "change": "upstream sync: ports of upstream da3d9ee9 (#1091), 54a6f418 and 7762f8e1 (#1097), branch sync/reclaimerr-da3d9ee9",
+      "measured": {
+        "embeddedBytes": 12383224
+      },
+      "limits": {
+        "embeddedBytes": 12384726
+      },
+      "reason": "Raised by exactly what the ports add, so the headroom left before them stays as it was (1,502 bytes). The assembly embeds the admin page (configPage.html and Configuration/admin/sections.js with their maps: the Reclaimerr card's Import Jellyfin users and User audit instead of the service account, the user map and Create service account), jeAdmin.css (the audit's grey unchecked names), tags/tag-item-menu.js with its twin and maps, and en.json's one new string. Measured with PackedResourcesTests with the limit set to 1: 12,367,267 bytes on ba6cdbdf8 (the base), 12,383,224 with the ports (+15,957)."
     }
   ]
 }

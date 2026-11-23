@@ -638,8 +638,9 @@
       requests: rows(data.requests),
       mine: rows(data.mine),
       requestsUnavailable: data.requestsUnavailable === true,
-      canSchedule: data.canSchedule === true,
-      graceDays: typeof data.graceDays === "number" && Number.isInteger(data.graceDays) ? data.graceDays : null
+      requestsError: typeof data.requestsError === "string" && data.requestsError ? data.requestsError : null,
+      graceDays: typeof data.graceDays === "number" && Number.isInteger(data.graceDays) ? data.graceDays : null,
+      source: typeof data.source === "string" && data.source ? data.source : null
     };
   }
   var shortDate = (date) => date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
@@ -712,6 +713,7 @@
     let spinUntil = 0;
     let loadTicket = 0;
     let drawnHost = null;
+    let requestSource = null;
     const t = (key, params) => {
       try {
         return JE.t(key, params);
@@ -771,7 +773,8 @@
       button.disabled = true;
       try {
         const client = export0();
-        await client.ajax({ type: "POST", url: client.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? "approve" : "deny"}`), data: JSON.stringify({ ...note ? { note } : {}, ...timing ?? {} }), contentType: "application/json", dataType: "json" });
+        const source = requestSource;
+        await client.ajax({ type: "POST", url: client.getUrl(`JellyfinEnhanced/reclaimerr/requests/${id}/${approve ? "approve" : "deny"}`), data: JSON.stringify({ ...note ? { note } : {}, ...timing ?? {}, ...source ? { source } : {} }), contentType: "application/json", dataType: "json" });
         JE.toast?.(esc(t(approve ? "leavingsoon_approved" : "leavingsoon_denied")));
         void refresh();
       } catch (err) {
@@ -836,7 +839,7 @@
       if (r.deferred) return { text: t("leavingsoon_status_deferred"), level: "warn" };
       return { text: t(`leavingsoon_status_${r.status}`) || r.status, level: r.status === "denied" ? "urgent" : r.status === "approved" ? "ok" : "warn" };
     }
-    function requestCard(r, admin, canSchedule = false, graceDays = null) {
+    function requestCard(r, admin, graceDays = null) {
       const el = document.createElement("div");
       el.className = "je-ls-card je-ls-reqcard";
       const when = r.createdAt ? relativeDate(r.createdAt) : "";
@@ -846,7 +849,8 @@
       const state = requestChip(r);
       const scope = scopeLabel(r);
       const answer = admin ? "" : requesterNote(r.adminNotes);
-      const leaves = r.scheduledAt && r.status === "approved" ? utcDate(r.scheduledAt) : null;
+      const live = r.scheduleState !== "canceled" && r.scheduleState !== "completed";
+      const leaves = r.scheduledAt && r.status === "approved" && live ? utcDate(r.scheduledAt) : null;
       const avatar = r.jellyfinUserId ? `<img alt="" src="${esc(export0().getUrl(`Users/${encodeURIComponent(r.jellyfinUserId)}/Images/Primary`, { maxHeight: 48, quality: 90 }))}"/>` : "";
       el.innerHTML = `<div class="je-ls-poster${r.itemId ? "" : " plain"}"${linked}><span class="je-ls-fallback material-icons" aria-hidden="true">${r.mediaType === "movie" ? "movie" : "tv"}</span>` + (poster ? `<img alt="" loading="lazy" src="${esc(poster)}"/>` : "") + `</div><div class="je-ls-info"><div class="je-ls-head"><div class="je-ls-name${r.itemId ? "" : " plain"}"${linked} title="${esc(r.title)}">${esc(r.title)}</div>` + (r.year ? `<span class="je-ls-year">(${esc(r.year)})</span>` : "") + `</div><div class="je-ls-badges"><span class="je-ls-chip ${esc(state.level)}">${esc(state.text)}</span>${scope ? `<span class="je-ls-scope">${esc(scope)}</span>` : ""}</div><div class="je-ls-who"${admin && r.requestedBy ? ` title="${esc(t("leavingsoon_reclaimerr_account", { name: r.requestedBy }))}"` : ""}>` + (person ? `<span class="je-ls-avatar" aria-hidden="true">${esc(person.charAt(0).toUpperCase())}${avatar}</span><span>${esc(t("leavingsoon_requested_by", { name: person }))}</span>` : "") + "</div>" + (when ? `<div class="je-ls-sub">${esc(when)}</div>` : "") + (leaves && !Number.isNaN(leaves.getTime()) ? `<div class="je-ls-sub">${esc(t("leavingsoon_leaves_on", { date: shortDate(leaves) }))}</div>` : "") + (r.note ? `<div class="je-ls-sub je-ls-note">${esc(r.note)}</div>` : "") + (answer ? `<div class="je-ls-sub je-ls-note">${esc(answer)}</div>` : "") + (r.executionError ? `<div class="je-ls-err">${esc(r.executionError)}</div>` : "") + (admin && r.status === "pending" ? '<div class="je-ls-reqactions"></div>' : "") + "</div>";
       for (const img of el.querySelectorAll("img")) img.addEventListener("error", () => img.remove());
@@ -881,56 +885,50 @@
           const yes = document.createElement("button");
           yes.type = "button";
           yes.className = "je-ls-btn danger";
-          yes.textContent = t(canSchedule ? "leavingsoon_approve" : "leavingsoon_delete_now");
+          yes.textContent = t("leavingsoon_approve");
           const cancel = document.createElement("button");
           cancel.type = "button";
           cancel.className = "je-ls-btn";
           cancel.textContent = t("maintainerr_cancel");
-          const parts = [warn];
-          let choice = null;
-          if (canSchedule) {
-            const when2 = document.createElement("select");
-            when2.className = "je-ls-note-input";
-            when2.setAttribute("aria-label", t("reclaimerr_schedule_title"));
-            const options = [
-              ["default", graceDays !== null && graceDays > 0 ? t("leavingsoon_when_default_days", { days: graceDays }) : t("leavingsoon_when_default")],
-              ["now", t("leavingsoon_delete_now")],
-              ["date", t("leavingsoon_when_date")]
-            ];
-            for (const [value, label] of options) {
-              const option = document.createElement("option");
-              option.value = value;
-              option.textContent = label;
-              when2.appendChild(option);
-            }
-            const day = document.createElement("input");
-            day.type = "datetime-local";
-            day.className = "je-ls-note-input";
-            day.hidden = true;
-            day.min = localInput(new Date(Date.now() + 6e4));
-            day.value = localInput(new Date(Date.now() + 7 * DAY_MS));
-            day.setAttribute("aria-label", t("leavingsoon_when_date"));
-            const sync = () => {
-              day.hidden = when2.value !== "date";
-              const picked = new Date(day.value);
-              const valid = when2.value !== "date" || day.value !== "" && !Number.isNaN(picked.getTime()) && picked.getTime() > Date.now();
-              yes.disabled = !valid;
-              warn.textContent = when2.value === "now" ? deleteText : when2.value === "date" ? valid ? t("leavingsoon_confirm_on", { date: shortDate(picked) }) : "" : graceDays === 0 ? deleteText : graceDays !== null && graceDays > 0 ? t("leavingsoon_confirm_on", { date: shortDate(new Date(Date.now() + graceDays * DAY_MS)) }) : t("leavingsoon_confirm_grace");
-            };
-            when2.addEventListener("change", sync);
-            day.addEventListener("input", sync);
-            parts.push(when2, day);
-            choice = { when: when2, day };
-            sync();
+          const when2 = document.createElement("select");
+          when2.className = "je-ls-note-input";
+          when2.setAttribute("aria-label", t("reclaimerr_schedule_title"));
+          const options = [
+            ["default", graceDays !== null && graceDays > 0 ? t("leavingsoon_when_default_days", { days: graceDays }) : t("leavingsoon_when_default")],
+            ["now", t("leavingsoon_delete_now")],
+            ["date", t("leavingsoon_when_date")]
+          ];
+          for (const [value, label] of options) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = label;
+            when2.appendChild(option);
           }
+          const day = document.createElement("input");
+          day.type = "datetime-local";
+          day.className = "je-ls-note-input";
+          day.hidden = true;
+          day.min = localInput(new Date(Date.now() + 6e4));
+          day.value = localInput(new Date(Date.now() + 7 * DAY_MS));
+          day.setAttribute("aria-label", t("leavingsoon_when_date"));
+          const sync = () => {
+            day.hidden = when2.value !== "date";
+            const picked = new Date(day.value);
+            const valid = when2.value !== "date" || day.value !== "" && !Number.isNaN(picked.getTime()) && picked.getTime() > Date.now();
+            yes.disabled = !valid;
+            warn.textContent = when2.value === "now" ? deleteText : when2.value === "date" ? valid ? t("leavingsoon_confirm_on", { date: shortDate(picked) }) : "" : graceDays === 0 ? deleteText : graceDays !== null && graceDays > 0 ? t("leavingsoon_confirm_on", { date: shortDate(new Date(Date.now() + graceDays * DAY_MS)) }) : t("leavingsoon_confirm_grace");
+          };
+          when2.addEventListener("change", sync);
+          day.addEventListener("input", sync);
+          sync();
           yes.addEventListener("click", () => {
-            const timing = !choice ? null : choice.when.value === "date" ? { when: "date", date: new Date(choice.day.value).toISOString() } : { when: choice.when.value };
+            const timing = when2.value === "date" ? { when: "date", date: new Date(day.value).toISOString() } : when2.value === "default" && graceDays !== null ? { when: "default", graceDays } : { when: when2.value };
             void review(r.id, true, yes, note.value.trim(), timing);
           });
           cancel.addEventListener("click", showChoice);
           row.append(yes, cancel);
-          box.append(...parts, note, row);
-          if (choice) paintPopups(choice.when, choice.day);
+          box.append(warn, when2, day, note, row);
+          paintPopups(when2, day);
         };
         showChoice();
       }
@@ -942,7 +940,7 @@
       sec.innerHTML = `<h3><span class="material-icons" aria-hidden="true">${esc(icon)}</span>${esc(title)}</h3>`;
       const grid = document.createElement("div");
       grid.className = "je-ls-grid";
-      for (const r of rows) grid.appendChild(requestCard(r, admin, data?.canSchedule === true, data?.graceDays ?? null));
+      for (const r of rows) grid.appendChild(requestCard(r, admin, data?.graceDays ?? null));
       sec.appendChild(grid);
       return sec;
     }
@@ -998,6 +996,7 @@
     }
     function draw(host, data) {
       host.textContent = "";
+      requestSource = data.source;
       const root = document.createElement("div");
       root.className = "je-ls";
       const items = data.items;
@@ -1017,7 +1016,7 @@
       if (data.requestsUnavailable) {
         const notice = document.createElement("div");
         notice.className = "je-ls-notice";
-        notice.textContent = t("leavingsoon_requests_unavailable");
+        notice.textContent = data.admin && data.requestsError ? t("leavingsoon_requests_unavailable_reason", { reason: data.requestsError }) : t("leavingsoon_requests_unavailable");
         root.appendChild(notice);
       }
       if (data.admin && data.requests.length) root.appendChild(section("inbox", t("leavingsoon_requests_title", { count: data.requests.length }), data.requests, true, data));

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
@@ -18,40 +19,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
     /// <summary>One Reclaimerr deletion request, as the Leaving soon page lists it.</summary>
     /// <remarks>The JSON names are pinned (Jellyfin's serializer would capitalize them) because the page reads these.</remarks>
     public sealed record ReclaimerrRequestRow(
-        [property: System.Text.Json.Serialization.JsonPropertyName("id")] int Id,
-        [property: System.Text.Json.Serialization.JsonPropertyName("title")] string Title,
-        [property: System.Text.Json.Serialization.JsonPropertyName("year")] int? Year,
-        [property: System.Text.Json.Serialization.JsonPropertyName("mediaType")] string MediaType,
-        [property: System.Text.Json.Serialization.JsonPropertyName("requestedBy")] string? RequestedBy,
-        [property: System.Text.Json.Serialization.JsonPropertyName("reason")] string? Reason,
-        [property: System.Text.Json.Serialization.JsonPropertyName("status")] string Status,
-        [property: System.Text.Json.Serialization.JsonPropertyName("createdAt")] string? CreatedAt,
-        [property: System.Text.Json.Serialization.JsonPropertyName("reviewedBy")] string? ReviewedBy,
-        [property: System.Text.Json.Serialization.JsonPropertyName("mediaId")] int MediaId = 0,
-        [property: System.Text.Json.Serialization.JsonPropertyName("posterPath")] string? PosterPath = null,
-        [property: System.Text.Json.Serialization.JsonPropertyName("scope")] string Scope = "movie",
-        [property: System.Text.Json.Serialization.JsonPropertyName("seasonNumber")] int? SeasonNumber = null,
-        [property: System.Text.Json.Serialization.JsonPropertyName("episodeNumber")] int? EpisodeNumber = null,
-        [property: System.Text.Json.Serialization.JsonPropertyName("versionResolution")] string? VersionResolution = null,
-        [property: System.Text.Json.Serialization.JsonPropertyName("versionSize")] long? VersionSize = null,
-        [property: System.Text.Json.Serialization.JsonPropertyName("adminNotes")] string? AdminNotes = null,
-        [property: System.Text.Json.Serialization.JsonPropertyName("executionError")] string? ExecutionError = null,
-        [property: System.Text.Json.Serialization.JsonPropertyName("deferred")] bool Deferred = false,
-        [property: System.Text.Json.Serialization.JsonPropertyName("scheduledAt")] string? ScheduledAt = null,
-        [property: System.Text.Json.Serialization.JsonPropertyName("scheduleState")] string? ScheduleState = null);
+        [property: JsonPropertyName("id")] int Id,
+        [property: JsonPropertyName("title")] string Title,
+        [property: JsonPropertyName("year")] int? Year,
+        [property: JsonPropertyName("mediaType")] string MediaType,
+        [property: JsonPropertyName("requestedBy")] string? RequestedBy,
+        [property: JsonPropertyName("reason")] string? Reason,
+        [property: JsonPropertyName("status")] string Status,
+        [property: JsonPropertyName("createdAt")] string? CreatedAt,
+        [property: JsonPropertyName("reviewedBy")] string? ReviewedBy,
+        [property: JsonPropertyName("mediaId")] int MediaId = 0,
+        [property: JsonPropertyName("posterPath")] string? PosterPath = null,
+        [property: JsonPropertyName("scope")] string Scope = "movie",
+        [property: JsonPropertyName("seasonNumber")] int? SeasonNumber = null,
+        [property: JsonPropertyName("episodeNumber")] int? EpisodeNumber = null,
+        [property: JsonPropertyName("versionResolution")] string? VersionResolution = null,
+        [property: JsonPropertyName("versionSize")] long? VersionSize = null,
+        [property: JsonPropertyName("adminNotes")] string? AdminNotes = null,
+        [property: JsonPropertyName("executionError")] string? ExecutionError = null,
+        [property: JsonPropertyName("deferred")] bool Deferred = false,
+        [property: JsonPropertyName("scheduledAt")] string? ScheduledAt = null,
+        [property: JsonPropertyName("scheduleState")] string? ScheduleState = null,
+        [property: JsonIgnore] IReadOnlyList<Guid>? ItemIds = null,
+        [property: JsonIgnore] IReadOnlyList<Guid>? RequesterIds = null);
 
     /// <summary>
-    /// The Reclaimerr counterpart of <see cref="MaintainerrActions"/>, same answers for the item menu:
+    /// The Reclaimerr counterpart of <see cref="MaintainerrActions"/>, same answers for the item menu, all through Reclaimerr's
+    /// token API (<see cref="ReclaimerrApi"/>):
     /// <list type="bullet">
-    /// <item>Keep and postpone use the token API on the item's cleanup candidate (<c>protect</c>, <c>postpone</c>,
-    /// <c>reset-timer</c>), or reschedule/cancel the item's scheduled manual deletion.</item>
-    /// <item>Mark for removal (administrators) schedules a manual deletion <see cref="MarkDays"/> days ahead, and
-    /// Request removal (anyone signed in) files a Reclaimerr deletion request for an administrator to approve.
-    /// Both need the service account, because Reclaimerr's token API has no such calls.</item>
+    /// <item>Keep and postpone act on the item's cleanup candidate (<c>protect</c>, <c>postpone</c>, <c>reset-timer</c>), or
+    /// cancel or reschedule its scheduled deletion (a manual one, or an approved request's).</item>
+    /// <item>Mark for removal (administrators) schedules a manual deletion, <see cref="MarkDays"/> days ahead by default.</item>
+    /// <item>Deletion requests are read, approved and denied with the token. Filing one (Request removal, anyone signed in) is
+    /// the one thing the token cannot do for someone else, so it is sent as the user's own linked Reclaimerr account.</item>
     /// </list>
-    /// A scheduled manual deletion is listed by its negated id where a candidate's id is positive, so one number
-    /// says which kind governs an item. Every action ends with a forced Leaving soon refresh. Upstream da0ea773's
-    /// <c>Services/ReclaimerrActions.cs</c>, in this feature's namespace; the switches live in <see cref="LeavingSoonSources"/>.
+    /// People and titles are matched by id, never by name: a Reclaimerr account by the Jellyfin user id it is linked to, a
+    /// title by the Jellyfin item ids Reclaimerr lists for it. A scheduled deletion is listed by its negated id where a
+    /// candidate's id is positive, so one number says which kind governs an item. Every action ends with a forced Leaving soon refresh.
+    /// Upstream da3d9ee9's <c>Services/ReclaimerrActions.cs</c>, in this feature's namespace; the switches live in <see cref="LeavingSoonSources"/>.
     /// </summary>
     public sealed class ReclaimerrActions
     {
@@ -59,13 +64,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         public const int MarkDays = 30;
         public const int MaxPostponeDays = 3650;
 
+        /// <summary>Most pages of a request list read (all of them, in practice).</summary>
+        private const int AllPages = 50;
+
         private readonly IHttpClientFactory _http;
         private readonly LeavingSoonService _leaving;
         private readonly TagCacheService _cache;
         private readonly Logger _logger;
+        private readonly object _sync = new();
 
         internal TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
-        /// <summary>How long the Leaving soon page waits for the deletion requests (both lists and their title lookups).</summary>
+        /// <summary>How long the Leaving soon page waits for the deletion requests (both lists and the grace period).</summary>
         internal TimeSpan ListBudget { get; set; } = TimeSpan.FromSeconds(8);
         internal Func<DateTimeOffset> Now { get; set; } = () => DateTimeOffset.UtcNow;
 
@@ -80,7 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         /// <summary>Whether the Reclaimerr actions are on: the switch, Reclaimerr chosen with its address and token.</summary>
         public static bool Enabled(PluginConfiguration? config) => LeavingSoonSources.ReclaimerrActionsEnabled(config);
 
-        /// <summary>Whether signed-in users who are not administrators can request removals.</summary>
+        /// <summary>Whether signed-in users who are not administrators can request removals (as themselves, through the trusted-proxy sign-in).</summary>
         public static bool RequestsEnabled(PluginConfiguration? config) => LeavingSoonSources.RemovalRequestsEnabled(config);
 
         /// <summary>Reclaimerr's media type for an item, or null for a kind the actions do not handle.</summary>
@@ -112,31 +121,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         }
 
         /// <summary>
-        /// Schedule a manual deletion of the whole title on <paramref name="at"/> (administrators), or
-        /// <see cref="MarkDays"/> days ahead when no date is given.
+        /// Schedule a manual deletion of the whole title on <paramref name="at"/> (administrators), or <see cref="MarkDays"/> days
+        /// ahead when no date is given. A movie kept in several versions is scheduled by the version picked only.
         /// </summary>
-        public async Task<MaintainerrItemState> MarkAsync(BaseItem item, PluginConfiguration config, DateTimeOffset? at, string? mediaSourceId, string? actingUser, CancellationToken token)
+        public async Task<MaintainerrItemState> MarkAsync(BaseItem item, PluginConfiguration config, DateTimeOffset? at, string? mediaSourceId, string? actingUser, CancellationToken token, Guid? actingUserId = null)
         {
             var type = MediaType(item) ?? throw new MaintainerrActions.ActionException("Only movies and series can be marked.");
             if (_leaving.CollectionOf(item.Id, config) != null) throw new MaintainerrActions.ActionException("This item is already marked for removal.");
-            var mediaId = await ResolveMediaAsync(item, type, config, token).ConfigureAwait(false);
+            var (mediaId, media) = await ResolveMediaAsync(item, type, config, token).ConfigureAwait(false);
             var when = at is { } exact ? CheckedDate(exact) : Now().AddDays(MarkDays);
             // A movie kept in several versions (1080p and 4K): schedule only the file this item or the picked version is,
             // so the movie and its other copies stay. A single-version movie is scheduled whole (the Radarr entry goes too).
-            var versionId = type == "movie" ? await VersionIdAsync(item, mediaSourceId, config, actingUser, token).ConfigureAwait(false) : null;
-            await SessionAsync(config, HttpMethod.Post, "/api/media/schedule-deletion", new { media_type = type, media_id = mediaId, movie_version_id = versionId, scheduled_at = Iso(when) }, actingUser, token, adminAction: true).ConfigureAwait(false);
-            _logger.Info($"[Reclaimerr] Scheduled '{item.Name}'{(versionId != null ? " (one version)" : string.Empty)} for deletion on {when:yyyy-MM-dd}.");
+            var versionId = type == "movie" ? VersionId(item, mediaSourceId, media) : null;
+            using (await ActingTokenAsync(config, actingUserId, HttpMethod.Post, "/api/v1/scheduled-deletions", new { media_type = type, media_id = mediaId, movie_version_id = versionId, scheduled_at = Iso(when) }, token).ConfigureAwait(false)) { }
+            _logger.Info($"[Reclaimerr] {actingUser ?? "An administrator"} scheduled '{item.Name}'{(versionId != null ? " (one version)" : string.Empty)} for deletion on {when:yyyy-MM-dd}.");
             return await AfterAsync(item, config, token).ConfigureAwait(false);
         }
 
         /// <summary>Keep the item: protect its candidate, or cancel its scheduled deletion.</summary>
-        public async Task<MaintainerrItemState> UnmarkAsync(BaseItem item, PluginConfiguration config, string? actingUser, CancellationToken token)
+        public async Task<MaintainerrItemState> UnmarkAsync(BaseItem item, PluginConfiguration config, string? actingUser, CancellationToken token, Guid? actingUserId = null)
         {
             if (MediaType(item) == null) throw new MaintainerrActions.ActionException("Only movies and series can be kept.");
             var owner = await OwnerAsync(item, config, token).ConfigureAwait(false);
-            if (owner > 0) await TokenAsync(config, HttpMethod.Post, $"/api/v1/candidates/{owner}/protect", new { reason = "Kept from Jellyfin" }, token).ConfigureAwait(false);
-            else await SessionAsync(config, HttpMethod.Post, $"/api/media/scheduled-deletions/{-owner}/cancel", new { }, actingUser, token, adminAction: true).ConfigureAwait(false);
-            _logger.Info($"[Reclaimerr] Kept '{item.Name}'.");
+            var path = owner > 0 ? $"/api/v1/candidates/{owner}/protect" : $"/api/v1/scheduled-deletions/{-owner}/cancel";
+            using (await ActingTokenAsync(config, actingUserId, HttpMethod.Post, path, owner > 0 ? new { reason = "Kept from Jellyfin" } : new { }, token).ConfigureAwait(false)) { }
+            _logger.Info($"[Reclaimerr] {actingUser ?? "An administrator"} kept '{item.Name}'.");
             return await AfterAsync(item, config, token).ConfigureAwait(false);
         }
 
@@ -144,79 +153,100 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         /// Move the removal to the exact day <paramref name="until"/>, or later by <paramref name="days"/> (1 to 3650),
         /// or restart a candidate's timer when neither is given.
         /// </summary>
-        public async Task<MaintainerrItemState> PostponeAsync(BaseItem item, int? days, DateTimeOffset? until, PluginConfiguration config, string? actingUser, CancellationToken token)
+        public async Task<MaintainerrItemState> PostponeAsync(BaseItem item, int? days, DateTimeOffset? until, PluginConfiguration config, string? actingUser, CancellationToken token, Guid? actingUserId = null)
         {
             if (MediaType(item) == null) throw new MaintainerrActions.ActionException("Only movies and series can be postponed.");
             if (days is { } d && (d < 1 || d > MaxPostponeDays)) throw new MaintainerrActions.ActionException($"Days must be between 1 and {MaxPostponeDays}.");
             var owner = await OwnerAsync(item, config, token).ConfigureAwait(false);
             var fact = _leaving.Get(item.Id, config);
             var exact = until is { } u ? CheckedDate(u) : (DateTimeOffset?)null;
+            var current = fact?.DeleteAt is { } cur ? DateTimeOffset.FromUnixTimeMilliseconds(cur) : (DateTimeOffset?)null;
             if (owner > 0)
             {
                 // Reclaimerr only lets a candidate's deadline move later; a scheduled deletion can move either way.
-                var current = fact?.DeleteAt is { } cur ? DateTimeOffset.FromUnixTimeMilliseconds(cur) : (DateTimeOffset?)null;
                 if (exact is { } early && current is { } c0 && early <= c0) throw new MaintainerrActions.ActionException("Reclaimerr only moves a cleanup candidate to a later day than its current deadline.");
-                if (exact is { } day) await TokenAsync(config, HttpMethod.Post, $"/api/v1/candidates/{owner}/postpone", new { until = Iso(day), reason = "Postponed from Jellyfin" }, token).ConfigureAwait(false);
-                else if (days is { } n) await TokenAsync(config, HttpMethod.Post, $"/api/v1/candidates/{owner}/postpone", new { until = Iso((fact?.DeleteAt is { } at ? DateTimeOffset.FromUnixTimeMilliseconds(at) : Now()).AddDays(n)), reason = "Postponed from Jellyfin" }, token).ConfigureAwait(false);
-                else await TokenAsync(config, HttpMethod.Post, $"/api/v1/candidates/{owner}/reset-timer", new { reason = "Reset from Jellyfin" }, token).ConfigureAwait(false);
+                var (path, body) = exact is { } day ? ($"/api/v1/candidates/{owner}/postpone", (object)new { until = Iso(day), reason = "Postponed from Jellyfin" })
+                    : days is { } n ? ($"/api/v1/candidates/{owner}/postpone", new { until = Iso((current ?? Now()).AddDays(n)), reason = "Postponed from Jellyfin" })
+                    : ($"/api/v1/candidates/{owner}/reset-timer", new { reason = "Reset from Jellyfin" });
+                using (await TokenAsync(config, HttpMethod.Post, path, body, token).ConfigureAwait(false)) { }
             }
             else
             {
-                var from = fact?.DeleteAt is { } at ? DateTimeOffset.FromUnixTimeMilliseconds(at) : Now();
-                var to = exact ?? (days is { } n ? from.AddDays(n) : Now().AddDays(MarkDays));
-                await SessionAsync(config, HttpMethod.Post, $"/api/media/scheduled-deletions/{-owner}/reschedule", new { scheduled_at = Iso(to) }, actingUser, token, adminAction: true).ConfigureAwait(false);
+                var to = exact ?? (days is { } n ? (current ?? Now()).AddDays(n) : Now().AddDays(MarkDays));
+                using (await ActingTokenAsync(config, actingUserId, HttpMethod.Post, $"/api/v1/scheduled-deletions/{-owner}/reschedule", new { scheduled_at = Iso(to) }, token).ConfigureAwait(false)) { }
             }
 
             _logger.Info(exact is { } e ? $"[Reclaimerr] Postponed '{item.Name}' to {e:yyyy-MM-dd}." : days is { } p ? $"[Reclaimerr] Postponed '{item.Name}' by {p} days." : $"[Reclaimerr] Reset the removal timer of '{item.Name}'.");
             return await AfterAsync(item, config, token).ConfigureAwait(false);
         }
 
-        /// <summary>File a Reclaimerr deletion request for an administrator to approve; the reason names the Jellyfin user.</summary>
-        public async Task<(MaintainerrItemState State, string? Existing)> RequestRemovalAsync(BaseItem item, string requester, string? reason, PluginConfiguration config, CancellationToken token)
+        /// <summary>
+        /// File a Reclaimerr deletion request for an administrator to approve, as the Reclaimerr account linked to the Jellyfin user
+        /// <paramref name="userId"/> (Reclaimerr's token API cannot file one for someone else). Answers <c>mine</c> or <c>other</c>
+        /// instead when a request for the title is already waiting.
+        /// </summary>
+        public async Task<(MaintainerrItemState State, string? Existing)> RequestRemovalAsync(BaseItem item, Guid userId, string userName, string? reason, PluginConfiguration config, CancellationToken token)
         {
             var type = MediaType(item) ?? throw new MaintainerrActions.ActionException("Only movies and series can be requested for removal.");
-            if (!RequestsEnabled(config)) throw new MaintainerrActions.ActionException("Removal requests are not set up (Reclaimerr needs a service account).");
+            if (!RequestsEnabled(config)) throw new MaintainerrActions.ActionException("Removal requests are off.");
             if (_leaving.CollectionOf(item.Id, config) != null) throw new MaintainerrActions.ActionException("This item is already marked for removal.");
-            var mediaId = await ResolveMediaAsync(item, type, config, token).ConfigureAwait(false);
+            var (mediaId, _) = await ResolveMediaAsync(item, type, config, token).ConfigureAwait(false);
+            var who = await ReclaimerrUserAsync(config, userId, token).ConfigureAwait(false)
+                ?? throw new MaintainerrActions.ActionException("Your Jellyfin account has no Reclaimerr account yet. Ask an administrator to import Jellyfin users into Reclaimerr.");
             // Already asked for (by this user or another) and still waiting: say so instead of failing on a duplicate.
-            var waiting = await PendingRequestAsync(mediaId, type, requester, config, token).ConfigureAwait(false);
+            var waiting = await PendingRequestAsync(mediaId, type, userId, config, token).ConfigureAwait(false);
             if (waiting != null) return (State(item, config), waiting);
-            var text = $"Requested by {requester} from Jellyfin" + (string.IsNullOrWhiteSpace(reason) ? string.Empty : ": " + reason.Trim());
-            var asUser = await SessionAsync(config, HttpMethod.Post, "/api/delete-requests", new { media_type = type, media_id = mediaId, reason = text.Length <= 500 ? text : text[..500] }, requester, token).ConfigureAwait(false);
-            _logger.Info($"[Reclaimerr] {requester} requested the removal of '{item.Name}'{(asUser ? string.Empty : " (filed by the service account)")}.");
+            var text = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+            try
+            {
+                using (await ReclaimerrApi.SendAsUserAsync(_http, config, who, HttpMethod.Post, "/api/delete-requests", new { media_type = type, media_id = mediaId, reason = text == null || text.Length <= 500 ? text : text[..500] }, Timeout, token).ConfigureAwait(false)) { }
+            }
+            catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401 && RefusedForAccountOnly(e.Reason))
+            {
+                // Reclaimerr trusted this server and turned down the account: the sign-in's setup is not what is wrong.
+                throw new MaintainerrActions.ActionException($"Reclaimerr does not accept the Reclaimerr account {who} linked to you ({e.Reason}). Ask an administrator to check that account in Reclaimerr.");
+            }
+            catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401)
+            {
+                throw new MaintainerrActions.ActionException($"Reclaimerr did not let this server sign in as {who} ({Said(e.Reason)}). An administrator can run the User audit in the plugin's Reclaimerr card to look into it: usually Reclaimerr's trusted-proxy sign-in (FORWARD_AUTH_ENABLED) is off, or this server's address is not in FORWARD_AUTH_TRUSTED_PROXIES.");
+            }
+            catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 403)
+            {
+                throw new MaintainerrActions.ActionException($"The Reclaimerr account {who} may not request removals (it needs the Request permission).");
+            }
+            catch
+            {
+                // Refused for another reason (already requested, a failure, no answer): Reclaimerr may have changed, so read the lists
+                // again. A refused sign-in or permission (above) changed nothing, so it keeps them: repeated clicks must not empty them.
+                ForgetLists();
+                throw;
+            }
+
+            ForgetLists();
+            _logger.Info($"[Reclaimerr] {userName} ({who}) requested the removal of '{item.Name}'.");
             return (State(item, config), null);
         }
 
         /// <summary>
-        /// "mine" when this user already has a pending deletion request for the title, "other" when someone else does,
-        /// null when none (or it could not be read: the request is then tried and Reclaimerr's own answer is shown).
+        /// "mine" when this user already has a pending deletion request for the whole title, "other" when someone else does,
+        /// null when none (a request for one season, episode or version is another target), or when it could not be read or
+        /// timed out: the request is then tried and Reclaimerr's own answer is shown.
         /// </summary>
-        private async Task<string?> PendingRequestAsync(int mediaId, string type, string requester, PluginConfiguration config, CancellationToken token)
+        private async Task<string?> PendingRequestAsync(int mediaId, string type, Guid userId, PluginConfiguration config, CancellationToken token)
         {
             try
             {
-                using var doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/delete-requests?status_filter=pending", requester, token).ConfigureAwait(false);
-                var list = doc.RootElement;
-                if (list.ValueKind == JsonValueKind.Object && list.TryGetProperty("items", out var inner)) list = inner;
-                if (list.ValueKind != JsonValueKind.Array) return null;
                 string? found = null;
-                var asName = await ResolveUserAsync(config, requester, token).ConfigureAwait(false);
-                foreach (var r in list.EnumerateArray())
+                foreach (var r in Parse(await ListAllAsync(config, "/api/v1/delete-requests?status=pending", token).ConfigureAwait(false), null))
                 {
-                    if (r.ValueKind != JsonValueKind.Object) continue;
-                    if (!r.TryGetProperty("media_id", out var m) || m.ValueKind != JsonValueKind.Number || m.GetInt32() != mediaId) continue;
-                    if (!r.TryGetProperty("media_type", out var t) || t.ValueKind != JsonValueKind.String || t.GetString() != type) continue;
-                    if (r.TryGetProperty("status", out var st) && st.ValueKind == JsonValueKind.String && st.GetString() != "pending") continue;
-                    var reason = r.TryGetProperty("reason", out var rs) && rs.ValueKind == JsonValueKind.String ? rs.GetString() : null;
-                    var by = r.TryGetProperty("requested_by_username", out var u) && u.ValueKind == JsonValueKind.String ? u.GetString() : null;
-                    if ((asName != null && string.Equals(by, asName, StringComparison.OrdinalIgnoreCase))
-                        || (reason != null && reason.StartsWith($"Requested by {requester} from Jellyfin", StringComparison.Ordinal))) return "mine";
+                    if (r.MediaId != mediaId || r.MediaType != type || r.Status != "pending" || r.Scope is not ("movie" or "series")) continue;
+                    if (r.RequesterIds?.Contains(userId) == true) return "mine";
                     found = "other";
                 }
 
                 return found;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
             {
                 _logger.Warning($"[Reclaimerr] Could not read the pending requests ({MaintainerrHttp.Describe(ex)}).");
                 return null;
@@ -224,216 +254,157 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         }
 
         /// <summary>
-        /// Reclaimerr's id of the movie file this action is about, or null for the whole movie. Null only when Reclaimerr
-        /// confirms it holds fewer than two versions; in every other case (movie not found, lookup failed, no version matches)
-        /// it throws, because sending no version would schedule every copy. Matched by <c>service_media_id</c> (Jellyfin's
-        /// media source id), then by file path; the movie is found by TMDB id, then by name.
+        /// Reclaimerr's id of the movie file this action is about, or null for the whole movie. The copy is the one picked on the item
+        /// page (else this item's own) and must be one Reclaimerr holds: its media source id, or, when Reclaimerr's versions come from
+        /// another main media server, its file path. The whole movie is scheduled only when both sides hold exactly one copy. Anything
+        /// else throws, because sending no version would schedule every copy and another version would delete the wrong one (a 4K
+        /// copy Reclaimerr has not synced must not take its 1080p with it).
         /// </summary>
-        private async Task<int?> VersionIdAsync(BaseItem item, string? mediaSourceId, PluginConfiguration config, string? actingUser, CancellationToken token)
+        private static int? VersionId(BaseItem item, string? mediaSourceId, JsonElement movie)
         {
+            if (!movie.TryGetProperty("versions", out var versions) || versions.ValueKind != JsonValueKind.Array) throw Unsure();
+            var held = versions.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.Object && v.TryGetProperty("id", out var i) && i.TryGetInt32(out _)).ToList();
             var source = MaintainerrActions.FindVersion(item, mediaSourceId);
-            var path = source?.Path ?? item.Path;
-            var tmdb = item.GetProviderId(MetadataProvider.Tmdb);
-            var ids = new[] { source?.Id, mediaSourceId, item.Id.ToString("N"), item.Id.ToString("D") }
-                .Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i!.Replace("-", string.Empty)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var unsure = new MaintainerrActions.ActionException("Could not tell which version of this movie Reclaimerr holds, so nothing was scheduled. Try again, or schedule it in Reclaimerr.");
-            if (string.IsNullOrWhiteSpace(tmdb)) throw unsure;
-            try
+            var picked = string.IsNullOrWhiteSpace(mediaSourceId) ? null : mediaSourceId;
+            var wanted = source?.Id ?? picked ?? item.Id.ToString("N");
+            var path = source?.Path ?? (picked == null ? item.Path : null);
+            int? match = null;
+            if (Guid.TryParse(wanted, out var id) && id != Guid.Empty)
             {
-                // Reclaimerr's movie list has no TMDB filter, only a title search: try the title, then the original title, and match the TMDB id on each result.
-                foreach (var query in new[] { item.Name, item.OriginalTitle }.Where(n => !string.IsNullOrWhiteSpace(n)).Distinct(StringComparer.OrdinalIgnoreCase).Select(n => "search=" + Uri.EscapeDataString(n!)))
+                foreach (var v in held)
                 {
-                    using var doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/media/movies?per_page=50&" + query, actingUser, token).ConfigureAwait(false);
-                    if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("items", out var movies) || movies.ValueKind != JsonValueKind.Array) continue;
-                    foreach (var m in movies.EnumerateArray())
-                    {
-                        if (m.ValueKind != JsonValueKind.Object || !m.TryGetProperty("tmdb_id", out var t) || t.ValueKind != JsonValueKind.Number || t.GetInt64().ToString(CultureInfo.InvariantCulture) != tmdb) continue;
-                        if (!m.TryGetProperty("versions", out var versions) || versions.ValueKind != JsonValueKind.Array) throw unsure;
-                        if (versions.GetArrayLength() < 2) return null;
-                        int? byPath = null;
-                        foreach (var v in versions.EnumerateArray())
-                        {
-                            if (!v.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.Number || !id.TryGetInt32(out var n)) continue;
-                            if (v.TryGetProperty("service_media_id", out var sm) && sm.ValueKind == JsonValueKind.String && sm.GetString() is { Length: > 0 } smId && ids.Contains(smId.Replace("-", string.Empty))) return n;
-                            if (!string.IsNullOrWhiteSpace(path) && v.TryGetProperty("path", out var p) && p.ValueKind == JsonValueKind.String && string.Equals(p.GetString(), path, StringComparison.OrdinalIgnoreCase)) byPath ??= n;
-                        }
-
-                        return byPath ?? throw unsure;
-                    }
+                    if (v.TryGetProperty("service_media_id", out var sm) && sm.ValueKind == JsonValueKind.String && Guid.TryParse(sm.GetString(), out var smId) && smId == id) { match = v.GetProperty("id").GetInt32(); break; }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException and not MaintainerrActions.ActionException)
+
+            if (match == null && !string.IsNullOrWhiteSpace(path))
             {
-                _logger.Warning($"[Reclaimerr] Could not read the movie's versions ({MaintainerrHttp.Describe(ex)}).");
+                var byPath = held.Where(v => v.TryGetProperty("path", out var p) && p.ValueKind == JsonValueKind.String && string.Equals(p.GetString(), path, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (byPath.Count == 1) match = byPath[0].GetProperty("id").GetInt32();
             }
 
-            throw unsure;
+            var copies = JellyfinCopies(item);
+            if (match is { } found) return held.Count == 1 && copies == 1 ? null : found;
+            // One copy here and one in Reclaimerr (its ids from another server): the same file, so the whole movie.
+            if (held.Count == 1 && copies == 1) return null;
+            throw Unsure();
         }
 
-        private readonly Dictionary<int, (DateTimeOffset At, long? Size)> _versionSizes = new();
-        private static readonly TimeSpan VersionSizeTtl = TimeSpan.FromMinutes(30);
-
         /// <summary>
-        /// The size of the one movie file that is leaving (<paramref name="owner"/>: a candidate's id, or a scheduled deletion's id negated),
-        /// which only Reclaimerr knows: a scheduled deletion carries its own estimate, and a candidate names its version, whose size the
-        /// service account reads from the movie's versions. Null when it cannot be told. Kept for 30 minutes (the page asks every refresh).
+        /// How many copies Jellyfin holds of a movie, or null when it cannot tell (a hidden alternate): its media sources (what Reclaimerr
+        /// syncs versions from, and what Jellyfin itself counts on both targets), or the alternate versions stored on the item, whichever
+        /// is more. More is the safe side: it only ever demands a matching copy where a lower count would schedule the whole movie.
         /// </summary>
-        public async Task<long?> VersionSizeAsync(BaseItem item, int owner, PluginConfiguration config, CancellationToken token)
+        private static int? JellyfinCopies(BaseItem item)
         {
-            if (owner == 0 || !ReclaimerrSession.HasAccount(config)) return null;
-            lock (_versionSizes)
-            {
-                if (_versionSizes.TryGetValue(owner, out var hit) && Now() - hit.At < VersionSizeTtl) return hit.Size;
-            }
-
-            long? size = null;
-            try
-            {
-                if (owner < 0)
-                {
-                    using var doc = await ReclaimerrSession.SendAsync(_http, config, HttpMethod.Get, "/api/media/scheduled-deletions", null, Timeout, null, token).ConfigureAwait(false);
-                    if (doc.RootElement.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var sd in doc.RootElement.EnumerateArray())
-                        {
-                            if (sd.ValueKind != JsonValueKind.Object || !sd.TryGetProperty("id", out var id) || !id.TryGetInt32(out var n) || n != -owner) continue;
-                            if (sd.TryGetProperty("target", out var target) && target.ValueKind == JsonValueKind.Object && target.TryGetProperty("estimated_space_bytes", out var bytes) && bytes.ValueKind == JsonValueKind.Number && bytes.TryGetInt64(out var b) && b > 0) size = b;
-                            break;
-                        }
-                    }
-                }
-                else
-                {
-                    using var cand = await TokenAsync(config, HttpMethod.Get, $"/api/v1/candidates/{owner}", null, token).ConfigureAwait(false);
-                    var tmdb = item.GetProviderId(MetadataProvider.Tmdb);
-                    if (cand.RootElement.ValueKind == JsonValueKind.Object && cand.RootElement.TryGetProperty("movie_version_id", out var vid) && vid.ValueKind == JsonValueKind.Number && vid.TryGetInt32(out var versionId) && !string.IsNullOrWhiteSpace(tmdb))
-                    {
-                        // The movie list has no TMDB filter, only a title search: try the title, then the original title, and match the TMDB id.
-                        foreach (var query in new[] { item.Name, item.OriginalTitle }.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).Select(x => "search=" + Uri.EscapeDataString(x!)))
-                        {
-                            using var doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/media/movies?per_page=50&" + query, null, token).ConfigureAwait(false);
-                            if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("items", out var movies) || movies.ValueKind != JsonValueKind.Array) continue;
-                            foreach (var m in movies.EnumerateArray())
-                            {
-                                if (m.ValueKind != JsonValueKind.Object || !m.TryGetProperty("tmdb_id", out var t) || t.ValueKind != JsonValueKind.Number || t.GetInt64().ToString(CultureInfo.InvariantCulture) != tmdb) continue;
-                                if (!m.TryGetProperty("versions", out var versions) || versions.ValueKind != JsonValueKind.Array) continue;
-                                foreach (var v in versions.EnumerateArray())
-                                {
-                                    if (v.TryGetProperty("id", out var vi) && vi.TryGetInt32(out var viId) && viId == versionId && v.TryGetProperty("size", out var sz) && sz.ValueKind == JsonValueKind.Number && sz.TryGetInt64(out var bytes) && bytes > 0) { size = bytes; break; }
-                                }
-
-                                if (size != null) break;
-                            }
-
-                            if (size != null) break;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.Warning($"[Reclaimerr] Could not read the size of the version leaving ({MaintainerrHttp.Describe(ex)}).");
-                return null;
-            }
-
-            lock (_versionSizes) _versionSizes[owner] = (Now(), size);
-            return size;
+            if (item is not MediaBrowser.Controller.Entities.Video video || !string.IsNullOrEmpty(video.PrimaryVersionId?.ToString())) return null;
+            var stored = 1 + (video.LinkedAlternateVersions?.Length ?? 0) + (video.LocalAlternateVersions?.Length ?? 0);
+            int sources;
+            try { sources = video.GetMediaSources(false).Count; }
+            catch { sources = 0; }
+            return Math.Max(stored, sources);
         }
 
-        /// <summary>A read that needs a login: the service account when there is one (it sees every user's rows), else the Jellyfin user.</summary>
-        private async Task<JsonDocument> SessionJsonAsync(PluginConfiguration config, HttpMethod method, string path, string? actingUser, CancellationToken token)
-            => ReclaimerrSession.HasAccount(config) || !ReclaimerrSession.ActsAsUser(config) || string.IsNullOrWhiteSpace(actingUser)
-                ? await ReclaimerrSession.SendAsync(_http, config, method, path, null, Timeout, null, token).ConfigureAwait(false)
-                : await ReclaimerrSession.SendAsUserAsync(_http, config, (await ResolveUserAsync(config, actingUser!, token).ConfigureAwait(false))!, method, path, null, Timeout, null, token).ConfigureAwait(false);
+        private static MaintainerrActions.ActionException Unsure() => new("Could not tell which version of this movie Reclaimerr holds, so nothing was scheduled. Try again, or schedule it in Reclaimerr.");
 
         /// <summary>
-        /// Deletion requests: every pending one (administrators; read by the service account, else as the administrator) or the
-        /// caller's own (<paramref name="mine"/>): their own list, read as the user when acting as the user is on, together with
-        /// the ones the service account filed in their name; a refused own list does not hide the others. What could be read
-        /// before a failure is kept.
+        /// Deletion requests: every pending one plus the approved ones whose deletion failed or is held back (administrators), or the
+        /// caller's own of any state (<paramref name="mine"/>, the requests whose requester is linked to <paramref name="userId"/>).
+        /// Null rows, with the reason (Reclaimerr's own, such as a scope the token lacks), when they could not be read. The approved ones
+        /// are extra: when only they fail, the pending ones still come back.
         /// </summary>
-        public async Task<IReadOnlyList<ReclaimerrRequestRow>> RequestsAsync(PluginConfiguration config, string? actingUser, bool mine, CancellationToken token)
+        public async Task<(IReadOnlyList<ReclaimerrRequestRow>? Rows, string? Error)> RequestsAsync(PluginConfiguration config, Guid userId, bool mine, CancellationToken token)
         {
-            var rows = new List<ReclaimerrRequestRow>();
+            List<ReclaimerrRequestRow> all;
             try
             {
-                JsonDocument doc;
                 if (mine)
                 {
-                    if (string.IsNullOrWhiteSpace(actingUser)) return rows;
-                    var own = ReclaimerrSession.ActsAsUser(config) ? await ResolveUserAsync(config, actingUser!, token).ConfigureAwait(false) : null;
-                    var seen = new HashSet<int>();
-                    if (own != null)
-                    {
-                        // Their own list; it can be refused (no Requests page access), which must not hide the rest.
-                        try
-                        {
-                            doc = await ReclaimerrSession.SendAsUserAsync(_http, config, own, HttpMethod.Get, "/api/delete-requests/my", null, Timeout, null, token).ConfigureAwait(false);
-                            foreach (var r in Parse(doc, null)) if (seen.Add(r.Id)) rows.Add(r);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException)
-                        {
-                            _logger.Warning($"[Reclaimerr] Could not read {actingUser}'s own deletion requests ({MaintainerrHttp.Describe(ex)}); grant that Reclaimerr account the Requests page.");
-                        }
-                    }
-
-                    if (ReclaimerrSession.HasAccount(config))
-                    {
-                        // Filed through the service account: they belong to it, so pick this user's out by the text the request carries.
-                        var prefix = $"Requested by {actingUser!.Trim()} from Jellyfin";
-                        doc = await ReclaimerrSession.SendAsync(_http, config, HttpMethod.Get, "/api/delete-requests", null, Timeout, null, token).ConfigureAwait(false);
-                        // Only rows the service account itself filed: the text alone could be typed into a request by anyone in Reclaimerr.
-                        var service = config.ReclaimerrUsername.Trim();
-                        foreach (var r in Parse(doc, r => string.Equals(r.RequestedBy, service, StringComparison.OrdinalIgnoreCase) && r.Reason != null && r.Reason.StartsWith(prefix, StringComparison.Ordinal))) if (seen.Add(r.Id)) rows.Add(r);
-                    }
-
-                    return rows;
-                }
-                else doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/delete-requests?status_filter=pending", actingUser, token).ConfigureAwait(false);
-                var all = Parse(doc, null);
-                // Approved requests whose deletion failed, is held back by playback, or whose schedule failed or is blocked would
-                // otherwise vanish from the page: keep them in view.
-                try
-                {
-                    doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/delete-requests?status_filter=approved", actingUser, token).ConfigureAwait(false);
-                    all.AddRange(Parse(doc, r => !string.IsNullOrEmpty(r.ExecutionError) || r.Deferred || r.ScheduleState is "failed" or "blocked"));
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    _logger.Warning($"[Reclaimerr] Could not read the approved deletion requests ({MaintainerrHttp.Describe(ex)}).");
+                    if (userId == Guid.Empty) return (Array.Empty<ReclaimerrRequestRow>(), null);
+                    return (Parse(await ListAllAsync(config, "/api/v1/delete-requests", token).ConfigureAwait(false), r => r.RequesterIds?.Contains(userId) == true), null);
                 }
 
-                return all;
+                all = Parse(await ListAllAsync(config, "/api/v1/delete-requests?status=pending", token).ConfigureAwait(false), null);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.Warning($"[Reclaimerr] Could not read the deletion requests ({MaintainerrHttp.Describe(ex)}).");
+                var reason = MaintainerrHttp.Describe(ex);
+                _logger.Warning($"[Reclaimerr] Could not read the deletion requests ({reason}).");
+                return (null, reason);
             }
 
-            return rows;
+            try
+            {
+                // Approved requests whose deletion failed or is held back by playback would otherwise vanish from the page: keep them in view.
+                all.AddRange(Parse(await ListAllAsync(config, "/api/v1/delete-requests?status=approved", token).ConfigureAwait(false),
+                    r => !string.IsNullOrEmpty(r.ExecutionError) || r.Deferred || r.ScheduleState is "failed" or "blocked"));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
+            {
+                _logger.Warning($"[Reclaimerr] Could not read the approved deletion requests ({MaintainerrHttp.Describe(ex)}); showing the waiting ones.");
+            }
+
+            return (all, null);
         }
 
-        internal static List<ReclaimerrRequestRow> Parse(JsonDocument doc, Func<ReclaimerrRequestRow, bool>? keep)
+        private readonly Dictionary<string, (DateTimeOffset At, List<JsonElement> Items)> _lists = new(StringComparer.Ordinal);
+        private long _listsGeneration;
+        private static readonly TimeSpan ListTtl = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// Every entry of a request list, saying in the log when there were more than <see cref="AllPages"/> pages. Kept for 30 seconds and
+        /// shared by every caller, so users reloading the Leaving soon page do not each read Reclaimerr's whole list; anything the plugin
+        /// changes in Reclaimerr forgets it (<see cref="ForgetLists"/>). A failed read is not kept, and neither is one that started before
+        /// such a change finished (it could hold the request just reviewed or miss the one just filed).
+        /// </summary>
+        private async Task<List<JsonElement>> ListAllAsync(PluginConfiguration config, string path, CancellationToken token)
+        {
+            var key = ReclaimerrApi.BaseUrl(config) + "\n" + path;
+            long generation;
+            lock (_lists)
+            {
+                if (_lists.TryGetValue(key, out var kept) && Now() - kept.At < ListTtl) return kept.Items;
+                generation = _listsGeneration;
+            }
+
+            var (items, complete) = await ReclaimerrApi.ListPagesAsync(_http, config, path, AllPages, Timeout, null, token).ConfigureAwait(false);
+            if (!complete) _logger.Warning($"[Reclaimerr] More than {AllPages * ReclaimerrApi.PageSize} deletion requests; only the newest are shown.");
+            lock (_lists)
+            {
+                if (_listsGeneration == generation) _lists[key] = (Now(), items);
+            }
+
+            return items;
+        }
+
+        /// <summary>Forget the kept request lists (a request was filed, reviewed or rescheduled from here, or tried and refused).</summary>
+        private void ForgetLists()
+        {
+            lock (_lists)
+            {
+                _lists.Clear();
+                _listsGeneration++;
+            }
+        }
+
+        /// <summary>Reclaimerr's deletion requests (<c>DeleteRequestResponse</c>) as rows, those <paramref name="keep"/> accepts.</summary>
+        internal static List<ReclaimerrRequestRow> Parse(IEnumerable<JsonElement> list, Func<ReclaimerrRequestRow, bool>? keep)
         {
             var rows = new List<ReclaimerrRequestRow>();
-            using (doc)
+            static string? Str(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+            static int? Num(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n : null;
+            static IReadOnlyList<Guid> Ids(JsonElement e, string name, string idName) => e.TryGetProperty(name, out var v) ? ReclaimerrApi.JellyfinIds(v, idName) : Array.Empty<Guid>();
+            foreach (var r in list)
             {
-                var list = doc.RootElement;
-                if (list.ValueKind == JsonValueKind.Object && list.TryGetProperty("items", out var inner)) list = inner;
-                if (list.ValueKind != JsonValueKind.Array) return rows;
-                string? Str(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
-                int? Num(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n : null;
-                foreach (var r in list.EnumerateArray())
-                {
-                    if (r.ValueKind != JsonValueKind.Object || Num(r, "id") is not { } n) continue;
-                    long? size = r.TryGetProperty("version_size", out var vs) && vs.ValueKind == JsonValueKind.Number && vs.TryGetInt64(out var vsz) ? vsz : null;
-                    var deferred = r.TryGetProperty("playback_deferral", out var pd) && pd.ValueKind == JsonValueKind.Object;
-                    var row = new ReclaimerrRequestRow(n, Str(r, "media_title") ?? "?", Num(r, "media_year"), Str(r, "media_type") ?? "movie", Str(r, "requested_by_username"), Str(r, "reason"), Str(r, "status") ?? "pending", Str(r, "created_at"), Str(r, "reviewed_by_username"),
-                        Num(r, "media_id") ?? 0, Str(r, "poster_url"),
-                        Str(r, "target_scope") ?? (Str(r, "media_type") == "series" ? "series" : "movie"), Num(r, "season_number"), Num(r, "episode_number"), Str(r, "version_resolution"), size,
-                        Str(r, "admin_notes"), Str(r, "execution_error"), deferred && string.IsNullOrEmpty(Str(r, "executed_at")), Str(r, "scheduled_at"), Str(r, "schedule_state"));
-                    if (keep == null || keep(row)) rows.Add(row);
-                }
+                if (r.ValueKind != JsonValueKind.Object || Num(r, "id") is not { } n) continue;
+                long? size = r.TryGetProperty("version_size", out var vs) && vs.ValueKind == JsonValueKind.Number && vs.TryGetInt64(out var vsz) ? vsz : null;
+                var deferred = r.TryGetProperty("playback_deferral", out var pd) && pd.ValueKind == JsonValueKind.Object;
+                var row = new ReclaimerrRequestRow(n, Str(r, "media_title") ?? "?", Num(r, "media_year"), Str(r, "media_type") ?? "movie", Str(r, "requested_by_username"), Str(r, "reason"), Str(r, "status") ?? "pending", Str(r, "created_at"), Str(r, "reviewed_by_username") ?? Str(r, "reviewed_by_api_token_name"),
+                    Num(r, "media_id") ?? 0, Str(r, "poster_url"),
+                    Str(r, "target_scope") ?? (Str(r, "media_type") == "series" ? "series" : "movie"), Num(r, "season_number"), Num(r, "episode_number"), Str(r, "version_resolution"), size,
+                    Str(r, "admin_notes"), Str(r, "execution_error"), deferred && string.IsNullOrEmpty(Str(r, "executed_at")), Str(r, "scheduled_at"), Str(r, "schedule_state"),
+                    Ids(r, "media_server_items", "source_item_id"), Ids(r, "requested_by_media_identities", "source_user_id"));
+                if (keep == null || keep(row)) rows.Add(row);
             }
 
             return rows;
@@ -442,192 +413,568 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         /// <summary>When an approved request is deleted: with Reclaimerr's own grace period (its setting; none by default), right away, or on a day.</summary>
         public enum ApprovalTiming { GracePeriod, Now, OnDate }
 
-        private (DateTimeOffset At, string Url, bool Supported)? _scheduling;
-        private static readonly TimeSpan SchedulingTtl = TimeSpan.FromMinutes(10);
-
         /// <summary>
-        /// Whether this Reclaimerr can schedule an approved deletion request (an approve call that takes <c>scheduled_at</c>). An older one
-        /// ignores the field and would delete at once whatever day was picked, so this is asked first: Reclaimerr's public
-        /// <c>/openapi.json</c> names the approve body (<c>ApproveDeleteRequest</c>) only when it can. Kept for ten minutes for the
-        /// Reclaimerr address asked (upstream 1de354c0 keeps one answer whatever the address); false when it cannot be read.
-        /// </summary>
-        public async Task<bool> SchedulingSupportedAsync(PluginConfiguration config, CancellationToken token)
-        {
-            if (!Enabled(config)) return false;
-            var url = config.ReclaimerrUrl.Trim().TrimEnd('/');
-            lock (_versionSizes)
-            {
-                if (_scheduling is { } known && known.Url == url && Now() - known.At < SchedulingTtl) return known.Supported;
-            }
-
-            var supported = false;
-            try
-            {
-                using var doc = await TokenAsync(config, HttpMethod.Get, "/openapi.json", null, token).ConfigureAwait(false);
-                supported = doc.RootElement.ValueKind == JsonValueKind.Object
-                    && doc.RootElement.TryGetProperty("components", out var components) && components.ValueKind == JsonValueKind.Object
-                    && components.TryGetProperty("schemas", out var schemas) && schemas.ValueKind == JsonValueKind.Object
-                    && schemas.TryGetProperty("ApproveDeleteRequest", out _);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.Warning($"[Reclaimerr] Could not tell whether Reclaimerr can schedule approved requests ({MaintainerrHttp.Describe(ex)}).");
-                return false;
-            }
-
-            lock (_versionSizes) _scheduling = (Now(), url, supported);
-            return supported;
-        }
-
-        private (DateTimeOffset At, string Url, int? Days)? _grace;
-
-        /// <summary>
-        /// The grace period (days) Reclaimerr applies to an approval that names no day (Settings, General: Approved Deletion Requests; 0 when
-        /// none). Read with the service account and kept for a minute for the Reclaimerr address asked; null when it cannot be read.
+        /// The grace period (days) Reclaimerr applies to an approval that names no day (its Settings, General: Approved Deletion
+        /// Requests; 0 when none), read now (never kept: it may change, or the address may). Null when it cannot be read.
         /// </summary>
         public async Task<int?> GracePeriodDaysAsync(PluginConfiguration config, CancellationToken token)
         {
-            var url = config.ReclaimerrUrl.Trim().TrimEnd('/');
-            lock (_versionSizes)
-            {
-                if (_grace is { } known && known.Url == url && Now() - known.At < TimeSpan.FromMinutes(1)) return known.Days;
-            }
-
-            int? days = null;
             try
             {
-                using var doc = await SessionJsonAsync(config, HttpMethod.Get, "/api/settings/general", null, token).ConfigureAwait(false);
-                if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("delete_request_grace_period_days", out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) && n >= 0) days = n;
+                using var doc = await TokenAsync(config, HttpMethod.Get, "/api/v1/delete-requests/approval-options", null, token).ConfigureAwait(false);
+                return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("delete_request_grace_period_days", out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) && n >= 0 ? n : null;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.Warning($"[Reclaimerr] Could not read the deletion request grace period ({MaintainerrHttp.Describe(ex)}).");
                 return null;
             }
-
-            lock (_versionSizes) _grace = (Now(), url, days);
-            return days;
         }
 
         /// <summary>
-        /// Approve or deny a pending deletion request as the administrator who clicked (the service account is the fallback). Approving
-        /// deletes at once unless <paramref name="timing"/> says otherwise (upstream 1de354c0): <see cref="ApprovalTiming.OnDate"/> on
-        /// <paramref name="at"/>, or <see cref="ApprovalTiming.GracePeriod"/> after the delay set in Reclaimerr (none by default, so the
-        /// same as now; the old call, without <c>scheduled_at</c>). A day or an explicit now is refused when this Reclaimerr cannot
-        /// schedule (it would delete at once instead), and nothing is sent.
+        /// Approve or deny a pending deletion request. Reclaimerr records the token as the reviewer, so the administrator who clicked is
+        /// named in the note. Approving follows <paramref name="timing"/>: <see cref="ApprovalTiming.GracePeriod"/> (Reclaimerr's delay,
+        /// none by default, so the same as now), <see cref="ApprovalTiming.Now"/>, or <see cref="ApprovalTiming.OnDate"/> on <paramref name="at"/>.
+        /// With <paramref name="shownGraceDays"/> (what the administrator was told the grace period is), the grace period is read again first and
+        /// nothing is approved when it differs or cannot be read: a period that became 0 would delete at once instead of on the day shown.
         /// </summary>
-        public async Task ReviewRequestAsync(int requestId, bool approve, string? note, string? actingUser, PluginConfiguration config, CancellationToken token, ApprovalTiming timing = ApprovalTiming.GracePeriod, DateTimeOffset? at = null)
+        public async Task ReviewRequestAsync(int requestId, bool approve, string? note, string? actingUser, PluginConfiguration config, CancellationToken token, ApprovalTiming timing = ApprovalTiming.GracePeriod, DateTimeOffset? at = null, int? shownGraceDays = null, Guid? actingUserId = null)
         {
             if (requestId <= 0) throw new MaintainerrActions.ActionException("Unknown request.");
+            if (approve && timing == ApprovalTiming.GracePeriod && shownGraceDays is { } shown)
+            {
+                var now = await GracePeriodDaysAsync(config, token).ConfigureAwait(false);
+                if (now == null) throw new MaintainerrActions.ActionException("Could not check Reclaimerr's grace period, so nothing was approved. Try again.");
+                if (now != shown) throw new MaintainerrActions.ActionException($"Reclaimerr's grace period is now {now} day(s), not {shown}, so nothing was approved. Look again before approving.");
+            }
             var text = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
-            // Reclaimerr records the service account as the reviewer when it sends the review (acting as the user off, no mapping
-            // or link, or Reclaimerr refused the administrator): that call names them in the note so the review is not anonymous.
-            // Upstream 40738412 decides before sending, so a refused administrator's review went out without their name.
-            var byService = text;
             if (!string.IsNullOrWhiteSpace(actingUser))
             {
                 var by = $"{(approve ? "Approved" : "Denied")} by {actingUser.Trim()} in Jellyfin";
-                byService = text == null ? by : $"{text} ({by})";
+                text = text == null ? by : $"{text} ({by})";
             }
 
             // Omitting scheduled_at means the grace period; null means now; a day schedules it.
-            var scheduled = approve && timing != ApprovalTiming.GracePeriod;
-            string? day = null;
-            if (scheduled)
+            string? when = approve && timing == ApprovalTiming.OnDate ? Iso(CheckedDate(at ?? throw new MaintainerrActions.ActionException("Pick the day to delete it."))) : null;
+            object body = !approve || timing == ApprovalTiming.GracePeriod ? new { admin_notes = text } : new { admin_notes = text, scheduled_at = when };
+            try
             {
-                if (!await SchedulingSupportedAsync(config, token).ConfigureAwait(false))
-                    throw new MaintainerrActions.ActionException("This Reclaimerr cannot schedule an approval yet (update it), so nothing was approved.");
-                if (timing == ApprovalTiming.OnDate) day = Iso(CheckedDate(at ?? throw new MaintainerrActions.ActionException("Pick the day to delete it.")));
+                using (await ActingTokenAsync(config, actingUserId, HttpMethod.Post, $"/api/v1/delete-requests/{requestId}/{(approve ? "approve" : "deny")}", body, token).ConfigureAwait(false)) { }
             }
-
-            object Body(string? notes) => scheduled ? new { admin_notes = notes, scheduled_at = day } : new { admin_notes = notes };
-            await SessionAsync(config, HttpMethod.Post, $"/api/delete-requests/{requestId}/{(approve ? "approve" : "deny")}", Body(text), actingUser, token, adminAction: true, serviceBody: Body(byService)).ConfigureAwait(false);
-            _logger.Info($"[Reclaimerr] {actingUser ?? "an administrator"} {(approve ? "approved" : "denied")} deletion request {requestId}{(day != null ? $" for {at:yyyy-MM-dd}" : string.Empty)}.");
+            finally
+            {
+                // Refused too (say, already reviewed in Reclaimerr): the kept list is what showed the card, so read it again.
+                ForgetLists();
+            }
+            _logger.Info($"[Reclaimerr] {actingUser ?? "An administrator"} {(approve ? "approved" : "denied")} deletion request {requestId}{(approve && timing == ApprovalTiming.OnDate ? $" for {at:yyyy-MM-dd}" : string.Empty)}.");
             // An approval on a day (or after a grace period) puts the title on the Leaving soon list and its tags: read that now, like Mark, Keep and Postpone do.
             if (approve) await RefreshAfterAsync(config, token).ConfigureAwait(false);
         }
 
-        /// <summary>Permissions an administrator may hand to the accounts created for Jellyfin users (never <c>manage_users</c>).</summary>
+        /// <summary>Permissions an administrator may hand to the accounts imported for Jellyfin users (never <c>manage_users</c>).</summary>
         public static readonly string[] GrantablePermissions = { "request", "auto_approve", "manage_requests", "manage_protection", "manage_reclaim" };
         /// <summary>Reclaimerr pages an account can be given.</summary>
         public static readonly string[] GrantablePages = { "dashboard", "movies", "series", "requests", "protected", "candidates", "duplicates", "calendar", "storage", "history", "settings" };
 
-        /// <summary>Result of <see cref="CreateAccountsAsync"/>: the new <c>Jellyfin name, Reclaimerr name</c> pairs, how many already had an account, and the ones that could not be created.</summary>
-        public sealed record AccountsResult(List<(string Jellyfin, string Reclaimerr)> Created, int Existing, List<string> Skipped);
+        /// <summary>
+        /// Result of <see cref="ImportUsersAsync"/>, by Jellyfin user name: the accounts created, the users already linked, the ones whose
+        /// match to an existing Reclaimerr account needs an administrator in Reclaimerr, and the ones that could not be imported (with why).
+        /// </summary>
+        public sealed record ImportResult(List<string> Created, int AlreadyLinked, List<string> NeedsReview, List<string> Skipped);
 
         /// <summary>
-        /// Create a Reclaimerr account (User role, no password to sign in with: they come in through the trusted-proxy sign-in) for
-        /// every Jellyfin user that has none, with the permissions and pages given. A user who is mapped, linked or already has an
-        /// account of the same name is left as it is. Reclaimerr's rules: 5 to 32 letters, digits, <c>_</c> or <c>-</c>; other
-        /// characters become <c>_</c>, and a name that is still too short or long is reported, not created.
+        /// Import this server's users into Reclaimerr (its <c>/api/v1/users/import-from-media-server</c>): every Jellyfin user without a
+        /// Reclaimerr account gets one (User role, the permissions and pages given), linked to them, so their requests carry their own
+        /// name. The Reclaimerr media server that is this Jellyfin is the one whose users are this server's users. Users Reclaimerr
+        /// would match to an existing account are left for an administrator to confirm in Reclaimerr: linking a person to someone
+        /// else's account by a shared name is not something to guess.
         /// </summary>
-        public async Task<AccountsResult> CreateAccountsAsync(PluginConfiguration config, IEnumerable<string> jellyfinNames, IEnumerable<string> permissions, IEnumerable<string> pages, CancellationToken token)
+        public async Task<ImportResult> ImportUsersAsync(PluginConfiguration config, IReadOnlyDictionary<Guid, string> jellyfinUsers, IEnumerable<string> permissions, IEnumerable<string> pages, CancellationToken token)
         {
-            if (!ReclaimerrSession.HasAccount(config)) throw new MaintainerrActions.ActionException("Create the service account first.");
             var perms = permissions.Where(p => GrantablePermissions.Contains(p)).Distinct().ToList();
             var allowed = pages.Where(p => GrantablePages.Contains(p)).Distinct().ToList();
             if (allowed.Count == 0) throw new MaintainerrActions.ActionException("Pick at least one page.");
 
-            var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            using (var users = await ReclaimerrSession.SendAsync(_http, config, HttpMethod.Get, "/api/account/users", null, Timeout, null, token).ConfigureAwait(false))
+            // The Jellyfin servers Reclaimerr knows; the one that is this server is the one listing this server's user ids.
+            // The preview is asked with the access the new accounts get: Reclaimerr's revisions cover it, so the import matches it.
+            object Access(int server) => new { service_config_id = server, role = "user", permissions = perms, use_default_page_access = false, allowed_pages = allowed };
+            var servers = new List<int>();
+            using (var doc = await TokenAsync(config, HttpMethod.Get, "/api/v1/users/import-from-media-server/providers", null, token).ConfigureAwait(false))
             {
-                var list = users.RootElement;
-                if (list.ValueKind == JsonValueKind.Object && list.TryGetProperty("items", out var inner)) list = inner;
-                if (list.ValueKind == JsonValueKind.Array)
-                    foreach (var u in list.EnumerateArray())
-                        if (u.ValueKind == JsonValueKind.Object && u.TryGetProperty("username", out var n) && n.ValueKind == JsonValueKind.String && n.GetString() is { Length: > 0 } s) taken.Add(s);
+                if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var p in doc.RootElement.EnumerateArray())
+                    {
+                        if (p.ValueKind == JsonValueKind.Object && p.TryGetProperty("service_type", out var t) && t.ValueKind == JsonValueKind.String && string.Equals(t.GetString(), "jellyfin", StringComparison.OrdinalIgnoreCase)
+                            && p.TryGetProperty("service_config_id", out var id) && id.TryGetInt32(out var n)) servers.Add(n);
+                    }
+                }
             }
 
-            var linked = await ReadIdentitiesAsync(config, token).ConfigureAwait(false);
-            var result = new AccountsResult(new(), 0, new());
-            var existing = 0;
-            foreach (var jf in jellyfinNames.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+            (int Server, List<JsonElement> Rows)? best = null;
+            var bestOverlap = 0;
+            var failed = new List<string>();
+            foreach (var server in servers)
             {
-                if (ReclaimerrSession.MappedUser(config, jf) != null || linked.ContainsKey(jf.ToLowerInvariant()) || taken.Contains(jf)) { existing++; continue; }
-                var name = System.Text.RegularExpressions.Regex.Replace(jf, "[^a-zA-Z0-9_-]", "_");
-                if (name.Length < 5) name += "_user"; // Reclaimerr's own Jellyfin sign-ins get the same suffix
-                if (name.Length > 32) { result.Skipped.Add($"{jf}: Reclaimerr allows at most 32 characters"); continue; }
-                if (taken.Contains(name)) { result.Skipped.Add($"{jf}: an account named {name} already exists (map it by hand)"); continue; }
-                var password = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24)).Replace('+', '-').Replace('/', '_');
-                var body = new { username = name, password, display_name = jf.Length is >= 3 and <= 32 ? jf : null, role = "user", permissions = perms, allowed_pages = allowed, use_default_page_access = false, require_password_change = false };
+                // Another Jellyfin server Reclaimerr knows may be down: that only matters when this one is not found.
                 try
                 {
-                    using (await ReclaimerrSession.SendAsync(_http, config, HttpMethod.Post, "/api/account/users", JsonSerializer.Serialize(body), Timeout, null, token).ConfigureAwait(false)) { }
-                    taken.Add(name);
-                    result.Created.Add((jf, name));
+                    using var preview = await TokenAsync(config, HttpMethod.Post, "/api/v1/users/import-from-media-server?preview=true", Access(server), token).ConfigureAwait(false);
+                    var rows = ImportRows(preview.RootElement);
+                    var overlap = rows.Count(r => RowUser(r) is { } u && jellyfinUsers.ContainsKey(u));
+                    if (overlap > bestOverlap) (best, bestOverlap) = ((server, rows), overlap);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
                 {
-                    result.Skipped.Add($"{jf}: {MaintainerrHttp.Describe(ex)}");
+                    failed.Add(MaintainerrHttp.Describe(ex));
                 }
             }
 
-            _logger.Info($"[Reclaimerr] Created {result.Created.Count} account(s) for Jellyfin users ({existing} already had one, {result.Skipped.Count} skipped).");
-            return result with { Existing = existing };
+            if (best is not { } chosen)
+            {
+                throw new MaintainerrActions.ActionException(failed.Count == 0
+                    ? "Reclaimerr has no Jellyfin server with this server's users. Add this server in Reclaimerr (Settings, Media servers) first."
+                    : $"Reclaimerr could not list the users of {failed.Count} of its Jellyfin servers ({string.Join("; ", failed.Distinct())}), and none it could list is this one.");
+            }
+
+            var linked = await ReadIdentitiesAsync(config, includeInactive: true, token).ConfigureAwait(false);
+            var result = new ImportResult(new(), 0, new(), new());
+            var alreadyLinked = 0;
+            var selection = new List<string>();
+            var revisions = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var row in chosen.Rows)
+            {
+                if (RowUser(row) is not { } user || !jellyfinUsers.TryGetValue(user, out var name)) continue;
+                if (linked.ContainsKey(user)) { alreadyLinked++; continue; }
+                var status = row.TryGetProperty("status", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null;
+                var message = row.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() : null;
+                switch (status)
+                {
+                    case "ready_to_create":
+                        var id = row.GetProperty("source_user_id").GetString()!;
+                        selection.Add(id);
+                        if (row.TryGetProperty("revision", out var rev) && rev.ValueKind == JsonValueKind.String && rev.GetString() is { Length: > 0 } revision) revisions[id] = revision;
+                        break;
+                    case "ready_to_link" or "needs_review":
+                        result.NeedsReview.Add(name);
+                        break;
+                    default:
+                        result.Skipped.Add(string.IsNullOrWhiteSpace(message) ? name : $"{name}: {message}");
+                        break;
+                }
+            }
+
+            if (selection.Count > 0)
+            {
+                var body = new { service_config_id = chosen.Server, source_user_ids = selection, role = "user", permissions = perms, use_default_page_access = false, allowed_pages = allowed, expected_revisions = revisions };
+                // The same access as the preview: Reclaimerr refuses (409) when anything its revisions cover changed since.
+                using var done = await TokenAsync(config, HttpMethod.Post, "/api/v1/users/import-from-media-server?preview=false", body, token).ConfigureAwait(false);
+                foreach (var row in ImportRows(done.RootElement))
+                {
+                    if (RowUser(row) is not { } user || !jellyfinUsers.TryGetValue(user, out var name) || !selection.Contains(row.GetProperty("source_user_id").GetString()!)) continue;
+                    var status = row.TryGetProperty("status", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null;
+                    var message = row.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() : null;
+                    if (status == "created") result.Created.Add(name);
+                    else result.Skipped.Add(string.IsNullOrWhiteSpace(message) ? name : $"{name}: {message}");
+                }
+            }
+
+            _logger.Info($"[Reclaimerr] Imported {result.Created.Count} Jellyfin user(s) into Reclaimerr ({alreadyLinked} already linked, {result.NeedsReview.Count} to review in Reclaimerr, {result.Skipped.Count} not imported).");
+            return result with { AlreadyLinked = alreadyLinked };
         }
 
-        private readonly Dictionary<(string Type, int Id), string?> _tmdbOfMedia = new();
+        private static List<JsonElement> ImportRows(JsonElement root)
+            => root.ValueKind == JsonValueKind.Object && root.TryGetProperty("rows", out var rows) && rows.ValueKind == JsonValueKind.Array
+                ? rows.EnumerateArray().Where(r => r.ValueKind == JsonValueKind.Object).Select(r => r.Clone()).ToList()
+                : new List<JsonElement>();
 
-        /// <summary>The TMDB id of a Reclaimerr movie or series (token API, kept), or null when it cannot be read.</summary>
-        public async Task<string?> TmdbIdAsync(PluginConfiguration config, string mediaType, int mediaId, CancellationToken token)
+        private static Guid? RowUser(JsonElement row)
+            => row.TryGetProperty("source_user_id", out var id) && id.ValueKind == JsonValueKind.String && Guid.TryParse(id.GetString(), out var g) && g != Guid.Empty ? g : null;
+
+        /// <summary>
+        /// The username of the active Reclaimerr account linked to the Jellyfin user <paramref name="userId"/> (Reclaimerr links one when the
+        /// person is imported, or signs in to Reclaimerr with their Jellyfin login), or null when none is. Read now with the token, never
+        /// kept: the name is about to be sent as a sign-in, so an unlinked account, a disabled one or another Reclaimerr's must not be used.
+        /// </summary>
+        internal async Task<string?> ReclaimerrUserAsync(PluginConfiguration config, Guid userId, CancellationToken token)
+            => userId == Guid.Empty ? null : (await ReadIdentitiesAsync(config, includeInactive: false, token).ConfigureAwait(false)).TryGetValue(userId, out var name) ? name : null;
+
+        /// <summary>
+        /// Jellyfin user id to the username of the Reclaimerr account linked to it (<c>/api/v1/users</c>, its <c>media_identities</c>), active
+        /// accounts only unless <paramref name="includeInactive"/>. A Jellyfin id linked to two accounts (the same server added twice) is left out.
+        /// </summary>
+        private async Task<Dictionary<Guid, string>> ReadIdentitiesAsync(PluginConfiguration config, bool includeInactive, CancellationToken token)
         {
-            if (mediaId <= 0) return null;
-            var key = (mediaType == "movie" ? "movie" : "series", mediaId);
-            lock (_tmdbOfMedia) { if (_tmdbOfMedia.TryGetValue(key, out var known)) return known; }
-            string? tmdb = null;
+            var map = new Dictionary<Guid, string>();
+            foreach (var (id, accounts) in await ReadAccountsAsync(config, token).ConfigureAwait(false))
+            {
+                var usable = accounts.Where(a => includeInactive || a.Active).Select(a => a.Username).Distinct(StringComparer.Ordinal).ToList();
+                if (usable.Count == 1) map[id] = usable[0];
+            }
+
+            return map;
+        }
+
+        /// <summary>
+        /// The token scopes the integration uses: each with its read scope (a manage scope grants it; null when there is none), what
+        /// goes without either, and what goes with the read scope alone.
+        /// </summary>
+        internal static readonly (string Scope, string? Read, string Without, string ReadOnly)[] RequiredScopes =
+        {
+            ("candidates:manage", "candidates:read", "Leaving soon cannot read Reclaimerr, and Keep and Postpone cannot act on cleanup candidates", "Keep and Postpone cannot act on cleanup candidates"),
+            ("scheduled_deletions:manage", "scheduled_deletions:read", "Mark for removal, and Keep and Postpone on a scheduled deletion, are refused", "Mark for removal, and Keep and Postpone on a scheduled deletion, are refused"),
+            ("delete_requests:manage", "delete_requests:read", "removal requests cannot be listed, approved or denied", "removal requests cannot be approved or denied"),
+            ("media:read", null, "Mark for removal and Request removal cannot find the title", string.Empty),
+            ("users:manage", "users:read", "Request removal, Import Jellyfin users and this audit cannot read Reclaimerr's accounts", "Import Jellyfin users is refused"),
+        };
+
+        /// <summary>
+        /// One Jellyfin user in the audit: the Reclaimerr account linked to them (null when none), what stops them, and whether everything
+        /// that applies to them was checked (false when the sign-in check was cut short for everyone; see the setup issues).
+        /// </summary>
+        public sealed record AuditUser(
+            [property: JsonPropertyName("jellyfinUsername")] string JellyfinUsername,
+            [property: JsonPropertyName("jellyfinUserId")] string JellyfinUserId,
+            [property: JsonPropertyName("admin")] bool Admin,
+            [property: JsonPropertyName("linked")] bool Linked,
+            [property: JsonPropertyName("reclaimerrUsername")] string? ReclaimerrUsername,
+            [property: JsonPropertyName("issues")] List<string> Issues,
+            [property: JsonPropertyName("checked")] bool Checked = true);
+
+        /// <summary>The audit: the version Reclaimerr reports, problems with the setup as a whole (token scopes, the trusted-proxy sign-in), and each user.</summary>
+        public sealed record AuditResult(
+            [property: JsonPropertyName("version")] string? Version,
+            [property: JsonPropertyName("requestsEnabled")] bool RequestsEnabled,
+            [property: JsonPropertyName("issues")] List<string> Issues,
+            [property: JsonPropertyName("users")] List<AuditUser> Users);
+
+        /// <summary>
+        /// Check every Jellyfin user against Reclaimerr, read-only: whether a Reclaimerr account is linked to them (and only one, and active),
+        /// and, with removal requests on, whether Reclaimerr's trusted-proxy sign-in accepts that account (<c>GET /api/account/me</c> as them,
+        /// which writes nothing) and whether it may request. Administrators mark instead of requesting, so nothing about them is an issue. Also
+        /// reports the token scopes the integration uses that the token lacks. A refusal that does not say whether it is about the
+        /// account or about this server is settled by asking the server once (<see cref="SignInTrustedAsync"/>): when Reclaimerr
+        /// refuses this server whoever is named (the feature off, another header, this server not trusted), that is a setup issue said
+        /// once, naming no user, and the remaining users are not tried; otherwise the refusal is that user's issue and the rest are
+        /// still checked. An answer that is not the account asked for is never read as that account's permissions.
+        /// </summary>
+        public async Task<AuditResult> AuditUsersAsync(PluginConfiguration config, IReadOnlyList<(Guid Id, string Name, bool Admin)> jellyfinUsers, CancellationToken token)
+        {
+            var requests = RequestsEnabled(config);
+            var result = new AuditResult(null, requests, new List<string>(), new List<AuditUser>());
+            // Request removal lives in the item menu, so it is off while the item-menu actions are, whatever its own switch says.
+            if (!requests && config.ReclaimerrUserRequests && !Enabled(config))
+            {
+                result.Issues.Add("Let users request removals is on, but Mark, keep and postpone from the item menu is off, and Request removal is in that menu: turn it on (Leaving soon card).");
+            }
+
+            // The scopes the token has (GET /api/v1 lists them); a manage scope grants its read scope.
+            using (var discovery = await TokenAsync(config, HttpMethod.Get, "/api/v1", null, token).ConfigureAwait(false))
+            {
+                var granted = new HashSet<string>(StringComparer.Ordinal);
+                if (discovery.RootElement.ValueKind == JsonValueKind.Object && discovery.RootElement.TryGetProperty("granted_scopes", out var scopes) && scopes.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var scope in scopes.EnumerateArray())
+                    {
+                        if (scope.ValueKind == JsonValueKind.String && scope.GetString() is { } name) granted.Add(name);
+                    }
+                }
+
+                foreach (var (scope, read, without, readOnly) in RequiredScopes)
+                {
+                    if (granted.Contains(scope)) continue;
+                    result.Issues.Add($"The API token lacks {scope}: {(read != null && granted.Contains(read) ? readOnly : without)}.");
+                }
+            }
+
+            result = result with { Version = ReclaimerrApi.ReportedVersion(config) };
+            Dictionary<Guid, List<(string Username, bool Active)>> accounts;
             try
             {
-                using var doc = await TokenAsync(config, HttpMethod.Get, $"/api/v1/{(key.Item1 == "movie" ? "movies" : "series")}/{mediaId}", null, token).ConfigureAwait(false);
-                if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("tmdb_id", out var t) && t.ValueKind == JsonValueKind.Number) tmdb = t.GetInt64().ToString(CultureInfo.InvariantCulture);
+                accounts = await ReadAccountsAsync(config, token).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.Warning($"[Reclaimerr] Could not read the TMDB id of {key.Item1} {mediaId} ({MaintainerrHttp.Describe(ex)}).");
-                return null;
+                result.Issues.Add($"Reclaimerr's users could not be read ({MaintainerrHttp.Describe(ex)}), so no user was checked.");
+                return result;
             }
 
-            lock (_tmdbOfMedia) _tmdbOfMedia[key] = tmdb;
-            return tmdb;
+            string? silent = null;
+            // Whether Reclaimerr takes this server's trusted-proxy sign-in at all: null until an answer shows it. True once it signs an
+            // account in or turns one down by name (it does either only after trusting this server). False once an account was refused
+            // without saying why and asking about the server itself (once per audit) did not show it is trusted: the check stops there.
+            // What the setup issue then says is kept: the reasons given for refusing the account and the name asked about the server
+            // with, whether both were Reclaimerr's plain "Not authenticated" (only then is it known to be Reclaimerr refusing every
+            // name), and why asking about the server failed, when it did.
+            bool? trusted = null;
+            string? refusedReason = null;
+            string? serverReason = null;
+            var refusedPlainly = false;
+            string? askingFailed = null;
+            var askingUnanswered = false;
+            foreach (var (id, name, admin) in jellyfinUsers.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var issues = new List<string>();
+                // The same rule as filing a request: exactly one active linked account.
+                var mine = accounts.TryGetValue(id, out var found) ? found : new List<(string Username, bool Active)>();
+                var linked = mine.Select(a => a.Username).Distinct(StringComparer.Ordinal).ToList();
+                var active = mine.Where(a => a.Active).Select(a => a.Username).Distinct(StringComparer.Ordinal).ToList();
+                string? account = active.Count == 1 ? active[0] : linked.Count == 1 ? linked[0] : null;
+                var done = true;
+                if (admin)
+                {
+                    // Administrators mark, keep and approve with the token: their link is shown, never an issue.
+                }
+                else if (linked.Count == 0)
+                {
+                    issues.Add("No Reclaimerr account is linked to this user: run Import Jellyfin users, or have them sign in to Reclaimerr with Jellyfin once.");
+                }
+                else if (active.Count > 1)
+                {
+                    issues.Add($"Linked to several active Reclaimerr accounts ({string.Join(", ", active)}): requests are refused until only one is linked.");
+                }
+                else if (active.Count == 0)
+                {
+                    issues.Add($"The linked Reclaimerr account {string.Join(", ", linked)} is disabled.");
+                }
+                else if (requests && (trusted == false || silent != null))
+                {
+                    done = false;
+                }
+                else if (requests)
+                {
+                    // A refusal that does not say whether it is about this account or about this server (Reclaimerr's reason, or none).
+                    var unclear = false;
+                    string? unclearReason = null;
+                    try
+                    {
+                        using var me = await ReclaimerrApi.SendAsUserAsync(_http, config, account!, HttpMethod.Get, "/api/account/me", null, Timeout, token).ConfigureAwait(false);
+                        var root = me.RootElement;
+                        var signedIn = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("username", out var u) && u.ValueKind == JsonValueKind.String ? u.GetString() : null;
+                        if (string.IsNullOrWhiteSpace(signedIn))
+                        {
+                            // An empty answer, or something else's: unknown, which is not the same as lacking the permission.
+                            issues.Add($"Could not check the Reclaimerr account {account} (Reclaimerr's answer was not an account).");
+                        }
+                        else if (!string.Equals(signedIn, account, StringComparison.Ordinal))
+                        {
+                            // Reclaimerr trims the name it is sent, so a stored name with stray spaces can resolve to another account.
+                            trusted = true;
+                            issues.Add($"Reclaimerr signed in as {signedIn} instead of the linked account {account}: a request of theirs that Reclaimerr accepts would be filed as {signedIn}.");
+                        }
+                        else
+                        {
+                            trusted = true;
+                            var role = root.TryGetProperty("role", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null;
+                            var listed = root.TryGetProperty("permissions", out var p) && p.ValueKind == JsonValueKind.Array;
+                            var canRequest = role == "admin" || (listed && p.EnumerateArray().Any(x => x.ValueKind == JsonValueKind.String && x.GetString() == "request"));
+                            // An answer without the permission list says nothing about the permission: unknown, not "lacks it".
+                            if (!canRequest) issues.Add(listed ? $"The Reclaimerr account {account} lacks the Request permission, so Request removal is refused." : $"Could not check the Reclaimerr account {account} (Reclaimerr's answer did not list its permissions).");
+                        }
+                    }
+                    catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401 && RefusedForAccountOnly(e.Reason))
+                    {
+                        // Reclaimerr trusted this server and turned down the name: only this user is stopped, so the others are still checked.
+                        trusted = true;
+                        issues.Add($"Reclaimerr's trusted-proxy sign-in refused the account {account} ({e.Reason}), so Request removal is refused for them.");
+                    }
+                    catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401)
+                    {
+                        unclear = true;
+                        unclearReason = e.Reason;
+                    }
+                    catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                    {
+                        // Reclaimerr stopped answering: waiting out the timeout for every other user would hold the page for minutes.
+                        silent = account;
+                        done = false;
+                    }
+                    catch (JsonException)
+                    {
+                        // This tree's MaintainerrHttp refuses an empty read (upstream reads it as {}): an answer that is no JSON
+                        // account is the same unknown as upstream's empty answer, said the same way.
+                        issues.Add($"Could not check the Reclaimerr account {account} (Reclaimerr's answer was not an account).");
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        issues.Add($"Could not check the Reclaimerr account {account} ({MaintainerrHttp.Describe(ex)}).");
+                    }
+
+                    if (unclear && trusted == null)
+                    {
+                        // Ask about the server itself, once per audit: what one account was answered cannot tell the two apart.
+                        try
+                        {
+                            var (taken, said) = await SignInTrustedAsync(config, token).ConfigureAwait(false);
+                            trusted = taken;
+                            serverReason = said;
+                            refusedPlainly = !taken && string.Equals(said, PlainRefusal, StringComparison.Ordinal) && string.Equals(unclearReason, PlainRefusal, StringComparison.Ordinal);
+                        }
+                        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                        {
+                            // Reclaimerr answered the account and then went quiet on the question about the server: the check stops, and
+                            // what is said is that, not that the account got no answer.
+                            silent = account;
+                            askingUnanswered = true;
+                            refusedReason = unclearReason;
+                            done = false;
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            // The question failed, so nothing shows the server is trusted: the check stops here, as it did before there
+                            // was a question to ask, and the setup issue says what was and was not found out.
+                            trusted = false;
+                            askingFailed = MaintainerrHttp.Describe(ex);
+                        }
+                    }
+
+                    if (unclear && trusted == true)
+                    {
+                        // Reclaimerr took this server's sign-in in this audit, so the refusal is about this account (with its
+                        // FORWARD_AUTH_ALLOW_LOCAL_FALLBACK on, a name it does not know gets its plain "Not authenticated"). Said as
+                        // the two things that were seen: what Reclaimerr does a moment later is not known.
+                        issues.Add($"Reclaimerr showed in this audit that it takes this server's sign-in, but it refused the account {account} ({Said(unclearReason)}), so Request removal is refused for them.");
+                    }
+                    else if (unclear && trusted == false)
+                    {
+                        // Not shown to be about this account: said once under Setup, and nobody else is tried.
+                        refusedReason = unclearReason;
+                        done = false;
+                    }
+                }
+
+                result.Users.Add(new AuditUser(name, id.ToString("N"), admin, linked.Count > 0, account, issues, done));
+            }
+
+            if (silent != null)
+            {
+                result.Issues.Insert(0, askingUnanswered
+                    ? $"Reclaimerr refused the trusted-proxy sign-in for an account ({Said(refusedReason)}) and then did not answer when asked whether it takes this server's sign-in at all, so no user's Request permission was checked. Run the audit again."
+                    : $"Reclaimerr did not answer when checking {silent}, so the remaining users' sign-in and permissions were not checked. Run the audit again.");
+            }
+
+            if (trusted == false)
+            {
+                result.Issues.Insert(0, SignInRefused(refusedReason, serverReason, refusedPlainly, askingFailed, config.ReclaimerrUserHeader.Trim()));
+            }
+
+            return result;
+        }
+
+        /// <summary>Reclaimerr's reasons for a <c>401</c> that turns down the one account named, after it has trusted this server.</summary>
+        private static readonly string[] AccountOnlyRefusals = { "Trusted proxy user is not configured", "Trusted proxy supplied an invalid username" };
+
+        /// <summary>
+        /// Whether a <c>401</c> from Reclaimerr's trusted-proxy sign-in turned down the one account named, not this server. Reclaimerr
+        /// gives these reasons only after it has accepted the address and read the header; with the feature off, another header or an
+        /// untrusted address it answers "Not authenticated" whoever is named. Any other reason, or none, counts as refusing the server.
+        /// </summary>
+        /// <param name="reason">Reclaimerr's own reason for the refusal (its <c>detail</c>), or null when it gave none.</param>
+        /// <returns>True when only the named account was refused.</returns>
+        internal static bool RefusedForAccountOnly(string? reason)
+            => reason != null && Array.IndexOf(AccountOnlyRefusals, reason) >= 0;
+
+        /// <summary>
+        /// A name no Reclaimerr account can have (it is longer than Reclaimerr's 32 characters), sent to ask about this server
+        /// instead of about an account. It says what it is, for anyone who meets it in a log.
+        /// </summary>
+        internal const string NoAccountName = "jellyfin-enhanced-sign-in-check-not-an-account";
+
+        /// <summary>Reclaimerr's answer to a request it does not sign in at all: the sign-in is off, the header is not there, or the address is not trusted.</summary>
+        private const string PlainRefusal = "Not authenticated";
+
+        /// <summary>
+        /// Whether Reclaimerr takes this server's trusted-proxy sign-in at all, asked with <see cref="NoAccountName"/>
+        /// (<c>GET /api/account/me</c>, which writes nothing). Reclaimerr turns that name down as a name ("Trusted proxy supplied an
+        /// invalid username") only after it has trusted the address and read the header, whichever accounts exist and whatever its
+        /// local fallback is set to; any other <c>401</c> is given to every name alike, so this server is being refused.
+        /// </summary>
+        /// <param name="config">The configuration (address and user header).</param>
+        /// <param name="token">The caller's cancellation.</param>
+        /// <returns>Whether Reclaimerr trusts this server's sign-in (false: it refuses it whoever is named), and the reason it gave, or null.</returns>
+        /// <exception cref="OperationCanceledException">Reclaimerr did not answer in time.</exception>
+        /// <exception cref="MaintainerrHttp.MaintainerrException">Reclaimerr answered with another failure status: nothing is known.</exception>
+        /// <exception cref="FormatException">Something signed the name in: that is not Reclaimerr's sign-in answering.</exception>
+        private async Task<(bool Trusted, string? Reason)> SignInTrustedAsync(PluginConfiguration config, CancellationToken token)
+        {
+            try
+            {
+                using (await ReclaimerrApi.SendAsUserAsync(_http, config, NoAccountName, HttpMethod.Get, "/api/account/me", null, Timeout, token).ConfigureAwait(false)) { }
+            }
+            catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401)
+            {
+                return (RefusedForAccountOnly(e.Reason), e.Reason);
+            }
+
+            throw new FormatException("A name that is no account was signed in.");
+        }
+
+        /// <summary>A refusal as the audit quotes it: the status, with Reclaimerr's own reason when it gave one.</summary>
+        /// <param name="reason">Reclaimerr's own reason for the refusal, or null when it gave none.</param>
+        /// <returns>"HTTP 401", or "HTTP 401: " and the reason.</returns>
+        private static string Said(string? reason) => string.IsNullOrWhiteSpace(reason) ? "HTTP 401" : $"HTTP 401: {reason}";
+
+        /// <summary>
+        /// The setup issue for an account's refusal that asking about the server (<see cref="SignInTrustedAsync"/>) did not show to be
+        /// about the account. It names no user and says what was seen. When the account and <see cref="NoAccountName"/> both got
+        /// Reclaimerr's plain "Not authenticated", that is how Reclaimerr answers every name while it does not take this server's
+        /// sign-in: the issue says so, what to set, and what its log line about an untrusted address tells (the line's absence proves
+        /// nothing: a proxy may drop the header, or the log may not show warnings). With another reason, none, or a question that
+        /// failed (something in between may be answering, or hiding Reclaimerr's answer), it says what to check and no more.
+        /// </summary>
+        /// <param name="reason">The reason given for refusing the account, or null when none was.</param>
+        /// <param name="serverReason">The reason given for refusing the name no account can have, or null when none was.</param>
+        /// <param name="plainly">Whether the account and the name no account can have both got Reclaimerr's plain "Not authenticated".</param>
+        /// <param name="askingFailed">Why asking about the server failed, or null when it was answered.</param>
+        /// <param name="header">The user header the plugin sends.</param>
+        /// <returns>The issue text for the audit's setup list.</returns>
+        private static string SignInRefused(string? reason, string? serverReason, bool plainly, string? askingFailed, string header)
+        {
+            if (plainly)
+            {
+                return $"Reclaimerr answered an account and a name no account can have the same way ({Said(reason)}). It does that for every name while its trusted-proxy sign-in is off, reads another header or does not trust this server's address, "
+                    + "so no user's Request permission was checked and Request removal fails for everyone, whatever their account. "
+                    + $"On Reclaimerr, set FORWARD_AUTH_ENABLED=true, FORWARD_AUTH_USER_HEADER={header} (the User header here) and FORWARD_AUTH_TRUSTED_PROXIES to the address this server's requests arrive from, then restart it. "
+                    + "If its log has \"authentication header from untrusted peer\", the address after it is the one to trust; if not, check that the sign-in is on, the header name, and that nothing in between drops the header.";
+            }
+
+            // Each answer is quoted as it came: together only when they were the same.
+            var seen = askingFailed != null
+                ? $"The trusted-proxy sign-in was refused for an account ({Said(reason)}), and asking Reclaimerr whether it takes this server's sign-in at all failed ({askingFailed})"
+                : string.Equals(reason, serverReason, StringComparison.Ordinal)
+                    ? $"The trusted-proxy sign-in was refused for an account and for a name no account can have alike ({Said(reason)})"
+                    : $"The trusted-proxy sign-in was refused for an account ({Said(reason)}) and for a name no account can have ({Said(serverReason)})";
+            // A question that failed may work the next time: say so before what to look at.
+            return seen + ", so no user's Request permission was checked. "
+                + (askingFailed != null ? "Run the audit again; if that keeps failing, check " : "Check ")
+                + $"FORWARD_AUTH_ENABLED, FORWARD_AUTH_USER_HEADER (the User header here is {header}) and FORWARD_AUTH_TRUSTED_PROXIES on Reclaimerr, its log, and that anything between this server and Reclaimerr passes the header and Reclaimerr's answers through.";
+        }
+
+        /// <summary>Jellyfin user id to every Reclaimerr account linked to it (username, active), from <c>/api/v1/users</c>.</summary>
+        private async Task<Dictionary<Guid, List<(string Username, bool Active)>>> ReadAccountsAsync(PluginConfiguration config, CancellationToken token)
+        {
+            const int limit = 1000;
+            var map = new Dictionary<Guid, List<(string, bool)>>();
+            for (var offset = 0; offset < 20 * limit; offset += limit)
+            {
+                using var doc = await TokenAsync(config, HttpMethod.Get, $"/api/v1/users?limit={limit}&offset={offset.ToString(CultureInfo.InvariantCulture)}", null, token).ConfigureAwait(false);
+                if (doc.RootElement.ValueKind != JsonValueKind.Array) throw new FormatException("Not a Reclaimerr user list.");
+                foreach (var u in doc.RootElement.EnumerateArray())
+                {
+                    if (u.ValueKind != JsonValueKind.Object || !u.TryGetProperty("username", out var name) || name.ValueKind != JsonValueKind.String || name.GetString() is not { Length: > 0 } username) continue;
+                    var active = u.TryGetProperty("is_active", out var a) && a.ValueKind == JsonValueKind.True;
+                    if (!u.TryGetProperty("media_identities", out var identities)) continue;
+                    foreach (var id in ReclaimerrApi.JellyfinIds(identities, "source_user_id"))
+                    {
+                        if (!map.TryGetValue(id, out var list)) map[id] = list = new List<(string, bool)>();
+                        list.Add((username, active));
+                    }
+                }
+
+                if (doc.RootElement.GetArrayLength() < limit) break;
+            }
+
+            return map;
         }
 
         private static string Iso(DateTimeOffset at) => at.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
@@ -645,159 +992,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             return known ?? throw new MaintainerrActions.ActionException("This item is not marked for removal.");
         }
 
-        /// <summary>Reclaimerr's own id for the title, by its TMDB id.</summary>
-        private async Task<int> ResolveMediaAsync(BaseItem item, string type, PluginConfiguration config, CancellationToken token)
+        /// <summary>
+        /// Reclaimerr's own id for the title (with its answer, for a movie's versions), by its TMDB id. When several of Reclaimerr's titles
+        /// share that id, the movie holding this item (by media server id) is the one; with none of them provably this item, it refuses.
+        /// </summary>
+        private async Task<(int Id, JsonElement Media)> ResolveMediaAsync(BaseItem item, string type, PluginConfiguration config, CancellationToken token)
         {
             var tmdb = item.GetProviderId(MetadataProvider.Tmdb);
             if (string.IsNullOrWhiteSpace(tmdb)) throw new MaintainerrActions.ActionException("This item has no TMDB id, so Reclaimerr cannot match it.");
             using var doc = await TokenAsync(config, HttpMethod.Get, $"/api/v1/{(type == "movie" ? "movies" : "series")}?tmdb_id={Uri.EscapeDataString(tmdb)}&per_page=5", null, token).ConfigureAwait(false);
+            var found = new List<(int, JsonElement)>();
             if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
             {
                 foreach (var m in items.EnumerateArray())
                 {
-                    if (m.ValueKind == JsonValueKind.Object && m.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number && id.TryGetInt32(out var n)) return n;
+                    if (m.ValueKind != JsonValueKind.Object || !m.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.Number || !id.TryGetInt32(out var n)) continue;
+                    found.Add((n, m.Clone()));
+                    if (m.TryGetProperty("versions", out var versions) && versions.ValueKind == JsonValueKind.Array
+                        && versions.EnumerateArray().Any(v => v.ValueKind == JsonValueKind.Object && v.TryGetProperty("service_item_id", out var si) && si.ValueKind == JsonValueKind.String && Guid.TryParse(si.GetString(), out var g) && g == item.Id)) return (n, m.Clone());
                 }
             }
 
-            throw new MaintainerrActions.ActionException("Reclaimerr does not have this title (run its Sync Media first).");
+            return found.Count switch
+            {
+                0 => throw new MaintainerrActions.ActionException("Reclaimerr does not have this title (run its Sync Media first)."),
+                1 => found[0],
+                _ => throw new MaintainerrActions.ActionException("Reclaimerr has more than one title with this TMDB id and none is provably this one, so nothing was sent. Act on it in Reclaimerr."),
+            };
         }
 
         private Task<JsonDocument> TokenAsync(PluginConfiguration config, HttpMethod method, string path, object? body, CancellationToken token)
-            => MaintainerrHttp.SendAsync(_http, config, method, config.ReclaimerrUrl.Trim().TrimEnd('/') + path, body == null ? null : JsonSerializer.Serialize(body), Timeout, null, token);
+            => ReclaimerrApi.TokenAsync(_http, config, method, path, body, Timeout, null, token);
 
         /// <summary>
-        /// A write to Reclaimerr that needs a login: as the Jellyfin user <paramref name="actingUser"/> (mapped to their
-        /// Reclaimerr username) through Reclaimerr's trusted-proxy sign-in when that is on, so the request carries their own
-        /// name; otherwise, or when Reclaimerr does not accept that user (401: the feature is off, this address is not
-        /// trusted, no such user), as the service account. Answers whether the user themself acted.
+        /// A token call that also names the acting Jellyfin user to Reclaimerr (the user header, same as a user's own request), so its
+        /// history credits them instead of the token. Only with "Let users request removals" on; a user with no active linked
+        /// Reclaimerr account, or a lookup that fails, sends no header and the call stays the token's.
         /// </summary>
-        private (DateTimeOffset At, Dictionary<string, string> ByJellyfinName)? _identities;
-        private static readonly TimeSpan IdentityTtl = TimeSpan.FromMinutes(5);
-
-        /// <summary>
-        /// The Reclaimerr username to act as for a Jellyfin user: the configured mapping, else the Reclaimerr account linked to
-        /// that Jellyfin user (a person who signed in to Reclaimerr with their Jellyfin login gets an account of its own, for
-        /// example <c>sam_user</c>, and Reclaimerr records the link, so nothing has to be created or mapped by hand), else the
-        /// same name. The links are read with the service account and kept for five minutes (read again when a user is missing).
-        /// </summary>
-        internal async Task<string?> ResolveUserAsync(PluginConfiguration config, string jellyfinName, CancellationToken token)
+        private async Task<JsonDocument> ActingTokenAsync(PluginConfiguration config, Guid? actingUserId, HttpMethod method, string path, object? body, CancellationToken token)
         {
-            if (ReclaimerrSession.MappedUser(config, jellyfinName) is { } mapped) return mapped;
-            if (ReclaimerrSession.HasAccount(config))
+            string? who = null;
+            if (actingUserId is { } id && RequestsEnabled(config))
             {
-                var key = jellyfinName.Trim().ToLowerInvariant();
-                var cached = _identities;
-                if (cached is { } c && DateTimeOffset.UtcNow - c.At < IdentityTtl && c.ByJellyfinName.TryGetValue(key, out var hit)) return hit;
-                // Missing or stale: read the links again, but not more than once a minute for names that have none.
-                if (cached is not { } known || DateTimeOffset.UtcNow - known.At > TimeSpan.FromMinutes(1))
-                {
-                    try { _identities = (DateTimeOffset.UtcNow, await ReadIdentitiesAsync(config, token).ConfigureAwait(false)); }
-                    catch (Exception ex) when (ex is not OperationCanceledException) { _logger.Warning($"[Reclaimerr] Could not read the linked Jellyfin users ({MaintainerrHttp.Describe(ex)})."); }
-                    if (_identities is { } fresh && fresh.ByJellyfinName.TryGetValue(key, out var found)) return found;
-                }
+                try { who = await ReclaimerrUserAsync(config, id, token).ConfigureAwait(false); }
+                catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested) { _logger.Warning($"[Reclaimerr] Could not look up the acting user ({MaintainerrHttp.Describe(ex)}); sending the call as the token."); }
             }
 
-            // With a service account, a user without a mapping or link is not guessed by name (that could be an unrelated
-            // Reclaimerr account); null means "use the service account". Without one, the same name is the only option.
-            return ReclaimerrSession.HasAccount(config) ? null : jellyfinName;
-        }
-
-        /// <summary>
-        /// The Jellyfin name of a Reclaimerr account (the other way round from <see cref="ResolveUserAsync"/>, upstream 1de354c0): the
-        /// configured mapping, else the Jellyfin login Reclaimerr linked that account to (it knows a person who signed in with Jellyfin
-        /// as, say, <c>ATM_user</c>). Null when neither says.
-        /// </summary>
-        public async Task<string?> JellyfinNameOfAsync(PluginConfiguration config, string reclaimerrUser, CancellationToken token)
-        {
-            if (string.IsNullOrWhiteSpace(reclaimerrUser)) return null;
-            if (ReclaimerrSession.MappedJellyfinUser(config, reclaimerrUser) is { } mapped) return mapped;
-            if (!ReclaimerrSession.HasAccount(config)) return null;
-            var cached = _identities;
-            if (cached is not { } c || DateTimeOffset.UtcNow - c.At > IdentityTtl)
-            {
-                try { _identities = (DateTimeOffset.UtcNow, await ReadIdentitiesAsync(config, token).ConfigureAwait(false)); }
-                catch (Exception ex) when (ex is not OperationCanceledException) { _logger.Warning($"[Reclaimerr] Could not read the linked Jellyfin users ({MaintainerrHttp.Describe(ex)})."); }
-            }
-
-            if (_identities is { } fresh)
-            {
-                foreach (var pair in fresh.ByJellyfinName)
-                    if (string.Equals(pair.Value, reclaimerrUser, StringComparison.OrdinalIgnoreCase)) return pair.Key;
-            }
-
-            return null;
-        }
-
-        /// <summary>Jellyfin username (lower case) to the Reclaimerr username its linked account has.</summary>
-        private async Task<Dictionary<string, string>> ReadIdentitiesAsync(PluginConfiguration config, CancellationToken token)
-        {
-            var names = new Dictionary<int, string>();
-            using (var users = await ReclaimerrSession.SendAsync(_http, config, HttpMethod.Get, "/api/account/users", null, Timeout, null, token).ConfigureAwait(false))
-            {
-                var list = users.RootElement;
-                if (list.ValueKind == JsonValueKind.Object && list.TryGetProperty("items", out var inner)) list = inner;
-                if (list.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var u in list.EnumerateArray())
-                    {
-                        if (u.ValueKind == JsonValueKind.Object && u.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number && id.TryGetInt32(out var n)
-                            && u.TryGetProperty("username", out var name) && name.ValueKind == JsonValueKind.String && name.GetString() is { Length: > 0 } text) names[n] = text;
-                    }
-                }
-            }
-
-            var map = new Dictionary<string, string>(StringComparer.Ordinal);
-            var clashes = new HashSet<string>(StringComparer.Ordinal);
-            using var doc = await ReclaimerrSession.SendAsync(_http, config, HttpMethod.Get, "/api/account/users/media-identities", null, Timeout, null, token).ConfigureAwait(false);
-            var identities = doc.RootElement;
-            if (identities.ValueKind == JsonValueKind.Object && identities.TryGetProperty("items", out var items)) identities = items;
-            if (identities.ValueKind != JsonValueKind.Array) return map;
-            foreach (var i in identities.EnumerateArray())
-            {
-                if (i.ValueKind != JsonValueKind.Object) continue;
-                if (i.TryGetProperty("source_service", out var svc) && svc.ValueKind == JsonValueKind.String && !string.Equals(svc.GetString(), "jellyfin", StringComparison.OrdinalIgnoreCase)) continue;
-                if (!i.TryGetProperty("username", out var un) || un.ValueKind != JsonValueKind.String || un.GetString() is not { Length: > 0 } jf) continue;
-                if (!i.TryGetProperty("user_id", out var uid) || uid.ValueKind != JsonValueKind.Number || !uid.TryGetInt32(out var linked) || !names.TryGetValue(linked, out var reclaimerrName)) continue;
-                // The same Jellyfin name linked to different Reclaimerr users (two media servers): ambiguous, so nobody is guessed.
-                var key = jf.Trim().ToLowerInvariant();
-                if (map.TryGetValue(key, out var previous) && previous != reclaimerrName) clashes.Add(key);
-                map[key] = reclaimerrName;
-            }
-
-            foreach (var key in clashes) map.Remove(key);
-
-            return map;
-        }
-
-        /// <summary>
-        /// Send as the Jellyfin user when acting as the user is on and they have a Reclaimerr account, else (or when Reclaimerr refuses
-        /// them) as the service account, with <paramref name="serviceBody"/> when one is given. True when sent as the user.
-        /// </summary>
-        private async Task<bool> SessionAsync(PluginConfiguration config, HttpMethod method, string path, object body, string? actingUser, CancellationToken token, bool adminAction = false, object? serviceBody = null)
-        {
-            var json = JsonSerializer.Serialize(body);
-            if (ReclaimerrSession.ActsAsUser(config) && !string.IsNullOrWhiteSpace(actingUser))
-            {
-                var who = await ResolveUserAsync(config, actingUser!, token).ConfigureAwait(false);
-                if (who != null)
-                try
-                {
-                    using var _ = await ReclaimerrSession.SendAsUserAsync(_http, config, who, method, path, json, Timeout, null, token).ConfigureAwait(false);
-                    return true;
-                }
-                catch (MaintainerrHttp.MaintainerrException e) when ((e.Status == 401 || (adminAction && e.Status == 403)) && ReclaimerrSession.HasAccount(config))
-                {
-                    _logger.Info($"[Reclaimerr] Reclaimerr did not accept '{who}' (no such user, or its trusted-proxy sign-in is off); using the service account.");
-                }
-                catch (MaintainerrHttp.MaintainerrException e) when (e.Status == 401)
-                {
-                    throw new MaintainerrActions.ActionException($"Reclaimerr has no user '{who}' (or its trusted-proxy sign-in is off). Add that user in Reclaimerr, map it in the Reclaimerr card, or set a service account.");
-                }
-            }
-
-            if (!ReclaimerrSession.HasAccount(config)) throw new MaintainerrActions.ActionException("This needs a Reclaimerr service account (username and password in the Reclaimerr card).");
-            using var __ = await ReclaimerrSession.SendAsync(_http, config, method, path, serviceBody == null ? json : JsonSerializer.Serialize(serviceBody), Timeout, null, token).ConfigureAwait(false);
-            return false;
+            return await ReclaimerrApi.TokenAsync(_http, config, method, path, body, Timeout, null, token, who).ConfigureAwait(false);
         }
 
         private async Task<MaintainerrItemState> AfterAsync(BaseItem item, PluginConfiguration config, CancellationToken token)
@@ -809,6 +1050,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
         /// <summary>The Leaving soon facts are read again now (the answer needs them); stamping the tag cache happens in the background.</summary>
         private async Task RefreshAfterAsync(PluginConfiguration config, CancellationToken token)
         {
+            ForgetLists();
             try { await _leaving.RefreshAsync(config, force: true, token).ConfigureAwait(false); }
             catch (Exception ex) when (ex is not OperationCanceledException) { _logger.Warning($"[Reclaimerr] The refresh after an action failed: {ex.Message}"); }
             _cache.QueueLeavingPublish();

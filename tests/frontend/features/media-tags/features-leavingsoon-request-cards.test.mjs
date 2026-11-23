@@ -43,6 +43,7 @@ test('a request says what it would delete, approving names that scope and carrie
   const series = { mediaType: 'series', requestedBy: 'x', status: 'pending', title: 'Sherlock', year: 2010 };
   const h = setup(t, {
     ...base,
+    graceDays: 0,
     requests: [
       { ...series, id: 1, scope: 'season', seasonNumber: 2 },
       { ...series, id: 2, scope: 'episode', seasonNumber: 2, episodeNumber: 5 },
@@ -64,10 +65,10 @@ test('a request says what it would delete, approving names that scope and carrie
 
   cards[0].querySelector('.je-ls-icon-btn.approve').click();
   assert.equal(cards[0].querySelector('.je-ls-warn').textContent, 'leavingsoon_confirm_delete_scope:leavingsoon_scope_season:2', 'the warning names the season');
-  cards[0].querySelector('.je-ls-note-input').value = '  gone in a week  ';
+  cards[0].querySelector('input[type="text"].je-ls-note-input').value = '  gone in a week  ';
   cards[0].querySelector('.je-ls-btn.danger').click();
   await h.settle();
-  assert.deepEqual(h.calls.find(c => c.path === 'reclaimerr/requests/1/approve').body, { note: 'gone in a week' });
+  assert.deepEqual(h.calls.find(c => c.path === 'reclaimerr/requests/1/approve').body, { note: 'gone in a week', when: 'default', graceDays: 0 }, 'the grace period the confirm promised goes along');
 
   cards[2].querySelector('.je-ls-icon-btn.approve').click();
   assert.equal(cards[2].querySelector('.je-ls-warn').textContent, 'leavingsoon_confirm_delete_scope:leavingsoon_scope_version · 2160p · 3.0 GB');
@@ -82,6 +83,18 @@ test('the page says so when the requests could not be read, and a leaving card s
   assert.equal(card.querySelector('.je-ls-scope').textContent, 'leavingsoon_one_version');
   assert.match(card.textContent, /leavingsoon_leaves_on:.* · 3.0 GB/, 'the date and the size share a line');
   assert.equal(card.querySelector('.je-ls-year').textContent, '(2026)');
+});
+
+test('an administrator is told why the requests could not be read; anyone else only that they could not', async t => {
+  const reason = 'API token requires the delete_requests:read scope';
+  const admin = setup(t, { ...base, requestsUnavailable: true, requestsError: reason });
+  admin.JE.leavingSoonPage.renderForCustomTab(admin.$('#host'));
+  await admin.settle();
+  assert.equal(admin.$('.je-ls-notice').textContent, `leavingsoon_requests_unavailable_reason:${reason}`, 'the reason, not the refresh advice');
+  const viewer = setup(t, { ...base, admin: false, requestsUnavailable: true, requestsError: reason });
+  viewer.JE.leavingSoonPage.renderForCustomTab(viewer.$('#host'));
+  await viewer.settle();
+  assert.equal(viewer.$('.je-ls-notice').textContent, 'leavingsoon_requests_unavailable');
 });
 
 test('dates read like the Requests page: day, short month, year for the leave date, and "ago" for a recent request', async t => {

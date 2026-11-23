@@ -29,9 +29,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
 
         /// <summary>
         /// What is leaving, soonest first (undated last): <c>{provider, admin, canRequest, actions, items[], requests[], mine[],
-        /// requestsUnavailable, canSchedule, graceDays}</c>. Items the user cannot see are left out; each says what leaving frees
-        /// (<c>size</c>). <c>canSchedule</c> says whether an approval can be given a day (administrators, with a Reclaimerr that can
-        /// schedule), <c>graceDays</c> the delay Reclaimerr gives one that names no day (null when unknown).
+        /// requestsUnavailable, requestsError, graceDays, source}</c>. Items the user cannot open (their library included) are left
+        /// out; each says what leaving frees (<c>size</c>). <c>graceDays</c> is the delay Reclaimerr gives an approval that names no
+        /// day (administrators; null when unknown), <c>requestsError</c> why the requests could not be read and <c>source</c> which
+        /// Reclaimerr they came from (both administrators only; upstream da3d9ee9).
         /// </summary>
         /// <param name="leaving">The Leaving soon facts.</param>
         /// <param name="reclaimerr">The Reclaimerr actions (deletion requests).</param>
@@ -51,10 +52,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
             var items = new List<object>();
             foreach (var (id, deleteAt) in leaving.MaintainerrItems(config).OrderBy(m => m.DeleteAt ?? long.MaxValue))
             {
+                // Standalone: the library the item is in must be one the user may open, not only its rating (as the item list route does).
                 var item = _libraryManager.GetItemById(id);
-                if (item == null || !item.IsVisible(user)) continue;
+                if (item == null || !item.IsVisibleStandalone(user)) continue;
                 var versionOnly = leaving.IsVersionOnly(id, config);
-                items.Add(DescribeLeaving(item, deleteAt, versionOnly, versionOnly ? await VersionSizeAsync(leaving, reclaimerr, item, config, token).ConfigureAwait(false) : SizeOf(item)));
+                // What leaving frees: the removal tool's own figure (Reclaimerr's, which alone knows which copy goes), else the library's.
+                var size = leaving.SizeOf(id, config);
+                items.Add(DescribeLeaving(item, deleteAt, versionOnly, versionOnly ? size : size ?? SizeOf(item)));
                 if (items.Count >= LeavingSoonMaxItems) break;
             }
 
@@ -63,45 +67,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
             IReadOnlyList<LeavingSoonRequestDto> requests = Array.Empty<LeavingSoonRequestDto>();
             IReadOnlyList<LeavingSoonRequestDto> mine = Array.Empty<LeavingSoonRequestDto>();
             var requestsUnavailable = false;
-            var canSchedule = false;
+            string? requestsError = null;
             int? graceDays = null;
             if (usesReclaimerr && ReclaimerrActions.Enabled(config))
             {
-                // Both lists are read at once under one short budget: a slow Reclaimerr leaves them short instead of holding the
-                // page, and the page is told so it can say the requests could not be read (rather than showing none). Rows that
-                // were read stay when only their title lookups run out of it (upstream 40738412 lost them with the lookups).
+                // Both lists and the grace period are read at once under one short budget: a slow Reclaimerr leaves them short instead
+                // of holding the page, and the page is told so it can say the requests could not be read (rather than showing none),
+                // and an administrator why (Reclaimerr's own reason, such as a scope the token lacks).
                 using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
                 budget.CancelAfter(reclaimerr.ListBudget);
                 async Task<IReadOnlyList<LeavingSoonRequestDto>> Load(bool pending)
                 {
-                    IReadOnlyList<ReclaimerrRequestRow> rows;
-                    try { rows = await reclaimerr.RequestsAsync(config, user.Username, mine: !pending, budget.Token).ConfigureAwait(false); }
-                    catch (OperationCanceledException) when (!token.IsCancellationRequested) { requestsUnavailable = true; return Array.Empty<LeavingSoonRequestDto>(); }
-                    return await DescribeRequestsAsync(reclaimerr, rows, config, user, budget.Token, token).ConfigureAwait(false);
-                }
-
-                var pendingTask = admin ? Load(true) : Task.FromResult<IReadOnlyList<LeavingSoonRequestDto>>(Array.Empty<LeavingSoonRequestDto>());
-                var mineTask = Load(false);
-                // Whether an approval can be given a day, and the delay one gets when none is named, so the page can say what
-                // "Reclaimerr's grace period" means (upstream 1de354c0). Only asked for administrators, who are the ones who
-                // approve, and while the two lists are read (upstream asks first, which spends the lists' budget). Unknown is
-                // "cannot": the page then offers the approval it always had.
-                if (admin)
-                {
                     try
                     {
-                        canSchedule = await reclaimerr.SchedulingSupportedAsync(config, budget.Token).ConfigureAwait(false);
-                        if (canSchedule) graceDays = await reclaimerr.GracePeriodDaysAsync(config, budget.Token).ConfigureAwait(false);
+                        var (rows, error) = await reclaimerr.RequestsAsync(config, user.Id, mine: !pending, budget.Token).ConfigureAwait(false);
+                        if (rows == null) { requestsUnavailable = true; requestsError ??= error; return Array.Empty<LeavingSoonRequestDto>(); }
+                        return DescribeRequests(rows, user);
                     }
-                    catch (OperationCanceledException) when (!token.IsCancellationRequested)
-                    {
-                        canSchedule = false;
-                        graceDays = null;
-                    }
+                    catch (OperationCanceledException) when (!token.IsCancellationRequested) { requestsUnavailable = true; requestsError ??= "Reclaimerr did not answer in time"; return Array.Empty<LeavingSoonRequestDto>(); }
                 }
 
+                // The delay an approval gets when no day is named, so the page can say what "Reclaimerr's grace period" means (only
+                // asked for administrators, who are the ones who approve). Read alongside the lists, never ahead of them.
+                async Task<int?> Grace()
+                {
+                    try { return await reclaimerr.GracePeriodDaysAsync(config, budget.Token).ConfigureAwait(false); }
+                    catch (OperationCanceledException) when (!token.IsCancellationRequested) { return null; }
+                }
+
+                var graceTask = admin ? Grace() : Task.FromResult<int?>(null);
+                var pendingTask = admin ? Load(true) : Task.FromResult<IReadOnlyList<LeavingSoonRequestDto>>(Array.Empty<LeavingSoonRequestDto>());
+                // A user's own requests go with Request removal: while requests are off there is no list of them to read.
+                var mineTask = ReclaimerrActions.RequestsEnabled(config) ? Load(false) : Task.FromResult<IReadOnlyList<LeavingSoonRequestDto>>(Array.Empty<LeavingSoonRequestDto>());
                 requests = await pendingTask.ConfigureAwait(false);
                 mine = await mineTask.ConfigureAwait(false);
+                graceDays = await graceTask.ConfigureAwait(false);
             }
 
             return Ok(new
@@ -114,8 +114,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
                 requests,
                 mine,
                 requestsUnavailable,
-                canSchedule,
+                // Why, for administrators (Reclaimerr's own reason, such as a scope the token lacks); others only learn that they could not be read.
+                requestsError = admin ? requestsError : null,
                 graceDays,
+                // Which Reclaimerr the requests came from: a review sends it back, so a card read from one is never approved at another.
+                // Administrators only (they are the ones who review): it is a digest of the address, which nobody else needs.
+                source = usesReclaimerr && admin ? ReclaimerrApi.SourceId(config) : null,
             });
         }
 
@@ -148,86 +152,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
         }
 
         /// <summary>
-        /// Requests with the Jellyfin title (matched by TMDB id, only one the viewer can see) and the Jellyfin person: the
-        /// request's reason starts "Requested by NAME from Jellyfin" whoever filed it, so the person shows even when
-        /// Reclaimerr knows them as <c>NAME_user</c> or the service account. The title lookups run under <paramref name="budget"/>;
-        /// one that fails or runs out of it only leaves that card without its Jellyfin link.
+        /// Requests with the Jellyfin title and person they are about, both by the ids Reclaimerr gives (upstream da3d9ee9): the first
+        /// item it names that the viewer can open (its library included; none: the card neither links nor shows the item's own poster),
+        /// and the Jellyfin user the requester's Reclaimerr account is linked to (none: the card shows the Reclaimerr name).
         /// </summary>
-        private async Task<IReadOnlyList<LeavingSoonRequestDto>> DescribeRequestsAsync(ReclaimerrActions reclaimerr, IReadOnlyList<ReclaimerrRequestRow> rows, PluginConfiguration config, JUser viewer, CancellationToken budget, CancellationToken token)
+        private IReadOnlyList<LeavingSoonRequestDto> DescribeRequests(IReadOnlyList<ReclaimerrRequestRow> rows, JUser viewer)
         {
-            // One title lookup per distinct title, all at once (each is kept after the first read).
-            async Task<string?> Tmdb(string mediaType, int mediaId)
-            {
-                try { return await reclaimerr.TmdbIdAsync(config, mediaType, mediaId, budget).ConfigureAwait(false); }
-                catch (OperationCanceledException) when (!token.IsCancellationRequested) { return null; }
-            }
-
-            var tmdbs = new Dictionary<(string, int), Task<string?>>();
-            foreach (var r in rows) tmdbs.TryAdd((r.MediaType, r.MediaId), Tmdb(r.MediaType, r.MediaId));
-            await Task.WhenAll(tmdbs.Values).ConfigureAwait(false);
             var list = new List<LeavingSoonRequestDto>(rows.Count);
             foreach (var r in rows)
             {
-                string? itemId = null;
-                var tmdb = tmdbs[(r.MediaType, r.MediaId)].Result;
-                if (tmdb != null)
-                {
-                    var query = new InternalItemsQuery(viewer)
-                    {
-                        IncludeItemTypes = new[] { r.MediaType == "movie" ? Jellyfin.Data.Enums.BaseItemKind.Movie : Jellyfin.Data.Enums.BaseItemKind.Series },
-                        HasAnyProviderId = new Dictionary<string, string> { ["Tmdb"] = tmdb },
-                        Recursive = true,
-                        IsVirtualItem = false,
-                        Limit = 5,
-                    };
-                    var found = _libraryManager.GetItemList(query).FirstOrDefault(i => i.IsVisible(viewer));
-                    itemId = found?.Id.ToString("N");
-                }
-
-                var (person, note) = ParseLeavingSoonReason(r.Reason);
-                // Filed straight in Reclaimerr (no "Requested by NAME from Jellyfin" text): a Jellyfin user of the same name is the
-                // person, else the one the mapping or Reclaimerr's link names for that account (upstream 1de354c0: Reclaimerr may
-                // know them as, say, ATM_user).
-                var jellyfinUser = person != null ? _userManager.GetUserByName(person) : null;
-                if (person == null && !string.IsNullOrWhiteSpace(r.RequestedBy))
-                {
-                    jellyfinUser = _userManager.GetUserByName(r.RequestedBy);
-                    if (jellyfinUser == null && await JellyfinNameOfAsync(reclaimerr, config, r.RequestedBy, budget, token).ConfigureAwait(false) is { } named) jellyfinUser = _userManager.GetUserByName(named);
-                }
-
-                list.Add(new LeavingSoonRequestDto(r.Id, r.Title, r.Year, r.MediaType, r.Status, r.CreatedAt, r.RequestedBy, note, jellyfinUser?.Username ?? person, jellyfinUser?.Id.ToString("N"), itemId, r.PosterPath,
+                var itemId = (r.ItemIds ?? Array.Empty<Guid>()).Select(id => _libraryManager.GetItemById(id)).FirstOrDefault(i => i != null && i.IsVisibleStandalone(viewer))?.Id.ToString("N");
+                var person = (r.RequesterIds ?? Array.Empty<Guid>()).Select(id => _userManager.GetUserById(id)).FirstOrDefault(u => u != null);
+                list.Add(new LeavingSoonRequestDto(r.Id, r.Title, r.Year, r.MediaType, r.Status, r.CreatedAt, r.RequestedBy, string.IsNullOrWhiteSpace(r.Reason) ? null : r.Reason.Trim(), person?.Username, person?.Id.ToString("N"), itemId, r.PosterPath,
                     r.Scope, r.SeasonNumber, r.EpisodeNumber, r.VersionResolution, r.VersionSize, r.AdminNotes, r.ExecutionError, r.Deferred, r.ScheduledAt, r.ScheduleState));
             }
 
             return list;
         }
 
-        /// <summary>The Jellyfin name of a Reclaimerr account, read under <paramref name="budget"/>; null when it runs out of it.</summary>
-        private static async Task<string?> JellyfinNameOfAsync(ReclaimerrActions reclaimerr, PluginConfiguration config, string reclaimerrUser, CancellationToken budget, CancellationToken token)
-        {
-            try { return await reclaimerr.JellyfinNameOfAsync(config, reclaimerrUser, budget).ConfigureAwait(false); }
-            catch (OperationCanceledException) when (!token.IsCancellationRequested) { return null; }
-        }
-
-        /// <summary>The size of the one version of a movie that is leaving, from Reclaimerr (it alone knows which copy); a slow answer is skipped.</summary>
-        private static async Task<long?> VersionSizeAsync(LeavingSoonService leaving, ReclaimerrActions reclaimerr, BaseItem item, PluginConfiguration config, CancellationToken token)
-        {
-            if (!LeavingSoonSources.UsesReclaimerr(config) || !ReclaimerrActions.Enabled(config) || leaving.CollectionOf(item.Id, config) is not { } owner) return null;
-            try
-            {
-                using var budget = CancellationTokenSource.CreateLinkedTokenSource(token);
-                budget.CancelAfter(TimeSpan.FromSeconds(4));
-                return await reclaimerr.VersionSizeAsync(item, owner, config, budget.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!token.IsCancellationRequested)
-            {
-                return null;
-            }
-        }
-
         /// <summary>
         /// What leaving frees, from the library's own file sizes: a movie's file, or all of a series' episode files. Null when no
-        /// size is known (Reclaimerr's candidate list carries none).
+        /// size is known. Used when the removal tool gives none (Maintainerr never does).
         /// </summary>
         private long? SizeOf(BaseItem item)
         {
@@ -252,20 +197,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags
             {
                 return null;
             }
-        }
-
-        /// <summary>"Requested by NAME from Jellyfin: note" to (NAME, note); any other reason is all note.</summary>
-        internal static (string? Person, string? Note) ParseLeavingSoonReason(string? reason)
-        {
-            if (string.IsNullOrWhiteSpace(reason)) return (null, null);
-            const string head = "Requested by ";
-            const string tail = " from Jellyfin";
-            if (!reason.StartsWith(head, StringComparison.Ordinal)) return (null, reason.Trim());
-            var end = reason.IndexOf(tail, head.Length, StringComparison.Ordinal);
-            if (end <= head.Length) return (null, reason.Trim());
-            var person = reason[head.Length..end].Trim();
-            var rest = reason[(end + tail.Length)..].TrimStart(':', ' ').Trim();
-            return (person.Length == 0 ? null : person, rest.Length == 0 ? null : rest);
         }
 
         /// <summary>The page's view of one item.</summary>
