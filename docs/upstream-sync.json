@@ -3308,7 +3308,8 @@
       ],
       "status": "ported",
       "rewriteCommits": [
-        "acf5eac22ba0049dfd5325b987de5be0c3511ed1"
+        "acf5eac22ba0049dfd5325b987de5be0c3511ed1",
+        "50954916a0c0f44f8020b267689db979bd9284d4"
       ],
       "unmappedPaths": [
         "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
@@ -3617,7 +3618,8 @@
       ],
       "status": "ported",
       "rewriteCommits": [
-        "a2991112d520d753f69e24d9816181e6556359de"
+        "a2991112d520d753f69e24d9816181e6556359de",
+        "50954916a0c0f44f8020b267689db979bd9284d4"
       ],
       "unmappedPaths": [
         "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
@@ -3690,6 +3692,30 @@
       ],
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p111-home-row.keep-before.txt, p111-home-row.keep-after.txt, p111-home-row.mjs, p111.tests.txt, p111.smoke.txt",
       "notes": "The behaviour arrived here first, in 2beb1e94 (fix(hidden-content), #1096, before upstream's commit): the same rule, byte for byte, `.verticalSection:has(.card.je-hidden):not(:has(.card:not(.je-hidden))) { display: none !important; }` with upstream's comment, in client/src/features/hidden-content/hidden-content.css, the stylesheet that hidden-content-styles.js injects as `je-hidden-content`, with a test of a direct hide and an unhide. This commit applies upstream's docs sentence (docs/enhanced/enhanced-features.md, git apply --3way, clean) and adds upstream's test beside the existing one in tests/frontend/features/hidden-content/features-hidden-regressions.test.mjs (upstream: tests/frontend/features/features-hidden.test.mjs): the row hides with filterNativeCards, comes back when filtering is turned off, hides again when it is turned on, and comes back when one card is restored. The one difference is where the test reaches the feature: getHiddenData, refreshNativeCardVisibility, restoreNativeCardsForIds and injectCSS are read from JE.internals.hiddenContent, where this tree keeps them, not from JE.hiddenContent. The test fails with the rule removed from hidden-content.css and passes with it. Lab parity: hiding all 16 cards of the home row Recently Added in Shows hides that row's heading and leaves Recently Added in Movies shown, on upstream's build at e16cc10b and on this tree alike; unhiding them brings it back on both."
+    },
+    {
+      "sha": "499376848a96ed3a04a7359dcc50a55058e75e8a",
+      "date": "2026-11-23T09:26:04Z",
+      "subject": "chore(ci)(deps): bump the github-actions group with 5 updates (#1099)",
+      "class": "deps",
+      "features": [],
+      "issues": [
+        "#1099"
+      ],
+      "release": null,
+      "size": {
+        "files": 10,
+        "insertions": 18,
+        "deletions": 18
+      },
+      "paths": [
+        ".github/workflows/ (10 files)"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "4ead3e5ecab3808a193f54e8dcb61c9af6951aa4"
+      ],
+      "notes": "Applied as is (git apply --3way, clean): the same five action pins in the ten workflows upstream changed: step-security/harden-runner 2.23.0 (aebdcf61), actions/create-github-app-token 3.4.0 (f418cff3), actions/dependency-review-action 5.0.1 (bbc44d14), ossf/scorecard-action 2.6.0 (23f22cd4) and trufflesecurity/trufflehog 3.100.0 (d232362a). The two workflows only the rewrite has, rewrite-validation.yml and validate-manifest.yml, use none of these actions, so nothing else changes; git grep finds none of the old pins left."
     }
   ]
 }
