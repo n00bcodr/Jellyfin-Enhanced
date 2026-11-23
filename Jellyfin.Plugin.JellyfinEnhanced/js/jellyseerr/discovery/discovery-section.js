@@ -30,8 +30,7 @@
         if (page === 'detail') section.classList.add('detailVerticalSection');
         section.setAttribute(`data-jellyseerr-${key}-discovery`, 'true');
         section.appendChild(header);
-        const itemsContainer = document.createElement('div');
-        itemsContainer.setAttribute('is', 'emby-itemscontainer');
+        const itemsContainer = document.createElement('div', 'emby-itemscontainer');
         itemsContainer.className = 'itemsContainer vertical-wrap';
         section.appendChild(itemsContainer);
         return section;
