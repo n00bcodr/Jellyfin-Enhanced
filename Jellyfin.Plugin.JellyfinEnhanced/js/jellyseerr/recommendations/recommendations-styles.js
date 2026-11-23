@@ -73,17 +73,20 @@
       .je-recommendations-section .emby-scroller::-webkit-scrollbar {
         display: none;
       }
-      .je-recommendations-section .emby-scroller.je-fade-r {
-        -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - var(--je-fade)), transparent);
-        mask-image: linear-gradient(90deg, #000 calc(100% - var(--je-fade)), transparent);
-      }
-      .je-recommendations-section .emby-scroller.je-fade-l {
-        -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade));
-        mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade));
-      }
-      .je-recommendations-section .emby-scroller.je-fade-l.je-fade-r {
-        -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade), #000 calc(100% - var(--je-fade)), transparent);
-        mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade), #000 calc(100% - var(--je-fade)), transparent);
+      /* Touch screens: Android WebView drops whole rows of posters while scrolling under a mask. */
+      @media (hover: hover) {
+        .je-recommendations-section .emby-scroller.je-fade-r {
+          -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - var(--je-fade)), transparent);
+          mask-image: linear-gradient(90deg, #000 calc(100% - var(--je-fade)), transparent);
+        }
+        .je-recommendations-section .emby-scroller.je-fade-l {
+          -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade));
+          mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade));
+        }
+        .je-recommendations-section .emby-scroller.je-fade-l.je-fade-r {
+          -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade), #000 calc(100% - var(--je-fade)), transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 var(--je-fade), #000 calc(100% - var(--je-fade)), transparent);
+        }
       }
       .je-scroll-btn {
         position: absolute;
@@ -239,6 +242,152 @@
       }
       .je-recommendations-category-header h1 {
         margin: 0;
+      }
+
+      /* ---- Filters: the page's, at the end of its title bar, and the same on a category page's header.
+         All | Movies | Series is one segmented control (a faint track holding the three, the chosen one a
+         light chip with dark words); the Filters button (the "More from" sections' button and menu) is a
+         pill of the same ground, its word beside Jellyfin's filter icon, filled like a chosen segment while
+         anything in it narrows the page ("Filters: 2"). What is set is said under the bar, each with its x. */
+      /* (The bar keeps the room above it that the title's own heading had, so it is not stuck until scrolled.) */
+      .je-recommendations-title.je-reco-header {
+        flex-wrap: wrap;
+        row-gap: 0.4em;
+        margin-top: 0.67em;
+      }
+      .je-reco-header .je-reco-heading {
+        display: flex;
+        align-items: center;
+        gap: 0.6em;
+        min-width: 0;
+        margin: 0;
+        font: inherit;
+        letter-spacing: inherit;
+      }
+      .je-reco-tools,
+      .je-recommendations-category-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.6em;
+        flex: none;
+      }
+      .je-reco-tools {
+        margin-inline-start: auto;
+        font-size: 1rem;
+        font-weight: 400;
+        letter-spacing: normal;
+      }
+      .je-recommendations-category-controls > :empty { display: none; }
+      .je-recommendations-category-header .jellyseerr-discovery-filter,
+      .je-reco-tools .jellyseerr-discovery-filter {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 3px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        background: color-mix(in srgb, currentColor 8%, transparent);
+      }
+      .je-recommendations-category-header .jellyseerr-discovery-filter .jellyseerr-filter-btn.emby-tab-button,
+      .je-reco-tools .jellyseerr-discovery-filter .jellyseerr-filter-btn.emby-tab-button {
+        border-radius: 999px;
+        padding: 0 0.95em;
+        min-height: 34px;
+        margin: 0;
+      }
+      /* (The one in use inverted, in the theme's own colours: its text for the ground, its page for the words.) */
+      .je-recommendations-category-header .jellyseerr-filter-btn.emby-tab-button-active,
+      .je-reco-tools .jellyseerr-filter-btn.emby-tab-button-active {
+        background: var(--jf-palette-text-primary, #e8e8e8);
+        color: var(--jf-palette-background-default, #101010);
+      }
+      .je-recommendations-category-header .jellyseerr-filter-btn:focus-visible,
+      .je-reco-tools .jellyseerr-filter-btn:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px var(--jf-palette-primary-main, #00a4dc);
+      }
+      .je-reco-tools .jellyseerr-filters-btn.emby-tab-button,
+      .je-recommendations-category-controls .jellyseerr-filters-btn.emby-tab-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4em;
+        margin: 0;
+        min-height: 40px;
+        padding: 0 1.05em 0 0.85em;
+        border-radius: 999px;
+        color: var(--jf-palette-text-primary, #fff);
+        background: rgba(255, 255, 255, 0.08);
+        background: color-mix(in srgb, currentColor 8%, transparent);
+      }
+      .je-reco-tools .jellyseerr-filters-btn.emby-tab-button:hover,
+      .je-recommendations-category-controls .jellyseerr-filters-btn.emby-tab-button:hover { background: rgba(255, 255, 255, 0.14); background: color-mix(in srgb, currentColor 14%, transparent); }
+      .je-reco-tools .jellyseerr-filters-btn.emby-tab-button[data-on],
+      .je-recommendations-category-controls .jellyseerr-filters-btn.emby-tab-button[data-on] {
+        background: var(--jf-palette-text-primary, #e8e8e8);
+        color: var(--jf-palette-background-default, #101010);
+      }
+      /* The pill's ::after is only its press area: a theme that draws the chosen tab's bar there (JellyFlix's
+         .emby-tab-button-active::after) would draw it through the words while filters are set. */
+      .je-reco-tools .jellyseerr-filters-btn.emby-tab-button::after,
+      .je-recommendations-category-controls .jellyseerr-filters-btn.emby-tab-button::after { background: none; }
+      /* Forced colours: each an edge, the one in use (and Filters while set) in the system's highlight. */
+      @media (forced-colors: active) {
+        .je-reco-tools .jellyseerr-filters-btn.emby-tab-button,
+        .je-recommendations-category-controls .jellyseerr-filters-btn.emby-tab-button,
+        .je-reco-tools .jellyseerr-discovery-filter,
+        .je-recommendations-category-header .jellyseerr-discovery-filter { border: 1px solid ButtonText; }
+        .je-reco-tools .jellyseerr-filters-btn.emby-tab-button[data-on],
+        .je-recommendations-category-controls .jellyseerr-filters-btn.emby-tab-button[data-on],
+        .je-recommendations-category-header .jellyseerr-filter-btn.emby-tab-button-active,
+        .je-reco-tools .jellyseerr-filter-btn.emby-tab-button-active { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+      }
+      .je-reco-tools .jellyseerr-filters-btn .material-icons,
+      .je-recommendations-category-controls .jellyseerr-filters-btn .material-icons { font-size: 1.2em; }
+      /* (Its count is in its words: no dot.) */
+      .je-reco-tools .jellyseerr-filters-btn[data-on] .material-icons::after,
+      .je-recommendations-category-controls .jellyseerr-filters-btn[data-on] .material-icons::after { display: none; }
+      .je-reco-tools .jellyseerr-filters-name,
+      .je-recommendations-category-controls .jellyseerr-filters-name {
+        position: static;
+        width: auto;
+        height: auto;
+        overflow: visible;
+        clip-path: none;
+      }
+      .je-reco-tools .jellyseerr-filters-btn:focus-visible,
+      .je-recommendations-category-controls .jellyseerr-filters-btn:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px var(--jf-palette-primary-main, #00a4dc);
+        border-radius: 999px;
+      }
+      /* What is set: under the page's title bar, and under a category page's header, on the gutter. */
+      .je-recommendations-title + .jellyseerr-filters-set,
+      .je-recommendations-category-header + .jellyseerr-filters-set {
+        margin: 0.2em max(3.3vw, env(safe-area-inset-right)) 0.8em max(3.3vw, env(safe-area-inset-left));
+      }
+      /* Nothing matches the filters: said where the rows or the cards would be. */
+      .je-reco-filters-none { padding-top: 1.5em; }
+      /* On a phone the page's filters take their own row under its title; a category page's go under its
+         title, the sort at the row's end, and with All | Movies | Series beside them the Filters button is its
+         icon alone (its words still name it to a screen reader), with the dot while anything in it is set. */
+      @media (max-width: 699px) {
+        .je-reco-tools { flex: 1 1 100%; margin-inline-start: 0; }
+        .je-recommendations-category-header { flex-wrap: wrap; row-gap: 0.7em; }
+        .je-recommendations-category-controls {
+          flex: 1 1 100%;
+          margin-left: 0 !important;
+        }
+        .je-recommendations-category-controls > #je-recommendations-category-sort { margin-inline-start: auto; }
+        .je-recommendations-category-controls:has(> #je-recommendations-category-filter:not(:empty)) .jellyseerr-filters-btn.emby-tab-button { padding: 0 0.7em; }
+        .je-recommendations-category-controls:has(> #je-recommendations-category-filter:not(:empty)) .jellyseerr-discovery-filter .jellyseerr-filter-btn.emby-tab-button { padding: 0 0.75em; }
+        .je-recommendations-category-controls:has(> #je-recommendations-category-filter:not(:empty)) .jellyseerr-filters-name {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          overflow: hidden;
+          clip-path: inset(50%);
+        }
+        .je-recommendations-category-controls:has(> #je-recommendations-category-filter:not(:empty)) .jellyseerr-filters-btn[data-on] .material-icons::after { display: block; }
       }
     `;
     document.head.appendChild(style);

@@ -180,7 +180,7 @@
                 break;
             case 'rating':
                 for (const fact of JE.ratingSources.resolve(sample.rating.community, sample.rating.critic?.replace('%', ''),
-                    { imdb: 8.1, tmdb: 81, rtCritic: 92, rtAudience: 88, metacritic: 74, letterboxd: 4.1, trakt: 85 })) {
+                    { imdb: 8.1, tmdb: 81, rtCritic: 92, rtAudience: 88, metacritic: 74, letterboxd: 4.1, trakt: 85, myAnimeList: 8.4, metacriticUser: 7.9, rogerEbert: 3.5, mdblist: 78 })) {
                     wrap.appendChild(JE.ratingSources.chip(fact));
                 }
                 break;
@@ -401,6 +401,9 @@
         #jellyfin-enhanced-panel .je-mtp-card--thumb .je-mtp-scalable { width: 140px; aspect-ratio: 16 / 9; }
         #jellyfin-enhanced-panel .je-mtp-scalable { position: relative; border-radius: 6px; overflow: hidden; contain: paint; }
         #jellyfin-enhanced-panel .je-mtp-art { position: absolute; inset: 0; }
+        /* A sample's status tag keeps the live backdrop blur: the painted one (tags/status-tag-backdrop.js)
+           reads a card's own artwork, which a sample has none of, and a handful of preview tags cost nothing. */
+        #jellyfin-enhanced-panel .je-mtp-card .status-tag { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
         #jellyfin-enhanced-panel .je-mtp-art--movie { background: linear-gradient(170deg, #e2a35d 0%, #b5562f 48%, #3a1d14 100%); }
         #jellyfin-enhanced-panel .je-mtp-art--movie::after { content: ''; position: absolute; left: 0; right: 0; bottom: 18%; height: 22%; background: linear-gradient(175deg, transparent 30%, rgba(60,25,12,0.85) 31%); }
         #jellyfin-enhanced-panel .je-mtp-art--series { background: radial-gradient(ellipse at 50% 58%, #f2f7f7 0%, #9ccfd2 22%, #2c6f7a 55%, #0d2a31 100%); }

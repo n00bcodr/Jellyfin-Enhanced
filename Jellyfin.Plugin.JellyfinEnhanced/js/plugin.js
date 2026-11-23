@@ -164,6 +164,20 @@
 
     const JE = window.JellyfinEnhanced; // Alias for internal use
 
+    // The tag layout moves group containers onto whole pixels through custom properties that are registered
+    // as not inherited (core/tag-layout.js, snapSupported). Registering a property has the browser work out
+    // the style of every element again, so it is done here, while the page is still empty, and costs nothing;
+    // done when the first card was drawn it was a whole page restyled in that frame. Chromium's family only,
+    // as there: the others get no nudges. (The names are core/tag-layout.js's SNAP_PROPERTIES, which
+    // registers any that this did not.)
+    try {
+        if (navigator.vendor === 'Google Inc.' && typeof CSS !== 'undefined' && typeof CSS.registerProperty === 'function') {
+            for (const name of ['--je-snap-x', '--je-snap-y', '--je-band-left']) {
+                try { CSS.registerProperty({ name, syntax: '*', inherits: false }); } catch { /* registered already */ }
+            }
+        }
+    } catch { /* no CSS object model to register with */ }
+
     /**
      * Converts PascalCase object keys to camelCase recursively.
      * @param {object} obj - The object to convert.
@@ -536,6 +550,7 @@
             JE.pluginConfig.RecommendationsUseCustomTabs = false;
             JE.pluginConfig.ActivityFeedUseCustomTabs = false;
             JE.pluginConfig.CatchUpUseCustomTabs = false;
+            JE.pluginConfig.LeavingSoonPageUseCustomTabs = false;
         }
         if (!hasPluginPages) {
             JE.pluginConfig.BookmarksUsePluginPages = false;
@@ -707,31 +722,35 @@
         return yieldToEventLoop().then(() => null);
     }
 
-    // Module-runner pacing. Evaluating the 150+ component modules costs ~100 ms
-    // of main thread; done as one task, or even as slices competing on equal
-    // terms, it lands exactly while jellyfin-web renders its first view and
-    // delays it by that much. So each slice runs in idle time (BUNDLE_IDLE_TIMEOUT_MS
-    // caps the wait) and is kept short (BUNDLE_RUN_BUDGET_MS) so a task that
-    // becomes pending mid-slice — a chunk arriving on a cold load — waits only
-    // a few milliseconds.
+    // Module-runner pacing. Evaluating component modules costs main-thread time;
+    // done as one task, or even as slices competing on equal terms, it lands
+    // exactly while jellyfin-web renders its first view and delays it by that
+    // much. So at boot each slice runs in idle time (BUNDLE_IDLE_TIMEOUT_MS caps
+    // the wait) and is kept short (BUNDLE_RUN_BUDGET_MS) so a task that becomes
+    // pending mid-slice — a chunk arriving on a cold load — waits only a few
+    // milliseconds. A group loaded later because the user went to its page is
+    // paced the same way, so the new view is drawn first; one loaded because
+    // something was asked for directly (the settings panel, a shortcut) keeps
+    // the short slices but does not wait for idle time: someone is waiting.
     const BUNDLE_RUN_BUDGET_MS = 10;
     const BUNDLE_IDLE_TIMEOUT_MS = 100;
 
     /**
-     * Runs the bundle's module functions in manifest order, in short slices
-     * scheduled in the browser's idle time (see the pacing notes above). A
-     * module that throws at its top level is logged and rethrown asynchronously
-     * (so it still surfaces as an uncaught error, exactly like a throwing
-     * <script> did) and the run continues with the next module — nothing after
-     * it is lost, and it is not re-run. window.__JE_BUNDLE_PROGRESS counts the
-     * modules run.
-     * @param {Function[]} modules - `window.__JE_BUNDLE_MODULES` from the bundle.
-     * @param {unknown} fromBootstrap - `ComponentScripts` from the bootstrap payload (for error messages).
+     * Runs module functions in order, in short slices (see the pacing notes
+     * above). A module that throws at its top level is logged and rethrown
+     * asynchronously (so it still surfaces as an uncaught error, exactly like a
+     * throwing <script> did) and the run continues with the next module —
+     * nothing after it is lost, and it is not re-run. window.__JE_BUNDLE_PROGRESS
+     * counts the modules run since the page loaded.
+     * @param {Function[]} modules - One function per module, in run order (a
+     *   function marked `jeLoaderStep` is a step of the loader's own, not counted).
+     * @param {string[]} names - The modules' paths (for error messages).
+     * @param {boolean} idle - Wait for browser idle time between slices (boot, and a page the user went to) instead of only yielding.
      * @returns {Promise<void>}
      */
-    async function runBundleModules(modules, fromBootstrap) {
-        const names = filterComponentManifest(fromBootstrap) || [];
-        let deadline = await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
+    async function runBundleModules(modules, names, idle) {
+        const nextSlice = () => (idle ? waitForIdle(BUNDLE_IDLE_TIMEOUT_MS) : yieldToEventLoop().then(() => null));
+        let deadline = await nextSlice();
         let sliceStart = performance.now();
         for (let i = 0; i < modules.length; i++) {
             try {
@@ -740,7 +759,7 @@
                 console.error(`🪼 Jellyfin Enhanced: Module '${names[i] || `#${i + 1}`}' threw while loading; continuing with the next module.`, e);
                 setTimeout(() => { throw e; }, 0);
             }
-            window.__JE_BUNDLE_PROGRESS = i + 1;
+            if (!modules[i].jeLoaderStep) window.__JE_BUNDLE_PROGRESS = Math.max(0, window.__JE_BUNDLE_PROGRESS || 0) + 1;
             if (i + 1 >= modules.length) break;
             // End the slice when its budget is spent or the idle period is over.
             // A callback that ran because the timeout expired reports no idle
@@ -748,75 +767,852 @@
             const budgetSpent = performance.now() - sliceStart >= BUNDLE_RUN_BUDGET_MS;
             const idleOver = !!deadline && !deadline.didTimeout && deadline.timeRemaining() < 1;
             if (budgetSpent || idleOver) {
-                deadline = await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
+                deadline = await nextSlice();
                 sliceStart = performance.now();
             }
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Component groups.
+    //
+    // js/component-groups.json assigns the manifest's modules to named groups;
+    // every module it does not list belongs to the implicit "core" group. The
+    // server serves any set of groups as one script (bundle.js?g=a,b). Only the
+    // groups a page needs are downloaded and run: "core" always, the others when
+    // their feature is enabled and their route, surface or trigger appears (see
+    // FEATURE_GROUPS below). A group's modules run in manifest order, after the
+    // groups it names in "after", and its stage-6 initializers run right after
+    // them. Dev mode, and any group whose bundle request fails, loads that
+    // group's files one by one instead — the same files in the same order.
+    // ---------------------------------------------------------------------
+    const CORE_GROUP = 'core';
+    const GROUP_ID_PATTERN = /^[a-z][a-z0-9-]{0,39}$/;
+
     /**
-     * Loads every component module from the server-side bundle (one request
-     * instead of one <script> per module): the bundle defines one function per
-     * module in window.__JE_BUNDLE_MODULES, which runBundleModules executes in
-     * order. Falls back to the per-file loader for every module when the
-     * request fails or nothing was defined (a syntax error aborts the whole
-     * script before it defines anything), so only the broken file fails,
-     * exactly as before the bundle existed.
-     * @param {unknown} fromBootstrap - `ComponentScripts` from the bootstrap payload, if any.
+     * The resolved groups for this page load, set once by setComponentGroups:
+     * `order` is the run order ("core" first), `byId` maps a group id to
+     * { id, after: string[], scripts: string[] }, and `whole` is true when no
+     * usable groups file was available and "core" is the entire manifest.
+     * @type {{ order: string[], byId: Object<string, { id: string, after: string[], scripts: string[] }>, whole: boolean }|null}
+     */
+    let componentGroups = null;
+    // Group id -> 'loading' | 'ready'. A group that is absent has not been asked for.
+    const groupStates = Object.create(null);
+    // Batches run strictly one after another, in the order they were asked for.
+    let groupQueue = Promise.resolve();
+    // Group id -> the JE.currentSettings object its stage-6 initializers last ran with.
+    const groupInitSettings = Object.create(null);
+    // Group id -> time (ms) before which a group whose load failed entirely is not retried
+    // on a mere page change, so an unreachable server is not asked again on every DOM change.
+    // The pause doubles with each failure in a row (5 s, 10 s, ... up to a minute).
+    const groupRetryAfter = Object.create(null);
+    const groupRetryCount = Object.create(null);
+    const GROUP_RETRY_DELAY_MS = 5000;
+    const GROUP_RETRY_MAX_DELAY_MS = 60000;
+    let groupRetryTimer = 0;
+
+    /**
+     * Resolves the "groups" array of js/component-groups.json against the
+     * manifest, exactly as Services/ClientScriptBundle.cs does: ids must be
+     * unique and well formed, every listed module must be in the manifest and
+     * in one group only, and "after" may only name earlier groups (so the file
+     * order is a valid run order). Returns null for anything else.
+     * @param {string[]} scripts - The manifest paths, in order.
+     * @param {unknown} rawGroups - The file's "groups" array.
+     * @returns {{ order: string[], byId: object, whole: boolean }|null}
+     */
+    function resolveComponentGroups(scripts, rawGroups) {
+        if (!Array.isArray(rawGroups)) return null;
+        const position = new Map(scripts.map((path, index) => [path, index]));
+        const owner = new Map();
+        const order = [CORE_GROUP];
+        const byId = Object.create(null);
+        byId[CORE_GROUP] = { id: CORE_GROUP, after: [], scripts: [] };
+        for (const entry of rawGroups) {
+            const id = entry && typeof entry.id === 'string' ? entry.id : '';
+            if (!GROUP_ID_PATTERN.test(id) || byId[id]) return null;
+            const after = [];
+            if (entry.after !== undefined) {
+                if (!Array.isArray(entry.after)) return null;
+                for (const name of entry.after) {
+                    if (typeof name !== 'string' || name === id || !byId[name]) return null;
+                    if (name !== CORE_GROUP && !after.includes(name)) after.push(name);
+                }
+            }
+            if (!Array.isArray(entry.modules) || entry.modules.length === 0) return null;
+            const own = [];
+            for (const module of entry.modules) {
+                const path = typeof module === 'string' ? module.trim() : '';
+                if (!position.has(path) || owner.has(path)) return null;
+                owner.set(path, id);
+                own.push(path);
+            }
+            own.sort((x, y) => position.get(x) - position.get(y));
+            byId[id] = { id, after, scripts: own };
+            order.push(id);
+        }
+        byId[CORE_GROUP].scripts = scripts.filter(path => !owner.has(path));
+        return { order, byId, whole: false };
+    }
+
+    /**
+     * Sets the page's component groups from the bootstrap payload when it
+     * carries them, otherwise from the embedded files. Without a usable groups
+     * file every module is "core" and the whole manifest loads as one bundle,
+     * as it did before groups existed.
+     * @param {object|null} bootstrap - The bootstrap payload, if any.
      * @returns {Promise<void>}
      */
-    async function loadComponentBundle(fromBootstrap) {
-        const url = getComponentBundleUrl();
-        // -1 = nothing executed; the bundle's prologue sets 0.
-        window.__JE_BUNDLE_PROGRESS = -1;
-        window.__JE_BUNDLE_MODULES = undefined;
-        // Fetch and parse the bundle only once jellyfin-web is idle, and at low
-        // fetch priority. Measured alternatives: an early <link rel="preload">
+    async function setComponentGroups(bootstrap) {
+        const scripts = await getComponentScriptList(bootstrap ? bootstrap.ComponentScripts : null);
+        let rawGroups = bootstrap ? bootstrap.ComponentGroups : null;
+        if (!Array.isArray(rawGroups) && !bootstrap) {
+            try {
+                const file = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl(`${COMPONENT_SCRIPTS_BASE_PATH}/component-groups.json?v=${getScriptVersion()}`),
+                    dataType: 'json'
+                });
+                rawGroups = file && file.groups;
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: Could not load the component-group file — loading every component script.', e);
+            }
+        }
+        const resolved = scripts.length ? resolveComponentGroups(scripts, rawGroups) : null;
+        if (!resolved && Array.isArray(rawGroups)) {
+            console.warn('🪼 Jellyfin Enhanced: The component-group file is not usable — loading every component script.');
+        }
+        const whole = Object.create(null);
+        whole[CORE_GROUP] = { id: CORE_GROUP, after: [], scripts };
+        componentGroups = resolved || { order: [CORE_GROUP], byId: whole, whole: true };
+    }
+
+    /**
+     * The given groups plus "core", everything they are (transitively) "after"
+     * and the groups their rules load along with them, in run order. Unknown
+     * ids are dropped.
+     * @param {string[]} ids
+     * @returns {string[]}
+     */
+    function withRequiredGroups(ids) {
+        const wanted = new Set([CORE_GROUP]);
+        const add = (id) => {
+            const group = componentGroups.byId[id];
+            if (!group || wanted.has(id)) return;
+            wanted.add(id);
+            group.after.forEach(add);
+            companionGroups(id).forEach(add);
+        };
+        ids.forEach(add);
+        return componentGroups.order.filter(id => wanted.has(id));
+    }
+
+    /**
+     * Requests one script holding the given groups and resolves with what it
+     * defined: { [id]: { total, modules } }, or null when the request failed
+     * (and in dev mode, which never requests bundles).
+     * @param {string[]} ids - Group ids, in run order.
+     * @param {boolean} idle - Boot: wait for idle time first and fetch at low priority.
+     * @returns {Promise<Object<string, { total: number, modules: Function[] }>|null>}
+     */
+    async function requestGroupBundle(ids, idle) {
+        if (isDevMode()) return null;
+        // Fetch and parse the boot bundle only once jellyfin-web is idle, and at
+        // low fetch priority. Measured alternatives: an early <link rel="preload">
         // (even at low priority) made jellyfin-web's first content ~200-300 ms
-        // later on a cold 20 Mbps load because the 800 KB download shares
-        // bandwidth with its own chunks, and inserting the script right away
-        // put its 2.8 MB pre-parse in front of the first view's rendering.
-        await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
+        // later on a cold 20 Mbps load because the download shares bandwidth
+        // with its own chunks, and inserting the script right away put its
+        // pre-parse in front of the first view's rendering.
+        if (idle) await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
+        const whole = componentGroups.whole;
+        const url = whole
+            ? getComponentBundleUrl()
+            : ApiClient.getUrl(`/JellyfinEnhanced/bundle.js?g=${ids.join(',')}&v=${getScriptVersion()}`);
+        if (whole) window.__JE_BUNDLE_MODULES = undefined;
         const requestOk = await new Promise((resolve) => {
             const script = document.createElement('script');
             script.src = url;
-            script.setAttribute('fetchpriority', 'low');
+            if (idle) script.setAttribute('fetchpriority', 'low');
             script.onload = () => resolve(true);
             script.onerror = () => resolve(false);
             document.head.appendChild(script);
         });
-        const modules = window.__JE_BUNDLE_MODULES;
-        const total = window.__JE_BUNDLE_TOTAL;
-        delete window.__JE_BUNDLE_MODULES; // the functions are only needed once
-        if (requestOk && Array.isArray(modules) && modules.length > 0 && modules.length === total) {
-            await runBundleModules(modules, fromBootstrap);
-            return;
-        }
-
-        const scripts = await getComponentScriptList(fromBootstrap);
-        if (!requestOk) {
-            console.warn('🪼 Jellyfin Enhanced: Component bundle request failed — loading the component scripts individually.');
+        const bundles = Object.create(null);
+        if (whole) {
+            bundles[CORE_GROUP] = { total: window.__JE_BUNDLE_TOTAL, modules: window.__JE_BUNDLE_MODULES };
+            delete window.__JE_BUNDLE_MODULES; // the functions are only needed once
         } else {
-            console.warn('🪼 Jellyfin Enhanced: Component bundle did not define its modules (syntax error?) — loading the component scripts individually.');
+            const defined = window.__JE_BUNDLES || {};
+            for (const id of ids) {
+                bundles[id] = defined[id];
+                delete defined[id];
+            }
         }
-        await loadScripts(scripts, COMPONENT_SCRIPTS_BASE_PATH);
+        return requestOk ? bundles : null;
     }
 
     /**
-     * Stage-3 entry point: loads all component modules, in manifest order.
-     * Dev mode loads the individual files (debuggable one by one, no-store);
-     * production loads the bundle with per-file fallback.
-     * @param {unknown} fromBootstrap - `ComponentScripts` from the bootstrap payload, if any.
+     * Whether a bundle defined exactly the modules a group lists.
+     * @param {{ scripts: string[] }} group
+     * @param {{ total: number, modules: Function[] }|undefined} bundle
+     * @returns {boolean}
+     */
+    function isCompleteBundle(group, bundle) {
+        return !!bundle && Array.isArray(bundle.modules) && bundle.modules.length > 0
+            && bundle.modules.length === bundle.total
+            && (componentGroups.whole || bundle.total === group.scripts.length);
+    }
+
+    /**
+     * Runs one batch of groups, in order: each group's modules from the bundle
+     * when the request defined them, otherwise its files one by one (dev mode,
+     * a failed request, or a bundle that defined nothing because of a syntax
+     * error — then only the broken file fails, as before bundles existed).
+     * @param {string[]} ids - Group ids, in run order, all marked 'loading'.
+     * @param {Promise<object|null>} pending - The batch's requestGroupBundle result.
+     * @param {boolean} idle - Run in idle-time slices (boot, and a page the user went to).
      * @returns {Promise<void>}
      */
-    async function loadComponentScripts(fromBootstrap) {
-        if (isDevMode()) {
-            const scripts = await getComponentScriptList(fromBootstrap);
-            await loadScripts(scripts, COMPONENT_SCRIPTS_BASE_PATH);
-            return;
+    async function runGroupBatch(ids, pending, idle) {
+        const bundles = await pending;
+        const complete = (id) => !!bundles && isCompleteBundle(componentGroups.byId[id], bundles[id]);
+        if (!isDevMode() && !ids.every(complete)) {
+            console.warn(bundles
+                ? '🪼 Jellyfin Enhanced: Component bundle did not define its modules (syntax error?) — loading the component scripts individually.'
+                : '🪼 Jellyfin Enhanced: Component bundle request failed — loading the component scripts individually.');
         }
-        await loadComponentBundle(fromBootstrap);
+        // Consecutive groups that load file by file go in as one ordered set of
+        // script tags, so their downloads overlap as they always have.
+        let files = [];
+        let fileGroups = [];
+        const flushFiles = async () => {
+            if (!fileGroups.length) return;
+            const loading = fileGroups;
+            const results = await loadScripts(files, COMPONENT_SCRIPTS_BASE_PATH);
+            files = [];
+            fileGroups = [];
+            // Nothing arrived at all (offline?): leave these groups unasked-for so
+            // the next trigger tries again, instead of staying missing until reload.
+            const anyLoaded = results.some(result => result.value && result.value.status === 'fulfilled');
+            for (const id of loading) {
+                if (anyLoaded || id === CORE_GROUP) {
+                    groupStates[id] = 'ready';
+                } else {
+                    delete groupStates[id];
+                    groupRetryCount[id] = (groupRetryCount[id] || 0) + 1;
+                    groupRetryAfter[id] = Date.now() + Math.min(GROUP_RETRY_MAX_DELAY_MS, GROUP_RETRY_DELAY_MS * Math.pow(2, groupRetryCount[id] - 1));
+                }
+            }
+        };
+        // Consecutive groups that came in the bundle run as ONE list of modules,
+        // paced as one run. Run group by group, each run would begin with its own
+        // wait for idle time, and a boot of twenty groups would spread its modules
+        // over a second or more: modules that start work as they load (Seerr's
+        // fetch and draw) would then finish before stage 6 had started the
+        // features they consult (Hidden Content), which follows the last module.
+        let modules = [];
+        let names = [];
+        let bundleGroups = [];
+        const flushBundles = async () => {
+            if (!bundleGroups.length) return;
+            const running = bundleGroups;
+            const list = modules;
+            const paths = names;
+            modules = [];
+            names = [];
+            bundleGroups = [];
+            await runBundleModules(list, paths, idle);
+            for (const id of running) groupStates[id] = 'ready';
+        };
+        // JE's own Home tabs are registered between "core" and every other
+        // group's modules, so the tabs keep one order (see registerPageTabs).
+        const registerTabs = () => registerPageTabs();
+        registerTabs.jeLoaderStep = true;
+        for (const id of ids) {
+            const group = componentGroups.byId[id];
+            const needsTabs = id === CORE_GROUP && !componentGroups.whole;
+            if (complete(id)) {
+                await flushFiles();
+                modules = modules.concat(bundles[id].modules);
+                names = names.concat(group.scripts);
+                bundleGroups.push(id);
+                if (needsTabs) {
+                    modules.push(registerTabs);
+                    names.push('plugin.js (Home tab registration)');
+                }
+            } else {
+                await flushBundles();
+                files = files.concat(group.scripts);
+                fileGroups.push(id);
+                if (needsTabs) {
+                    await flushFiles();
+                    if (groupStates[CORE_GROUP] === 'ready') registerPageTabs();
+                }
+            }
+        }
+        await flushBundles();
+        await flushFiles();
     }
+
+    /**
+     * Makes sure the given groups (and everything they must load after) have
+     * run, loading whichever have not been asked for yet as one request. The
+     * returned promise resolves once they, and every batch asked for before
+     * them, have run; it never rejects. Groups run in the order they were asked
+     * for, so a dependency asked for earlier always runs first.
+     * @param {string[]} ids - Group ids.
+     * @param {{ pace?: 'boot'|'background'|'now', initialize?: boolean }} [options]
+     *   `pace`: 'boot' waits for idle time before requesting and runs the
+     *   modules in idle time; 'background' (a page the user went to) requests
+     *   at once but still runs the modules in idle time, so jellyfin-web draws
+     *   the new view first; 'now' (the default: something was asked for
+     *   directly) requests at once and runs without waiting for idle time.
+     *   `initialize: false`: the caller runs the groups' stage-6 initializers
+     *   itself (boot).
+     * @returns {Promise<void>}
+     */
+    function ensureGroups(ids, options = {}) {
+        if (!componentGroups) return Promise.resolve();
+        const missing = withRequiredGroups(ids).filter(id => !groupStates[id]);
+        if (missing.length) {
+            for (const id of missing) groupStates[id] = 'loading';
+            const pending = requestGroupBundle(missing, options.pace === 'boot').catch(() => null);
+            groupQueue = groupQueue
+                .then(() => runGroupBatch(missing, pending, options.pace === 'boot' || options.pace === 'background'))
+                .then(() => {
+                    if (options.initialize === false) return;
+                    const loaded = missing.filter(id => groupStates[id] === 'ready');
+                    for (const id of loaded) {
+                        delete groupRetryAfter[id];
+                        delete groupRetryCount[id];
+                    }
+                    if (loaded.length < missing.length) scheduleGroupRetry();
+                    if (!loaded.length) return;
+                    initializeGroupFeatures(loaded);
+                    nudgeObservers();
+                })
+                .catch((e) => {
+                    console.error('🪼 Jellyfin Enhanced: Failed to load component groups', missing, e);
+                    for (const id of missing) if (groupStates[id] === 'loading') groupStates[id] = 'ready';
+                });
+        }
+        return groupQueue;
+    }
+
+    /**
+     * The route the address shows, as the group rules read it: `path` is the
+     * router path in lower case without a leading slash or ".html"
+     * ("home", "details", "video", "dashboard/activity"), `query` what follows it.
+     * @returns {{ path: string, query: string }}
+     */
+    function currentRoute() {
+        const hash = String(window.location.hash || '').replace(/^#!?\/?/, '');
+        const at = hash.search(/[?#]/);
+        const path = (at < 0 ? hash : hash.slice(0, at)).toLowerCase().replace(/\.html$/, '').replace(/\/+$/, '');
+        return { path, query: at < 0 ? '' : hash.slice(at + 1) };
+    }
+
+    /**
+     * A personal boolean setting as JE.loadSettings resolves it: the user's
+     * saved value, else the administrator's default, else off. Group rules use
+     * it for the first plan, which runs before enhanced/config.js (which owns
+     * JE.loadSettings) has been loaded; once JE.currentSettings exists it is
+     * read instead, and the plan is made again.
+     * @param {string} key - camelCase settings key (e.g. "qualityTagsEnabled").
+     * @returns {boolean}
+     */
+    function userSetting(key) {
+        const current = JE.currentSettings;
+        if (current && Object.prototype.hasOwnProperty.call(current, key)) return current[key] === true;
+        const saved = JE.userConfig && JE.userConfig.settings ? JE.userConfig.settings[key] : undefined;
+        if (typeof saved === 'boolean') return saved;
+        const config = JE.pluginConfig || {};
+        const fallback = config[key] !== null && config[key] !== undefined ? config[key] : config[key.charAt(0).toUpperCase() + key.slice(1)];
+        return fallback === true;
+    }
+
+    /**
+     * Stage 6, as data: [group, initializer, condition]. `group` is the
+     * component group whose modules define the initializer (an id that is not
+     * in js/component-groups.json means "core"), `initializer` its path on JE,
+     * and `condition(config, settings)` — JE.pluginConfig and
+     * JE.currentSettings — whether to call it (omitted: always). The order is
+     * the order the calls have always run in: at boot every entry of a loaded
+     * group runs in this order; a group loaded later runs its own entries, in
+     * this order, right after its modules.
+     * @type {Array<[string, string, ((config: object, settings: object) => any)?]>}
+     */
+    const FEATURE_INITIALIZERS = [
+        ['dashboard', 'initializePluginRevisions'],
+        ['core', 'initializeEnhancedScript'],
+        ['elsewhere', 'initializeElsewhereScript', (c) => c.ElsewhereEnabled],
+        ['seerr', 'initializeJellyseerrScript', (c) => c.JellyseerrEnabled && c.JellyseerrShowSearchResults !== false],
+        ['seerr', 'jellyseerrIssueReporter.initialize', (c) => c.JellyseerrEnabled && c.JellyseerrShowReportButton],
+        ['player', 'initializePauseScreen'],
+        ['bookmarks', 'initializeBookmarks'],
+        ['tags', 'initializeQualityTags', (c, s) => s.qualityTagsEnabled],
+        ['tags', 'initializeGenreTags', (c, s) => s.genreTagsEnabled],
+        ['tags', 'initializeRatingTags', (c, s) => s.ratingTagsEnabled],
+        ['tags', 'initializeAgeRatingTags', (c, s) => s.ageRatingTagsEnabled],
+        ['tags', 'initializeStatusTags', (c, s) => s.statusTagsEnabled],
+        ['tags', 'initializeAwardsTags', (c, s) => s.awardsTagsEnabled && c.AwardsTagsEnabled !== false],
+        ['tags', 'initializeCustomTags', (c, s) => s.customTagsEnabled],
+        ['tags', 'initializeTagStyles', (c) => c.TagStyleWebActive],
+        ['tags', 'initializeUserReviewTags', (c, s) => c.ShowUserReviews && c.ShowUserRatingOnPosters && s.ratingTagsEnabled],
+        ['arr-links', 'initializeArrLinksScript', (c) => c.ArrLinksEnabled],
+        ['arr-tag-links', 'initializeArrTagLinksScript', (c) => c.ArrTagsShowAsLinks],
+        ['seerr', 'initializeSeerrDetailLinkScript', (c) => c.JellyseerrEnabled && c.JellyseerrShowDetailPageLink],
+        ['letterboxd', 'initializeLetterboxdLinksScript', (c) => c.LetterboxdEnabled],
+        ['reviews', 'initializeReviewsScript', (c) => c.ShowReviews || c.ShowUserReviews || c.ShowAnilistReviews],
+        ['awards', 'initializeAwardsScript', (c) => c.ShowAwards],
+        ['content-warnings', 'initializeDoesTheDogDieScript', (c) => c.DoesTheDogDieEnabled],
+        ['mdblist', 'initializeMdblistRatingsScript', (c) => c.MdblistRatingsEnabled && c.MdblistRatingsShowOnItemDetails],
+        ['tags', 'initializeLanguageTags', (c, s) => s.languageTagsEnabled],
+        ['tags', 'initializeLogoTags', (c, s) => s.logoTagsEnabled],
+        ['tag-people', 'initializePeopleTags', (c, s) => s.peopleTagsEnabled],
+        // The unified tag pipeline starts AFTER all tag renderers have registered.
+        ['tags', 'tagPipeline.initialize'],
+        ['player', 'initializeOsdRating'],
+        ['player-badge', 'initializePlaybackRatingBadge', (c) => c.ShowPlaybackRatingBadge],
+        // Hidden Content off server-wide: JE.hiddenContent stays undefined, safely disabling all downstream consumers.
+        ['hidden-content', 'initializeHiddenContent', (c) => c.HiddenContentEnabled],
+        // Spoiler Guard loads its per-user enabled-series list once at startup. The toggle button on series detail pages reads from that cache.
+        ['spoiler-guard', 'spoilerBlur.init', (c) => c.SpoilerBlurEnabled],
+        ['core', 'initializeColoredRatings', (c) => c.ColoredRatingsEnabled],
+        ['theme-selector', 'initializeThemeSelector', (c) => c.ThemeSelectorEnabled],
+        ['dashboard', 'initializeActivityIcons', (c) => c.ColoredActivityIconsEnabled],
+        ['dashboard', 'initializePluginIcons', (c) => c.PluginIconsEnabled],
+        ['active-streams', 'activeStreams.initialize', (c) => c.ActiveStreamsEnabled],
+        ['requests-page', 'initializeDownloadsPage', (c) => c.DownloadsPageEnabled],
+        ['calendar-page', 'initializeCalendarPage', (c) => c.CalendarPageEnabled],
+        ['hidden-content-page', 'initializeHiddenContentPage', (c) => c.HiddenContentEnabled],
+        // Seerr search used to make this check as it started, on every page: it
+        // caches the user's Seerr status for the session and shows the one-time
+        // "not linked / unreachable" notice. Search now loads on its own pages,
+        // so the check is made here, at the same moment as before.
+        ['seerr-api', 'jellyseerrAPI.checkUserStatus', (c) => c.JellyseerrEnabled && c.JellyseerrShowSearchResults !== false]
+    ];
+
+    /**
+     * Whether any stage-6 initializer of a group would run with the current
+     * config and settings. A group whose features all start through stage 6
+     * has nothing to do while this is false, so it is not loaded.
+     * @param {string} id - Group id.
+     * @returns {boolean}
+     */
+    function groupHasEnabledFeature(id) {
+        const config = JE.pluginConfig || {};
+        const settings = JE.currentSettings || {};
+        return FEATURE_INITIALIZERS.some(([group, , condition]) => group === id && (!condition || !!condition(config, settings)));
+    }
+
+    const isHomeRoute = (route) => route.path === '' || route.path === 'home';
+    const isDetailsRoute = (route) => route.path === 'details';
+    const isVideoRoute = (route) => route.path === 'video';
+    const isDashboardRoute = (route) => /^(dashboard|configurationpage|settings)(\/|$)/.test(route.path);
+    /** Whether the address is the plugin's own admin configuration page (or its old Media Tags address). */
+    const isOwnConfigPage = (route) => route.path === 'configurationpage' && /jellyfin[\s+_.-]*enhanced/i.test(safeDecode(route.query));
+    const isSeerrRoute = (route) => isDetailsRoute(route) || route.path === 'list' || route.path === 'search';
+    /** The nine poster tag types: any of them on means cards carry JE tags. */
+    const POSTER_TAG_SETTINGS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled',
+        'awardsTagsEnabled', 'customTagsEnabled', 'languageTagsEnabled', 'logoTagsEnabled'];
+    const posterTagsOn = () => POSTER_TAG_SETTINGS.some(userSetting);
+    // Set once a <video> starts loading or playing anywhere (see watchGroupTriggers):
+    // playback can begin before the address changes to the video page.
+    let videoSeen = false;
+    const playerWanted = (route) => videoSeen || isVideoRoute(route);
+
+    /**
+     * decodeURIComponent that returns its input when it is not valid.
+     * @param {string} text
+     * @returns {string}
+     */
+    function safeDecode(text) {
+        try { return decodeURIComponent(text); } catch (e) { return text; }
+    }
+
+    /**
+     * JE's own pages. Each can be delivered as a tab on Home (JE's own tab, or
+     * one the Custom Tabs plugin provides), by the Plugin Pages plugin, or, for
+     * the pages with `routes`, standalone behind a sidebar link at its own
+     * address. `tab` is the Home tab JE registers for the page ([id, title key,
+     * fallback title, icon]: exactly what the page's own *-custom-tab module
+     * registers), `marker` the class of the placeholder a tab holds for it,
+     * `pluginPage` the page's Plugin Pages address (lower case). The order is
+     * the order the tabs are registered in, which is the order they appear in:
+     * the order the pages' own modules register them in the single bundle.
+     */
+    const FEATURE_PAGES = [
+        { group: 'hidden-content-page', flag: 'HiddenContentEnabled', delivery: 'HiddenContent', tab: ['hidden-content', 'hidden_content_manage_title', 'Hidden Content', 'remove_red_eye'], marker: 'jellyfinenhanced hidden-content', routes: ['hidden-content'], pluginPage: 'hiddencontentpage' },
+        { group: 'catchup', flag: 'CatchUpEnabled', delivery: 'CatchUp', tab: ['catchup', 'catchup_title', 'Catch Up', 'style'], marker: 'jellyfinenhanced catchup', pluginPage: 'catchuppage' },
+        { group: 'recommendations', flag: 'RecommendationsPageEnabled', delivery: 'Recommendations', tab: ['recommendations', 'recommendations_title', undefined, 'auto_awesome'], marker: 'jellyfinenhanced recommendations', routes: ['recommendations'], pluginPage: 'recommendationspage' },
+        { group: 'requests-page', flag: 'DownloadsPageEnabled', delivery: 'Downloads', tab: ['requests', 'requests_requests', 'Requests', 'download'], marker: 'jellyfinenhanced requests', routes: ['downloads'], pluginPage: 'downloadspage' },
+        { group: 'calendar-page', flag: 'CalendarPageEnabled', delivery: 'Calendar', tab: ['calendar', 'calendar_title', 'Calendar', 'calendar_month'], marker: 'jellyfinenhanced calendar', routes: ['calendar'], pluginPage: 'calendarpage' },
+        { group: 'activity-page', flag: 'ActivityFeedEnabled', delivery: 'ActivityFeed', tab: ['activity', 'activity_title', 'Activity', 'history'], marker: 'jellyfinenhanced activity', pluginPage: 'activitypage' },
+        { group: 'leavingsoon-page', flag: 'LeavingSoonPageEnabled', delivery: 'LeavingSoonPage', tab: ['leavingsoon', 'leavingsoon_title', 'Leaving Soon', 'auto_delete'], marker: 'jellyfinenhanced leavingsoon', pluginPage: 'leavingsoonpage' },
+        // Last: the Bookmarks library registers its tab from a timer once its data is ready, after the others.
+        { group: 'bookmarks-library', flag: 'BookmarksEnabled', delivery: 'Bookmarks', tab: ['bookmarks', null, 'Bookmarks', 'location_on'], marker: 'sections bookmarks', routes: ['bookmarks'], pluginPage: 'bookmarkspage' }
+    ];
+    const markerSelector = (page) => '.' + page.marker.split(' ').join('.');
+    /** Whether a page is delivered as a Home tab (JE's own or the Custom Tabs plugin's). */
+    const isTabbedPage = (page) => {
+        const config = JE.pluginConfig || {};
+        return !!(config[`${page.delivery}UseNativeTab`] || config[`${page.delivery}UseCustomTabs`]);
+    };
+
+    /**
+     * Whether one of JE's pages has to be loaded now: it is enabled and either
+     * it is delivered standalone (its own start-up adds the sidebar link and
+     * takes over its address, so it loads at boot as it always has), or the
+     * address is the page's own, or its Plugin Pages address, or names its Home
+     * tab, or the tab holding its placeholder is the active one.
+     * @param {typeof FEATURE_PAGES[number]} page
+     * @param {{ path: string, query: string }} route
+     * @returns {boolean}
+     */
+    function pageNeeded(page, route) {
+        const config = JE.pluginConfig || {};
+        if (!config[page.flag]) return false;
+        if (page.routes && !isTabbedPage(page)) return true;
+        if (page.routes && page.routes.includes(route.path)) return true;
+        if (route.path.indexOf('userpluginsettings') === 0) {
+            // Plugin Pages shows the page at an address that carries its URL
+            // (/JellyfinEnhanced/calendarPage). An address that names none of
+            // JE's pages is one this code does not know how to read: load them all.
+            const address = safeDecode(route.query).toLowerCase();
+            return address.includes('jellyfinenhanced/') ? address.includes(`jellyfinenhanced/${page.pluginPage}`) : true;
+        }
+        if (isHomeRoute(route)) {
+            const query = safeDecode(route.query);
+            if (new RegExp(`(^|[?&#])jeTab=${page.tab[0]}(&|#|$)`).test(query)) return true;
+            // A Recommendations category opens over Home whichever tab is shown.
+            if (page.group === 'recommendations' && /(^|[?&#])jeCategory=/.test(query)) return true;
+        }
+        const isActive = JE.helpers && JE.helpers.isActiveTabContainer;
+        return typeof isActive === 'function'
+            && Array.prototype.some.call(document.querySelectorAll(markerSelector(page)), (element) => isActive(element));
+    }
+    const pageRule = (group) => {
+        const page = FEATURE_PAGES.find(entry => entry.group === group);
+        return (route) => pageNeeded(page, route);
+    };
+    /** A group all of whose features start through stage 6, on details pages only. */
+    const onDetails = (group) => (route) => isDetailsRoute(route) && groupHasEnabledFeature(group);
+
+    /**
+     * When each group is needed, beyond "core" (always):
+     *  - `needed(route)` is asked at boot, after every navigation, when a tab or
+     *    video appears and after a user switch. The group loads the first time
+     *    it answers true, and then stays loaded.
+     *  - `with()` lists groups to load along with it that it is not "after" in
+     *    js/component-groups.json because the need depends on the config.
+     *  - `exports` are JE functions (dotted paths) that load the group when
+     *    called before it is loaded, then make the call (installLazyExports).
+     * A group in js/component-groups.json without an entry here loads at boot.
+     * @type {Object<string, { needed?: (route: { path: string, query: string }) => boolean, with?: () => string[], exports?: string[] }>}
+     */
+    const FEATURE_GROUPS = {
+        // Poster tags are on every card surface, so they load at boot — but
+        // only when the user has a tag type on. The settings panel is "after"
+        // every tag group, so switching a type on there finds its code loaded.
+        'tags': { needed: () => posterTagsOn() },
+        'tag-direct-play': { needed: () => posterTagsOn() && userSetting('statusTagsEnabled') && userSetting('statusTagsDirectPlay') },
+        'tag-poster-colours': { needed: () => posterTagsOn() && !!(JE.pluginConfig || {}).TagStyleWebActive },
+        // No page needs it by itself: tags/statustags.js asks for it (JE.loader.ensure)
+        // when the first status tag is drawn, so a page that shows none never fetches it.
+        'tag-status-backdrop': { needed: () => false },
+        'tag-people': { needed: (route) => isDetailsRoute(route) && userSetting('peopleTagsEnabled') },
+        // Its item-menu hook has to see the first menu that opens.
+        'removal-menu': { needed: () => { const c = JE.pluginConfig || {}; return c.MaintainerrActionsAvailable === true || c.RemovalRequestsAvailable === true; } },
+        // Both act before content paints, so they are never deferred.
+        'spoiler-guard': { needed: () => !!(JE.pluginConfig || {}).SpoilerBlurEnabled },
+        'hidden-content': { needed: () => !!(JE.pluginConfig || {}).HiddenContentEnabled },
+        'details': { needed: isDetailsRoute },
+        'player': {
+            needed: playerWanted,
+            // The player shortcuts (enhanced/events.js): one pressed while the
+            // group is still arriving is carried out when it has.
+            exports: ['cycleAspect', 'togglePlaybackInfo', 'cycleSubtitleTrack', 'cycleAudioTrack', 'resetPlaybackSpeed', 'adjustPlaybackSpeed',
+                'skipIntroOutro', 'frameStep', 'adjustSubtitleOffset', 'jumpToLastPosition', 'jumpToPercentage', 'toggleSubtitleSync']
+        },
+        // Listens for the first "playing" event, which can come before the video page.
+        'player-badge': { needed: () => !!(JE.pluginConfig || {}).ShowPlaybackRatingBadge },
+        'bookmarks': { needed: (route) => !!(JE.pluginConfig || {}).BookmarksEnabled && playerWanted(route) },
+        'bookmarks-library': { needed: pageRule('bookmarks-library') },
+        'hidden-content-page': { needed: pageRule('hidden-content-page') },
+        'catchup': { needed: pageRule('catchup') },
+        'settings': {
+            // The admin page's Media Tags tab draws with the panel's preview and editors.
+            needed: isOwnConfigPage,
+            // The panel's "Manage hidden content" asks the page, synchronously, whether it can show itself.
+            with: () => ((JE.pluginConfig || {}).HiddenContentEnabled ? ['hidden-content-page'] : []),
+            exports: ['showEnhancedPanel']
+        },
+        'elsewhere': { needed: onDetails('elsewhere') },
+        'reviews': { needed: onDetails('reviews') },
+        'awards': { needed: onDetails('awards') },
+        'mdblist': { needed: onDetails('mdblist') },
+        'content-warnings': { needed: onDetails('content-warnings') },
+        'letterboxd': { needed: onDetails('letterboxd') },
+        'arr-tag-links': { needed: onDetails('arr-tag-links') },
+        // Administrators only (its start-up checks), and it reports a broken
+        // Sonarr/Radarr setup as it starts, so it keeps starting at boot.
+        'arr-links': { needed: () => !!(JE.pluginConfig || {}).ArrLinksEnabled && userSetting('isAdmin') },
+        'seerr-api': { needed: () => !!(JE.pluginConfig || {}).JellyseerrEnabled },
+        'seerr': {
+            needed: (route) => !!(JE.pluginConfig || {}).JellyseerrEnabled && isSeerrRoute(route),
+            // Opened from outside its own pages: Home Screen Sections' discover
+            // cards and Hidden Content lists (More Info), the Requests page (issues).
+            exports: ['jellyseerrMoreInfo.open', 'jellyseerrIssueReporter.showReportModal']
+        },
+        'recommendations': { needed: pageRule('recommendations') },
+        'requests-page': { needed: pageRule('requests-page') },
+        'calendar-page': { needed: pageRule('calendar-page') },
+        'activity-page': { needed: pageRule('activity-page') },
+        'leavingsoon-page': { needed: pageRule('leavingsoon-page') },
+        // No flag: plugin revision lists always start, and the configuration
+        // page's "Test custom links" uses the plugin-icons module either way.
+        'dashboard': { needed: isDashboardRoute },
+        'theme-selector': { needed: () => !!(JE.pluginConfig || {}).ThemeSelectorEnabled },
+        'active-streams': { needed: () => !!(JE.pluginConfig || {}).ActiveStreamsEnabled }
+    };
+
+    /**
+     * The groups a group's rule asks to load along with it (`with`).
+     * @param {string} id
+     * @returns {string[]}
+     */
+    function companionGroups(id) {
+        const rule = FEATURE_GROUPS[id];
+        try {
+            return rule && rule.with ? rule.with() : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    /**
+     * The groups the current page, config and user need right now.
+     * @returns {string[]}
+     */
+    function neededGroups() {
+        if (!componentGroups) return [];
+        const route = currentRoute();
+        return componentGroups.order.filter((id) => {
+            if (id === CORE_GROUP) return true;
+            const rule = FEATURE_GROUPS[id];
+            if (!rule) return true;
+            try {
+                return !!rule.needed && !!rule.needed(route);
+            } catch (e) {
+                console.error(`🪼 Jellyfin Enhanced: Could not decide whether component group '${id}' is needed; loading it.`, e);
+                return true;
+            }
+        });
+    }
+
+    /**
+     * Reads a dotted path on JE ("jellyseerrIssueReporter.initialize").
+     * @param {string} path
+     * @returns {{ owner: any, value: any }} The value and the object it sits on.
+     */
+    function readExport(path) {
+        const parts = path.split('.');
+        let owner = JE;
+        for (let i = 0; i < parts.length - 1 && owner; i++) owner = owner[parts[i]];
+        return { owner, value: owner ? owner[parts[parts.length - 1]] : undefined };
+    }
+
+    /**
+     * Runs the stage-6 initializers of the given groups, in FEATURE_INITIALIZERS
+     * order, each under its condition and only when its module defined it.
+     * @param {string[]} ids - Groups whose modules have just run.
+     */
+    function initializeGroupFeatures(ids) {
+        const config = JE.pluginConfig || {};
+        const settings = JE.currentSettings || {};
+        const known = (id) => (componentGroups && componentGroups.byId[id] ? id : CORE_GROUP);
+        for (const id of ids) groupInitSettings[id] = JE.currentSettings;
+        for (const [group, path, condition] of FEATURE_INITIALIZERS) {
+            if (!ids.includes(known(group))) continue;
+            if (condition && !condition(config, settings)) continue;
+            const { owner, value } = readExport(path);
+            if (typeof value === 'function' && !value.jeLazyGroup) value.call(owner);
+        }
+    }
+
+    /**
+     * Gives every `exports` function of a group that is not loaded a stand-in
+     * that loads the group and then makes the same call, so a caller anywhere
+     * (a shortcut, a header button, another feature) needs no knowledge of
+     * groups. The group's module replaces the stand-in when it runs. A
+     * stand-in returns a promise for the real call's result, so it only suits
+     * calls whose result the caller does not use at once.
+     */
+    function installLazyExports() {
+        for (const id of Object.keys(FEATURE_GROUPS)) {
+            const exports = FEATURE_GROUPS[id].exports;
+            if (!exports || !componentGroups || !componentGroups.byId[id] || groupStates[id]) continue;
+            for (const path of exports) {
+                // A dotted export sits on a namespace its module creates; until
+                // then an empty one holds the stand-in (the module replaces it).
+                const parts = path.split('.');
+                let owner = JE;
+                for (let i = 0; i < parts.length - 1; i++) {
+                    if (owner[parts[i]] === undefined || owner[parts[i]] === null) owner[parts[i]] = {};
+                    owner = owner[parts[i]];
+                }
+                const name = parts[parts.length - 1];
+                if (owner[name] !== undefined) continue;
+                const standIn = function(...args) {
+                    return ensureGroups([id]).then(() => {
+                        const real = readExport(path);
+                        if (typeof real.value === 'function' && real.value !== standIn) return real.value.apply(real.owner, args);
+                        console.error(`🪼 Jellyfin Enhanced: '${path}' is not available (component group '${id}' did not load).`);
+                        return undefined;
+                    });
+                };
+                standIn.jeLazyGroup = id;
+                owner[name] = standIn;
+            }
+        }
+    }
+
+    /**
+     * Loads whatever the current page, config and user need and do not have
+     * yet. Called on every navigation, when a Home tab or a video appears and
+     * after a user switch; cheap when nothing is missing.
+     * @returns {Promise<void>}
+     */
+    function loadNeededGroups() {
+        const now = Date.now();
+        // A group whose files could not be fetched at all is asked for again
+        // after a pause, not on every page change in between (scheduleGroupRetry).
+        const due = neededGroups().filter(id => groupStates[id] || !groupRetryAfter[id] || groupRetryAfter[id] <= now);
+        // Paced like boot: the modules of a page the user has just gone to
+        // run in the gaps jellyfin-web leaves while it draws that page.
+        const loading = ensureGroups(due, { pace: 'background' });
+        scheduleGroupRetry();
+        return loading;
+    }
+
+    /**
+     * Arranges for the groups whose last load failed entirely to be asked for
+     * again when their pause is over, without waiting for another trigger. The
+     * retry asks only for what the page still needs; if that fails too, the
+     * batch schedules the next one, with a longer pause.
+     */
+    function scheduleGroupRetry() {
+        if (groupRetryTimer) return;
+        const now = Date.now();
+        // Only groups the page still needs and that are not being loaded right now.
+        const waiting = neededGroups().filter(id => !groupStates[id] && groupRetryAfter[id] > now).map(id => groupRetryAfter[id]);
+        if (!waiting.length) return;
+        groupRetryTimer = setTimeout(() => {
+            groupRetryTimer = 0;
+            loadNeededGroups();
+        }, Math.max(0, Math.min(...waiting) - Date.now()) + 50);
+    }
+
+    /**
+     * Registers JE's own Home tabs for the pages delivered that way, in
+     * FEATURE_PAGES order, right after "core" has run: a tab has to be in the
+     * tab strip from the first Home render, while its page loads only when the
+     * tab is shown. Each page's *-custom-tab module registers the same tab when
+     * it loads; the registry keeps the first registration of an id.
+     */
+    function registerPageTabs() {
+        const config = JE.pluginConfig || {};
+        const register = JE.nativeTabs && JE.nativeTabs.register;
+        if (typeof register !== 'function') return;
+        for (const page of FEATURE_PAGES) {
+            if (!config[page.flag] || !config[`${page.delivery}UseNativeTab`]) continue;
+            const [id, titleKey, fallbackTitle, icon] = page.tab;
+            const title = titleKey ? (JE.t(titleKey) || fallbackTitle) : fallbackTitle;
+            register(id, title, (panel) => {
+                const marker = document.createElement('div');
+                marker.className = page.marker;
+                panel.appendChild(marker);
+            }, icon);
+        }
+    }
+
+    /**
+     * Gives the features of groups that loaded after the page was drawn the
+     * DOM change they wait for. Many features start their work from the shared
+     * body observer and, started at boot, are woken by the page still filling
+     * in; started later, on a page that has already settled, nothing would wake
+     * them until the user did something. An empty hidden element added to the
+     * body and removed again is that wake-up, and changes nothing else.
+     */
+    function nudgeObservers() {
+        if (!document.body) return;
+        const marker = document.createElement('span');
+        marker.hidden = true;
+        document.body.appendChild(marker);
+        marker.remove();
+    }
+
+    /**
+     * Starts loading groups on demand once the boot groups' features have
+     * started, and loads at once whatever the page needs beyond them:
+     *  - on every navigation (JE's own deduplicated navigation hook, which
+     *    fires as soon as the address changes, before the new view is shown);
+     *  - when a Home tab holding the placeholder of a page that is not loaded
+     *    becomes the active one (tab switches do not always change the address);
+     *  - when a <video> starts loading or playing (playback can begin before
+     *    the address changes to the video page);
+     *  - when a switched-in user's data has loaded (done by its own caller).
+     * @returns {Promise<void>} Resolves when the groups needed right now have loaded.
+     */
+    function watchGroupTriggers() {
+        const onNavigate = JE.core && JE.core.navigation && JE.core.navigation.onNavigate;
+        if (typeof onNavigate === 'function') onNavigate(() => { loadNeededGroups(); });
+        else window.addEventListener('hashchange', () => { loadNeededGroups(); });
+
+        const tabbed = FEATURE_PAGES.filter(page => componentGroups.byId[page.group] && (JE.pluginConfig || {})[page.flag] && isTabbedPage(page));
+        if (tabbed.length && JE.helpers && typeof JE.helpers.observeTabContainers === 'function') {
+            const watcher = JE.helpers.observeTabContainers('je-component-groups', tabbed.map(markerSelector).join(', '), () => {
+                if (tabbed.every(page => groupStates[page.group])) watcher.teardown();
+                else loadNeededGroups();
+            });
+        }
+
+        if (componentGroups.byId.player && !groupStates.player) {
+            const onVideo = (event) => {
+                if (!event.target || event.target.nodeName !== 'VIDEO') return;
+                videoSeen = true;
+                for (const type of ['loadstart', 'play', 'playing']) document.removeEventListener(type, onVideo, true);
+                loadNeededGroups();
+            };
+            for (const type of ['loadstart', 'play', 'playing']) document.addEventListener(type, onVideo, true);
+        }
+
+        return loadNeededGroups(); // what the resolved settings and the current address add
+    }
+
+    /**
+     * The component-group loader, for features and automation.
+     * `ensure(ids, { pace })` loads groups (resolves when they have run and
+     * their features are initialized; `pace` as in ensureGroups, 'now' unless
+     * given: a caller whose work can wait for the page asks with 'boot'),
+     * `state()` reports each group asked for so far
+     * ('loading' or 'ready'), `needed()` lists what the current page needs,
+     * `settled()` resolves when nothing is loading, and `catalog()` describes
+     * the rules above as data (tests check them against the groups file).
+     */
+    JE.loader = {
+        ensure: (ids, options) => ensureGroups(Array.isArray(ids) ? ids : [ids], options && options.pace ? { pace: options.pace } : {}),
+        state: () => Object.assign({}, groupStates),
+        needed: () => neededGroups(),
+        settled: () => groupQueue.then(() => undefined),
+        catalog: () => ({
+            groups: Object.keys(FEATURE_GROUPS).map(id => ({ id, exports: (FEATURE_GROUPS[id].exports || []).slice() })),
+            initializers: FEATURE_INITIALIZERS.map(([group, path]) => ({ group, path })),
+            pages: FEATURE_PAGES.map(page => ({ group: page.group, flag: page.flag, delivery: page.delivery, tab: page.tab.slice(), marker: page.marker }))
+        })
+    };
 
      /**
      * Loads the splash screen script early.
@@ -1037,12 +1833,19 @@
         hiddenContent: 'hidden-content.json'
     };
 
+    // Documents the client saves whole. One that failed to load (null) stays
+    // null instead of taking the empty default: the next change would
+    // otherwise be saved over the user's stored list.
+    const SAVED_WHOLE_DOCUMENTS = new Set(['shortcuts', 'hiddenContent']);
+
     /**
      * Assembles a fresh userConfig object from the five per-user documents.
      * A document that is missing or failed to load (null/undefined/non-object)
-     * keeps its default; settings, bookmark and hidden-content are converted
-     * from PascalCase to camelCase. Shared by the per-endpoint loader and the
-     * bootstrap payload so both build the object identically.
+     * keeps its default, except that a hidden-content or shortcuts document
+     * that failed to load (null) stays null; settings, bookmark and
+     * hidden-content are converted from PascalCase to camelCase. Shared by the
+     * per-endpoint loader and the bootstrap payload so both build the object
+     * identically.
      * @param {object} documents - Map of document name (settings, shortcuts,
      *   bookmark, elsewhere, hiddenContent) to its parsed JSON, or null.
      * @returns {object} A freshly-built userConfig object.
@@ -1051,6 +1854,7 @@
         const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
         for (const name of Object.keys(USER_CONFIG_DOCUMENTS)) {
             const value = documents ? documents[name] : null;
+            if (value === null && SAVED_WHOLE_DOCUMENTS.has(name)) { userConfig[name] = null; continue; }
             if (!value || typeof value !== 'object') continue; // keep the default
             // *** CONVERT PASCALCASE TO CAMELCASE ***
             if (name === 'settings' || name === 'bookmark' || name === 'hiddenContent') {
@@ -1064,18 +1868,22 @@
 
     /**
      * Builds the userConfig object from the bootstrap payload's UserSettings
-     * block (the same five documents the standalone endpoints return).
+     * block (the same five documents the standalone endpoints return). The
+     * server answers null for a document it could not load, and Jellyfin's
+     * serializer leaves null properties out, so a missing document is one
+     * that failed to load.
      * @param {object} userSettings - `UserSettings` from the bootstrap payload.
      * @returns {object} A freshly-built userConfig object.
      */
     function buildUserConfigFromBootstrap(userSettings) {
         const docs = userSettings && typeof userSettings === 'object' ? userSettings : {};
+        const doc = key => (Object.prototype.hasOwnProperty.call(docs, key) ? docs[key] : null);
         return buildUserConfig({
-            settings: docs.Settings,
-            shortcuts: docs.Shortcuts,
-            bookmark: docs.Bookmark,
-            elsewhere: docs.Elsewhere,
-            hiddenContent: docs.HiddenContent
+            settings: doc('Settings'),
+            shortcuts: doc('Shortcuts'),
+            bookmark: doc('Bookmark'),
+            elsewhere: doc('Elsewhere'),
+            hiddenContent: doc('HiddenContent')
         });
     }
 
@@ -1210,6 +2018,19 @@
                     JE.initializeShortcuts();
                     seedDisplayLanguage(userId);
 
+                    // The incoming user may have features on that the previous
+                    // one did not: load their groups (which also runs their
+                    // stage-6 initializers) before the re-initialization below.
+                    await loadNeededGroups();
+                    if (!JE.session.isCurrent(epoch)) return;
+                    // When the tags group has only just loaded, its stage 6 has
+                    // already started these with this user's settings; starting a
+                    // renderer a second time a moment later restarts work it has
+                    // just begun. (Compared by settings object: a group that
+                    // finished loading while an earlier switch's settings were
+                    // still cleared has not started anything for this user.)
+                    const tagsJustStarted = !!componentGroups && !!componentGroups.byId.tags && groupInitSettings.tags === JE.currentSettings;
+
                     // Per-user tag toggles can differ between users, and the
                     // boot-time conditional initialization only ran for the
                     // first user. The four base-renderer initializers are
@@ -1218,15 +2039,17 @@
                     // enabled; renderers whose toggle is now off stop via
                     // their isEnabled gate and the pipeline invalidation
                     // removes stale overlays.
-                    if (JE.currentSettings?.qualityTagsEnabled && typeof JE.initializeQualityTags === 'function') JE.initializeQualityTags();
-                    if (JE.currentSettings?.genreTagsEnabled && typeof JE.initializeGenreTags === 'function') JE.initializeGenreTags();
-                    if (JE.currentSettings?.ratingTagsEnabled && typeof JE.initializeRatingTags === 'function') JE.initializeRatingTags();
-                    if (JE.currentSettings?.ageRatingTagsEnabled && typeof JE.initializeAgeRatingTags === 'function') JE.initializeAgeRatingTags();
-                    if (JE.currentSettings?.statusTagsEnabled && typeof JE.initializeStatusTags === 'function') JE.initializeStatusTags();
-                    if (JE.currentSettings?.awardsTagsEnabled && JE.pluginConfig?.AwardsTagsEnabled !== false && typeof JE.initializeAwardsTags === 'function') JE.initializeAwardsTags();
-                    if (JE.currentSettings?.customTagsEnabled && typeof JE.initializeCustomTags === 'function') JE.initializeCustomTags();
-                    if (JE.currentSettings?.languageTagsEnabled && typeof JE.initializeLanguageTags === 'function') JE.initializeLanguageTags();
-                    if (JE.currentSettings?.logoTagsEnabled && typeof JE.initializeLogoTags === 'function') JE.initializeLogoTags();
+                    if (!tagsJustStarted) {
+                        if (JE.currentSettings?.qualityTagsEnabled && typeof JE.initializeQualityTags === 'function') JE.initializeQualityTags();
+                        if (JE.currentSettings?.genreTagsEnabled && typeof JE.initializeGenreTags === 'function') JE.initializeGenreTags();
+                        if (JE.currentSettings?.ratingTagsEnabled && typeof JE.initializeRatingTags === 'function') JE.initializeRatingTags();
+                        if (JE.currentSettings?.ageRatingTagsEnabled && typeof JE.initializeAgeRatingTags === 'function') JE.initializeAgeRatingTags();
+                        if (JE.currentSettings?.statusTagsEnabled && typeof JE.initializeStatusTags === 'function') JE.initializeStatusTags();
+                        if (JE.currentSettings?.awardsTagsEnabled && JE.pluginConfig?.AwardsTagsEnabled !== false && typeof JE.initializeAwardsTags === 'function') JE.initializeAwardsTags();
+                        if (JE.currentSettings?.customTagsEnabled && typeof JE.initializeCustomTags === 'function') JE.initializeCustomTags();
+                        if (JE.currentSettings?.languageTagsEnabled && typeof JE.initializeLanguageTags === 'function') JE.initializeLanguageTags();
+                        if (JE.currentSettings?.logoTagsEnabled && typeof JE.initializeLogoTags === 'function') JE.initializeLogoTags();
+                    }
 
                     // Translations follow the per-user language choice.
                     try {
@@ -1356,13 +2179,21 @@
                 JE.initializeSplashScreen();
             }
 
-            // Stage 3: Load ALL component scripts. The ordered list lives in
-            // js/component-scripts.json (see CONTRIBUTING.md); production loads
-            // them as one server-side bundle, dev mode as individual files.
-            // Modules read JE.pluginConfig / JE.userConfig at eval time, so this
-            // must stay after the config is applied.
-            await loadComponentScripts(bootstrap ? bootstrap.ComponentScripts : null);
-            console.log('🪼 Jellyfin Enhanced: All component scripts loaded.');
+            // Stage 3: Load the component groups this page needs. The ordered
+            // module list lives in js/component-scripts.json and its split into
+            // groups in js/component-groups.json (see CONTRIBUTING.md);
+            // production loads the groups as one server-side bundle, dev mode
+            // as individual files. Modules read JE.pluginConfig / JE.userConfig
+            // at eval time, so this must stay after the config is applied.
+            await setComponentGroups(bootstrap);
+            await ensureGroups(neededGroups(), { pace: 'boot', initialize: false });
+            console.log('🪼 Jellyfin Enhanced: Component scripts loaded.');
+
+            // window.JE has named the plugin on every page whenever Bookmarks was enabled: the Bookmarks
+            // library view set it as soon as the component scripts had run, and scripts outside JE came to
+            // use it. That view loads on demand now, so the alias is set here, at the same point of the
+            // boot, with nothing loaded for it.
+            if (JE.pluginConfig?.BookmarksEnabled && !window.JE) window.JE = JE;
 
             // Wire user-switch detection → global reset → re-bootstrap.
             // Must happen after the component scripts so JE.session exists.
@@ -1404,6 +2235,8 @@
 
             seedDisplayLanguage(userId);
 
+            installLazyExports();
+
             // Stage 5: Initialize theme system first
             if (typeof JE.themer?.init === 'function') {
                 JE.themer.init();
@@ -1415,73 +2248,25 @@
                 JE._cacheManager.forceSave();
             });
 
-            // Stage 6: Initialize feature modules
-            if (typeof JE.initializePluginRevisions === 'function') JE.initializePluginRevisions();
-            if (typeof JE.initializeEnhancedScript === 'function') JE.initializeEnhancedScript();
-            if (typeof JE.initializeElsewhereScript === 'function' && JE.pluginConfig?.ElsewhereEnabled) JE.initializeElsewhereScript();
-            if (typeof JE.initializeJellyseerrScript === 'function' && JE.pluginConfig?.JellyseerrEnabled && JE.pluginConfig?.JellyseerrShowSearchResults !== false) JE.initializeJellyseerrScript();
-            if (typeof JE.jellyseerrIssueReporter?.initialize === 'function' && JE.pluginConfig?.JellyseerrEnabled && JE.pluginConfig?.JellyseerrShowReportButton) JE.jellyseerrIssueReporter.initialize();
-            if (typeof JE.initializePauseScreen === 'function') JE.initializePauseScreen();
-            if (typeof JE.initializeBookmarks === 'function') JE.initializeBookmarks();
-            if (typeof JE.initializeQualityTags === 'function' && JE.currentSettings?.qualityTagsEnabled) JE.initializeQualityTags();
-            if (typeof JE.initializeGenreTags === 'function' && JE.currentSettings?.genreTagsEnabled) JE.initializeGenreTags();
-            if (typeof JE.initializeRatingTags === 'function' && JE.currentSettings?.ratingTagsEnabled) JE.initializeRatingTags();
-            if (typeof JE.initializeAgeRatingTags === 'function' && JE.currentSettings?.ageRatingTagsEnabled) JE.initializeAgeRatingTags();
-            if (typeof JE.initializeStatusTags === 'function' && JE.currentSettings?.statusTagsEnabled) JE.initializeStatusTags();
-            if (typeof JE.initializeAwardsTags === 'function' && JE.currentSettings?.awardsTagsEnabled && JE.pluginConfig?.AwardsTagsEnabled !== false) JE.initializeAwardsTags();
-            if (typeof JE.initializeCustomTags === 'function' && JE.currentSettings?.customTagsEnabled) JE.initializeCustomTags();
-            if (typeof JE.initializeTagStyles === 'function' && JE.pluginConfig?.TagStyleWebActive) JE.initializeTagStyles();
-            if (typeof JE.initializeUserReviewTags === 'function' && JE.pluginConfig?.ShowUserReviews && JE.pluginConfig?.ShowUserRatingOnPosters && JE.currentSettings?.ratingTagsEnabled) JE.initializeUserReviewTags();
-            if (typeof JE.initializeArrLinksScript === 'function' && JE.pluginConfig?.ArrLinksEnabled) JE.initializeArrLinksScript();
-            if (typeof JE.initializeArrTagLinksScript === 'function' && JE.pluginConfig?.ArrTagsShowAsLinks) JE.initializeArrTagLinksScript();
-            if (typeof JE.initializeSeerrDetailLinkScript === 'function' && JE.pluginConfig?.JellyseerrEnabled && JE.pluginConfig?.JellyseerrShowDetailPageLink) JE.initializeSeerrDetailLinkScript();
-            if (typeof JE.initializeLetterboxdLinksScript === 'function' && JE.pluginConfig?.LetterboxdEnabled) JE.initializeLetterboxdLinksScript();
-            if (typeof JE.initializeReviewsScript === 'function' && (JE.pluginConfig?.ShowReviews || JE.pluginConfig?.ShowUserReviews || JE.pluginConfig?.ShowAnilistReviews)) JE.initializeReviewsScript();
-            if (typeof JE.initializeAwardsScript === 'function' && JE.pluginConfig?.ShowAwards) JE.initializeAwardsScript();
-            if (typeof JE.initializeDoesTheDogDieScript === 'function' && JE.pluginConfig?.DoesTheDogDieEnabled) JE.initializeDoesTheDogDieScript();
-            if (typeof JE.initializeMdblistRatingsScript === 'function' && JE.pluginConfig?.MdblistRatingsEnabled && JE.pluginConfig?.MdblistRatingsShowOnItemDetails) JE.initializeMdblistRatingsScript();
-            if (typeof JE.initializeLanguageTags === 'function' && JE.currentSettings?.languageTagsEnabled) JE.initializeLanguageTags();
-            if (typeof JE.initializeLogoTags === 'function' && JE.currentSettings?.logoTagsEnabled) JE.initializeLogoTags();
-            if (typeof JE.initializePeopleTags === 'function' && JE.currentSettings?.peopleTagsEnabled) JE.initializePeopleTags();
-            // Initialize the unified tag pipeline AFTER all tag renderers have registered
-            if (typeof JE.tagPipeline?.initialize === 'function') JE.tagPipeline.initialize();
-            if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
-            if (typeof JE.initializePlaybackRatingBadge === 'function' && JE.pluginConfig?.ShowPlaybackRatingBadge) JE.initializePlaybackRatingBadge();
-            // Skip hidden content initialization when feature is disabled server-wide — JE.hiddenContent stays undefined, safely disabling all downstream consumers
-            if (typeof JE.initializeHiddenContent === 'function' && JE.pluginConfig?.HiddenContentEnabled) JE.initializeHiddenContent();
-            // Spoiler Guard loads its per-user enabled-series list once at startup. The toggle button on series detail pages reads from that cache.
-            if (JE.pluginConfig?.SpoilerBlurEnabled && typeof JE.spoilerBlur?.init === 'function') JE.spoilerBlur.init();
-
-            if (JE.pluginConfig?.ColoredRatingsEnabled && typeof JE.initializeColoredRatings === 'function') {
-                JE.initializeColoredRatings();
-            }
-            if (JE.pluginConfig?.ThemeSelectorEnabled && typeof JE.initializeThemeSelector === 'function') {
-                JE.initializeThemeSelector();
-            }
-            if (JE.pluginConfig?.ColoredActivityIconsEnabled && typeof JE.initializeActivityIcons === 'function') {
-                JE.initializeActivityIcons();
-            }
-            if (JE.pluginConfig?.PluginIconsEnabled && typeof JE.initializePluginIcons === 'function') {
-                JE.initializePluginIcons();
-            }
-            if (JE.pluginConfig?.ActiveStreamsEnabled && typeof JE.activeStreams?.initialize === 'function') {
-                JE.activeStreams.initialize();
-            }
-            if (JE.pluginConfig?.DownloadsPageEnabled && typeof JE.initializeDownloadsPage === 'function') {
-                JE.initializeDownloadsPage();
-            }
-            if (JE.pluginConfig?.CalendarPageEnabled && typeof JE.initializeCalendarPage === 'function') {
-                JE.initializeCalendarPage();
-            }
-            if (JE.pluginConfig?.HiddenContentEnabled && typeof JE.initializeHiddenContentPage === 'function') {
-                JE.initializeHiddenContentPage();
-            }
+            // Stage 6: Initialize the feature modules of every group loaded so
+            // far, in FEATURE_INITIALIZERS order. Groups loaded later run their
+            // own entries right after their modules.
+            initializeGroupFeatures(Object.keys(groupStates).filter(id => groupStates[id] === 'ready'));
+            // Only now ask the rules again. The first plan was made before
+            // enhanced/config.js had resolved the personal settings, and the
+            // address or the user may have changed since (a sign-in redirect
+            // lands on its page after boot began). Whatever that adds loads as
+            // its own batch, AFTER the features above have started: Hidden
+            // Content and Spoiler Guard must never wait on another download.
+            await watchGroupTriggers();
 
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');
 
-            // Programmatic boot-complete marker: every component script has executed
-            // and every enabled initializeX() has run. Automation (E2E) waits on this
-            // instead of racing individual JE.* properties that appear mid-boot.
+            // Programmatic boot-complete marker: every component script this page
+            // needs has executed and every enabled initializeX() of theirs has run.
+            // Automation (E2E) waits on this instead of racing individual JE.*
+            // properties that appear mid-boot; for a feature that loads on demand,
+            // await JE.loader.ensure([group]) or JE.loader.settled().
             JE.initialized = true;
 
             // Final Stage: Hide splash screen

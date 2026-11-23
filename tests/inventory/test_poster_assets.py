@@ -28,7 +28,8 @@ class RatingSourceAssetsTests(unittest.TestCase):
             self.assertFalse((out / "obsolete.json").exists())
             logos = json.loads((out / "rating-source-icons.json").read_text())
             self.assertEqual(set(logos), {"rating-" + name for name in
-                             ["imdb", "tmdb", "rtCritic", "rtAudience", "metacritic", "letterboxd", "trakt"]})
+                             ["imdb", "tmdb", "rtCritic", "rtAudience", "metacritic", "letterboxd", "trakt",
+                              "myAnimeList", "aniList", "metacriticUser", "rogerEbert", "mdblist"]})
             for logo in logos.values():
                 self.assertTrue(logo["paths"])
                 self.assertTrue(all(path["d"] and path["fill"] for path in logo["paths"]))

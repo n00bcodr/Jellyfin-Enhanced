@@ -11,7 +11,8 @@
      */
     JE.CONFIG = {
         // Use getters so values always reflect the latest pluginConfig even if assigned later
-        get TOAST_DURATION() { return (JE.pluginConfig && JE.pluginConfig.ToastDuration) || 1500; },
+        // 0 is a real value (toasts off), so only a missing/invalid setting falls back to 1500.
+        get TOAST_DURATION() { const v = JE.pluginConfig && JE.pluginConfig.ToastDuration; return Number.isFinite(v) && v >= 0 ? v : 1500; },
         get HELP_PANEL_AUTOCLOSE_DELAY() { return (JE.pluginConfig && JE.pluginConfig.HelpPanelAutocloseDelay) || 15000; }
     };
 
@@ -272,7 +273,7 @@
             displayLanguage: '',
             calendarDisplayMode: 'list',
             calendarDefaultViewMode: 'agenda',
-            disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
+            disableAllShortcuts: false, longPress2xEnabled: false, subtitleSyncButtonEnabled: false, lastOpenedTab: 'shortcuts'
         };
 
         // Aliases mapping camelCase client settings keys to potential server plugin default keys

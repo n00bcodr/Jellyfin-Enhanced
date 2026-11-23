@@ -1,6 +1,6 @@
 # Elsewhere & Reviews Settings
 
-Configure providers, TMDB reviews, release dates, and local reviews in **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Elsewhere & Reviews**. Settings on this page are admin settings for the server unless marked per user. The **TMDB** and **AniList** cards also appear on the **Services** tab as linked copies, so changing one changes the other. For viewer workflows, see [Elsewhere Integration](elsewhere-features.md).
+Configure providers, TMDB reviews, release dates, and local reviews in **Dashboard** → **Plugins** → **Jellyfin Enhanced** → [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere). Settings on this page are admin settings for the server unless marked per user. The [**TMDB**](../open-in-jellyfin.md?tab=elsewhere&card=tmdb) and [**AniList**](../open-in-jellyfin.md?tab=elsewhere&card=anilist) cards also appear on the **Services** tab as linked copies, so changing one changes the other. For viewer workflows, see [Elsewhere Integration](elsewhere-features.md).
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ Use a compatible Jellyfin web client with Jellyfin Enhanced loaded. See [Compati
 
 !!! note "TMDB key and internet access"
 
-    Provider lookup, TMDB reviews, and release dates need a TMDB API key and outbound internet access from your Jellyfin server. Get the v3 API key from your [TMDB account's API settings](https://www.themoviedb.org/settings/api). Local reviews need no key, but the item still needs a TMDB identity.
+    TMDB reviews and release dates need a TMDB API key; provider lookup and Seerr poster logos can instead use Seerr's streaming-provider data when no TMDB key is set and the Seerr integration is enabled (per-season providers still need TMDB). TMDB-backed features need outbound internet access from your Jellyfin server. Get the v3 API key from your [TMDB account's API settings](https://www.themoviedb.org/settings/api). Local reviews need no key, but the item still needs a TMDB identity.
 
 ??? info "How items are identified"
 
@@ -20,20 +20,23 @@ Use a compatible Jellyfin web client with Jellyfin Enhanced loaded. See [Compati
 
 ## Setup
 
+[Elsewhere & Reviews > TMDB](../open-in-jellyfin.md?tab=elsewhere&card=tmdb){ .je-open }
+
 Set up the shared TMDB key first, then choose the Elsewhere features you want. The same key also serves JE's TMDB-dependent Seerr features.
 
-1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then **Elsewhere & Reviews**.
-2. Enter your **TMDB API Key**. Click **Test** beside it and read the feedback. This checks the entered key through Jellyfin, including an unsaved key; it does not save configuration.
-3. Turn on **Enable Elsewhere**. Enter the key first if this checkbox is disabled.
-4. Choose **Default Region**, such as `US`, `GB`, `DE`, or `AU`. Optionally configure **Default Providers**, **Ignore Providers**, and **Custom Branding**.
-5. Turn on any review or release-date features you want, then click **Save Settings**.
-6. Reload the client and open a supported item detail page.
+1. Enter your **TMDB API Key**. Click **Test** beside it and read the feedback. This checks the entered key through Jellyfin, including an unsaved key; it does not save configuration.
+2. Turn on **Enable Elsewhere**. Enter the key first if this checkbox is disabled.
+3. Choose **Default Region**, such as `US`, `GB`, `DE`, or `AU`. Optionally configure **Default Providers**, **Ignore Providers**, and **Custom Branding**.
+4. Turn on any review or release-date features you want, then click **Save Settings**.
+5. Reload the client and open a supported item detail page.
 
 ??? note "Configured key versus tested key"
 
     **Enable Elsewhere** ships on, but providers cannot work until a key is configured. Its checkbox depends on that key requirement. The server's configured-key flag only means the key is nonempty and non-whitespace; it does not mean the key passed **Test**.
 
 ## Configuration Options
+
+[Elsewhere & Reviews > Elsewhere (Streaming Providers)](../open-in-jellyfin.md?tab=elsewhere&card=elsewhere-streaming-providers){ .je-open }
 
 Use **Elsewhere (Streaming Providers)** to choose what appears in automatic detail-page results. The country and provider filters also affect logos on JE's Seerr cards.
 
@@ -43,14 +46,16 @@ Follow [Setup](#setup) to apply these server settings, then use the sections bel
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Enable Elsewhere** | On | Enables the detail-page provider panel with a configured TMDB key. |
+| **Enable Elsewhere** | On | Enables the detail-page provider panel with a configured TMDB key or, without one, the Seerr integration. |
 | **TMDB API Key** | Empty | Supplies the server-side key shared by TMDB-backed features. |
 | **Default Region** | `US` | Sets the automatic search country unless the viewer chooses a personal default. Empty falls back to `US`. |
 | **Default Providers** | Empty | Shows all subscription providers when empty; otherwise permits only exact provider names. |
 | **Ignore Providers** | Empty | Hides matching provider names after **Default Providers** is applied. |
+| **Use each user's Seerr streaming region** | Off | Looks providers up in each user's Seerr **Streaming Region** (their own Seerr setting, else Seerr's global one, else US as Seerr does) instead of the Default Region or the user's own Elsewhere country; needs the Seerr integration. Falls back to the Default Region if Seerr gives none. Applies to the Elsewhere panel, Seerr poster logos, and the More Info modal's streaming row. |
 | **Per-season providers** | On | Enables automatic season lookup for default/aired-order series; users can opt out. |
 | **Custom Branding Message** | Empty | Replaces the unavailable heading when no filtered automatic providers or season groups remain. |
 | **Custom Branding Icon URL** | Empty | Adds an optional icon beside a nonempty custom message. |
+| **Upload Icon** | None | An icon stored on the server, used in place of the icon URL. |
 
 ### Default Region
 
@@ -211,14 +216,18 @@ Show your own heading when no filtered automatic providers or season groups rema
 
 ### How to use
 
-1. Expand **Custom Branding** in **Elsewhere & Reviews**.
-2. Enter a message and optional icon URL. Use an image viewers can access, such as an HTTPS URL or a root-relative path like `/web/assets/img/icon.png`.
-3. Click **Save Settings** and reload the client.
+1. Expand [**Custom Branding** in **Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=elsewhere-streaming-providers).
+2. Enter a message.
+3. Optionally add an icon, either way:
+    - **Upload Icon:** drop or pick a PNG, JPG, GIF, WebP or SVG file. It is stored on the server straight away and used instead of the icon URL; the bin button removes it.
+    - **Custom Branding Icon URL:** each viewer's browser loads the icon, so use a web address it can open, such as `https://example.com/logo.png`, or a path Jellyfin serves, such as `/web/favicons/touchicon.png`. A file path on the server, such as `/config/logo.png`, doesn't work. If the admin page can't load the image, a warning appears under the field.
+4. Click **Save Settings** and reload the client.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Custom Branding Message** | Empty | Replaces only the automatic unavailable heading. Empty keeps the standard unavailable heading. |
-| **Custom Branding Icon URL** | Empty | Adds a 24 × 24 CSS-pixel icon beside the custom message. Empty supplies no icon. |
+| **Custom Branding Icon URL** | Empty | Adds a 24 × 24 CSS-pixel icon beside the custom message. Any image type browsers show works, such as PNG, SVG or WebP. Ignored while an icon is uploaded. Empty supplies no icon. |
+| **Upload Icon** | None | An icon stored on the server, used in place of the icon URL. |
 
 !!! tip "Check your touch devices"
 
@@ -226,11 +235,13 @@ Show your own heading when no filtered automatic providers or season groups rema
 
 ??? info "Icons, headings, and hidden controls"
 
-    An icon URL without a message has no effect. Failed icons are hidden. There is no default branding logo. Manual-country results retain their own availability headings.
+    An icon without a message has no effect. Failed icons are hidden, and the browser console logs a warning naming the URL. Paths starting with `/web/` or `/JellyfinEnhanced/` are resolved against your server address, so they keep working when Jellyfin runs under a base path such as `/jellyfin`; other root-relative paths are used as entered. There is no default branding logo. Manual-country results retain their own availability headings.
 
     With a custom message in the unavailable automatic state, search and settings controls initially have zero opacity. Pointer entry reveals them and pointer exit hides them; their click handlers remain.
 
 ## TMDB Reviews
+
+[Elsewhere & Reviews > TMDB Reviews](../open-in-jellyfin.md?tab=elsewhere&card=tmdb-reviews){ .je-open }
 
 Read TMDB community reviews on movie and series pages. See [TMDB Reviews](elsewhere-features.md#tmdb-reviews) for card behavior and limits.
 
@@ -255,6 +266,8 @@ Opening or closing **Reviews ({count})** saves your expansion choice, including 
 
 ## AniList Reviews
 
+[Elsewhere & Reviews > AniList](../open-in-jellyfin.md?tab=elsewhere&card=anilist){ .je-open }
+
 Show the top AniList user reviews for anime on movie and series pages. See [AniList Reviews](elsewhere-features.md#anilist-reviews) for card behavior and limits.
 
 ### How to use
@@ -276,6 +289,8 @@ Show the top AniList user reviews for anime on movie and series pages. See [AniL
 
 ## Review Translation
 
+[Elsewhere & Reviews > Review Translation](../open-in-jellyfin.md?tab=elsewhere&card=review-translation){ .je-open }
+
 Add a **Translate** button to English TMDB and AniList reviews. See [Review Translation](elsewhere-features.md#review-translation) for how it behaves.
 
 !!! warning "Only shown when the user's display language is not English"
@@ -284,7 +299,7 @@ Add a **Translate** button to English TMDB and AniList reviews. See [Review Tran
 
 ### How to use
 
-1. Turn on **Enable Review Translation** in **Elsewhere & Reviews**.
+1. Turn on **Enable Review Translation** in [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=review-translation).
 2. Optionally enter your **LibreTranslate URL** (and **API Key** if your instance needs one) for browsers without a built-in translator.
 3. Click **Save Settings** and reload the client.
 
@@ -306,11 +321,13 @@ Add a **Translate** button to English TMDB and AniList reviews. See [Review Tran
 
 ## User Reviews
 
+[Elsewhere & Reviews > User Reviews](../open-in-jellyfin.md?tab=elsewhere&card=user-reviews){ .je-open }
+
 Let viewers share text reviews and/or star ratings on your server. Local reviews need no TMDB API key or enabled provider panel.
 
 ### How to use
 
-1. Turn on **Enable User Written Reviews** in **Elsewhere & Reviews**, click **Save Settings**, and reload the client.
+1. Turn on **Enable User Written Reviews** in [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=user-reviews), click **Save Settings**, and reload the client.
 2. On an eligible detail page, expand **Reviews ({count})** and click **Write a Review** if you have no review for that item, or **Edit** on your existing review.
 
 See [User Reviews](elsewhere-features.md#user-reviews) for writing, editing, deletion, character limits, and the picker limitation.
@@ -383,13 +400,13 @@ To use this, turn on **Also save review star ratings as the user's Jellyfin rati
 
 Hide both local and TMDB review panels on guarded items in the web client. This includes guarded movies and a guarded series' child pages.
 
-1. Use the admin **Enable Spoiler Guard** and **Hide reviews on Spoiler Guard series** settings in **Display**.
+1. Use the admin **Enable Spoiler Guard** and **Hide reviews on Spoiler Guard series** settings in [**Display**](../open-in-jellyfin.md?tab=display&card=spoiler-guard).
 2. Set your personal **Reviews** preference in Spoiler Guard to override the admin policy, or leave it unset to inherit that policy.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Enable Spoiler Guard** | Off (admin, **Display**) | Enables Spoiler Guard, including its review-suppression checks. |
-| **Hide reviews on Spoiler Guard series** | On (admin, **Display**) | Permits suppression of local and TMDB review panels for guarded items. |
+| **Enable Spoiler Guard** | Off (admin, [**Display**](../open-in-jellyfin.md?tab=display&card=spoiler-guard)) | Enables Spoiler Guard, including its review-suppression checks. |
+| **Hide reviews on Spoiler Guard series** | On (admin, [**Display**](../open-in-jellyfin.md?tab=display&card=spoiler-guard)) | Permits suppression of local and TMDB review panels for guarded items. |
 | **Reviews** | Unset; inherits admin policy (per user) | Controls personal review hiding in Spoiler Guard preferences. Off allows reviews once state loads successfully. |
 
 See [Spoiler Guard settings](../spoiler-guard/spoiler-guard-settings.md).
@@ -400,12 +417,14 @@ See [Spoiler Guard settings](../spoiler-guard/spoiler-guard-settings.md).
 
 ## Release Dates
 
+[Elsewhere & Reviews > Release Dates](../open-in-jellyfin.md?tab=elsewhere&card=release-dates){ .je-open }
+
 Show movie release dates and television air dates beside detail-page metadata. See [Release Dates](elsewhere-features.md#release-dates) for how each item's date is chosen.
 
 ### How to use
 
 1. Configure the shared **TMDB API Key**.
-2. Turn on **Show Release/Air Date** under **Release Dates**, then click **Save Settings**.
+2. Turn on **Show Release/Air Date** under [**Release Dates**](../open-in-jellyfin.md?tab=elsewhere&card=release-dates), then click **Save Settings**.
 3. Reload the client and open an identifiable movie, series, season, or episode.
 
 | Setting | Default | What it does |
@@ -426,8 +445,8 @@ Show subscription-provider logos on JE's Seerr cards inside Jellyfin, including 
 ### How to use
 
 1. Complete [Seerr connection setup](../seerr/seerr-settings.md).
-2. Configure the shared **TMDB API Key** in **Elsewhere & Reviews**.
-3. Open **Seerr**, turn on **Show Streaming Providers on Posters**, and click **Save Settings**.
+2. Configure the shared **TMDB API Key** in [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=tmdb).
+3. Open [**Seerr**](../open-in-jellyfin.md?tab=seerr&card=discovery-ui-extras), turn on **Show Streaming Providers on Posters**, and click **Save Settings**.
 4. Reload the client and browse JE's Seerr cards. For Jellyfin search cards, keep **Show Seerr Results in Search** on.
 
 Admin settings in **Seerr**, except the TMDB key:
@@ -437,7 +456,7 @@ Admin settings in **Seerr**, except the TMDB key:
 | **Enable Seerr integration** | Off | Enables JE's Seerr features. |
 | **Seerr URL(s) (One per line)** | Empty | Supplies the Seerr instance addresses used by JE. |
 | **Seerr API Key** | Empty | Authenticates JE's requests to Seerr. |
-| **TMDB API Key** | Empty (**Elsewhere & Reviews**) | Enables server-side watch-provider lookups. |
+| **TMDB API Key** | Empty ([**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere&card=tmdb)) | Enables server-side watch-provider lookups. |
 | **Show Streaming Providers on Posters** | Off | Adds at most four valid subscription-provider logos to JE's Seerr cards. |
 | **Show Seerr Results in Search** | On | Enables JE's Seerr results in Jellyfin search when connection and access requirements are met. |
 
@@ -537,7 +556,7 @@ Check the country and filters before assuming a title has no subscription provid
 
 1. Check your effective default country and both admin lists. **Default Providers** can remove everything through unmatched names or capitalization; **Ignore Providers** can exclude all matches.
 2. Try a manual search with an empty personal provider list to compare unfiltered subscription data in another country.
-3. If names show without logos, check browser access to `image.tmdb.org`. For a missing branding icon, check the configured image host.
+3. If names show without logos, check browser access to `image.tmdb.org`. For a missing branding icon, check the warning under **Custom Branding Icon URL** and the browser console; the URL must be a web address, not a server file path. An uploaded icon replaces the URL.
 
 ??? note "Subscription categories"
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { coverage, TAG_KEY } from '../../../scripts/tag-translation-coverage.mjs';
 
 // Untranslated Media Tags strings fall back to English (Weblate fills them); a translated one must keep
@@ -20,7 +21,7 @@ test('every shipped locale is reported and its translated Media Tags strings kee
 // Shared plugin strings (common buttons, other features' dialogs) are translated with those features.
 const SHARED = /^(common_|hidden_content_|remove_button_text$|track_off$|awards_label$|panel_settings_subtitles_position$|reviews_|jellyseerr_)/;
 test('the coverage report counts every string the Media Tags code uses', () => {
-  const js = new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/', import.meta.url).pathname;
+  const js = fileURLToPath(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/', import.meta.url));
   const english = JSON.parse(readFileSync(join(js, 'locales/en.json'), 'utf8'));
   const files = [];
   const walk = dir => { for (const name of readdirSync(dir)) { const path = join(dir, name); if (statSync(path).isDirectory()) walk(path); else if (path.endsWith('.js')) files.push(path); } };

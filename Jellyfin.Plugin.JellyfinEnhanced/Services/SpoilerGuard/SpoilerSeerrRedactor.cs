@@ -768,7 +768,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (SeerrCollection.IsMatch(path)) return RedactList(list["parts"] as JsonArray, scope, false);
             if (SeerrPersonCredits.IsMatch(path))
             {
-                var changed = RedactList(list["cast"] as JsonArray, scope, null);
+                // A person's cast rows name the part they played, which the discovery
+                // role line shows ("as …"): a guarded title's goes, as on its details.
+                var changed = RedactList(list["cast"] as JsonArray, scope, null, true);
                 return RedactList(list["crew"] as JsonArray, scope, null) || changed;
             }
 
@@ -793,7 +795,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return null;
         }
 
-        private bool RedactList(JsonArray? items, GuardScope scope, bool? listIsSeries)
+        private bool RedactList(JsonArray? items, GuardScope scope, bool? listIsSeries, bool castCredits = false)
         {
             if (items == null) return false;
             var changed = false;
@@ -812,7 +814,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var policy = BuildPolicy(scope, isSeries);
                 // Top Rated sorts on the client, where a missing score would sink the title.
                 if (policy.Ratings && item[SeerrKeys.VoteAverage] is { } score) item["jeSortRating"] = score.DeepClone();
+                // So does Most votes, on the vote count.
+                if (policy.Ratings && item[SeerrKeys.VoteCount] is { } votes) item["jeSortVotes"] = votes.DeepClone();
                 RedactTitleFields(item, policy, SeerrKeys);
+                if (castCredits && policy.Auxiliary) item.Remove("character");
                 changed = true;
             }
 

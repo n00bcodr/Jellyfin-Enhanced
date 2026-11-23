@@ -37,7 +37,7 @@
             master: 'Master', imdb: 'IMDb', tmdb: 'TMDB', trakt: 'Trakt',
             letterboxd: 'Letterboxd', tomatoes: 'RT Critic', popcorn: 'RT Audience',
             metacritic: 'Metascore', metacriticuser: 'Metacritic User',
-            rogerebert: 'Roger Ebert', myanimelist: 'MAL', anilist: 'AniList',
+            rogerebert: 'Roger Ebert', myanimelist: 'MAL',
         };
 
         // Logo filenames served via the "mdblist-logos" CDN source (see CdnAssetService.cs).
@@ -46,7 +46,7 @@
             master: 'master.png', imdb: 'imdb.png', tmdb: 'tmdb.png', trakt: 'trakt.png',
             letterboxd: 'letterboxd.png', tomatoes: 'rottentomatoes.png', popcorn: 'rottentomatoes_audience.png',
             metacritic: 'metacritic.png', metacriticuser: 'metacritic_audience.png',
-            rogerebert: 'rogerebert.png', myanimelist: 'myanimelist.png', anilist: 'anilist.png',
+            rogerebert: 'rogerebert.png', myanimelist: 'myanimelist.png',
         };
 
         // Only 'tomatoes' (RT Critic) gets a Fresh/Rotten status from MDBList (r.Fresh).
@@ -63,14 +63,14 @@
 
         /**
          * Direct link to a rating's source site, ported from xroguel1ke/jellyfin_ratings'
-         * generateLink(). tmdb/imdb/trakt/anilist/myanimelist use the item's
+         * generateLink(). tmdb/imdb/trakt/myanimelist use the item's
          * cross-provider ids (MdblistCacheEntry.Ids); letterboxd/tomatoes/popcorn/
          * rogerebert use the per-source url MDBList returns (MdblistRatingSource.Url)
          * when it looks usable; metacritic is constructed from the title since
          * MDBList doesn't provide a slug for it. Returns null (render as plain
          * text, not a link) when no usable target exists for that source.
          * @param {string} sourceKey
-         * @param {Object} ids - entry.Ids from the server (imdb/tmdb/trakt/mal/anilist/...)
+         * @param {Object} ids - entry.Ids from the server (imdb/tmdb/trakt/mal/...)
          * @param {string|null|undefined} apiUrl - this rating's Url field, if any
          * @param {string} mediaType - 'movie' or 'tv'
          * @param {string} title
@@ -93,7 +93,6 @@
                 case 'popcorn':
                     if (sLink.startsWith('/')) return `https://www.rottentomatoes.com${sLink}`;
                     return sLink.length > 2 ? `https://www.rottentomatoes.com/m/${sLink}` : null;
-                case 'anilist': return ids.anilist ? `https://anilist.co/anime/${ids.anilist}` : (title ? `https://anilist.co/search/anime?search=${safeTitle}` : null);
                 case 'myanimelist': return ids.mal ? `https://myanimelist.net/anime/${ids.mal}` : (title ? `https://myanimelist.net/anime.php?q=${safeTitle}` : null);
                 case 'rogerebert': return sLink.length > 2 ? `https://www.rogerebert.com/reviews/${sLink}` : (title ? `https://duckduckgo.com/?q=!ducky+site:rogerebert.com/reviews+${safeTitle}` : null);
                 default: return null; // e.g. "master" (MDBList's own aggregate) has no source site to link to

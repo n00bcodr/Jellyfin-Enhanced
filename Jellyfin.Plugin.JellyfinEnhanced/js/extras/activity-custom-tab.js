@@ -51,7 +51,9 @@
   function isOnHomePage() {
     var hash = window.location.hash;
     return hash === '' || hash === '#/home' || hash === '#/home.html'
-      || hash.indexOf('#/home?') !== -1 || hash.indexOf('#/home.html?') !== -1;
+      || hash.indexOf('#/home?') !== -1 || hash.indexOf('#/home.html?') !== -1
+      // (Or only the Recommendations filters' fragment after it: see discovery-address.js.)
+      || hash.indexOf('#/home#') === 0 || hash.indexOf('#/home.html#') === 0;
   }
 
   /** Wait for JE.activityPage to be ready before initializing (30s timeout). */

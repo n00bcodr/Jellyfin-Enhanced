@@ -108,6 +108,14 @@
       `;
     }
 
+    // Remove (delete) the request in Seerr. The server decides who may: the requester
+    // for their own requests in any status, managers and admins for every request.
+    let removeButton = "";
+    if (item.canRemove === true && item.id) {
+      const removeLabel = JE.t?.("requests_remove_request") || "Remove request";
+      removeButton = `<button class="je-request-remove-btn" data-request-id="${escapeHtml(String(item.id))}" data-request-title="${escapeHtml(item.title || "")}" title="${escapeHtml(removeLabel)}" aria-label="${escapeHtml(removeLabel)}"><span class="material-icons">delete</span></button>`;
+    }
+
     // Handle release date label - check if it contains HTML
     let releaseDateHtml = "";
     if (releaseDateLabel) {
@@ -161,7 +169,7 @@
                         ${item.createdAt ? `<span>&#8226;</span><span>${escapeHtml(formatRelativeDate(item.createdAt))}</span>` : ""}
                       </div>
                     </div>
-                    ${(watchButton || approvalButtons) ? `<div class="je-request-actions">${watchButton}${approvalButtons}</div>` : ""}
+                    ${(watchButton || approvalButtons || removeButton) ? `<div class="je-request-actions">${watchButton}${approvalButtons}${removeButton}</div>` : ""}
                 </div>
             </div>
         `;

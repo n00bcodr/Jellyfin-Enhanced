@@ -14,9 +14,9 @@ This section follows the client from loader injection through initialization and
 
 `Services/ScriptInjectionStartupFilter.cs` injects the loader into web responses. `GET /JellyfinEnhanced/script` serves `js/plugin.js`; it is separate from the component bundle. `JellyfinEnhanced.csproj` embeds `js/**`, and `GetScript` in `Controllers/JellyfinEnhancedController.cs` serves individual resources at `/JellyfinEnhanced/js/{path}`.
 
-The ordered module list lives in `js/component-scripts.json`: 181 component modules, with paths relative to `js/`. Entries starting with `//` are ordering notes.
+The ordered module list lives in `js/component-scripts.json`: 195 component modules, with paths relative to `js/`. Entries starting with `//` are ordering notes. `js/component-groups.json` splits those modules into groups that load together; see [Component groups](#component-groups).
 
-**Modules execute in manifest order.** Place a module after every producer whose exports it reads at load time. A consumer loaded too early can capture `undefined`.
+**Modules execute in manifest order.** Place a module after every producer whose exports it reads at load time. A consumer loaded too early can capture `undefined`. A page runs only the groups it needs, so a module also has to be in a group that loads with, or after, every group it reads from.
 
 The initialization stages and user-switch behavior are:
 
@@ -24,8 +24,10 @@ The initialization stages and user-switch behavior are:
 |---|---|
 | Early UI | Dedicated loaders inject `js/others/splashscreen.js` and, when enabled, `js/extras/login-image.js` before the component stage so they can affect the login screen. |
 | Translations | `js/enhanced/translations.js` starts loading at the beginning of `initialize()`, in parallel with bootstrap. It loads/caches locale JSON and resolves `JE.t` before components run. |
-| Bootstrap | Authenticated `GET /JellyfinEnhanced/bootstrap` returns version, token user ID, public configuration, administrator-only private configuration, Custom Tabs / Plugin Pages presence flags, five user documents and the component list. Non-admin `PrivateConfig` is null. The loader falls back to individual endpoints if bootstrap fails. |
-| Components | After configuration is applied, production loads `GET /JellyfinEnhanced/bundle.js`; development mode and bundle failure use individual scripts. |
+| Bootstrap | Authenticated `GET /JellyfinEnhanced/bootstrap` returns version, token user ID, public configuration, administrator-only private configuration, Custom Tabs / Plugin Pages presence flags, five user documents, the component list and the component groups. Non-admin `PrivateConfig` is null. The loader falls back to individual endpoints if bootstrap fails. |
+| Components | After configuration is applied, the loader works out which component groups the page needs and loads `core` plus those groups with one `GET /JellyfinEnhanced/bundle.js?g=…` request. Once those groups' features have started it asks again, with the settings `JE.loadSettings()` resolved and the address as it then is, and loads anything that adds as a second request; boot is complete (`JE.initialized`) after that. Development mode and bundle failure use individual scripts. |
+| Feature start-up | The loader calls each loaded group's start-up functions (`JE.initializeX()` and similar), in a fixed order and under the same conditions as before groups existed, then sets `JE.initialized = true`. That flag means the groups this page needed at boot have loaded and started; groups loaded later start right after their modules run. |
+| Later loads | After boot the loader loads further groups when the address changes, when a Home tab holding a JE page becomes active, when a video starts loading or playing, after a user switch, and when code calls a function a group provides (for example `JE.showEnhancedPanel()`). |
 | User switches | `js/core/session.js` detects identity changes and resets registered feature state. The loader reloads the incoming user's documents and the public config fields the server projects per user (`TagLookItemOverrides`, filtered to the items that user can see) and emits `je:user-data-loaded`. Async work uses identity epochs to discard stale results. |
 
 The bootstrap's `UserSettings` members are `Settings`, `Shortcuts`, `Bookmark`, `Elsewhere` and `HiddenContent`. A document-loading failure yields null for that document. Bootstrap always loads the token user's data, with no target-user parameter, and is served with `no-store`.
@@ -36,24 +38,118 @@ Components consume a value once, shortly after bootstrap, through `JE.takePrefet
 
 ### Bundle and development mode
 
-`Services/ClientScriptBundle.cs` builds the bundle on first use and caches it by the plugin's script cache key (version plus DLL timestamp). It wraps each manifest file in a function and publishes `window.__JE_BUNDLE_MODULES`.
+`Services/ClientScriptBundle.cs` serves the component modules as one script. It wraps each manifest file in a function, so the loader can run the modules one at a time.
 
-The index source map at `/JellyfinEnhanced/bundle.js.map` uses `sections` to preserve original filenames and line numbers in DevTools and stack traces. Bundle and map routes are anonymous; production responses use `public, max-age=31536000, immutable`.
+- `GET /JellyfinEnhanced/bundle.js?g=core,tags` serves the named groups. The script has one statement per group, `window.__JE_BUNDLES["<id>"] = { total, modules: [...] }`, in the order of the groups file (`core` first), each group's modules in manifest order. An unknown, repeated or malformed group list returns `404`.
+- `GET /JellyfinEnhanced/bundle.js` without `g` serves the whole manifest as before: one array, `window.__JE_BUNDLE_MODULES`.
+- Each group's part is built once per plugin script cache key (version plus DLL timestamp); a requested combination is assembled from those parts, and the most recent 24 combinations are kept.
 
-The loader waits for browser idle time, with a 100 ms timeout. It then executes functions in order, yielding between modules at an approximately 10 ms budget. This reduces interference with initial rendering; a synchronous module can still exceed the budget and occupy the main thread. A top-level exception is reported and skipped without re-running that module.
+The index source map at `/JellyfinEnhanced/bundle.js.map` (with the same optional `g`) uses `sections` to preserve original filenames and line numbers in DevTools and stack traces. Bundle and map routes are anonymous; production responses use `public, max-age=31536000, immutable`, because the URL carries the cache key.
 
-If the bundle request fails or the bundle does not define a valid module array, the loader injects individual files with `script.async = false`. Downloads can overlap; execution follows manifest order.
+At boot the loader waits for browser idle time, with a 100 ms timeout, and fetches at low priority. It then executes functions in order, yielding between modules at an approximately 10 ms budget. This reduces interference with initial rendering; a synchronous module can still exceed the budget and occupy the main thread. A group loaded later keeps the short slices but does not wait for idle time. A top-level exception is reported and skipped without re-running that module.
 
-Administrator setting, under **Admin** → **Developer Settings**:
+Requests for groups run strictly in the order they were asked for, so a group that another one is `after` has always run first, even if its request was slower.
+
+If a bundle request fails, or the bundle does not define a group's modules (for example after a syntax error), the loader injects that group's files individually with `script.async = false`. Downloads can overlap; execution follows manifest order, so only a broken file fails. If none of those files arrive (for example offline), the loader forgets the group so the next trigger tries again.
+
+If no usable groups file is available (bootstrap carries no `ComponentGroups` and the embedded `js/component-groups.json` cannot be loaded, or the file is invalid), the loader treats every module as `core` and requests `bundle.js?v=…` without `g`, as it did before groups existed.
+
+Administrator setting, under [**Admin** → **Developer Settings**](../open-in-jellyfin.md?tab=admin&card=developer-settings):
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Dev Mode** | Off (`DevMode=false`) | Loads individual component scripts and serves script responses with `no-store`. Direct bundle requests also rebuild rather than using the process cache. |
+| **Dev Mode** | Off (`DevMode=false`) | Loads individual component scripts and serves script responses with `no-store`. Groups still load only when needed, but each group's files load one by one, in order, instead of as a bundle. Direct bundle requests also rebuild rather than using the process cache. |
 
 !!! note
     Development mode still serves embedded resources. Rebuild the plugin and load the new assembly after editing JavaScript; it does not read loose source files from your checkout.
 
 `DisableScriptInjectionMiddleware=false` is a server configuration property without an admin-page control. It gates the request-time injection middleware. `BrandingAssetStartupFilter.cs` handles custom image assets separately from script injection.
+
+
+### Component groups
+
+A page runs only the client modules it needs. `js/component-groups.json` lists the groups; each has an `id`, a `note` saying what it holds and when it loads, its `modules` (manifest paths, listed in manifest order) and optionally `after`. Every manifest module that no group lists is in the implicit group `core`, which every page loads.
+
+- A module belongs to one group. Inside a group, modules run in manifest order.
+- `after` names earlier groups in the file whose modules must have run first, because this group reads their exports while it loads or cannot work without them. Loading a group always loads its `after` groups too.
+- Groups that load together run in the order of the file, `core` first.
+- The server (`ClientScriptBundle.cs`) and the loader (`plugin.js`) check the file the same way: unique, well-formed ids, every module in the manifest and in one group only, and `after` naming only earlier groups.
+
+`js/plugin.js` decides when each group loads:
+
+| Rule | What it holds |
+|---|---|
+| `FEATURE_GROUPS` | One entry per group except `core`: `needed(route)`, asked at boot and at each trigger below; `with()`, groups to load alongside it when the need depends on configuration; `exports`, JE functions that load the group when called before it has loaded. |
+| `FEATURE_INITIALIZERS` | The start-up calls, as `[group, initializer, condition]`, in the order they have always run. At boot every entry of a loaded group runs in this order; a group loaded later runs its own entries right after its modules. |
+| `FEATURE_PAGES` | JE's own pages: enabling flag, delivery settings, Home tab and placeholder, own address and Plugin Pages address. |
+
+The loader asks every rule again, and loads whatever is missing in one request, at boot (once from the saved settings and again once the first groups' features have started, with the resolved settings), on every navigation (before the new view shows), when a Home tab holding a JE page's placeholder becomes active, when a `<video>` fires `loadstart`, `play` or `playing`, and after a user switch once the new user's data has loaded. A group stays loaded once it has loaded.
+
+For each function in a group's `exports`, the loader installs a stand-in until the group loads. Calling it loads the group and then makes the same call; the module replaces the stand-in when it runs. The stand-in returns a promise, so only calls whose result the caller does not use straight away get one.
+
+After a group loaded on demand starts, the loader adds and removes an empty hidden element on `<body>`, so features that wait for a change through the shared body observer see one on a page that has already settled.
+
+**JE pages.** Hidden Content, Catch Up, Recommendations, Requests, Calendar, Activity, Leaving Soon and the Bookmarks library each load when their feature is enabled and one of these holds:
+
+- The page is not delivered as a Home tab (neither JE's own Home tab nor Custom Tabs) and has its own address: Bookmarks, Hidden Content, Recommendations, Requests and Calendar. Such a page adds its own sidebar link and takes over its address as it starts, so it loads at boot.
+- The address is the page's own (`#/bookmarks`, `#/hidden-content`, `#/recommendations`, `#/downloads`, `#/calendar`).
+- The address is a Plugin Pages page that names it. A Plugin Pages address that names none of JE's pages loads them all.
+- The address is Home with `jeTab=<id>` naming its tab. For Recommendations, a category address on Home (`jeCategory=`) also counts.
+- The Home tab holding the page's placeholder is the active one.
+
+So that JE's own Home tabs are in the tab strip from the first Home render, the loader registers them itself as soon as `core` has run, with the same id, title, icon and placeholder the page's `*-custom-tab` module registers.
+
+The groups, in the order they run:
+
+| Group | What it holds | After | Loads when |
+|---|---|---|---|
+| `core` | 24 modules: navigation, session, lifecycle, the shared DOM observer, UI kit, API client, settings resolution (`enhanced/config.js`), helpers, header actions, native tabs, icons, the random button, keyboard shortcuts and menu entries (`enhanced/events.js`), theme detection, injected styles and the settings panel's entry points. Also small modules other code needs at once: media language, rating sources, Continue Watching / Next Up removal, subtitle presets, now playing, coloured ratings and the Home Screen Sections discovery handler. | | Every page. |
+| `tags` | Poster tags: shared renderer, layout, look rules, cache store and pipeline, the nine poster tag renderers, web tag styles, review ratings on posters, and the item menu's Media Tags row and editor. | | At boot, when any poster tag type (quality, genre, rating, age rating, status, awards, custom, language or logo) is on for the user. |
+| `tag-direct-play` | Status tags' direct-play warning. | `tags` | With the tags, when Status tags and their direct-play warning are on for the user. |
+| `tag-poster-colours` | Poster colour sampling for the Poster tag style. | `tags` | With the tags, when web tag styles are active (`TagStyleWebActive`). |
+| `tag-status-backdrop` | The blurred backdrop of status tags, painted as a picture under each tag. | `tags` | When the first status tag is drawn on a page (`tags/statustags.js` asks for it); never at boot. |
+| `tag-people` | People tags on cast cards. | | On an item's details page, when People tags are on for the user. |
+| `removal-menu` | Maintainerr and removal-request rows in the item menu. | | At boot, when the server offers Maintainerr actions or removal requests. |
+| `spoiler-guard` | Spoiler Guard. | | At boot, when Spoiler Guard is enabled. Never waits for a page, so it acts before content paints. |
+| `details` | Details-page chips and buttons: media information, release dates and their page wiring. | | On an item's details page. |
+| `player` | Playback controls, OSD playback, auto-skip, subtitle sync, the OSD rating and the pause screen. | | On the video page; when a `<video>` starts loading or playing on any page; or when a player shortcut function is called. |
+| `player-badge` | The rating badge shown when playback starts. | | At boot, when the badge is enabled, so it hears the first `playing` event. |
+| `hidden-content` | Hidden Content filtering, buttons, dialogs and panel. | | At boot, when Hidden Content is enabled. Never waits for a page, so it acts before content paints. |
+| `hidden-content-page` | The Hidden Content management page and its tab. | `hidden-content` | JE page rule above; also with `settings` when Hidden Content is enabled. |
+| `catchup` | The Catch Up page. | | JE page rule above (no standalone delivery). |
+| `settings` | The settings panel. | `tags`, `tag-direct-play`, `tag-poster-colours`, `tag-people` | When `JE.showEnhancedPanel()` is first called, and on the plugin's admin configuration page, whose Media Tags tab uses the panel's preview. |
+| `bookmarks` | Bookmark store and the player's bookmark markers. | | On the video page or once a video has started, when Bookmarks are enabled; also with `bookmarks-library`. |
+| `bookmarks-library` | The Bookmarks library page. | `bookmarks` | JE page rule above. |
+| `elsewhere` | Streaming providers on details pages. | | On an item's details page, when Elsewhere is enabled. |
+| `reviews` | Reviews on details pages. | | On an item's details page, when any review source is enabled. |
+| `awards` | Awards on details pages. | | On an item's details page, when awards are shown. |
+| `mdblist` | MDBList ratings on details pages. | | On an item's details page, when MDBList ratings are enabled and shown on details pages. |
+| `content-warnings` | Content warnings (Does the Dog Die). | | On an item's details page, when content warnings are enabled. |
+| `seerr-api` | Seerr API client, request manager and status helpers. | | At boot, when Seerr is enabled. When Seerr search results are on, it also makes the one-time Seerr account check at boot. |
+| `seerr` | Seerr search results, cards, request and More Info dialogs, details-page rows and links, issue reporting and discovery sections. | `seerr-api` | When Seerr is enabled, on search, details and list pages; or when `JE.jellyseerrMoreInfo.open` or `JE.jellyseerrIssueReporter.showReportModal` is called from elsewhere. |
+| `recommendations` | The Recommendations page. | `seerr` | JE page rule above. |
+| `arr-links` | Sonarr, Radarr and Bazarr links on details pages. | | At boot, when \*arr links are enabled and the user is an administrator. |
+| `arr-tag-links` | \*arr tags shown as links on details pages. | | On an item's details page, when \*arr tags are shown as links. |
+| `requests-page` | The Requests / Downloads page. | | JE page rule above. |
+| `calendar-page` | The Calendar page. | | JE page rule above. |
+| `dashboard` | Coloured activity icons, plugin icons and links, plugin revision lists. | | On dashboard and configuration pages (addresses starting with `dashboard`, `configurationpage` or `settings`). |
+| `theme-selector` | The theme selector. | | At boot, when enabled. |
+| `active-streams` | The Active Streams header widget. | | At boot, when enabled. |
+| `activity-page` | The Activity page. | | JE page rule above (no standalone delivery). |
+| `leavingsoon-page` | The Leaving Soon page. | `removal-menu` | JE page rule above (no standalone delivery). |
+| `letterboxd` | Letterboxd links on details pages. | | On an item's details page, when Letterboxd links are enabled. |
+
+`JE.loader` (also `window.JellyfinEnhanced.loader`) lets features and automation work with the groups:
+
+| Member | What it does |
+|---|---|
+| `ensure(ids)` | Loads the groups (and their `after` groups) if needed. Resolves once they have run and started, after every batch asked for before them; it never rejects. |
+| `needed()` | The groups the current page, configuration and user need. |
+| `state()` | Each group asked for so far: `loading` or `ready`. |
+| `settled()` | Resolves when nothing is loading. |
+| `catalog()` | The rules above as data: groups and their exports, start-up calls and pages. Tests compare it with the groups file. |
+
+`JE.initialized` covers only the groups the page needed at boot. Code or automation that needs a feature which loads on demand should `await JE.loader.ensure(['<group>'])` or `JE.loader.settled()` instead of waiting for its `JE` property to appear.
 
 ## File Structure
 
@@ -73,6 +169,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   ├── TagShapeSettings.cs         # Per-shape layout/density/slot/cap validation and defaults
 │   ├── TagLookSettings.cs
 │   ├── CustomTagRuleSet.cs        # Custom tag rules: model, validation and the matcher
+│   ├── TagHiddenValues.cs         # Hidden tags: the hidden Tag Styles labels, validation and each chip's label
+│   ├── TagTextOverrides.cs        # Tag text: the words a Tag Styles label's chips show instead of their own
 │   ├── UserConfigurationManager.cs
 │   ├── configPage.html
 │   ├── mediaTagsPage.html          # Old Media Tags page address: forwards to the Media Tags tab
@@ -106,7 +204,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   └── TagPresets/                   # Built-in Media Tags presets (embedded JSON)
 └── js/
     ├── plugin.js
-    ├── component-scripts.json
+    ├── component-scripts.json        # Ordered list of every component module
+    ├── component-groups.json         # Which modules load together, and when (see Component groups)
     ├── fonts/                        # Full and subset Material Symbols WOFF2 files
     ├── locales/                      # 33 bundled JSON files, including regional variants
     ├── core/                         # Shared browser primitives
@@ -224,6 +323,17 @@ Avoid hyphens in JavaScript directory segments under the current implicit embedd
 
 [bootstrap-manifest.test.mjs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/tests/frontend/bootstrap/bootstrap-manifest.test.mjs) checks manifest-order loading and the single-IIFE shape. Top-level directives or declarations outside that IIFE break the wrapping contract. These tests do not build a complete dependency graph; producer-before-consumer order remains your responsibility.
 
+[bootstrap-groups.test.mjs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/tests/frontend/bootstrap/bootstrap-groups.test.mjs) checks the split into groups:
+
+- `js/component-groups.json` is well formed and lists modules in manifest order.
+- `FEATURE_GROUPS` and the groups file name the same groups, and every start-up call and page names a real group.
+- Each start-up call and each function in `exports` is defined by a module of the group it is listed under.
+- Each group, loaded with only the groups it is `after`, reads the same exports while loading as it does in the single bundle, with every feature on and with every feature off. A difference means a missing `after` or a module in the wrong group.
+
+[bootstrap-loader-groups.test.mjs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/tests/frontend/bootstrap/bootstrap-loader-groups.test.mjs) runs the loader itself against simulated requests: what a boot asks for, loading on navigation, on a Home tab becoming active, on a video starting and through a stand-in function, the order batches run in, the file-by-file fallback, dev mode, a missing or invalid groups file, and a user switch.
+
+[bootstrap-bundle-budget.test.mjs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/tests/frontend/bootstrap/bootstrap-bundle-budget.test.mjs) keeps a Home load small. For three configurations (every feature on, the stock defaults, and the defaults with the poster tag types on) it checks the exact groups a Home load asks for and their module count and size against `scripts/bundle-budgets.json`, which also caps `core`, any single group other than `core`, `tags`, `seerr` and `settings`, and the every-feature-on load at 45% of the whole client. `node scripts/bundle-budgets.mjs` prints the current numbers.
+
 ## Component Breakdown
 
 These indexes group client modules and relevant supporting server files by web feature area.
@@ -235,11 +345,11 @@ These indexes group client modules and relevant supporting server files by web f
 | `api-client.js` | Shared managed HTTP layer, `JE.core.api.{fetch,jf,plugin}`: authentication, retry/backoff, caching, deduplication, concurrency limits and abort support. Persistence, translations and some features also issue direct `ApiClient.ajax` or `fetch` requests. |
 | `dom-observer.js` | One shared body MutationObserver with named subscribers, dedicated observers and `waitForElement`. |
 | `lifecycle.js` | Registers feature observers, timers and listeners for coordinated cleanup. |
-| `navigation.js` | Deduplicated SPA navigation notifications through `onNavigate` and `onViewPage`. |
+| `navigation.js` | Deduplicated SPA navigation notifications through `onNavigate` and `onViewPage`; `setAddressQuietly` changes the address without a navigation (a page's own state in a fragment after its address), and a jellyfin-web dialog's history entry gets the page's address. |
 | `session.js` | Hooks `ApiClient.setAuthenticationInfo`, follows navigation notifications and reconciles every five seconds. Runs `JE.session.onUserChange` reset handlers and emits `je:user-changed`; supplies identity epochs for async work. |
 | `media-language.js` | Shared language/region-to-flag resolution (`resolveFlag`) and canonical ISO language bases (`canonicalBase`) through `JE.core.mediaLanguage`. |
-| `tag-renderer-base.js` | Overlay creation, deduplication, caching and reinitialization for the genre, language, quality, rating, age-rating and status tags; hands each group to `tag-layout.js`. People and user-review renderers are independent. |
-| `tag-layout.js` | Poster tag layouts (`JE.core.tagLayout`): resolves the user's layout, slots, group order, caps and label density (with the migration for settings saved before layouts), keeps one controller per card and presents each group's chips in slots, the caption outlet, the summary pill, quality dots and the hover scrim. `JE.reinitializeTagLayout()` re-presents every card; Status Tags supply translated compact labels through `data-je-compact`. `resolveLayout()` picks each card's look: lock, then first matching rule, then the default. |
+| `tag-renderer-base.js` | Overlay creation, deduplication, caching and reinitialization for the genre, language, quality, rating, age-rating and status tags; hands each group to `tag-layout.js`. People and user-review renderers are independent. Also holds **Where to show** (`JE.core.tagScopes`) and the hidden tag lists (`JE.core.tagHidden`), which `tag-layout.js` applies before each group's limit. |
+| `tag-layout.js` | Poster tag layouts (`JE.core.tagLayout`): resolves the user's layout, slots, group order, caps and label density (with the migration for settings saved before layouts), keeps one controller per card and presents each group's chips in slots, the caption outlet, the summary pill, quality dots and the hover scrim. `JE.reinitializeTagLayout()` re-presents every card; Status Tags supply translated compact labels through `data-je-compact`. `resolveLayout()` picks each card's look: lock, then first matching rule, then the default. It also decides which cards rest in flow (asked of the browser in idle time, never while a card is drawn) and, in Chromium-based browsers, moves each group container that used to be contained to the whole pixel it was painted from (`--je-snap-x` / `--je-snap-y`, measured in the same idle pass and again when a card's size changes). |
 | `tag-look.js` | Tag look rules and locks (`JE.core.tagLook`): normalization, condition matching, card facts from cache entries, saving rules, locking and unlocking. |
 | `ui-kit.js` | HTML escaping, toasts, deduplicated CSS injection and scroll-friendly direct/delegated tap listeners. |
 
@@ -259,7 +369,7 @@ These indexes group client modules and relevant supporting server files by web f
 | `hiddencontent/` | Sixteen modules covering data, saving, filtering, hide controls, dialogs, panel wiring and the management page's state, admin operations, cards, rendering, navigation and mounting. |
 | `homeremoval/` | `features-remove-home.js` and `features-remove-multiselect.js`: Continue Watching / Next Up removal and multi-select. |
 | `itemdetails/` | `features-details-media-info.js`, `features-release-dates.js`, `features-details-page.js`: media information, file sizes, audio languages, release dates and detail-page orchestration. |
-| `player/` | `playback.js` supplies speed, seeking and track cycling; `auto-skip.js` consumes its player state for media-segment skipping; `subtitles.js` handles styles/presets; `pausescreen.js` supplies the pause overlay; `osd-rating.js` shows Jellyfin community/critic scores; `playback-rating-badge.js` supplies the playback-start age-rating/genre card. |
+| `player/` | `playback.js` supplies speed, seeking and track cycling; `osd-playback.js` reads the position and seeks through jellyfin-web's OSD for players without a `<video>` (Jellyfin Desktop's mpv); `auto-skip.js` consumes its player state for media-segment skipping; `subtitles.js` handles styles/presets; `pausescreen.js` supplies the pause overlay; `osd-rating.js` shows Jellyfin community/critic scores; `playback-rating-badge.js` supplies the playback-start age-rating/genre card; `subtitle-sync.js` syncs subtitles to a chosen line: it lists the playing subtitle track's lines (the server's `Stream.js` JSON) to search, jump to, or sync through jellyfin-web's subtitle offset control (`JE.setSubtitleOffset` in `playback.js`). |
 | `admintags/` | The configuration page's Media Tags tab, loaded by `Configuration/configPage.html` when the tab first opens (not listed in `component-scripts.json`): `admin-tags.js` (section registry, declarative fields, auto-save, `holdSaves` for the page's whole-configuration writes, sections, addresses, preview hand-over), `admin-tags.css`, `tag-styles-editor.js` (the Tag Styles editor) and `sections/*.js`, one module per section or Groups panel. See [Admin Media Tags tab](admin-media-tags.md). |
 | `settingspanel/` | Thirteen modules: `ui-entry-points.js`, `ui-release-notes.js`, `ui-panel-template.js`, `ui-panel-shortcut-editor.js`, `ui-panel-settings.js`, `ui-panel-tag-editor.js` (the Media Tags group editor), `ui-panel-hidden-content.js`, `ui-panel-language.js`, `ui-panel-tag-looks.js` (tag look rules and locked items), `ui-panel-tag-preview.js` (the Media Tags live preview: sample cards drawn by the layout controller; also used by the Media Tags admin tab with a seeded new-user document), `ui-panel-tag-portable.js` (Media Tags presets, import and export: the Layout tab's Presets and Import & export cards, and the dialogs and file/clipboard helpers the Media Tags admin tab reuses), `ui-panel-media-tags.js` (the Media Tags section: tabs, Layout/Status badges/Colours/Server tabs, the phone preview strip and its search entries), `ui-panel.js` (the panel host: dialog, section nav, settings search). The shell orchestrates section wiring after its producers. |
 | `spoilerguard/` | Twelve modules: `ids.js`, `state.js`, `image-refresh.js`, `snooze.js`, `dialog.js`, `identity.js`, `styles.js`, `settings-tab.js`, `seerr-toggle.js`, `detail-button.js`, `watched-refresh.js`, `index.js`. The final module publishes `JE.spoilerBlur`; server filters perform image/metadata protection. |
@@ -297,7 +407,7 @@ Administrator settings under **Pages**:
 | `item-details.js` | Similar/recommended detail rows and requests for missing series seasons. |
 | `hss-discovery-handler.js`, `seerr-detail-link.js` | Home Screen Sections discovery-card interception and detail-page links to Seerr. |
 | `seamless-scroll.js` | Shared buffer-fill scrolling and deduplication for search, discovery and category pages, with prefetching and failure backoff. Pauses for manual continuation after 40 consecutive empty pages. |
-| `discovery/` | `discovery-base.js` owns lifecycle, pagination, aborts, gating, filtering and rendering. `discovery-filter-utils.js` supplies shared filters/cards; `genre-discovery.js`, `network-discovery.js`, `person-discovery.js`, `tag-discovery.js`, `collection-discovery.js` provide feed specs. |
+| `discovery/` | `discovery-base.js` owns lifecycle, pagination, aborts, gating, filtering and rendering. `discovery-filter-utils.js` supplies the section header (type tabs, sort button), shared filters and cards; `genre-discovery.js`, `network-discovery.js`, `person-discovery.js`, `tag-discovery.js`, `collection-discovery.js` provide feed specs. `discovery-section.js` builds and places the section, its placeholders and retry row, and joins it to the page (sticky header, jump line); `discovery-menu.js` is the Jellyfin-style action sheet the sort and Filters buttons open; `discovery-filters.js` holds the further filters' logic and their lists; `discovery-filter-panel.js` is the Filters button, its menu, the set-filters line and the empty note; `discovery-address.js` reads and writes the filters (and the Recommendations category) in the page's address; `discovery-roles.js` writes a person's role line on each card; `discovery-busy.js` dims a list and marks the control while it reloads; `discovery-styles.js` holds the section's CSS. |
 | `moreinfo/` | Eight `more-info-modal-*` modules: styles, data, seasons, badges, render, TV actions, general actions and initialization. |
 | `recommendations/` | Eight `recommendations-*` modules: styles, catalog, data, render, page, category, initialization and tab mounting. Discovery rows, studio/network tiles and category pages live here. |
 | `ui/` | Ten `ui-*` modules: icons, styles, popover, badges, cards, buttons, quota, results, request modals and season modal. |
@@ -312,7 +422,7 @@ See [Seerr Features](../seerr/seerr-features.md) for permissions and integration
 
 Calendar combines Radarr, Sonarr and Shoko data. Shoko retrieval lives in the main controller, with Jellyfin posters and deep-link handling in the calendar modules; there is no separate `ShokoService.cs`. Shoko is configured when both URL and API key are present. Check it alone and alongside *arr sources when changing calendar behavior. See [*arr Settings](../arr/arr-settings.md) for setup.
 
-Administrator settings under **\*arr** → **Shoko**:
+Administrator settings under [**\*arr** → **Shoko**](../open-in-jellyfin.md?tab=arr&card=shoko):
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -350,6 +460,7 @@ Administrator settings under **\*arr** → **Shoko**:
 | `tag-styles.js` | Retrieves the resolved Tag Styles (with the user's own preset when allowed) and injects web CSS for every chip group; paired with server `Services/PosterTags/TagStyles.cs`. |
 | `tag-poster-colours.js` | The Poster preset on the web: samples each card's artwork in idle slices (dominant colour, normalised for contrast; the same algorithm as `Services/PosterTags/PosterColour.cs`), sets `--je-tag-bg/-border/-fg` on the card and keeps the colours in memory and in the tag cache store. |
 | `tag-direct-play.js` | The Status group's direct-play warning: jellyfin-web 12.1's browser device profile (ported; `tests/fixtures/direct-play-web-12.1-chromium.json` is the real client's, captured in Chromium) and the user's saved bitrate, `PlaybackInfo` lookups for on-screen cards in idle slices (two in flight, each aborted after 15 seconds), answers per item and profile hash for a day in memory and the tag cache store. |
+| `status-tag-backdrop.js` | The blurred backdrop of status tags, painted once as a picture under each tag instead of `backdrop-filter` (the artwork under the tag, blurred the way Chromium's backdrop filter blurs it, in idle slices). A component group of its own: `statustags.js` asks for it when the first status tag is drawn, so a page without one never downloads it, and a tag shows with its plain pill until its picture is there. |
 
 `Configuration/LogoTagSettings.cs` (`LogoTagRules`) normalizes the administrator's Logos modes, region and maximum. `Model/TagLogo.cs` is the immutable `{kind,name,logo}` cache-entry value. `Services/TagLogoService.cs` keeps the daily TMDB provider and company/network lookups (`tag-logos.json`), rate-limits them, and serves the allow-listed logo images from its size-bounded disk cache (least recently read evicted first, orphans swept at start) through `/JellyfinEnhanced/logo/{size}/{file}`. `Services/TagCacheLogos.cs` projects the lookups and Jellyfin's studio names into cache entries and batch DTOs, warms them before builds and reconciles, and republishes them after settings changes.
 
@@ -357,7 +468,7 @@ Administrator settings under **\*arr** → **Shoko**:
 
 `Services/PosterTags/Resolution/StatusRules.cs` resolves the same first-match status decision server-side and reads embedded locale resources. `PosterTagStatusProvider.cs` obtains shared daily TMDB ranks and series schedules plus caller-filtered parent aggregates. `PosterTagPlan.cs` plans static top/bottom Bands and their overflow; `PosterTagRenderer.cs` paints strips, status chips and the dedicated overflow tile. `tests/fixtures/native-overflow/` holds browser measurements and isolated chip pixels for Corners/Bands, exercised by backend tests and `tests/browser/native-overflow.spec.cjs`. Status-enabled settings digests use a five-minute URL bucket. `tests/poster/parity/status-fixtures.mjs` exercises each status family and timezone boundaries against the real web renderer and native resolver; the integrated profiles also cover Bands, density, order and profile inheritance.
 
-See [Tag Styles and CSS](../enhanced/tags.md#tag-styles-and-css) and [Native Poster Tags](../enhanced/tags.md#native-poster-tags-experimental) for controls and defaults. Tag Styles change colors, not size, shape or position. Administrator controls under **Display** map to these properties:
+See [Tag Styles and CSS](../enhanced/tags-server.md#tag-styles-and-css) and [Native Poster Tags](../enhanced/tags-server.md#native-poster-tags-experimental) for controls and defaults. Tag Styles change colors, not size, shape or position. Administrator controls under **Display** map to these properties:
 
 | Setting | Property |
 |---|---|
@@ -455,7 +566,7 @@ The client interacts with server classes through endpoints, cookies and image re
 | `AutoMovieRequestMonitor.cs`, `AutoSeasonRequestMonitor.cs` | Playback event subscriptions feeding those request services. |
 | `WatchlistMonitor.cs`, `SeerrScanTriggerService.cs` | Watchlist event handling and debounced library-add → Seerr recently-added scan bridge. |
 | `SeerrParentalFilter.cs` | Shared parental filtering for integration responses. |
-| `TmdbResponseCache.cs`, `TmdbCompanyTvDiscover.cs` | TMDB response caching/coalescing and studio-produced TV discovery shaped for Seerr consumers. |
+| `TmdbResponseCache.cs`, `TmdbCompanyTvDiscover.cs`, `DiscoverFilters.cs` | TMDB response caching/coalescing, studio-produced TV discovery shaped for Seerr consumers, and the discover filters passed to Seerr or translated for TMDB discover/tv. |
 | `StatusTagsTrendingService.cs` | Server-wide trending ranks for Status Tags: TMDB daily trending, else Seerr weekly trending, cached for 30 minutes. |
 | `MovieCollectionsBatch.cs`, `WatchProvidersBatch.cs` | Parsing/shaping batched collection and regional streaming-provider lookups. Movie collections use Seerr first, then TMDB when needed. |
 | `ItemStatsService.cs` | Aggregate item/subtree size and watch-progress data for detail chips. |
@@ -547,7 +658,7 @@ Missing or wrong-length keys are recreated; old URLs can serve original artwork 
 
 | Location | Files and responsibilities |
 |---|---|
-| `Helpers/` | `ArrUrlGuard.cs` checks integration URLs; `BuildAttestation.cs` handles release attestation; `PluginConfigurationPatch.cs` writes a few configuration fields on top of the live configuration and reports conflicting edits (the Media Tags tab's saves); `MediaTagsPageFields.cs` is the list of fields those saves may write, read from the page's section modules; `MediaTagsPortable.cs` reads and writes the versioned Media Tags documents (user and server export, import preview with the save paths' validators, presets: built-in, per-user and offered); `ProviderHelper.cs` and `UserHelper.cs` resolve provider/user identifiers; `ReviewVisibility.cs` applies author visibility; `TagEpisodeSelector.cs` chooses representative episodes with usable streams. |
+| `Helpers/` | `ArrUrlGuard.cs` checks integration URLs; `BuildAttestation.cs` handles release attestation; `PluginConfigurationPatch.cs` writes a few configuration fields on top of the live configuration and reports conflicting edits (the Media Tags tab's saves); `MediaTagsPageFields.cs` is the list of fields those saves may write, read from the page's section modules; `MediaTagsPortable.cs` reads and writes the versioned Media Tags documents (user and server export, import preview with the save paths' validators, presets: built-in, per-user and offered); `DiscoveryFilterProfiles.cs` checks and stores a user's saved Seerr filter profiles; `ProviderHelper.cs` and `UserHelper.cs` resolve provider/user identifiers; `ReviewVisibility.cs` applies author visibility; `TagEpisodeSelector.cs` chooses representative episodes with usable streams. |
 | `Helpers/` language handling | `MatroskaLanguageReader.cs`, `MediaStreamLanguageResolver.cs` recover stream language data; `MatroskaLanguageCache.cs` keeps each file's parsed languages (persisted, keyed by path, size and modification time) so unchanged files are not reopened; `AudioLanguageTagHelper.cs` maps base/regional codes to tag names and computes changes. |
 | `Helpers/Jellyseerr/` | `SeerrHttpHelper.cs`, `JellyseerrPermissionHelper.cs`, `JellyseerrUserImportHelper.cs`: HTTP, permission and import helpers. `ParentalRatingDecision.cs`, `ParentalTagDecision.cs`, `SeerrCertificationExtractor.cs`, `SeerrTagSignatureExtractor.cs`: shared parental decisions/extraction. |
 | `Extensions/` | `ItemRepositoryExtensions.cs`, `JellyfinDbContextExtensions.cs`, `UserManagerExtensions.cs`: repository/database provider lookups and compatible user enumeration across server API changes. |
@@ -587,6 +698,7 @@ Feature gates still apply when a task runs. A task is hidden from the dashboard 
 | `JellyseerrWatchlistSyncTask.cs` | **Sync Watchlist from Seerr to Jellyfin** | Daily at 03:00 |
 | `MdblistRatingsFetchTask.cs` | **Fetch Ratings from MDBList** | None |
 | `MdblistRatingsSyncTask.cs` | **Sync Ratings from MDBList to Jellyfin** | None |
+| `WatchlistRemovalSyncTask.cs` | **Sync Watchlist Removals between Jellyfin and Seerr** | Daily at 04:00 |
 | `RefreshCdnAssetsTask.cs` | **Refresh CDN Assets** | Application startup and every 24 hours |
 | `SpoilerApplyExistingTitlesTask.cs` | **Spoiler Guard: apply to existing titles** | None |
 | `Services/StartupService.cs` | **Jellyfin Enhanced Startup** | Application startup |
@@ -608,7 +720,7 @@ Repository-root files support development, documentation and release metadata:
 | Location | Purpose |
 |---|---|
 | `README.md`, `CONTRIBUTING.md` | Project overview and contribution/build/check guidance. |
-| `mkdocs.yml`, `docs/` | MkDocs navigation, enabled extensions and site content. Documentation is separate from embedded plugin resources. |
+| `mkdocs.yml`, `docs/` | Navigation, enabled extensions and site content. The docs are built with Zensical, which reads `mkdocs.yml`, so the file keeps its name. Documentation is separate from embedded plugin resources. |
 | `manifest.json` | Release/plugin catalog metadata; distinct from the component manifest and generated-asset manifest. |
 | `package.json`, `package-lock.json` | Test tooling/dependencies; production client bundling is performed by C#, without an npm bundler. |
 | `css/ratings.css`, `images/mdblist-logos/` | Rating color-table input and MDBList logo sources. |
@@ -659,7 +771,7 @@ docs/
 overrides/                            # Theme template overrides (copies of Material 9.6.12 templates with marked changes)
 ```
 
-`mkdocs.yml` owns navigation and Markdown extensions. Site screenshots (WebP) and short screen recordings (MP4) live in the `docs/images/<area>/` folders above; Spoiler Guard's sit beside its pages in `docs/spoiler-guard/`. `docs/images/readme/` holds the README images. Keep the flat `docs/images/ratings.png`, `theme-selector.png`, `colored-activity-icons.png`, `login-image.png` and `plugin-icons.png`: the admin page loads them from `main` for its **View Screenshot** previews. `overrides/` copies a few Material 9.6.12 templates, so refresh it if the Material version pin in `.github/workflows/docs.yml` changes.
+`mkdocs.yml` owns navigation and Markdown extensions. Site screenshots (WebP) and short screen recordings (MP4) live in the `docs/images/<area>/` folders above; Spoiler Guard's sit beside its pages in `docs/spoiler-guard/`. `docs/images/readme/` holds the README images. Keep the flat `docs/images/ratings.png`, `theme-selector.png`, `colored-activity-icons.png`, `login-image.png` and `plugin-icons.png`: the admin page loads them from `main` for its **View Screenshot** previews. `overrides/` holds the header, footer, navigation and icon templates for the `classic` theme variant. Pull requests that touch the docs build the site without publishing it, so a docs break shows up before merge.
 
 These are documentation assets, separate from runtime fonts, native rendering assets and root feature assets. The admin **Docs** tab loads the hosted site from the browser, rather than an offline copy embedded in the assembly.
 
@@ -752,7 +864,7 @@ The inventory at `tests/docs/production-inventory.json` records lexical producti
 | Workflows | Purpose |
 |---|---|
 | `regression.yml` | Regression suites, lock checks and production inventory. |
-| `docs.yml` | Generated config groups, MkDocs Material 9.6.12 build and Pages deployment. |
+| `docs.yml` | Generated config groups, Zensical build, versioned Pages deployment with mike, and a build-only run on pull requests. |
 | `translation_validation.yml`, `check-unused-translations.yml` | Locale validation and unused-key reporting. |
 | `validate-manifest.yml` | Release manifest validation. |
 | `codeql.yml`, `dependency-review.yml`, `security-scan.yml`, `scorecards.yml` | Static analysis, dependency/security checks and repository scorecard. |

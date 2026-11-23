@@ -11,10 +11,17 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Jellyfin-10.11%20%7C%2012.x-AA5CC3?logo=jellyfin&logoColor=00A4DC&labelColor=black" alt="Jellyfin 10.11 | 12.x">
-  <img src="https://img.shields.io/github/last-commit/n00bcodr/Jellyfin-Enhanced/main?logo=semantic-release&logoColor=white&label=Updated&labelColor=black&color=00A4DC&cacheSeconds=3600" alt="Last updated">
-  <img alt="Downloads for 10.11" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip?displayAssetName=false&label=10.11%20downloads&labelColor=black&color=AA5CC3&cacheSeconds=60">
-  <img alt="Downloads for 12.x" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip?displayAssetName=false&label=12.x%20downloads&labelColor=black&color=AA5CC3&cacheSeconds=60">
+  <img src="https://img.shields.io/github/last-commit/n00bcodr/Jellyfin-Enhanced/main?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMyAzYTkgOSAwIDAgMC05IDlIMWwzLjg5IDMuODkuMDcuMTRMOSAxMkg2YzAtMy44NyAzLjEzLTcgNy03czcgMy4xMyA3IDctMy4xMyA3LTcgN2MtMS45MyAwLTMuNjgtLjc5LTQuOTQtMi4wNmwtMS40MiAxLjQyQTguOTU0IDguOTU0IDAgMCAwIDEzIDIxYTkgOSAwIDAgMCAwLTE4em0tMSA1djVsNC4yOCAyLjU0LjcyLTEuMjEtMy41LTIuMDhWOEgxMnoiLz48L3N2Zz4=&label=Updated&labelColor=black&color=00A4DC&cacheSeconds=3600" alt="Last updated">
+  <img alt="Downloads for 10.11" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip?displayAssetName=false&label=10.11%20downloads&labelColor=black&color=00B3A4&cacheSeconds=60&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xOSA5aC00VjNIOXY2SDVsNyA3IDctN3pNNSAxOHYyaDE0di0ySDV6Ii8+PC9zdmc+">
+  <img alt="Downloads for 12.x" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip?displayAssetName=false&label=12.x%20downloads&labelColor=black&color=00B3A4&cacheSeconds=60&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xOSA5aC00VjNIOXY2SDVsNyA3IDctN3pNNSAxOHYyaDE0di0ySDV6Ii8+PC9zdmc+">
   <a href="https://discord.gg/EYNFf7y4CG"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white&labelColor=black"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/n00bcodr/Jellyfin-Enhanced/actions/workflows/regression.yml"><img alt="Regression tests" src="https://img.shields.io/github/actions/workflow/status/n00bcodr/Jellyfin-Enhanced/regression.yml?branch=main&label=Tests&logo=github&logoColor=white&labelColor=black&cacheSeconds=3600"></a>
+  <a href="tests/README.md"><img alt="Browser Tests: 474" src="https://img.shields.io/badge/Browser%20Tests-474-00A4DC?logo=googlechrome&logoColor=white&labelColor=black"></a>
+  <a href="tests/README.md"><img alt="Backend Tests: 2.6k" src="https://img.shields.io/badge/Backend%20Tests-2.6k-00A4DC?logo=dotnet&logoColor=white&labelColor=black"></a>
+  <a href="tests/README.md"><img alt="Frontend Tests: 2.6k" src="https://img.shields.io/badge/Frontend%20Tests-2.6k-00A4DC?logo=javascript&logoColor=white&labelColor=black"></a>
 </p>
 
 <p align="center">
@@ -250,6 +257,7 @@ Save favorite moments, adjust subtitles and make playback more comfortable in Je
 - **Automatic intro and outro skipping**, using the intro data Jellyfin already has (for example from [Intro Skipper](https://github.com/intro-skipper/intro-skipper))
 - **Auto-pause** when you switch browser tabs, **auto-resume** when you come back, and optional picture-in-picture
 - **Custom subtitles:** font, size, color, background, position and an outline or drop shadow, with a live preview
+- **Subtitle sync:** pick the line you just heard to sync the subtitles to it; the list of lines can also be searched and jumped through
 - **Press and hold the video for 2× speed** (mouse or touch)
 - **Ratings in the player** while the controls are showing, and optionally a brief age rating, content advisory and genre card when playback starts
 
@@ -330,6 +338,7 @@ Desktop restores your last section. Phone layouts start at the section list with
 | | | <kbd>P</kbd> | Episode preview (with the [InPlayerEpisodePreview](https://github.com/Namo2/InPlayerEpisodePreview) plugin) |
 | | | <kbd>,</kbd> / <kbd>.</kbd> | Back or forward one frame |
 | | | <kbd>Z</kbd> | Jump back to where you were |
+| | | <kbd>Shift</kbd>+<kbd>S</kbd> | Sync the subtitles to the line you just heard |
 | | | <kbd>0</kbd>–<kbd>9</kbd> | Jump to 0–90% of the video |
 
 </details>

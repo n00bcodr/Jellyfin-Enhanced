@@ -9,7 +9,7 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.hiddenContent = JE.internals.hiddenContent || {};
 
-    const { getHiddenData } = internal;
+    const { getHiddenData, isLoaded, rebaseOnto } = internal;
 
     let saveTimeout = null;
 
@@ -89,9 +89,9 @@
             });
             // The server returns PascalCase ({ Items, Settings }); reuse the shared converter so the
             // items match locally-loaded ones (toCamelCase is idempotent and recurses into Items).
-            const hc = (typeof JE.toCamelCase === 'function')
+            const hc = internal.withPlainNames((typeof JE.toCamelCase === 'function')
                 ? JE.toCamelCase(res && res.hiddenContent)
-                : (res && res.hiddenContent);
+                : (res && res.hiddenContent));
             const items = (hc && hc.items) || {};
             return Object.entries(items).map(([key, item]) => ({ ...item, _key: key }));
         } catch (e) {
@@ -147,20 +147,73 @@
         }
     }
 
+    // Saves run one at a time: each reads the stored list and writes it back with this session's
+    // changes, so two in flight at once could each write a list without the other's changes.
+    let saveQueue = Promise.resolve();
+    // The last save queued, until it settles, so flushPendingSave can wait for it and report its failure.
+    let lastSave = null;
+
+    // Later saves and a Continue Watching / Next Up removal wait for the save in flight, and ApiClient.ajax
+    // only gives up on a request when asked to, so a read or write that never gets an answer fails after this
+    // long and the save is retried like any other failure.
+    const SAVE_REQUEST_TIMEOUT_MS = 30000;
+
+    async function requestWithTimeout(request) {
+        let timer = null;
+        const timedOut = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('hidden-content request timed out')), SAVE_REQUEST_TIMEOUT_MS);
+        });
+        try {
+            return await Promise.race([ApiClient.ajax(request), timedOut]);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
     // Direct bypass of JE.saveUserSettings (which swallows errors) so callers can react to failure.
-    // Returns the JSON snapshot that was sent so the caller can compare it to current state and decide
+    // Returns the saved list, as the session holds it, as JSON so the caller can compare it to current state and decide
     // whether the success acknowledgement still represents the latest local intent.
-    async function directSaveHiddenContent() {
+    function directSaveHiddenContent() {
+        const save = saveQueue.then(saveOnce);
+        saveQueue = save.catch(() => {});
+        lastSave = save;
+        const settled = () => { if (lastSave === save) lastSave = null; };
+        save.then(settled, settled);
+        return save;
+    }
+
+    // The list is saved whole, but other devices, an administrator and the server (Continue Watching
+    // hides dropped on playback, removed items) change it too. So each save reads the stored list first
+    // and writes it with only this session's changes applied, never the copy the page loaded.
+    async function saveOnce() {
+        // Never write a list that did not load: it would replace the stored one.
+        if (!isLoaded()) throw new Error('hidden-content list not loaded');
         const userId = ApiClient.getCurrentUserId();
         if (!userId) throw new Error('no current user');
-        const snapshot = JSON.stringify(getHiddenData());
-        await ApiClient.ajax({
-            type: 'POST',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
-            data: snapshot,
-            contentType: 'application/json'
+        const generation = saveGeneration;
+        const fresh = await requestWithTimeout({
+            type: 'GET',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
+            dataType: 'json'
         });
-        return snapshot;
+        if (generation !== saveGeneration || ApiClient.getCurrentUserId() !== userId) throw new Error('user changed during save');
+        const stored = (typeof JE.toCamelCase === 'function') ? JE.toCamelCase(fresh) : fresh;
+        if (!stored || typeof stored !== 'object' || (stored.items != null && typeof stored.items !== 'object')) {
+            throw new Error('invalid hidden-content response');
+        }
+        const { list, saved } = rebaseOnto(stored);
+        const snapshot = JSON.stringify(list);
+        // Nothing of this session's to write (e.g. a hide undone before the save ran).
+        if (snapshot !== JSON.stringify(stored)) {
+            await requestWithTimeout({
+                type: 'POST',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
+                data: snapshot,
+                contentType: 'application/json'
+            });
+        }
+        // What the session now holds unchanged (names read as plain text), for reconcileAfterSave.
+        return JSON.stringify(saved());
     }
 
     // After a successful save, decide whether the server is caught up.
@@ -233,8 +286,14 @@
 
     // Flush pending debouncedSave so a following server-direct write sees the latest local state.
     // On failure: re-throw so the caller aborts, AND start a bounded background retry so the local mutation isn't lost.
+    // With nothing pending, wait for a save already in flight: it read the list before the server-direct
+    // write and would otherwise write that read back over it. If it fails (or times out, when its write may
+    // still land), re-throw as well; whoever started it has already scheduled its retry.
     async function flushPendingSave() {
-        if (!saveTimeout) return;
+        if (!saveTimeout) {
+            if (lastSave) await lastSave;
+            return;
+        }
         clearTimeout(saveTimeout);
         saveTimeout = null;
         const generation = saveGeneration;
@@ -248,10 +307,15 @@
         }
     }
 
-    // Cancel pending retries on tab teardown so a stale snapshot can't overwrite server state after navigation.
+    // Cancel pending retries on tab teardown.
     // Only pagehide — visibilitychange fires on backgrounded tabs the user may return to within the retry window.
+    // Only the page's own (its target is the document, or window when scripted): jellyfin-web dispatches a
+    // bubbling `pagehide` on each view it leaves, and a back/forward-cache hide (persisted) may be shown again
+    // with the retry still due.
     try {
-        window.addEventListener('pagehide', cancelPendingRetry);
+        window.addEventListener('pagehide', (event) => {
+            if ((event.target === window || event.target === document) && !event.persisted) cancelPendingRetry();
+        });
     } catch (_) { /* non-browser env, harmless */ }
 
     // Invalidate every scheduled save/retry on a user switch (the generation

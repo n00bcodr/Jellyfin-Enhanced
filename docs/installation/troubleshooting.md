@@ -72,10 +72,10 @@ An independently served web client does not automatically receive JE's injection
 Check the script requests for a failed download or a response that contains the wrong kind of content.
 
 1. Filter **Network** requests by `JellyfinEnhanced`.
-2. Check the status, response type, and response body of the script request and `/JellyfinEnhanced/bundle.js?v=…`.
+2. Check the status, response type, and response body of the script request and the `/JellyfinEnhanced/bundle.js?g=…&v=…` requests. JE makes one when the page loads and more later, as you open pages or features that need other scripts.
 3. Check browser messages for blocked scripts, browser extensions, content-security-policy errors, or failed assets.
 
-Administrator diagnostic setting, under **Admin** → **Developer Settings**:
+Administrator diagnostic setting, under [**Admin** → **Developer Settings**](../open-in-jellyfin.md?tab=admin&card=developer-settings):
 
 ![Developer Settings with the Dev Mode switch](../images/admin/developer.webp)
 
@@ -87,7 +87,7 @@ Leave **Dev Mode** off for normal use. If you change it for diagnosis, save and 
 
 ??? info "How it works"
 
-    JE normally loads its scripts together from `/JellyfinEnhanced/bundle.js?v=…`. If that request fails, JE can try loading the scripts individually. If you see individual requests, check the console for the original failure and whether loading recovered. You do not need to sign in to request the bundle or its diagnostic source map at `/JellyfinEnhanced/bundle.js.map`.
+    JE loads its scripts in groups, several at a time, from `/JellyfinEnhanced/bundle.js?g=…&v=…`; `g` lists the groups in that request. It loads the groups a page needs when the page loads, and the rest only when you open a page or use a feature that needs them, so a failure can appear later in a session rather than at sign-in. If a request fails, JE tries loading that request's scripts individually. If you see individual requests, check the console for the original failure and whether loading recovered. You do not need to sign in to request the bundles or their diagnostic source map at `/JellyfinEnhanced/bundle.js.map`.
 
     A 404 suggests a missing route or proxy path problem. An HTML login page returned for a JavaScript request suggests proxy authentication or rewriting.
 
@@ -205,8 +205,8 @@ Use the action that matches the stale or missing content. Clearing all browser s
 | --- | --- |
 | Old scripts after an update | Hard-refresh; inspect the script version and proxy cache using [Scripts Not Loading](#scripts-not-loading). |
 | Stale translation strings | Personal **Language Settings** → **Clear Translation Cache** reloads this browser. **Refresh Translation Cache** signals clients to refresh translations on their next page load. See [Translation Updates](../faq-support/contributing-translations.md#translation-updates) for bundled-locale limits. |
-| Stale browser tag data | With **Server-Side Tag Cache** off, use administrator **Overview** → **Quick Actions** → **Clear all client tag caches**, or **Display** → **Clear All Client Caches**, then reload affected clients. |
-| Stale server tag data | **Refresh Tag Cache** updates changed entries and rebuilds the cache when needed. **Admin** → **Tag Cache** → **Rebuild Server Tag Cache** starts a full rebuild. |
+| Stale browser tag data | With **Server-Side Tag Cache** off, use administrator **Overview** → **Quick Actions** → **Clear all client tag caches**, or [**Media Tags** → **Server** → **Clear All Client Caches**](../open-in-jellyfin.md?jeSection=media-tags&tab=server), then reload affected clients. |
+| Stale server tag data | **Refresh Tag Cache** updates changed entries and rebuilds the cache when needed. [**Media Tags** → **Server**](../open-in-jellyfin.md?jeSection=media-tags&tab=server) → **Rebuild Server Tag Cache** starts a full rebuild. |
 | Missing locally mirrored icons or other CDN assets | Check asset requests and server logs; run **Refresh CDN Assets** after repairing upstream connectivity. See the details below for the request path. |
 
 The admin **Display** controls for tag caching are:
@@ -252,7 +252,7 @@ Compare direct local access with your remote URL. If the tabs work locally, chec
 
 ??? note "Details"
 
-    The current tabs are **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard**, **Admin**, and **Docs**.
+    The current tabs are [**Overview**](../open-in-jellyfin.md?tab=overview), [**Display**](../open-in-jellyfin.md?tab=display), [**Playback**](../open-in-jellyfin.md?tab=playback), [**Pages**](../open-in-jellyfin.md?tab=pages), [**Seerr**](../open-in-jellyfin.md?tab=seerr), [**\*arr**](../open-in-jellyfin.md?tab=arr), [**Elsewhere & Reviews**](../open-in-jellyfin.md?tab=elsewhere), [**Extras**](../open-in-jellyfin.md?tab=extras), [**Keyboard**](../open-in-jellyfin.md?tab=keyboard&card=keyboard-shortcuts), [**Admin**](../open-in-jellyfin.md?tab=admin), and **Docs**.
 
     A proxy authentication page returned in place of JSON or JavaScript is a different failure from an unreachable service. For Seerr and *arr, server connection URLs must be reachable by Jellyfin without an interactive browser sign-in; user-facing URL mappings are separate. Follow [Seerr settings](../seerr/seerr-settings.md) or [*arr troubleshooting](../arr/troubleshooting-support.md) for service-specific diagnosis.
 

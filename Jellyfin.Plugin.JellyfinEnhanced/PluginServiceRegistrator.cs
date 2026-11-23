@@ -80,6 +80,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Its Maintainerr client never follows redirects (the API key must not reach another origin).
             LeavingSoonService.AddHttpClient(serviceCollection);
             serviceCollection.AddSingleton<LeavingSoonService>();
+            // Administrators' Maintainerr actions (mark, keep, postpone) over the same client, and the
+            // "Leaving soon" Home Screen Sections row (registered by reflection once HSS has loaded).
+            serviceCollection.AddSingleton<MaintainerrActions>();
+            serviceCollection.AddSingleton<ReclaimerrActions>();
+            serviceCollection.AddSingleton<LeavingSoonHomeSection>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<LeavingSoonHomeSection>());
             serviceCollection.AddSingleton<AnilistReviewsService>();
             serviceCollection.AddSingleton<ReviewTranslationService>();
             serviceCollection.AddSingleton<MdblistService>();
@@ -117,6 +123,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddTransient<RefreshAwardTagsTask>();
             serviceCollection.AddTransient<JellyseerrWatchlistSyncTask>();
             serviceCollection.AddTransient<JellyfinToSeerrWatchlistSyncTask>();
+            serviceCollection.AddTransient<WatchlistRemovalSyncTask>();
+            serviceCollection.AddTransient<AutoRequestRemovalTask>();
             serviceCollection.AddTransient<JellyseerrUserImportTask>();
             serviceCollection.AddTransient<ClearTranslationCacheTask>();
 

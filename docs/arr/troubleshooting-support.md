@@ -9,7 +9,7 @@ Start with the symptom you see, then work through the checks. See [*arr settings
 Service links let you open a title in Sonarr, Radarr, or Bazarr. Check your account, connection, and detail page if they are missing.
 
 1. Sign in as a Jellyfin administrator. Sonarr/Radarr/Bazarr links and request-card service icons are administrator-only.
-2. Under **Jellyfin Enhanced** → **\*arr** → **\*arr UI Links**, turn on **Enable \*arr Links on Detail Pages** and click **Save Settings**.
+2. Under **Jellyfin Enhanced** → **\*arr** → [**\*arr UI Links**](../open-in-jellyfin.md?tab=arr&card=arr-ui-links), turn on **Enable \*arr Links on Detail Pages** and click **Save Settings**.
 3. Check that the relevant Sonarr/Radarr card is enabled and has both **URL** and **API Key**. Use **Test** to check the current connection.
 4. Open a movie or series detail page with a visible TMDB external link. Season and episode pages do not get these service links.
 5. Confirm the title exists in that upstream instance. Instances without a matching title are omitted.
@@ -22,7 +22,7 @@ Service links let you open a title in Sonarr, Radarr, or Bazarr. Check your acco
 
     If a link appears but opens the wrong address, check **URL Mappings (optional)**, **Bazarr URL Mappings**, or **Shoko URL Mappings**. The left side must be the Jellyfin server address used by the client, including any base path. The right side is the browser-facing service address. A successful API test does not establish browser reachability; mappings do not change the server's API destination.
 
-    If the single-instance status badge is missing, enable **Show status badge for single-instance** and **Show links as text**. If Sonarr reports no statistics, the badge reads `0/0` with gray status. **Enable Metadata Icons (Druidblack)** under **Extras** forces icon mode, where visible badges are omitted and details remain in tooltips.
+    If the single-instance status badge is missing, enable **Show status badge for single-instance** and **Show links as text**. If Sonarr reports no statistics, the badge reads `0/0` with gray status. **Enable Metadata Icons (Druidblack)** under [**Extras**](../open-in-jellyfin.md?tab=extras&card=metadata-icons-sidebar-links) forces icon mode, where visible badges are omitted and details remain in tooltips.
 
 ### Connection errors and instance recovery
 
@@ -58,15 +58,15 @@ If settings show an unreadable Sonarr/Radarr instance list, ordinary **Save Sett
 
 Tag sync copies source tags into Jellyfin metadata. Check the task first, then distinguish missing metadata from missing tag links.
 
-1. Under **\*arr** → **Tags Sync**, turn on **Enable Tags Sync**, configure complete enabled Sonarr/Radarr instances, then click **Save Settings**.
+1. Under [**\*arr** → **Tags Sync**](../open-in-jellyfin.md?tab=arr&card=tags-sync), turn on **Enable Tags Sync**, configure complete enabled Sonarr/Radarr instances, then click **Save Settings**.
 2. Run **Sync Tags from \*arr to Jellyfin** from **Scheduled Tasks**. Saving alone does not run it, and the task has no default triggers. Add your own trigger for recurring runs.
 3. Check that source tags exist.
 4. If **Sync to Jellyfin Filter** is set, use comma- or semicolon-separated source names without the prefix. Putting each name on a new line does not work for sync, even though the form suggests it.
 5. Inspect the Jellyfin item's metadata tags. **Tag Prefix** is added during sync; source tags do not need to contain it.
-6. Check task/server logs for a failed or disabled instance and review cleanup before running again.
+6. Check task/server logs for a failed or disabled instance and review cleanup before running again. A run that could not read Radarr or Sonarr shows as failed in Scheduled Tasks, logs `Radarr could not be read` or `Sonarr could not be read`, and leaves that service's tags as they are. An instance that is retired but still enabled keeps doing this: disable it.
 
 !!! warning "Preserve tags while investigating"
-    **Clear old tags before sync** removes tags starting with the current prefix even on unmatched items or empty/failed source results. Turn it off if you need to preserve existing tags. Changing the prefix does not remove tags bearing the old prefix.
+    **Clear old tags before sync** removes tags starting with the current prefix even on unmatched items or when a source answers with no tags. A source that cannot be read keeps its items' tags for that run. Turn it off if you need to preserve existing tags. Changing the prefix does not remove tags bearing the old prefix.
 
 If tags are present in metadata but missing as links:
 
@@ -79,13 +79,13 @@ Seeing existing tag links does not require administrator status or **Enable Tags
 ??? info "Tag matching and prefix behavior"
     Movie sync matches TMDB IDs; series sync matches IMDb IDs, not the TVDB ID used by Sonarr item links. Sync updates movies and series in your library, excluding virtual placeholders.
 
-    Keep **Tag Prefix** nonempty. Settings replace a blank value with `Requested by: `, while displayed tag links use `JE Arr Tag: ` for a blank prefix. Sync uses `Requested by: ` only if the stored prefix is unset, rather than empty. See [tag settings and examples](arr-features.md#arr-tags).
+    Keep **Tag Prefix** nonempty. Settings save a blank value as the default, `JE Arr Tag: `, and sync and displayed tag links also use `JE Arr Tag: ` for a blank or unset stored prefix. See [tag settings and examples](arr-features.md#arr-tags).
 
 ### Calendar Not Loading
 
 A blank Calendar page and a Calendar with no events need different checks. Start by confirming the page is enabled and opens from the right place.
 
-1. Under **Pages** → **Calendar Page**, turn on **Enable Calendar Page**, click **Save Settings**, and reload the web client.
+1. Under [**Pages** → **Calendar Page**](../open-in-jellyfin.md?tab=pages&card=calendar-page), turn on **Enable Calendar Page**, click **Save Settings**, and reload the web client.
 2. Verify at least one source: a complete enabled Sonarr/Radarr instance, or both **Shoko URL** and **Shoko API Key**. A Shoko-only Calendar needs neither Sonarr nor Radarr. **Enable \*arr Links on Detail Pages** is not required.
 3. Check how you are opening it: standalone, Plugin Pages, native Home tab, or Custom Tabs. Use the matching entry point; see [page placement](arr-settings.md#page-placement).
 4. Distinguish a blank/unready page from **No upcoming releases**. The former points to client injection or placement; the latter can be successful loading with no visible events.
@@ -111,7 +111,7 @@ Filters can hide events even when a source loads successfully. Check the visible
 6. Check [Hidden Content filtering](#hidden-content-filtering) and named source failures.
 
 ??? info "Highlighting, matching, and event times"
-    Watchlist highlighting uses Jellyfin's like (Likes) flag, not the favorite (heart) flag. Under **Seerr**, **Add requested media to Watchlist** and **Sync Seerr Watchlist → Jellyfin** set this flag for matching library items; see [Seerr settings](../seerr/seerr-settings.md). Watched markers reflect whether you have played or started the matched episode or movie; watching other episodes does not mark an upcoming episode.
+    Watchlist highlighting uses Jellyfin's like (Likes) flag, not the favorite (heart) flag. Under [**Seerr**](../open-in-jellyfin.md?tab=seerr&card=watchlist), **Add requested media to Watchlist** and **Sync Seerr Watchlist → Jellyfin** set this flag for matching library items; see [Seerr settings](../seerr/seerr-settings.md). Watched markers reflect whether you have played or started the matched episode or movie; watching other episodes does not mark an upcoming episode.
 
     If an available event does nothing when clicked, confirm Jellyfin has scanned and matched it. The **Available** arrow opens details rather than starting playback. A Shoko event is **Available** when Shoko reports an episode file. Shoko matching needs `Shoko Series`/`Shoko Episode` provider IDs. Unmatched anime may still offer an administrator's **Open in Shoko** link. Event dates use your browser's local time. Shoko air dates are also converted to your browser's local time, so depending on your timezone an event can show a time or appear on the previous day.
 
@@ -135,7 +135,7 @@ There is no independently enabled second Seerr Requests page.
 
 Check the queue source and your access rules if Downloads is empty. Administrators and viewers can get different results.
 
-1. Under **Pages** → **Requests Page**, enable **Enable Requests Page** and **Show Downloads in Requests Page**, then save and reload.
+1. Under [**Pages** → **Requests Page**](../open-in-jellyfin.md?tab=pages&card=requests-page), enable **Enable Requests Page** and **Show Downloads in Requests Page**, then save and reload.
 2. Verify complete enabled Sonarr/Radarr cards and use **Test**. Confirm the upstream queue contains records.
 3. Compare administrator and viewer results. With **Filter Downloads by User Requests** on, administrators bypass filtering. Viewers need enabled/configured Seerr, a linked account, and requested titles.
 4. Clear download search/status selections and check Hidden Content filtering.
@@ -214,6 +214,7 @@ Use the signed-in web client's network panel to inspect responses when the check
     | `GET arr/history?take=…&skip=…` | Signed-in viewer; applies History enablement, administrator restriction, and ownership gates. `take` defaults 20, capped at 50; `skip` defaults 0 and cannot be negative. |
     | `GET arr/requests?take=…&skip=…&filter=…&userOnly=…` | Signed-in linked viewer with configured Seerr for data; `take` defaults 20, capped at 200, `skip` defaults 0/nonnegative, `userOnly` defaults false. See Seerr features for visibility permissions. |
     | `POST arr/requests/{requestId}/approve`, `POST arr/requests/{requestId}/decline` | Linked Jellyfin administrator or Seerr user with `ADMIN`/`MANAGE_REQUESTS`; missing identity/link/permission can fail separately. |
+    | `DELETE arr/requests/{requestId}` | Linked user who made the request, or a linked Jellyfin administrator or Seerr user with `ADMIN`/`MANAGE_REQUESTS`; others get `403`. Deletes only the request record. |
     | `GET arr/calendar?start=…&end=…` | Signed-in viewer; library filtering applies. Defaults to today UTC through 90 days; invalid dates keep defaults, reversed ranges swap, and ranges over 365 days are capped. |
     | `POST arr/calendar/user-data` | Signed-in viewer; reads caller-specific watchlist/watched flags for supplied events, without saving preferences. |
 

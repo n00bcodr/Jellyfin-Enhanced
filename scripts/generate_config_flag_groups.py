@@ -43,7 +43,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PAGE = REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "Configuration" / "configPage.html"
 PLUGIN_CONFIG_CS = REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "Configuration" / "PluginConfiguration.cs"
-ENGLISH_LABELS = json.loads((REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "js" / "locales" / "en.json").read_text())
+ENGLISH_LABELS = json.loads((REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "js" / "locales" / "en.json").read_text(encoding="utf-8"))
 OUTPUT = REPO_ROOT / "docs" / "advanced" / "config-flag-groups.json"
 MEDIA_TAGS_SECTIONS = REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "js" / "enhanced" / "admintags" / "sections"
 # The Media Tags tab in the output, and its icon (its tab button's).

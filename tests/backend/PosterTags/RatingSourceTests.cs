@@ -21,6 +21,32 @@ namespace JE.Tests;
 public class RatingSourceTests
 {
     [Fact]
+    public void RetiredAniListStyleOverrideIsIgnoredNotRejected()
+    {
+        var doc = "{\"v\":2,\"preset\":\"default\",\"labels\":{\"rating:aniList\":{\"text\":\"#ffffff\"}}}";
+        Assert.True(TagStyleSet.TryValidate(doc, null, out var set, out var error), error);
+        Assert.DoesNotContain("aniList", set.Serialize());
+    }
+
+    [Fact]
+    public void AnimeAndCriticSourcesMapFromMdblistInTheirNativeUnits()
+    {
+        MdblistRatingSource R(string id, double score) => new() { Source = id, Score = score };
+        var entry = new MdblistCacheEntry
+        {
+            Found = true,
+            Ratings = [R("myanimelist", 84), R("metacriticuser", 79), R("rogerebert", 87.5), R("master", 78)],
+        };
+        var ratings = TagSourceRatings.FromMdblist(entry)!;
+        Assert.Equal(8.4, ratings.Get("myAnimeList")!.Value, 3);
+        Assert.Equal(7.9, ratings.Get("metacriticUser")!.Value, 3);
+        Assert.Equal(3.5, ratings.Get("rogerEbert")!.Value, 3);
+        Assert.Equal(78, ratings.Get("mdblist")!.Value, 3);
+        foreach (var id in new[] { "myAnimeList", "metacriticUser", "rogerEbert", "mdblist" })
+            Assert.Contains(id, RatingSourceSettings.SourceIds);
+    }
+
+    [Fact]
     public void MapsNormalizedAndRawNativeValuesWithoutInventingMissingScores()
     {
         var entry = new MdblistCacheEntry { Found = true, Ratings = [
@@ -415,7 +441,8 @@ public class RatingSourceTests
         cache.BuildFullCache(null, default);
         cache.WarmSourceRatingsForItems([movie], default);
         cache.BuildEntryOnDemand(movie);
-        Assert.Equal(fetches ? 2 : 0, requests);
+        // Status, the batch, and the title's own lookup: the batch answer ("[]") left it out.
+        Assert.Equal(fetches ? 3 : 0, requests);
         if (!fetches)
         {
             f.Plugin.Configuration.RatingTagsEnabled = true;

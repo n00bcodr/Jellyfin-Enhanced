@@ -116,7 +116,7 @@ test('the stylesheet restates every anchor with the edge inset and leaves the de
   assert.match(css, /\[data-je-indicator-gap\]\[data-je-edge\] > \.je-tag-slot\[data-je-slot="tr"\] \{\s*top: calc\(var\(--je-edge\) \+ calc\(clamp\(20px, 3vw, 30px\) \* var\(--je-tag-scale, 1\)\)\);/);
   // The default inset and the legacy phone offsets are untouched.
   assert.match(css, /\[data-je-slot="br"\] \{\s*inset: 6px;/);
-  assert.match(css, /margin-left: -2px;/);
+  assert.match(css, /margin-left: calc\(-2px \+ var\(--je-snap-x, 0px\)\);/);
 });
 
 test('a flush card measures the artwork radius once and centre budgets start at the edge', async t => {

@@ -1,0 +1,6 @@
+zensical
+mdx-truly-sane-lists
+# Dependencies of mike, the Zensical-compatible fork that docs.yml installs from a pinned commit
+jinja2
+pyparsing
+verspec

@@ -187,7 +187,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             "banner-light.png",
             "banner-dark.png",
             "favicon.ico",
-            "apple-touch-icon.png"
+            "apple-touch-icon.png",
+            ElsewhereBrandingIconFileName
+        }, StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Upload slot for the Elsewhere custom branding icon. Unlike the other slots it
+        /// isn't swapped into a jellyfin-web asset; viewers load it from
+        /// <c>/JellyfinEnhanced/ElsewhereBrandingIcon</c>. The name is fixed, but the
+        /// bytes may be PNG, JPEG, GIF, WebP or SVG, so it's served by content.
+        /// </summary>
+        private const string ElsewhereBrandingIconFileName = "elsewhere-icon.png";
+
+        private static readonly HashSet<string> ElsewhereIconContentTypes = new(new[]
+        {
+            "image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"
         }, StringComparer.OrdinalIgnoreCase);
 
         public JellyfinEnhancedController(
@@ -648,32 +662,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return jellyseerrUserId;
         }
 
-        // Seerr's discover API accepts these params (verified live against
-        // Seerr 3.2.0). The correct names are `keywords`, `watchProviders`,
-        // `watchRegion` — no `with*` prefix; Seerr rejects `withCompanies`
-        // / `withNetworks` / `withOriginalLanguage` as `Unknown query parameter`.
-        // `studio` and `network` are accepted on /discover/movies and
-        // /discover/tv respectively (handled via path routes).
-        private static readonly string[] DiscoverFilterParams = {
-            "sortBy", "primaryReleaseDateGte", "primaryReleaseDateLte",
-            "firstAirDateGte", "firstAirDateLte",
-            "voteAverageGte", "voteAverageLte",
-            "withRuntimeGte", "withRuntimeLte",
-            "certification", "watchRegion", "language",
-            "keywords", "watchProviders"
-        };
-
+        /// <summary>Adds the request's discover filters to a Seerr path (see <see cref="Services.DiscoverFilters"/>).</summary>
         private string AppendDiscoverFilters(string basePath)
         {
-            var sb = new StringBuilder(basePath);
-            foreach (var param in DiscoverFilterParams)
-            {
-                if (Request.Query.TryGetValue(param, out var value) && !string.IsNullOrEmpty(value))
-                {
-                    sb.Append($"&{param}={Uri.EscapeDataString(value!)}");
-                }
-            }
-            return sb.ToString();
+            return Services.DiscoverFilters.AppendToSeerrPath(basePath, ReadQueryValue);
+        }
+
+        /// <summary>The request's query value for <paramref name="name"/>, or null when it has none.</summary>
+        private string? ReadQueryValue(string name)
+        {
+            return Request.Query.TryGetValue(name, out var value) ? value.ToString() : null;
         }
 
         private static bool IsCacheableApiPath(string apiPath, HttpMethod method)
@@ -981,9 +979,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 return StatusCode(403, new { code = "no_issue_view_permission", message = "You do not have permission to view issues in Seerr." });
                         }
 
-                        // GET /api/v1/service/sonarr|radarr, /api/v1/service/{type}/{id},
-                        // /api/v1/overrideRule, Seerr does not gate this route
-                        // behind REQUEST_ADVANCED, so require just the ability to request.
+                        // GET /api/v1/service/sonarr|radarr, /api/v1/service/{type}/{id}:
+                        // Seerr does not gate these behind REQUEST_ADVANCED, so require just
+                        // the ability to request. /api/v1/overrideRule needs it too; Seerr
+                        // itself lets only its admins read that one (answered below).
                         if (method == HttpMethod.Get && (
                             apiPath.StartsWith("/api/v1/service/", StringComparison.OrdinalIgnoreCase)
                             || apiPath.StartsWith("/api/v1/overrideRule", StringComparison.OrdinalIgnoreCase)))
@@ -995,6 +994,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         }
                     }
                 }
+            }
+
+            // Only Seerr admins may read the override rules (Permission.ADMIN in Seerr 3.x and
+            // Jellyseerr 2.x), and Seerr applies them itself when a request is created. The proxy
+            // acts as the linked Seerr user, so anyone else has none to read here, not Seerr's 403.
+            if (method == HttpMethod.Get
+                && string.Equals(apiPath, "/api/v1/overrideRule", StringComparison.OrdinalIgnoreCase)
+                && seerrUser != null
+                && !JellyseerrPermissionHelper.HasPermission(seerrUser.Permissions, JellyseerrPermission.ADMIN))
+            {
+                return Content("[]", "application/json");
             }
 
             // Check server-side response cache for cacheable endpoints.
@@ -1983,7 +1993,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public Task<IActionResult> GetJellyseerrRequests([FromQuery] int take = 500, [FromQuery] int skip = 0, [FromQuery] string filter = "all")
         {
-            return ProxyJellyseerrRequest($"/api/v1/request?take={take}&skip={skip}&filter={filter}", HttpMethod.Get);
+            // Escaped, so a filter value cannot add query parameters of its own to the Seerr call.
+            return ProxyJellyseerrRequest($"/api/v1/request?take={take}&skip={skip}&filter={Uri.EscapeDataString(filter ?? string.Empty)}", HttpMethod.Get);
         }
 
         // Returns the user's Seerr quota with a nextResetAt added per side.
@@ -2116,6 +2127,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// The streaming region Seerr itself shows watch providers for: the caller's
+        /// own Seerr "Streaming Region" when set, otherwise Seerr's global one, otherwise
+        /// US (what Seerr itself falls back to). Null only when Seerr can't be read.
+        /// Response: { "region": "IN" | null, "source": "user" | "seerr" | "default" | null }.
+        /// </summary>
+        [HttpGet("jellyseerr/streaming-region")]
+        [Authorize]
+        public async Task<IActionResult> GetSeerrStreamingRegion()
+        {
+            Response.Headers["Cache-Control"] = "no-store";
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            {
+                return StatusCode(503, "Seerr integration is not configured or enabled.");
+            }
+
+            var callerId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(callerId))
+            {
+                return Forbid();
+            }
+
+            var seerrUser = await GetJellyseerrUser(callerId);
+            var aborted = HttpContext.RequestAborted;
+            var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+
+            // (reachable, region): region is null when Seerr answered but has none set.
+            async Task<(bool Ok, string? Region)> ReadRegionAsync(string baseUrl, string path)
+            {
+                var requestUri = $"{baseUrl.TrimEnd('/')}{path}";
+                using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                using var response = await httpClient.SendAsync(request, aborted).ConfigureAwait(false);
+                var (body, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                if (error != null || body == null)
+                {
+                    return (false, null);
+                }
+
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("streamingRegion", out var el) && el.ValueKind == JsonValueKind.String)
+                {
+                    var code = el.GetString()?.Trim().ToUpperInvariant();
+                    return (true, Services.WatchProvidersBatch.IsValidRegion(code) ? code : null);
+                }
+
+                return (true, null);
+            }
+
+            foreach (var url in config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                try
+                {
+                    var trimmed = url.Trim();
+                    if (seerrUser != null)
+                    {
+                        var own = await ReadRegionAsync(trimmed, $"/api/v1/user/{seerrUser.Id}/settings/main").ConfigureAwait(false);
+                        if (own.Region != null)
+                        {
+                            return Ok(new { region = own.Region, source = "user" });
+                        }
+                    }
+
+                    var global = await ReadRegionAsync(trimmed, "/api/v1/settings/main").ConfigureAwait(false);
+                    if (!global.Ok)
+                    {
+                        continue;
+                    }
+
+                    // Seerr itself shows US when neither the user nor the server sets one.
+                    return global.Region != null
+                        ? Ok(new { region = global.Region, source = "seerr" })
+                        : Ok(new { region = "US", source = "default" });
+                }
+                catch (OperationCanceledException) when (aborted.IsCancellationRequested)
+                {
+                    return StatusCode(499);
+                }
+                catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException or IOException)
+                {
+                    _logger.Warning($"Could not read the Seerr streaming region from a Seerr URL: {ex.Message}");
+                }
+            }
+
+            return Ok(new { region = (string?)null, source = (string?)null });
         }
 
         [HttpGet("jellyseerr/tv/{tmdbId}")]
@@ -2369,6 +2468,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 query += $"&sort_by={sortBy}";
             }
+            // The filters the Seerr-fed feeds take, under TMDB's names.
+            query += Services.DiscoverFilters.ToTmdbTvQuery(ReadQueryValue);
 
             try
             {
@@ -2463,7 +2564,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            Response.Headers["Cache-Control"] = "private, max-age=300";
+            Response.Headers["Cache-Control"] = "no-store";
             return Ok(new { source = snapshot.Source, movies = snapshot.Movies, series = snapshot.Series });
         }
 
@@ -2583,13 +2684,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/tv/upcoming?page={page}"), HttpMethod.Get);
         }
 
+        /// <summary>
+        /// The item behind <paramref name="id"/> when the caller may see it, as Jellyfin decides:
+        /// a studio, genre or person for any signed-in caller (Jellyfin's own /Studios, /Genres and
+        /// /Persons routes answer those to anyone), any other item only within the caller's library
+        /// access and parental rules (Jellyfin's user item routes). Null otherwise, so a hidden item
+        /// is answered exactly as a missing one. Administrators get any item, as before.
+        /// </summary>
+        private BaseItem? GetItemForCaller(Guid id)
+        {
+            var item = _libraryManager.GetItemById(id);
+            if (item == null
+                || item is MediaBrowser.Controller.Entities.Studio or MediaBrowser.Controller.Entities.Genre or MediaBrowser.Controller.Entities.Person
+                || IsAdminUser())
+            {
+                return item;
+            }
+
+            var userId = UserHelper.GetCurrentUserId(User);
+            var user = userId.HasValue ? _userManager.GetUserById(userId.Value) : null;
+            return user == null ? null : _libraryManager.GetItemById<BaseItem>(id, user);
+        }
+
         [HttpGet("studio/{studioId}")]
         [Authorize]
         public IActionResult GetStudioInfo(Guid studioId)
         {
             try
             {
-                var studio = _libraryManager.GetItemById(studioId);
+                var studio = GetItemForCaller(studioId);
                 if (studio == null)
                 {
                     return NotFound(new { message = "Studio not found" });
@@ -2623,7 +2746,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             try
             {
-                var boxset = _libraryManager.GetItemById(boxsetId);
+                var boxset = GetItemForCaller(boxsetId);
                 if (boxset == null || boxset.GetType().Name != "BoxSet")
                 {
                     return NotFound(new { message = "BoxSet not found" });
@@ -2657,7 +2780,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             try
             {
-                var person = _libraryManager.GetItemById(personId);
+                // Any id is accepted, so a title the caller may not see must read as a missing one.
+                var person = GetItemForCaller(personId);
                 if (person == null)
                 {
                     return NotFound(new { message = "Person not found" });
@@ -3013,7 +3137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             try
             {
-                var genre = _libraryManager.GetItemById(genreId);
+                var genre = GetItemForCaller(genreId);
                 if (genre == null)
                 {
                     return NotFound(new { message = "Genre not found" });
@@ -3132,6 +3256,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest("/api/v1/genres/tv", HttpMethod.Get);
         }
 
+        // The lists the discovery filters offer, from Seerr (which reads them from
+        // TMDB). None of them carries a title.
+        /// <summary>The languages the discovery filters offer (Seerr's <c>/api/v1/languages</c>).</summary>
+        [HttpGet("jellyseerr/filters/languages")]
+        [Authorize]
+        public Task<IActionResult> GetSeerrFilterLanguages()
+        {
+            return ProxyJellyseerrRequest("/api/v1/languages", HttpMethod.Get);
+        }
+
+        /// <summary>The content ratings for movies or series (<paramref name="mediaType"/> is <c>movie</c> or <c>tv</c>).</summary>
+        [HttpGet("jellyseerr/filters/certifications/{mediaType}")]
+        [Authorize]
+        public Task<IActionResult> GetSeerrFilterCertifications(string mediaType)
+        {
+            if (mediaType != "movie" && mediaType != "tv")
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_media_type", message = "mediaType must be movie or tv." }));
+            }
+            return ProxyJellyseerrRequest($"/api/v1/certifications/{mediaType}", HttpMethod.Get);
+        }
+
+        /// <summary>
+        /// The streaming services for movies or series in a region: <paramref name="watchRegion"/>,
+        /// or the admin's DEFAULT_REGION when none is sent.
+        /// </summary>
+        [HttpGet("jellyseerr/filters/watchproviders/{mediaType}")]
+        [Authorize]
+        public Task<IActionResult> GetSeerrFilterWatchProviders(string mediaType, [FromQuery] string? watchRegion = null)
+        {
+            if (mediaType != "movie" && mediaType != "tv")
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_media_type", message = "mediaType must be movie or tv." }));
+            }
+            var region = string.IsNullOrEmpty(watchRegion)
+                ? Services.WatchProvidersBatch.DefaultRegion(JellyfinEnhanced.Instance?.Configuration?.DEFAULT_REGION)
+                : watchRegion;
+            if (!Services.WatchProvidersBatch.IsValidRegion(region))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_region", message = "watchRegion must be a two-letter region code." }));
+            }
+            return ProxyJellyseerrRequest($"/api/v1/watchproviders/{(mediaType == "movie" ? "movies" : "tv")}?watchRegion={region}", HttpMethod.Get);
+        }
+
         [HttpGet("jellyseerr/discover/genreslider/movie")]
         [Authorize]
         public Task<IActionResult> GetMovieGenreSlider()
@@ -3224,6 +3392,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // calls work.
             if (page < 1) page = 1;
             return ProxyJellyseerrRequest($"/api/v1/discover/watchlist?page={page}", HttpMethod.Get);
+        }
+
+        // Puts one title on the calling user's Seerr watchlist. The browser calls it right after a
+        // request when "Requested media goes on the requester's watchlist" is on. The Jellyfin
+        // watchlist is filled later by WatchlistMonitor, when the title reaches the library.
+        [HttpPost("jellyseerr/watchlist")]
+        [Authorize]
+        public Task<IActionResult> AddJellyseerrWatchlist([FromBody] JsonElement requestBody)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled || !config.AddRequestedMediaToWatchlist)
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "watchlist_disabled", message = "Adding requested media to the watchlist is turned off." }));
+            }
+
+            var tmdbId = 0;
+            string? mediaType = null;
+            if (requestBody.ValueKind == JsonValueKind.Object)
+            {
+                if (requestBody.TryGetProperty("tmdbId", out var idElement) && idElement.ValueKind == JsonValueKind.Number) idElement.TryGetInt32(out tmdbId);
+                if (requestBody.TryGetProperty("mediaType", out var typeElement) && typeElement.ValueKind == JsonValueKind.String) mediaType = typeElement.GetString();
+            }
+
+            if (tmdbId <= 0 || (mediaType != "movie" && mediaType != "tv"))
+            {
+                return Task.FromResult<IActionResult>(BadRequest(new { error = true, code = "invalid_watchlist_item", message = "tmdbId and a mediaType of 'movie' or 'tv' are required." }));
+            }
+
+            // Only the two validated fields are forwarded; Seerr answers 500 to an unknown mediaType.
+            return ProxyJellyseerrRequest("/api/v1/watchlist", HttpMethod.Post, JsonSerializer.Serialize(new { tmdbId, mediaType }));
         }
 
         [HttpPost("jellyseerr/sync-watchlist")]
@@ -3852,8 +4050,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DEFAULT_PROVIDERS,
                 config.IGNORE_PROVIDERS,
                 config.ElsewhereSeasonProviders,
+                config.ElsewhereUseSeerrRegion,
                 config.ElsewhereCustomBrandingText,
                 config.ElsewhereCustomBrandingImageUrl,
+                ElsewhereCustomBrandingIconVersion = GetElsewhereBrandingIconVersion(),
                 config.ClearLocalStorageTimestamp,
                 config.ClearTranslationCacheTimestamp,
 
@@ -3864,6 +4064,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.AutoSkipIntro,
                 config.AutoSkipOutro,
                 config.LongPress2xEnabled,
+                config.SubtitleSyncButtonEnabled,
                 config.RandomButtonEnabled,
                 config.RandomIncludeMovies,
                 config.RandomIncludeShows,
@@ -4007,6 +4208,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.StatusTagsLeaving,
                 config.StatusTagsDirectPlay,
                 LeavingSoonAvailable = Services.LeavingSoonService.Configured(config),
+                // Whether administrators can mark, keep and postpone removals from the item menu (the actions
+                // switch and a Maintainerr URL); the rows themselves are admin-only on the server.
+                MaintainerrActionsAvailable = Services.MaintainerrActions.Enabled(config) || Services.ReclaimerrActions.Enabled(config),
+                // Whether anyone signed in can ask for a removal (Reclaimerr, as their linked account through its trusted-proxy sign-in).
+                RemovalRequestsAvailable = Services.ReclaimerrActions.RequestsEnabled(config),
+                LeavingSoonProvider = Services.LeavingSoonService.UsesReclaimerr(config) ? "reclaimerr" : "maintainerr",
+                config.StatusTagsOnCollections,
                 config.StatusTagsJustAddedDays,
                 config.StatusTagsNewReleaseDays,
                 // Poster tag layout starting defaults (normalized; null = built-in)
@@ -4015,6 +4223,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 TagGroupOrder = TagLayoutRules.NormalizeOrder(config.TagGroupOrder),
                 TagGroupCaps = TagLayoutRules.NormalizeCaps(config.TagGroupCaps),
                 TagGroupScopes = TagLayoutRules.NormalizeScopes(config.TagGroupScopes),
+                // Hidden tags: Tag Styles labels whose chips never draw (normalized; null = none), and the
+                // ratings on hidden age rating boards, which the web matches badges by
+                TagHiddenValues = TagHiddenRules.Normalize(config.TagHiddenValues),
+                TagHiddenAgeRatings = TagHiddenRules.HiddenAgeRatings(TagHiddenRules.Normalize(config.TagHiddenValues)),
+                // Tag text: the chip text an administrator set instead of a tag's own (canonical JSON; null = none)
+                TagTextOverrides = TagTextRules.Normalize(config.TagTextOverrides),
                 TagLabelDensity = TagLayoutRules.NormalizeDensity(config.TagLabelDensity),
                 TagScale = TagLayoutRules.NormalizeScale(config.TagScale),
                 TagGap = TagLayoutRules.NormalizeGap(config.TagGap),
@@ -4056,6 +4270,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowRecommended,
                 config.JellyseerrShowRequestMoreOnSeries,
                 config.JellyseerrShowNetworkDiscovery,
+                config.JellyseerrFilterYear,
+                config.JellyseerrFilterScore,
+                config.JellyseerrFilterVotes,
+                config.JellyseerrFilterRuntime,
+                config.JellyseerrFilterGenres,
+                config.JellyseerrFilterLanguage,
+                config.JellyseerrFilterContentRating,
+                config.JellyseerrFilterStreaming,
+                config.JellyseerrFilterKeywords,
+                config.JellyseerrFilterRole,
                 config.JellyseerrShowGenreDiscovery,
                 config.JellyseerrShowTagDiscovery,
                 config.JellyseerrShowPersonDiscovery,
@@ -4165,6 +4389,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CatchUpUsePluginPages,
                 config.CatchUpUseCustomTabs,
                 config.CatchUpUseNativeTab,
+                // Leaving soon page placement
+                config.LeavingSoonPageEnabled,
+                config.LeavingSoonPageUsePluginPages,
+                config.LeavingSoonPageUseCustomTabs,
+                config.LeavingSoonPageUseNativeTab,
 
                 // Maintenance Mode
                 MaintenanceModeEnabled = mmActive,
@@ -4251,6 +4480,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Error($"Bootstrap: could not read the component-script manifest: {ex.Message}");
             }
 
+            System.Text.Json.JsonElement? componentGroups = null;
+            try
+            {
+                componentGroups = Services.ClientScriptBundle.GetComponentGroupsDocument();
+            }
+            catch (Exception ex)
+            {
+                // The client then loads the whole manifest as one group.
+                _logger.Error($"Bootstrap: could not read the component-group file: {ex.Message}");
+            }
+
             var isAdmin = IsAdminUser();
 
             return new JsonResult(new
@@ -4267,12 +4507,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 UserSettings = new
                 {
                     Settings = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId)),
-                    Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json")),
+                    Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, () => LoadSavedWholeDocument<UserShortcuts>(authorizedUserId, "shortcuts.json")),
                     Bookmark = TryLoadUserDocument("bookmark.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json")),
                     Elsewhere = TryLoadUserDocument("elsewhere.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json")),
                     HiddenContent = TryLoadUserDocument("hidden-content.json", authorizedUserId, () => LoadUserHiddenContentDocument(authorizedUserId)),
                 },
                 ComponentScripts = componentScripts,
+                // The "groups" array of js/component-groups.json: which modules
+                // load together and on demand. Null when the file is unusable.
+                ComponentGroups = componentGroups,
                 Prefetched = BuildBootstrapPrefetched(config, userId.Value, authorizedUserId, isAdmin),
             });
         }
@@ -4371,6 +4614,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
+        /// Reads a per-user document the client saves whole (hidden-content.json, shortcuts.json).
+        /// The lenient read answers an empty document for a file it cannot read, and the client's
+        /// next save would then replace the stored list with that one change, so this read throws
+        /// instead (the bootstrap answers null, the endpoint an error). A read error, such as a
+        /// lock or a network share, leaves the file as it is. Content that does not parse is moved
+        /// aside first, as the save path already does, so the next read starts from the defaults
+        /// instead of failing on every page load.
+        /// </summary>
+        private T LoadSavedWholeDocument<T>(string authorizedUserId, string fileName) where T : new()
+        {
+            try
+            {
+                return _userConfigurationManager.GetUserConfigurationStrict<T>(authorizedUserId, fileName, quarantineCorrupt: false);
+            }
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
+            {
+                // Every writer of these files holds this lock, so a save cannot replace the file
+                // between the read below and moving it aside.
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, fileName))
+                {
+                    try
+                    {
+                        // Read again: a save may have replaced the file since the first read.
+                        return _userConfigurationManager.GetUserConfigurationStrict<T>(authorizedUserId, fileName, quarantineCorrupt: false);
+                    }
+                    catch (Exception again) when (again is InvalidDataException || again is Newtonsoft.Json.JsonException)
+                    {
+                        _userConfigurationManager.QuarantineUserConfiguration(authorizedUserId, fileName);
+                        throw;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// Whether a plugin with exactly this name is loaded and running right now. A plugin
         /// that is disabled (after the restart that unloads it) or failed to load serves
         /// nothing, so the client must treat it as absent; one disabled, deleted or updated
@@ -4391,17 +4669,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// The concatenated component scripts (see Services/ClientScriptBundle).
+        /// The concatenated component scripts (see Services/ClientScriptBundle):
+        /// the groups named by <paramref name="g"/> ("core,tags"), or the whole
+        /// manifest without it. An unknown, repeated or malformed group list is 404.
         /// Same headers as GetScriptResource: immutable in production (the URL
         /// carries the cache key), no-store and rebuilt per request in dev mode.
         /// </summary>
         [HttpGet("bundle.js")]
-        public ActionResult GetScriptBundle() => GetScriptBundleResource(map: false);
+        public ActionResult GetScriptBundle([FromQuery] string? g = null) => GetScriptBundleResource(map: false, g);
 
         [HttpGet("bundle.js.map")]
-        public ActionResult GetScriptBundleMap() => GetScriptBundleResource(map: true);
+        public ActionResult GetScriptBundleMap([FromQuery] string? g = null) => GetScriptBundleResource(map: true, g);
 
-        private ActionResult GetScriptBundleResource(bool map)
+        private ActionResult GetScriptBundleResource(bool map, string? groupList)
         {
             var plugin = JellyfinEnhanced.Instance;
             if (plugin == null)
@@ -4413,7 +4693,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             byte[] script, sourceMap;
             try
             {
-                (script, sourceMap) = Services.ClientScriptBundle.GetBundle(plugin.ScriptCacheKey, rebuild: devMode, _logger);
+                if (groupList == null)
+                {
+                    (script, sourceMap) = Services.ClientScriptBundle.GetBundle(plugin.ScriptCacheKey, rebuild: devMode, _logger);
+                }
+                else
+                {
+                    var groups = Services.ClientScriptBundle.ParseGroupRequest(groupList);
+                    if (groups == null)
+                    {
+                        return NotFound();
+                    }
+
+                    (script, sourceMap) = Services.ClientScriptBundle.GetGroupBundle(plugin.ScriptCacheKey, groups, rebuild: devMode, _logger);
+                }
             }
             catch (Exception ex)
             {
@@ -4552,9 +4845,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Response.Headers["Cache-Control"] = "no-store";
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
+            // Without a TMDB key the providers come from Seerr's own title detail.
+            var useSeerr = config != null && string.IsNullOrEmpty(config.TMDB_API_KEY)
+                && config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.JellyseerrApiKey);
+            if (config == null || (string.IsNullOrEmpty(config.TMDB_API_KEY) && !useSeerr))
             {
-                return StatusCode(503, "TMDB API key is not configured.");
+                return StatusCode(503, "Neither a TMDB API key nor the Seerr integration is configured.");
             }
 
             if (!Services.WatchProvidersBatch.TryParseItems(items, out var requested, out var itemsError))
@@ -4597,6 +4893,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 }
                                 break;
                         }
+                    }
+
+                    if (useSeerr)
+                    {
+                        // The caller's Seerr detail: its response cache, Seerr user and
+                        // permission checks. Anything but a readable 200 stays null.
+                        var seerr = await ProxyJellyseerrRequest($"/api/v1/{item.MediaType}/{item.TmdbId}", HttpMethod.Get).ConfigureAwait(false);
+                        if (seerr is ContentResult { StatusCode: null or 200, Content: { } seerrJson })
+                        {
+                            results[item.Key] = Services.WatchProvidersBatch.ExtractSeerrFlatrate(seerrJson, regionCode);
+                        }
+                        return;
                     }
 
                     var response = await _tmdbResponseCache.GetAsync(item.ApiPath, string.Empty, apiKey, aborted).ConfigureAwait(false);
@@ -4708,6 +5016,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _usageEventCounterService.Increment(key);
             return Ok();
         }
+
+        /// <summary>Names of the settings the usage report carries; the config page marks them with an icon.</summary>
+        [HttpGet("usage/fields")]
+        [Authorize]
+        public IActionResult GetUsageReportedFields() =>
+            IsAdminUser() ? new JsonResult(Services.AnalyticsReportingService.GetReportedSettingNames()) : Forbid();
 
         /// <summary>
         /// Returns the exact payload a report would send right now, using the
@@ -5475,7 +5789,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (firstSeen)
                     _logger.Error("SonarrInstances config is corrupt JSON — instance list is effectively empty. "
                         + "Endpoints will return no Sonarr data until the admin opens the config page and resets it. "
-                        + $"Raw value (first 200 chars): {(config.SonarrInstances ?? "").Substring(0, Math.Min(200, (config.SonarrInstances ?? "").Length))}");
+                        + DescribeCorruptArrInstances(config.SonarrInstances));
             }
             if (config.IsRadarrInstancesCorrupt())
             {
@@ -5485,7 +5799,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (firstSeen)
                     _logger.Error("RadarrInstances config is corrupt JSON — instance list is effectively empty. "
                         + "Endpoints will return no Radarr data until the admin opens the config page and resets it. "
-                        + $"Raw value (first 200 chars): {(config.RadarrInstances ?? "").Substring(0, Math.Min(200, (config.RadarrInstances ?? "").Length))}");
+                        + DescribeCorruptArrInstances(config.RadarrInstances));
+            }
+        }
+
+        /// <summary>
+        /// Describes a stored instance list that does not parse by its length and the position where
+        /// parsing stops. The list holds each instance's URL and API key, so its text is never logged.
+        /// </summary>
+        private static string DescribeCorruptArrInstances(string? raw)
+        {
+            raw ??= "";
+            try
+            {
+                JsonSerializer.Deserialize<List<ArrInstance>>(raw);
+                return $"Stored value: {raw.Length} characters.";
+            }
+            catch (JsonException ex)
+            {
+                return $"Stored value: {raw.Length} characters, not valid JSON at line {(ex.LineNumber ?? 0) + 1}, byte {(ex.BytePositionInLine ?? 0) + 1}.";
             }
         }
 
@@ -5554,6 +5886,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         AutoResumeEnabled = defaultConfig.AutoResumeEnabled,
                         AutoPipEnabled = defaultConfig.AutoPipEnabled,
                         LongPress2xEnabled = defaultConfig.LongPress2xEnabled,
+                        SubtitleSyncButtonEnabled = defaultConfig.SubtitleSyncButtonEnabled,
                         PauseScreenEnabled = defaultConfig.PauseScreenEnabled,
                         PauseScreenDelaySeconds = defaultConfig.PauseScreenDelaySeconds,
                         AutoSkipIntro = defaultConfig.AutoSkipIntro,
@@ -5694,8 +6027,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json");
-            return Ok(userConfig);
+            try
+            {
+                return Ok(LoadSavedWholeDocument<UserShortcuts>(authorizedUserId, "shortcuts.json"));
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"shortcuts.json could not be read for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Shortcuts could not be read. Please retry." });
+            }
         }
 
         [HttpGet("user-settings/{userId}/elsewhere.json")]
@@ -5927,6 +6267,105 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return removed > 0 ? Ok(new { success = true }) : NotFound(new { error = "missing" });
         }
 
+        /// <summary>
+        /// A user's saved Seerr filter profiles (<see cref="DiscoveryFilterProfiles"/>), at most
+        /// <see cref="DiscoveryFilterProfiles.MaxProfiles"/>.
+        /// </summary>
+        /// <param name="userId">The user.</param>
+        /// <returns><c>{max, profiles}</c>, each profile <c>{id, name, filters}</c>, oldest first.</returns>
+        [HttpGet("user-settings/{userId}/discovery-filter-profiles")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        [Produces("application/json")]
+        public IActionResult GetDiscoveryFilterProfiles(string userId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            var store = _userConfigurationManager.GetUserConfiguration<DiscoveryFilterProfiles.Store>(authorizedUserId, DiscoveryFilterProfiles.File);
+            return Ok(new
+            {
+                max = DiscoveryFilterProfiles.MaxProfiles,
+                profiles = (store.Profiles ?? new List<DiscoveryFilterProfiles.Profile>()).Select(DiscoveryFilterProfiles.ToDocument),
+            });
+        }
+
+        /// <summary>
+        /// Saves a filter profile <c>{name, filters}</c> to the user's own list. A profile of the same name (ignoring
+        /// case) takes the new filters and keeps its id and place; otherwise it is added with a new id.
+        /// </summary>
+        /// <param name="userId">The user.</param>
+        /// <param name="body">The profile.</param>
+        /// <returns>200 <c>{profile}</c>; 400 <c>{error}</c> (<c>name</c>, <c>filters</c>, <c>empty</c>, or <c>full</c> with <c>max</c>).</returns>
+        [HttpPost("user-settings/{userId}/discovery-filter-profiles")]
+        [Authorize]
+        [RequestSizeLimit(DiscoveryFilterProfiles.MaxRequestBytes)]
+        [Produces("application/json")]
+        public IActionResult SaveDiscoveryFilterProfile(string userId, [FromBody] JsonElement body)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            if (!DiscoveryFilterProfiles.TryRead(body, out var name, out var filters, out var error))
+            {
+                return BadRequest(new { error });
+            }
+
+            DiscoveryFilterProfiles.Profile? saved = null;
+            try
+            {
+                _userConfigurationManager.RmwUserConfiguration<DiscoveryFilterProfiles.Store>(authorizedUserId, DiscoveryFilterProfiles.File, store =>
+                {
+                    store.Profiles ??= new List<DiscoveryFilterProfiles.Profile>();
+                    var same = store.Profiles.Find(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+                    if (same != null)
+                    {
+                        same.Name = name;
+                        same.Filters = filters;
+                        saved = same;
+                        return 1;
+                    }
+
+                    if (store.Profiles.Count >= DiscoveryFilterProfiles.MaxProfiles) return 0;
+                    saved = new DiscoveryFilterProfiles.Profile { Id = Guid.NewGuid().ToString("N")[..12], Name = name, Filters = filters };
+                    store.Profiles.Add(saved);
+                    return 1;
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save a Seerr filter profile for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { error = "save" });
+            }
+
+            if (saved == null) return BadRequest(new { error = "full", max = DiscoveryFilterProfiles.MaxProfiles });
+            return Ok(new { profile = DiscoveryFilterProfiles.ToDocument(saved) });
+        }
+
+        /// <summary>Deletes one of the user's own filter profiles.</summary>
+        /// <param name="userId">The user.</param>
+        /// <param name="profileId">The profile's id.</param>
+        /// <returns>200, or 404 when the user has no such profile.</returns>
+        [HttpDelete("user-settings/{userId}/discovery-filter-profiles/{profileId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DeleteDiscoveryFilterProfile(string userId, string profileId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            int removed;
+            try
+            {
+                removed = _userConfigurationManager.RmwUserConfiguration<DiscoveryFilterProfiles.Store>(authorizedUserId, DiscoveryFilterProfiles.File, store =>
+                    store.Profiles?.RemoveAll(p => string.Equals(p.Id, profileId, StringComparison.Ordinal)) ?? 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to delete a Seerr filter profile for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { error = "save" });
+            }
+
+            return removed > 0 ? Ok(new { success = true }) : NotFound(new { error = "missing" });
+        }
+
         /// <summary>An import preview as the endpoints answer it.</summary>
         private static object PreviewBody(MediaTagsPortable.Preview preview) => new
         {
@@ -5956,7 +6395,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "shortcuts.json", userConfiguration);
+                // Under the file's lock, like every hidden-content.json writer: the read for the
+                // bootstrap and the GET moves content that does not parse aside under it.
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "shortcuts.json"))
+                {
+                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "shortcuts.json", userConfiguration);
+                }
                 _logger.Info($"Saved user shortcuts for {ResolveUserDisplay(authorizedUserId)} to shortcuts.json");
                 return Ok(new { success = true, file = "shortcuts.json" });
             }
@@ -6147,12 +6591,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            return Ok(LoadUserHiddenContentDocument(authorizedUserId));
+            try
+            {
+                return Ok(LoadUserHiddenContentDocument(authorizedUserId));
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"hidden-content.json could not be read for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Hidden content could not be read. Please retry." });
+            }
         }
 
         /// <summary>
         /// Loads (seeding defaults on first access) the user's hidden-content.json
         /// document. Shared by the hidden-content.json endpoint and /bootstrap.
+        /// Throws when the stored list cannot be read (see <see cref="LoadSavedWholeDocument{T}"/>).
         /// </summary>
         private UserHiddenContent LoadUserHiddenContentDocument(string authorizedUserId)
         {
@@ -6179,7 +6632,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            return _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
+            return LoadSavedWholeDocument<UserHiddenContent>(authorizedUserId, "hidden-content.json");
         }
 
         private static HiddenContentSettings BuildHcDefaultSettings(PluginConfiguration src)
@@ -8796,6 +9249,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 AutoResumeEnabled = defaultConfig.AutoResumeEnabled,
                 AutoPipEnabled = defaultConfig.AutoPipEnabled,
                 LongPress2xEnabled = defaultConfig.LongPress2xEnabled,
+                SubtitleSyncButtonEnabled = defaultConfig.SubtitleSyncButtonEnabled,
                 PauseScreenEnabled = defaultConfig.PauseScreenEnabled,
                 PauseScreenDelaySeconds = defaultConfig.PauseScreenDelaySeconds,
                 AutoSkipIntro = defaultConfig.AutoSkipIntro,
@@ -9182,10 +9636,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpGet("admin/leaving-soon")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult GetLeavingSoonStatus([FromServices] Services.LeavingSoonService leavingSoon)
+        public IActionResult GetLeavingSoonStatus([FromServices] Services.LeavingSoonService leavingSoon, [FromServices] Services.LeavingSoonHomeSection homeRow)
         {
             if (!IsAdminUser()) return Forbid();
-            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration));
+            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration, homeRow.Status));
         }
 
         /// <summary>Refresh the Leaving soon facts now (the Media Tags tab's Refresh), then answer the status. Admin only.</summary>
@@ -9195,11 +9649,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpPost("admin/leaving-soon/refresh")]
         [Authorize]
         [Produces("application/json")]
-        public async Task<IActionResult> RefreshLeavingSoon([FromServices] Services.LeavingSoonService leavingSoon, CancellationToken cancellationToken)
+        public async Task<IActionResult> RefreshLeavingSoon([FromServices] Services.LeavingSoonService leavingSoon, [FromServices] Services.LeavingSoonHomeSection homeRow, CancellationToken cancellationToken)
         {
             if (!IsAdminUser()) return Forbid();
             await _tagCacheService.RefreshLeavingAsync(force: true, cancellationToken).ConfigureAwait(false);
-            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration));
+            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration, homeRow.Status));
         }
 
         /// <summary>
@@ -9787,6 +10241,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var factsNow = DateTime.UtcNow;
             (long? LatestAdded, Services.StatusTagsEpisodeFacts? Facts) TagDataEpisodeFacts(BaseItem tagItem)
             {
+                // A collection: its newest member this user can see ("Just Added" reads it instead of
+                // the collection's own DateCreated, which a library scan can reset).
+                if (latestEpisode && tagItem is MediaBrowser.Controller.Entities.Movies.BoxSet tagCollection)
+                {
+                    if (episodeFactsMemo.TryGetValue(tagItem.Id, out var collectionMemo)) return collectionMemo;
+                    long? newestMember = null;
+                    try
+                    {
+                        foreach (var member in ((Folder)tagCollection).GetChildren(user, true))
+                        {
+                            if (!Services.TagCacheService.IsDatedCollectionMember(member)) continue;
+                            if (Services.TagCacheService.ToUnixMilliseconds(member.DateCreated) is { } added && (newestMember == null || added > newestMember)) newestMember = added;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // One unreadable collection must not fail the batch: it just shows no badge.
+                        _logger.Warning($"[TagData] Failed to read the members of collection {tagItem.Id}: {ex.Message}");
+                        newestMember = null;
+                    }
+
+                    return episodeFactsMemo[tagItem.Id] = (newestMember, null);
+                }
+
                 if (!latestEpisode || tagItem is not (MediaBrowser.Controller.Entities.TV.Series or MediaBrowser.Controller.Entities.TV.Season))
                 {
                     return (null, null);
@@ -10545,6 +11023,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (!uploadedFile.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
                     return BadRequest("Only image files are allowed");
 
+                if (string.Equals(normalizedFileName, ElsewhereBrandingIconFileName, StringComparison.OrdinalIgnoreCase)
+                    && !ElsewhereIconContentTypes.Contains(uploadedFile.ContentType))
+                    return BadRequest("The Elsewhere icon must be a PNG, JPEG, GIF, WebP or SVG image");
+
+                // The Elsewhere icon is served by its content, so only store bytes that
+                // are recognisably one of those formats; anything else would be served
+                // with the wrong type and never display.
+                if (string.Equals(normalizedFileName, ElsewhereBrandingIconFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    string? sniffed;
+                    using (var head = uploadedFile.OpenReadStream())
+                    {
+                        sniffed = SniffImageContentType(head);
+                    }
+
+                    if (sniffed == null)
+                        return BadRequest("The Elsewhere icon file isn't a readable PNG, JPEG, GIF, WebP or SVG image (an SVG must be UTF-8 and have its <svg> tag in the first 64 KB)");
+                }
+
                 const long maxFileSize = 10 * 1024 * 1024; // 10MB
                 if (uploadedFile.Length > maxFileSize)
                     return BadRequest($"File too large (max 10MB)");
@@ -10612,13 +11109,134 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!System.IO.File.Exists(filePath))
                 return NotFound();
 
-            var provider = new FileExtensionContentTypeProvider();
-            if (!provider.TryGetContentType(filePath, out var contentType))
+            string? contentType = null;
+            if (filePath.EndsWith(ElsewhereBrandingIconFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!TrySniffImageFile(filePath, out contentType))
+                {
+                    return NotFound();
+                }
+
+                SetUploadedImageSandboxHeaders();
+            }
+
+            if (contentType == null && !new FileExtensionContentTypeProvider().TryGetContentType(filePath, out contentType))
             {
                 contentType = "application/octet-stream";
             }
 
             return PhysicalFile(filePath, contentType);
+        }
+
+        /// <summary>
+        /// The uploaded Elsewhere custom branding icon, for every viewer's
+        /// <c>&lt;img&gt;</c>. Anonymous because an image tag can't send Jellyfin's
+        /// auth header; it exposes nothing beyond what the stock branding images
+        /// (served publicly by BrandingAssetStartupFilter) already do.
+        /// </summary>
+        [HttpGet("ElsewhereBrandingIcon")]
+        [AllowAnonymous]
+        public IActionResult GetElsewhereBrandingIcon()
+        {
+            if (!TryResolveBrandingFilePath(ElsewhereBrandingIconFileName, out _, out var filePath)
+                || !System.IO.File.Exists(filePath)
+                || !TrySniffImageFile(filePath, out var contentType))
+            {
+                return NotFound();
+            }
+
+            SetUploadedImageSandboxHeaders();
+            // Clients add ?v=<upload time>, so a re-upload gets a new URL.
+            Response.Headers["Cache-Control"] = "public, max-age=86400";
+            return PhysicalFile(filePath, contentType ?? "image/png");
+        }
+
+        /// <summary>
+        /// Headers for serving an admin-uploaded image that may be an SVG: it must never
+        /// run script or load anything if its URL is opened directly.
+        /// </summary>
+        private void SetUploadedImageSandboxHeaders()
+        {
+            Response.Headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
+        }
+
+        /// <summary>
+        /// Sniffs a stored image's type. Returns false when the file vanished or can't be
+        /// read (e.g. deleted mid-request); <paramref name="contentType"/> is null when
+        /// the content isn't recognised.
+        /// </summary>
+        private static bool TrySniffImageFile(string filePath, out string? contentType)
+        {
+            contentType = null;
+            try
+            {
+                using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                contentType = SniffImageContentType(stream);
+                return true;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Changes whenever the Elsewhere branding icon is uploaded or deleted: the
+        /// file's last-write ticks and size, or an empty string when no icon is uploaded.
+        /// </summary>
+        private static string GetElsewhereBrandingIconVersion()
+        {
+            try
+            {
+                var brandingDir = JellyfinEnhanced.BrandingDirectory;
+                if (string.IsNullOrWhiteSpace(brandingDir))
+                {
+                    return string.Empty;
+                }
+
+                var info = new FileInfo(Path.Combine(brandingDir, ElsewhereBrandingIconFileName));
+                // Size as well as time, so a replacement on a coarse-mtime filesystem
+                // (or restored with its old mtime) still gets a new URL.
+                return info.Exists && info.Length > 0
+                    ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{info.LastWriteTimeUtc.Ticks}-{info.Length}")
+                    : string.Empty;
+            }
+            catch (Exception)
+            {
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Identifies an image by its first bytes (PNG, JPEG, GIF, WebP or UTF-8 SVG), so a
+        /// file stored under a fixed name is served with its real type. Upload uses the
+        /// same window, so every stored Elsewhere icon is recognised when served.
+        /// Returns null when the content isn't recognised.
+        /// </summary>
+        private static string? SniffImageContentType(Stream stream)
+        {
+            // SVGs can open with an XML prolog, comments, metadata or a DOCTYPE before <svg.
+            var head = new byte[64 * 1024];
+            var read = 0;
+            int n;
+            while (read < head.Length && (n = stream.Read(head, read, head.Length - read)) > 0)
+            {
+                read += n;
+            }
+
+            if (read >= 8 && head[0] == 0x89 && head[1] == 0x50 && head[2] == 0x4E && head[3] == 0x47) return "image/png";
+            if (read >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF) return "image/jpeg";
+            if (read >= 6 && head[0] == 0x47 && head[1] == 0x49 && head[2] == 0x46 && head[3] == 0x38) return "image/gif";
+            if (read >= 12 && head[0] == 0x52 && head[1] == 0x49 && head[2] == 0x46 && head[3] == 0x46
+                && head[8] == 0x57 && head[9] == 0x45 && head[10] == 0x42 && head[11] == 0x50) return "image/webp";
+            var text = Encoding.UTF8.GetString(head, 0, read);
+            if (text.Contains("<svg", StringComparison.OrdinalIgnoreCase)) return "image/svg+xml";
+            return null;
         }
 
         [HttpPost("DeleteBrandingImage")]
@@ -12167,6 +12785,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS | JellyseerrPermission.REQUEST_VIEW
                 ));
 
+                // Managers can approve, decline and remove anyone's request; everyone else may
+                // only remove their own (see RemoveRequest).
+                var canApproveRequests = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                    jellyseerrUser.Permissions,
+                    JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
+                );
+
                 // Build filter parameter
                 // "comingsoon" is a custom filter - fetch processing items and filter server-side
                 var isComingSoonFilter = string.Equals(filter, "comingsoon", StringComparison.OrdinalIgnoreCase);
@@ -12422,7 +13047,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             initialAirDate = initialAirDate,
                             nextAirDate = nextAirDate,
                             isComingSoon = isComingSoon,
-                            isOrphaned = isOrphaned
+                            isOrphaned = isOrphaned,
+                            // Whether this caller may remove the request: managers always, others
+                            // only their own. Only the flag is sent, never the requester's ids.
+                            canRemove = canApproveRequests || requestedBy?["id"]?.Value<int?>() == jellyseerrUser.Id
                         };
                     }).ToList();
 
@@ -12477,11 +13105,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var pageInfo = data["pageInfo"] as JObject;
                 var totalResults = splitsProcessing ? (splitTotal ?? 0) : (pageInfo?["results"]?.Value<int>() ?? 0);
                 var totalPages = (int)Math.Ceiling((double)totalResults / take);
-
-                var canApproveRequests = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
-                    jellyseerrUser.Permissions,
-                    JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
-                );
 
                 return Ok(new
                 {
@@ -12609,6 +13232,93 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     IsAdminUser() ? error.ToAdminResponseShape() : error.ToResponseShape());
             }
 
+            return Ok(new { success = true });
+        }
+
+        /// <summary>
+        /// Deletes a Seerr request from the Requests page. The requester may remove their own
+        /// request in any status; Jellyfin admins and Seerr managers may remove anyone's. Only the
+        /// request record is deleted, never the media.
+        /// </summary>
+        /// <remarks>
+        /// Seerr itself only lets a non-manager delete their own request while it is pending, so
+        /// ownership is checked here and the delete is sent with the API key alone.
+        /// </remarks>
+        [HttpDelete("arr/requests/{requestId}")]
+        [Authorize]
+        public async Task<IActionResult> RemoveRequest([FromRoute] int requestId)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+                return StatusCode(503, new { error = true, message = "Seerr not configured." });
+
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(jellyfinUserId))
+                return BadRequest(new { message = "Jellyfin User ID not found." });
+
+            var jellyseerrUser = await GetJellyseerrUser(jellyfinUserId);
+            if (jellyseerrUser == null)
+                return NotFound(new { message = "Current user is not linked to a Seerr account." });
+
+            var jellyseerrUrl = config.JellyseerrUrls
+                .Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(u => u.Trim().TrimEnd('/'))
+                .FirstOrDefault(u => !string.IsNullOrWhiteSpace(u));
+
+            if (string.IsNullOrEmpty(jellyseerrUrl))
+                return StatusCode(503, new { error = true, message = "No valid Seerr URL configured." });
+
+            var requestUri = $"{jellyseerrUrl}/api/v1/request/{requestId}";
+            var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+
+            var isManager = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                jellyseerrUser.Permissions,
+                JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
+            );
+
+            // Read the request first to learn who made it.
+            int? requesterId;
+            using (var getRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.JellyseerrApiKey))
+            using (var getResponse = await client.SendAsync(getRequest))
+            {
+                if ((int)getResponse.StatusCode == 404)
+                {
+                    // Already gone: the outcome a manager asked for. Anyone else gets the same
+                    // answer as for another user's request, so request ids cannot be probed.
+                    return isManager
+                        ? Ok(new { success = true })
+                        : StatusCode(403, new { error = true, message = "You can only remove your own requests." });
+                }
+
+                var (json, getError) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(getResponse, requestUri);
+                if (getError != null)
+                {
+                    _logger.Warning($"[Request-Removal] Reading request {requestId} failed: {getError.Code} {getError.HttpStatus}");
+                    return StatusCode(getError.HttpStatus > 0 ? getError.HttpStatus : 502,
+                        IsAdminUser() ? getError.ToAdminResponseShape() : getError.ToResponseShape());
+                }
+
+                requesterId = JObject.Parse(json!)["requestedBy"]?["id"]?.Value<int?>();
+            }
+
+            var isOwner = requesterId.HasValue && requesterId.Value == jellyseerrUser.Id;
+            if (!isManager && !isOwner)
+                return StatusCode(403, new { error = true, message = "You can only remove your own requests." });
+
+            // No X-Api-User: the plugin made the ownership check, and Seerr's own rule would
+            // refuse an owner's approved request.
+            using var deleteRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Delete, requestUri, config.JellyseerrApiKey);
+            using var deleteResponse = await client.SendAsync(deleteRequest);
+            if (!deleteResponse.IsSuccessStatusCode && (int)deleteResponse.StatusCode != 404)
+            {
+                var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(deleteResponse, requestUri);
+                _logger.Warning($"[Request-Removal] Removing request {requestId} failed: {error?.Code} {(int)deleteResponse.StatusCode}");
+                if (error == null) return StatusCode(502, new { error = true, message = "Seerr refused to remove the request." });
+                return StatusCode(error.HttpStatus > 0 ? error.HttpStatus : 502,
+                    IsAdminUser() ? error.ToAdminResponseShape() : error.ToResponseShape());
+            }
+
+            _logger.Info($"[Request-Removal] Request {requestId} removed by {ResolveUserDisplay(jellyfinUserId)} ({(isOwner ? "owner" : "manager")})");
             return Ok(new { success = true });
         }
 
@@ -13678,6 +14388,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var itemIds = _itemRepository.GetItemIdsByProviders(providers, includeItemTypes);
+            if (!IsAdminUser())
+            {
+                // Only a title the caller may see, as Jellyfin's own item routes decide, so one held
+                // only in a library they cannot open reads as one the server does not hold.
+                // Administrators get the same answer as before. The checks stop at the first visible match, and
+                // at 100 matches: an untyped lookup of an id stamped on many episodes would otherwise load each.
+                var userId = UserHelper.GetCurrentUserId(User);
+                var user = userId.HasValue ? _userManager.GetUserById(userId.Value) : null;
+                itemIds = itemIds.Take(100).Where(id => user != null && _libraryManager.GetItemById<BaseItem>(id, user) != null).Take(1).ToList();
+            }
 
             if (itemIds.Count == 0)
                 return BadRequest("No provider ids supplied or no items found");

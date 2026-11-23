@@ -38,7 +38,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                     value = double.Parse(JsText.ToFixed(JsText.FloatAsJsNumber(community), 1), CultureInfo.InvariantCulture);
                 if (id == "critic" && entry.CriticRating is { } critic)
                     value = JsText.MathRound(JsText.FloatAsJsNumber(critic));
-                var maximum = id is "community" or "imdb" ? 10 : id == "letterboxd" ? 5 : 100;
+                var maximum = id is "community" or "imdb" or "myAnimeList" or "metacriticUser" ? 10 : id == "letterboxd" ? 5 : id == "rogerEbert" ? 4 : 100;
                 value = Math.Clamp(value, 0, maximum);
                 var score = value * 10 / maximum;
                 if (score < settings.RatingTagsMinScore) continue;

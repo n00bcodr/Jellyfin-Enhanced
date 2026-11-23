@@ -1038,6 +1038,42 @@ public class PrivacySeerrRedactionTests
     }
 
     [Fact]
+    public void ListsKeepAHiddenVoteCountForSorting()
+    {
+        using var f = new Fixture(); f.GuardMovie();
+        const string List = "{\"results\":[{\"mediaType\":\"movie\",\"id\":299534,\"voteCount\":26000},{\"mediaType\":\"movie\",\"id\":7,\"voteCount\":12}]}";
+        var results = f.SeerrObject(List, "/api/v1/discover/movies?page=1")["results"]!.AsArray();
+        Assert.False(results[0]!.AsObject().ContainsKey("voteCount"));
+        Assert.Equal(26000, (int?)results[0]!["jeSortVotes"]);
+        // A title nobody guards keeps its own count and gets no copy.
+        Assert.Equal(12, (int?)results[1]!["voteCount"]);
+        Assert.False(results[1]!.AsObject().ContainsKey("jeSortVotes"));
+        f.State.Prefs = new SpoilerBlurUserPrefs { HideRatings = false }; f.Save();
+        var released = f.SeerrObject(List, "/api/v1/discover/movies?page=1")["results"]![0]!.AsObject();
+        Assert.Equal(26000, (int?)released["voteCount"]);
+        Assert.False(released.ContainsKey("jeSortVotes"));
+    }
+
+    [Fact]
+    public void APersonsCreditsDropTheGuardedTitlesPart()
+    {
+        using var f = new Fixture(); f.GuardMovie();
+        const string Credits = "{\"cast\":[{\"mediaType\":\"movie\",\"id\":299534,\"character\":\"Secret role\"},"
+            + "{\"mediaType\":\"movie\",\"id\":7,\"character\":\"Other role\"}],"
+            + "\"crew\":[{\"mediaType\":\"movie\",\"id\":299534,\"job\":\"Director\",\"department\":\"Directing\"}]}";
+        const string Path = "/api/v1/person/5/combined_credits";
+        var credits = f.SeerrObject(Credits, Path);
+        // Denied: the guarded title's part is gone, as on its details.
+        Assert.False(credits["cast"]![0]!.AsObject().ContainsKey("character"));
+        // Another title keeps its part, and a crew row its job.
+        Assert.Equal("Other role", (string?)credits["cast"]![1]!["character"]);
+        Assert.Equal("Director", (string?)credits["crew"]![0]!["job"]);
+        // With titles and descriptions both allowed, the part comes back, as on the details.
+        f.Config.SpoilerReplaceTitle = false; f.Config.SpoilerStripOverview = false;
+        Assert.Equal("Secret role", (string?)f.SeerrObject(Credits, Path)["cast"]![0]!["character"]);
+    }
+
+    [Fact]
     public void ARowMatchesEitherJellyfinCopyOfATitle()
     {
         using var f = new Fixture();

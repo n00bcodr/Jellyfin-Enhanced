@@ -133,6 +133,105 @@ public sealed class LeavingSoonTests : IDisposable
         => new() { LeavingSoonMaintainerrUrl = url ?? string.Empty, LeavingSoonMaintainerrApiKey = key, LeavingSoonCollections = names, LeavingSoonRefreshHours = hours };
 
     [Fact]
+    public void Leaving_facts_are_consumed_only_while_a_source_is_set_and_something_uses_them()
+    {
+        var url = "http://maintainerr:6246";
+        PluginConfiguration With(string? u, string names, bool badge, bool row, bool actions)
+        {
+            var c = Config(url: u, names: names);
+            c.StatusTagsLeaving = badge; c.LeavingSoonHomeRow = row; c.LeavingSoonMaintainerrActions = actions;
+            return c;
+        }
+
+        // No source: never, even with everything on.
+        Assert.False(LeavingSoonService.Consumed(With(null, "", true, true, true), () => true));
+        // A source but nothing uses it: skipped; a user with the badge on counts.
+        Assert.False(LeavingSoonService.Consumed(With(url, "", false, false, false), () => false));
+        Assert.True(LeavingSoonService.Consumed(With(url, "", false, false, false), () => true));
+        // The badge default, or the home row / actions with a Maintainerr URL, count; the row and actions need that URL.
+        Assert.True(LeavingSoonService.Consumed(With(null, "Leaving", true, false, false), () => false));
+        Assert.True(LeavingSoonService.Consumed(With(url, "", false, true, false), () => false));
+        Assert.True(LeavingSoonService.Consumed(With(url, "", false, false, true), () => false));
+        Assert.False(LeavingSoonService.Consumed(With(null, "Leaving", false, true, true), () => false));
+    }
+
+    [Fact]
+    public void The_Reclaimerr_user_header_must_be_a_header_name_or_the_stored_one_is_kept()
+    {
+        var stored = new PluginConfiguration { ReclaimerrUserHeader = "X-Remote-User" };
+        var bad = new PluginConfiguration { ReclaimerrUserHeader = "Remote User\r\nX: y" };
+        Assert.NotEmpty(LeavingSoonService.NormalizeSource(bad, stored));
+        Assert.Equal("X-Remote-User", bad.ReclaimerrUserHeader);
+        var good = new PluginConfiguration { ReclaimerrUserHeader = "  Remote-User  " };
+        Assert.Empty(LeavingSoonService.NormalizeSource(good, stored));
+        Assert.Equal("Remote-User", good.ReclaimerrUserHeader);
+        var empty = new PluginConfiguration { ReclaimerrUserHeader = "" };
+        LeavingSoonService.NormalizeSource(empty, stored);
+        Assert.Equal("Remote-User", empty.ReclaimerrUserHeader);
+    }
+
+    [Fact]
+    public void Maintainerr_and_Reclaimerr_are_never_both_on_and_either_can_be_off()
+    {
+        var stored = new PluginConfiguration { LeavingSoonMaintainerrEnabled = true, ReclaimerrEnabled = false };
+        // Reclaimerr switched on while Maintainerr was on: Reclaimerr wins.
+        var turnedOnReclaimerr = new PluginConfiguration { LeavingSoonMaintainerrEnabled = true, ReclaimerrEnabled = true };
+        Assert.NotEmpty(LeavingSoonService.NormalizeSource(turnedOnReclaimerr, stored));
+        Assert.True(turnedOnReclaimerr.ReclaimerrEnabled);
+        Assert.False(turnedOnReclaimerr.LeavingSoonMaintainerrEnabled);
+        // Maintainerr switched back on while Reclaimerr was on: Maintainerr wins.
+        var turnedOnMaintainerr = new PluginConfiguration { LeavingSoonMaintainerrEnabled = true, ReclaimerrEnabled = true };
+        Assert.NotEmpty(LeavingSoonService.NormalizeSource(turnedOnMaintainerr, turnedOnReclaimerr));
+        Assert.True(turnedOnMaintainerr.LeavingSoonMaintainerrEnabled);
+        Assert.False(turnedOnMaintainerr.ReclaimerrEnabled);
+        // Both off is allowed, and a Maintainerr that is off is not a source even with its URL saved.
+        var neither = new PluginConfiguration { LeavingSoonMaintainerrEnabled = false, ReclaimerrEnabled = false, LeavingSoonMaintainerrUrl = "http://m:6246" };
+        Assert.Empty(LeavingSoonService.NormalizeSource(neither, stored));
+        Assert.False(LeavingSoonService.ApiConfigured(neither));
+        Assert.False(MaintainerrActions.Enabled(neither));
+    }
+
+    [Fact]
+    public void A_request_row_serializes_with_the_lower_case_names_the_page_reads()
+    {
+        var row = new ReclaimerrRequestRow(7, "12th Fail", 2023, "movie", "sam_user", "why", "pending", "2026-11-16T10:00:00Z", null);
+        using var doc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(row));
+        var names = doc.RootElement.EnumerateObject().Select(p => p.Name).ToArray();
+        Assert.Equal(new[] { "id", "title", "year", "mediaType", "requestedBy", "reason", "status", "createdAt", "reviewedBy", "mediaId", "posterPath", "scope", "seasonNumber", "episodeNumber", "versionResolution", "versionSize", "adminNotes", "executionError", "deferred", "scheduledAt", "scheduleState" }, names);
+    }
+
+    [Fact]
+    public void A_leaving_alternate_version_also_marks_the_primary_item_the_library_shows()
+    {
+        var primary = Guid.NewGuid(); var alt = Guid.NewGuid();
+        var members = new[] { new LeavingSoonService.MaintainerrMember(alt, null, "movie", 1000, -7, true, 3) };
+        var oneVersion = new HashSet<string>();
+        var sizes = new Dictionary<string, long>();
+        var items = LeavingSoonService.ToItems(members, null, out var owners, id => id == alt ? primary : null, oneVersion, sizes);
+        Assert.Equal(new[] { alt.ToString("N"), primary.ToString("N") }.Order(), items.Keys.Order());
+        Assert.Equal(-7, owners[primary.ToString("N")]);
+        Assert.Equal(items.Keys.Order(), oneVersion.Order());
+        Assert.Equal(3, sizes[primary.ToString("N")]);
+    }
+
+    [Fact]
+    public void Only_the_chosen_provider_is_configured_and_part_of_the_signature()
+    {
+        var both = new PluginConfiguration { LeavingSoonMaintainerrUrl = "http://m:6246", LeavingSoonMaintainerrApiKey = "mk", ReclaimerrUrl = "http://r:8000", ReclaimerrToken = "rcl_x" };
+        Assert.True(LeavingSoonService.ApiConfigured(both));
+        Assert.False(LeavingSoonService.UsesReclaimerr(both));
+        var before = LeavingSoonService.Signature(both);
+        both.ReclaimerrEnabled = true; both.LeavingSoonMaintainerrEnabled = false;
+        Assert.True(LeavingSoonService.ApiConfigured(both));
+        Assert.NotEqual(before, LeavingSoonService.Signature(both));
+        both.ReclaimerrToken = string.Empty;
+        Assert.False(LeavingSoonService.ApiConfigured(both));
+        Assert.False(MaintainerrActions.Enabled(both));
+        both.ReclaimerrEnabled = false; both.LeavingSoonMaintainerrEnabled = true;
+        Assert.True(MaintainerrActions.Enabled(both));
+    }
+
+    [Fact]
     public void Parses_dated_undated_inactive_wrapped_and_numeric_type_answers()
     {
         var a = Guid.NewGuid(); var b = Guid.NewGuid(); var c = Guid.NewGuid();
@@ -192,7 +291,8 @@ public sealed class LeavingSoonTests : IDisposable
         var service = Service();
         var config = Config(server.Url + "/", key: "secret-key-123");
         Assert.True(await service.RefreshAsync(config, false, CancellationToken.None));
-        Assert.Equal(("/maintainerr/api/collections", "secret-key-123"), Assert.Single(server.Seen));
+        Assert.Equal("/maintainerr/api/collections", server.Seen[0].Path);
+        Assert.All(server.Seen, s => Assert.Equal("secret-key-123", s.Key));
         Assert.Equal(new TagLeaving { DeleteAt = Added.AddDays(10).ToUnixTimeMilliseconds() }, service.Get(item, config));
         var disk = File.ReadAllText(Path.Combine(_core.Root, "leaving-soon.json"));
         Assert.DoesNotContain("secret-key-123", disk);
@@ -223,15 +323,15 @@ public sealed class LeavingSoonTests : IDisposable
         service.Now = () => now;
         var config = Config(server.Url, key: "k-should-not-leak", hours: 6);
         await service.RefreshAsync(config, false, CancellationToken.None);
-        Assert.Equal(1, server.Requests);
+        Assert.Equal(2, server.Requests);
         // Card reads never ask; a run before the interval does nothing.
         for (var i = 0; i < 5; i++) Assert.NotNull(service.Get(item, config));
         now = now.AddHours(5);
         Assert.False(await service.RefreshAsync(config, false, CancellationToken.None));
-        Assert.Equal(1, server.Requests);
+        Assert.Equal(2, server.Requests);
         // A forced refresh (the admin page) asks at once.
         Assert.False(await service.RefreshAsync(config, true, CancellationToken.None));
-        Assert.Equal(2, server.Requests);
+        Assert.Equal(4, server.Requests);
 
         // Failures: the previous answer stays, the retry waits 15, 30, 60 minutes… at most the interval.
         status = 500;
@@ -335,8 +435,8 @@ public sealed class LeavingSoonTests : IDisposable
         }
 
         Assert.Equal(0, receiver.Requests);
-        Assert.Equal(4, server.Requests);
-        Assert.All(server.Seen, s => Assert.Equal("/api/collections", s.Path));
+        Assert.Equal(5, server.Requests);
+        Assert.All(server.Seen, s => Assert.StartsWith("/api/collections", s.Path));
         var log = File.ReadAllText(_core.Logger.CurrentLogFilePath);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(log, "redirect to host 'localhost'"));
         Assert.Contains("redirect to host '169.254.169.254'", log);
@@ -977,31 +1077,70 @@ public sealed class LeavingSoonTests : IDisposable
     }
 
     [Theory]
-    [InlineData("LeavingSoonMaintainerrUrl", "http://maintainerr:6246", true)]
-    [InlineData("LeavingSoonMaintainerrUrl", "", true)]
-    [InlineData("LeavingSoonMaintainerrUrl", "javascript:alert(1)", false)]
-    [InlineData("LeavingSoonMaintainerrUrl", "http://a:b@host", false)]
-    [InlineData("LeavingSoonMaintainerrApiKey", "abc123-XYZ", true)]
-    [InlineData("LeavingSoonMaintainerrApiKey", "has space", false)]
-    [InlineData("LeavingSoonCollections", "Leaving Soon\nGone Next Week", true)]
-    [InlineData("LeavingSoonCollections", "", true)]
-    public void Page_fields_are_validated(string field, string value, bool ok)
+    [InlineData("http://maintainerr:6246", true)]
+    [InlineData("", true)]
+    [InlineData("javascript:alert(1)", false)]
+    [InlineData("http://a:b@host", false)]
+    [InlineData("http://host/api?token=1", false)]
+    public void The_source_address_is_checked_on_a_save_and_a_refused_one_keeps_the_stored_value(string url, bool ok)
     {
-        Assert.Contains(field, MediaTagsPageFields.Allowed);
-        Assert.Equal(ok, MediaTagsPageFields.TryNormalize(field, value, out _, out var error));
-        Assert.Equal(ok, error == null);
+        var stored = new PluginConfiguration { LeavingSoonMaintainerrUrl = "http://stored:6246" };
+        var incoming = new PluginConfiguration { LeavingSoonMaintainerrUrl = url };
+        var problems = LeavingSoonService.NormalizeSource(incoming, stored);
+        Assert.Equal(ok, problems.Count == 0);
+        Assert.Equal(ok ? url : "http://stored:6246", incoming.LeavingSoonMaintainerrUrl);
+    }
+
+    [Theory]
+    [InlineData("abc123-XYZ", true)]
+    [InlineData("", true)]
+    [InlineData("has space", false)]
+    [InlineData("naïve", false)]
+    public void The_key_is_printable_ascii_and_a_refused_one_keeps_the_stored_key_out_of_the_problems(string key, bool ok)
+    {
+        var incoming = new PluginConfiguration { LeavingSoonMaintainerrApiKey = key };
+        var problems = LeavingSoonService.NormalizeSource(incoming, new PluginConfiguration { LeavingSoonMaintainerrApiKey = "stored-key" });
+        Assert.Equal(ok, problems.Count == 0);
+        Assert.Equal(ok ? key : "stored-key", incoming.LeavingSoonMaintainerrApiKey);
+        Assert.DoesNotContain(problems, p => p.Contains(key.Length > 0 ? key : "\u0001") || p.Contains("stored-key"));
     }
 
     [Fact]
-    public void Page_number_and_list_limits_are_validated()
+    public void The_refresh_hours_and_the_collection_list_are_bounded_on_a_save()
     {
-        Assert.True(MediaTagsPageFields.TryNormalize("LeavingSoonRefreshHours", 6, out _, out _));
-        Assert.False(MediaTagsPageFields.TryNormalize("LeavingSoonRefreshHours", 0, out _, out _));
-        Assert.False(MediaTagsPageFields.TryNormalize("LeavingSoonRefreshHours", 169, out _, out _));
+        foreach (var (given, expected) in new[] { (6, 6), (0, 1), (169, 168), (-5, 1) })
+        {
+            var c = new PluginConfiguration { LeavingSoonRefreshHours = given };
+            LeavingSoonService.NormalizeSource(c, null);
+            Assert.Equal(expected, c.LeavingSoonRefreshHours);
+        }
+
+        var stored = new PluginConfiguration { LeavingSoonCollections = "Stored" };
+        var many = new PluginConfiguration { LeavingSoonCollections = string.Join("\n", Enumerable.Range(1, 21).Select(i => "Collection " + i)) };
+        Assert.Single(LeavingSoonService.NormalizeSource(many, stored));
+        Assert.Equal("Stored", many.LeavingSoonCollections);
+        var long1 = new PluginConfiguration { LeavingSoonCollections = new string('x', 201) };
+        Assert.Single(LeavingSoonService.NormalizeSource(long1, stored));
+        Assert.Equal("Stored", long1.LeavingSoonCollections);
+        var good = new PluginConfiguration { LeavingSoonCollections = " Leaving Soon\nGone Next Week " };
+        Assert.Empty(LeavingSoonService.NormalizeSource(good, stored));
+        Assert.Equal("Leaving Soon\nGone Next Week", good.LeavingSoonCollections);
+        // The status family switches stay on the Media Tags page; the source fields no longer do.
+        foreach (var field in new[] { "StatusTagsLeaving", "StatusTagsDirectPlay" }) Assert.Contains(field, MediaTagsPageFields.Allowed);
+        foreach (var field in new[] { "LeavingSoonMaintainerrUrl", "LeavingSoonMaintainerrApiKey", "LeavingSoonRefreshHours" }) Assert.DoesNotContain(field, MediaTagsPageFields.Allowed);
+    }
+
+    [Theory]
+    [InlineData("Leaving Soon\nGone Next Week", true)]
+    [InlineData("", true)]
+    public void The_collections_list_is_a_Media_Tags_page_field_with_its_own_contract(string value, bool ok)
+    {
+        Assert.Contains("LeavingSoonCollections", MediaTagsPageFields.Allowed);
+        Assert.Equal(ok, MediaTagsPageFields.TryNormalize("LeavingSoonCollections", value, out _, out var error));
+        Assert.Equal(ok, error == null);
         var many = string.Join("\n", Enumerable.Range(1, 21).Select(i => "Collection " + i));
         Assert.False(MediaTagsPageFields.TryNormalize("LeavingSoonCollections", many, out _, out _));
         Assert.False(MediaTagsPageFields.TryNormalize("LeavingSoonCollections", new string('x', 201), out _, out _));
-        foreach (var field in new[] { "StatusTagsLeaving", "StatusTagsDirectPlay" }) Assert.Contains(field, MediaTagsPageFields.Allowed);
     }
 
     [Theory]

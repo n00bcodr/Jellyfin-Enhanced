@@ -86,6 +86,95 @@ public class ApiSeerrTests
         Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/user?"));
     }
 
+    // Seerr 3.4/3.5 and Jellyseerr 2.7 let only their admins read override rules (GET /api/v1/overrideRule is
+    // isAuthenticated(Permission.ADMIN)), and apply the rules themselves when a request is created. The proxy
+    // acts as the linked Seerr user, so for anyone else Seerr answered 403 and the client logged an error.
+    private static Func<HttpRequestMessage, HttpResponseMessage> SeerrGatesOverrideRules(SeerrFixture f) => request =>
+        request.RequestUri!.AbsolutePath != "/api/v1/overrideRule" ? IntegrationTransport.Response("{\"id\":99}")
+        : (f.Permissions & JellyseerrPermission.ADMIN) != 0 ? IntegrationTransport.Response("[{\"id\":4,\"profileId\":7}]")
+        : IntegrationTransport.Response("{\"message\":\"You do not have permission to access this endpoint.\"}", 403);
+
+    [Theory]
+    [InlineData(JellyseerrPermission.REQUEST, false)]
+    [InlineData(JellyseerrPermission.REQUEST | JellyseerrPermission.REQUEST_ADVANCED, false)]
+    [InlineData(JellyseerrPermission.REQUEST | JellyseerrPermission.MANAGE_REQUESTS, false)]
+    [InlineData(JellyseerrPermission.REQUEST, true)]
+    public async Task OverrideRulesAreNotAskedOfSeerrForAUserWhoMayNotReadThem(JellyseerrPermission permissions, bool jellyfinAdmin)
+    {
+        using var f = new SeerrFixture { Permissions = permissions };
+        f.Reply = SeerrGatesOverrideRules(f);
+        f.SetUser(f.UserId, jellyfinAdmin);
+        var result = Assert.IsType<ContentResult>(await f.Controller.GetOverrideRules());
+        Assert.Equal("[]", result.Content);
+        Assert.DoesNotContain(f.Calls, c => c.Path.StartsWith("/api/v1/overrideRule"));
+    }
+
+    [Fact]
+    public async Task ASeerrAdminStillReadsTheOverrideRulesFromSeerr()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.ADMIN };
+        f.Reply = SeerrGatesOverrideRules(f);
+        var result = Assert.IsType<ContentResult>(await f.Controller.GetOverrideRules());
+        Assert.Equal(4, Body(result.Content!)[0].GetProperty("id").GetInt32());
+        Assert.Equal("27", Assert.Single(f.Calls, c => c.Path == "/api/v1/overrideRule").User);
+    }
+
+    [Fact]
+    public async Task OverrideRulesStillNeedRequestPermissionBeforeAnything()
+    {
+        // The existing gate is unchanged: without a request permission the caller gets JE's 403, not an empty list.
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.VIEW_ISSUES };
+        f.Reply = SeerrGatesOverrideRules(f);
+        var denied = Assert.IsType<ObjectResult>(await f.Controller.GetOverrideRules());
+        Assert.Equal(403, denied.StatusCode);
+        Assert.Contains("no_request_permission", JsonSerializer.Serialize(denied.Value));
+        Assert.DoesNotContain(f.Calls, c => c.Path.StartsWith("/api/v1/overrideRule"));
+    }
+
+    [Theory]
+    [InlineData("all", "filter=all")]
+    [InlineData("pending", "filter=pending")]
+    [InlineData("all&requestedBy=1&sort=modified", "filter=all%26requestedBy%3D1%26sort%3Dmodified")]
+    [InlineData("all#x", "filter=all%23x")]
+    public async Task RequestListFilterReachesSeerrAsOneValue(string filter, string expected)
+    {
+        using var f = new SeerrFixture { Reply = _ => IntegrationTransport.Response("{\"results\":[]}") };
+        Assert.IsType<ContentResult>(await f.Controller.GetJellyseerrRequests(filter: filter));
+        var call = Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/request"));
+        Assert.Equal("/api/v1/request?take=500&skip=0&" + expected, call.Path);
+    }
+
+    [Fact]
+    public async Task AddingToTheSeerrWatchlistSendsOnlyTheTwoFieldsAsTheCallingUser()
+    {
+        using var f = new SeerrFixture();
+        f.Plugin.Plugin.Configuration.AddRequestedMediaToWatchlist = true;
+        f.Controller.Request.Headers["X-Api-User"] = "1"; // a client-supplied identity must be ignored
+        var result = await f.Controller.AddJellyseerrWatchlist(Body("{\"tmdbId\":603,\"mediaType\":\"movie\",\"title\":\"ignored\",\"extra\":true}"));
+        Assert.IsType<ContentResult>(result);
+        var call = Assert.Single(f.Calls, c => c.Method == "POST");
+        Assert.Equal("/api/v1/watchlist", call.Path);
+        Assert.Equal("27", call.User);
+        Assert.Equal("{\"tmdbId\":603,\"mediaType\":\"movie\"}", call.Body);
+    }
+
+    [Fact]
+    public async Task AddingToTheSeerrWatchlistFailsBeforeCallingSeerrWhenOffOrInvalid()
+    {
+        using var f = new SeerrFixture();
+        f.Plugin.Plugin.Configuration.AddRequestedMediaToWatchlist = false;
+        var off = Assert.IsType<BadRequestObjectResult>(await f.Controller.AddJellyseerrWatchlist(Body("{\"tmdbId\":603,\"mediaType\":\"movie\"}")));
+        Assert.Contains("watchlist_disabled", JsonSerializer.Serialize(off.Value));
+
+        f.Plugin.Plugin.Configuration.AddRequestedMediaToWatchlist = true;
+        foreach (var body in new[] { "{}", "[]", "{\"tmdbId\":0,\"mediaType\":\"movie\"}", "{\"tmdbId\":\"603\",\"mediaType\":\"movie\"}", "{\"tmdbId\":603,\"mediaType\":\"person\"}", "{\"tmdbId\":603}" })
+        {
+            var bad = Assert.IsType<BadRequestObjectResult>(await f.Controller.AddJellyseerrWatchlist(Body(body)));
+            Assert.Contains("invalid_watchlist_item", JsonSerializer.Serialize(bad.Value));
+        }
+        Assert.Empty(f.Calls);
+    }
+
     [Fact]
     public async Task MissingRequestPermissionFailsBeforePostingAndMissingIdentityFailsBeforeLookup()
     {
@@ -241,6 +330,74 @@ public class ApiSeerrTests
         var write = await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"tv\",\"mediaId\":333,\"seasons\":[1]}"));
         Assert.IsType<ContentResult>(write);
         Assert.Single(f.Calls, c => c.Method == "POST");
+    }
+
+    [Theory]
+    [InlineData(nameof(JellyfinEnhancedController.GetSeerrFilterLanguages), "jellyseerr/filters/languages")]
+    [InlineData(nameof(JellyfinEnhancedController.GetSeerrFilterCertifications), "jellyseerr/filters/certifications/{mediaType}")]
+    [InlineData(nameof(JellyfinEnhancedController.GetSeerrFilterWatchProviders), "jellyseerr/filters/watchproviders/{mediaType}")]
+    public void DiscoveryFilterListsNeedASignedInUser(string method, string route)
+    {
+        var action = typeof(JellyfinEnhancedController).GetMethod(method)!;
+        Assert.Equal(route, Assert.Single(action.GetCustomAttributes(typeof(HttpGetAttribute), false).Cast<HttpGetAttribute>()).Template);
+        Assert.Single(action.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), false));
+    }
+
+    [Fact]
+    public async Task DiscoveryFilterListsAskSeerrOnlyForAKnownTypeAndRegion()
+    {
+        using var f = new SeerrFixture();
+        f.Reply = _ => IntegrationTransport.Response("[]");
+        f.Plugin.Plugin.Configuration.DEFAULT_REGION = " gb ";
+        Assert.IsType<ContentResult>(await f.Controller.GetSeerrFilterLanguages());
+        Assert.IsType<ContentResult>(await f.Controller.GetSeerrFilterCertifications("movie"));
+        Assert.IsType<ContentResult>(await f.Controller.GetSeerrFilterWatchProviders("tv", "AU"));
+        // No region sent: the admin's Default Region, made valid.
+        Assert.IsType<ContentResult>(await f.Controller.GetSeerrFilterWatchProviders("movie"));
+        Assert.Equal(new[] { "/api/v1/languages", "/api/v1/certifications/movie", "/api/v1/watchproviders/tv?watchRegion=AU", "/api/v1/watchproviders/movies?watchRegion=GB" },
+            f.Calls.Where(c => !c.Path.StartsWith("/api/v1/user?", StringComparison.Ordinal)).Select(c => c.Path).ToArray());
+        var before = f.Calls.Count;
+        // Denied: anything else is refused before Seerr is asked.
+        foreach (var type in new[] { "person", "../settings", "MOVIE", "" })
+        {
+            Assert.IsType<BadRequestObjectResult>(await f.Controller.GetSeerrFilterCertifications(type));
+            Assert.IsType<BadRequestObjectResult>(await f.Controller.GetSeerrFilterWatchProviders(type, "US"));
+        }
+        foreach (var region in new[] { "us", "USA", "U", "US&page=2", "../" })
+        {
+            Assert.IsType<BadRequestObjectResult>(await f.Controller.GetSeerrFilterWatchProviders("movie", region));
+        }
+        Assert.Equal(before, f.Calls.Count);
+    }
+
+    [Fact]
+    public async Task ADiscoverFeedPassesOnTheFiltersSeerrTakesAndJoinsItsOwnGenre()
+    {
+        using var f = new SeerrFixture();
+        f.Reply = _ => IntegrationTransport.Response("{\"page\":1,\"totalPages\":1,\"results\":[]}");
+        f.Controller.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString("?page=4&genre=35&voteCountGte=100&excludeKeywords=9715&withCompanies=1");
+        await f.Controller.DiscoverTvByGenre(16);
+        Assert.Contains(f.Calls, c => c.Path == "/api/v1/discover/tv?page=1&genre=16%2C35&voteCountGte=100&excludeKeywords=9715");
+    }
+
+    [Fact]
+    public async Task SeriesByStudioAskTmdbWithTheFiltersUnderTmdbsNames()
+    {
+        var asked = new ConcurrentQueue<string>();
+        using var tmdb = new TmdbResponseCache(new IntegrationTransport((request, _) =>
+        {
+            asked.Enqueue(request.RequestUri!.PathAndQuery);
+            return Task.FromResult(IntegrationTransport.Response("{\"page\":1,\"total_pages\":1,\"total_results\":0,\"results\":[]}"));
+        }), TimeProvider.System);
+        using var f = new SeerrFixture((_, _) => [tmdb]);
+        f.Plugin.Plugin.Configuration.TMDB_API_KEY = "tmdb-secret";
+        f.Controller.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString("?firstAirDateGte=2000-01-01&genre=16&voteAverageGte=8;drop&watchRegion=usa");
+        Assert.IsType<ContentResult>(await f.Controller.DiscoverTvByStudio(3, 1, "vote_count.desc"));
+        var query = Assert.Single(asked);
+        Assert.Contains("with_companies=3&page=1&sort_by=vote_count.desc&first_air_date.gte=2000-01-01&with_genres=16", query);
+        // A value not of its parameter's shape never reaches TMDB.
+        Assert.DoesNotContain("vote_average", query);
+        Assert.DoesNotContain("watch_region", query);
     }
 
     private const string TmdbBody = "{\"id\":603,\"title\":\"Film\",\"overview\":\"Secret plot\"}";
@@ -410,5 +567,110 @@ public class ApiSeerrTests
         Assert.Equal("Show", row.GetProperty("title").GetString());
         f.SetUser(f.OtherUserId, admin: true);
         Assert.Equal("2099-01-01", Rows(await f.Controller.GetRequests(), "requests")[0].GetProperty("nextAirDate").GetString());
+    }
+
+    // Seerr request 5 belongs to Seerr user 27 (f.UserId); request 6 to user 38 (f.OtherUserId).
+    private static Func<HttpRequestMessage, HttpResponseMessage> RequestOwners(int getStatus = 200, int deleteStatus = 204) => request =>
+    {
+        if (request.Method == HttpMethod.Delete) return new HttpResponseMessage((System.Net.HttpStatusCode)deleteStatus);
+        if (getStatus != 200) return IntegrationTransport.Response("{\"message\":\"Request not found.\"}", getStatus);
+        var owner = request.RequestUri!.AbsolutePath.EndsWith("/5") ? 27 : 38;
+        return IntegrationTransport.Response(JsonSerializer.Serialize(new { id = 1, status = 2, requestedBy = new { id = owner } }));
+    };
+
+    private static int Status(IActionResult result) => result switch
+    {
+        OkObjectResult => 200,
+        ObjectResult o => o.StatusCode ?? 200,
+        StatusCodeResult s => s.StatusCode,
+        _ => 0
+    };
+
+    [Fact]
+    public async Task ARequesterRemovesTheirOwnApprovedRequestWithoutManagePermission()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.REQUEST, Reply = RequestOwners() };
+        Assert.Equal(200, Status(await f.Controller.RemoveRequest(5)));
+        var delete = Assert.Single(f.Calls, c => c.Method == "DELETE");
+        Assert.Equal("/api/v1/request/5", delete.Path);
+        // Sent as the Seerr admin: Seerr itself would refuse an owner's approved request.
+        Assert.Null(delete.User);
+    }
+
+    [Fact]
+    public async Task SomeoneElsesRequestNeedsManagePermission()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.REQUEST, Reply = RequestOwners() };
+        Assert.Equal(403, Status(await f.Controller.RemoveRequest(6)));
+        Assert.DoesNotContain(f.Calls, c => c.Method == "DELETE");
+
+        f.Permissions = JellyseerrPermission.REQUEST | JellyseerrPermission.MANAGE_REQUESTS;
+        JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
+        Assert.Equal(200, Status(await f.Controller.RemoveRequest(6)));
+        Assert.Single(f.Calls, c => c.Method == "DELETE" && c.Path == "/api/v1/request/6");
+    }
+
+    [Fact]
+    public async Task AJellyfinAdminRemovesAnyRequest()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.NONE, Reply = RequestOwners() };
+        f.SetUser(f.UserId, admin: true);
+        Assert.Equal(200, Status(await f.Controller.RemoveRequest(6)));
+        Assert.Single(f.Calls, c => c.Method == "DELETE");
+    }
+
+    [Fact]
+    public async Task ARequestDeletedBetweenTheReadAndTheDeleteCountsAsRemoved()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.REQUEST, Reply = RequestOwners(deleteStatus: 404) };
+        Assert.Equal(200, Status(await f.Controller.RemoveRequest(5)));
+    }
+
+    [Fact]
+    public async Task AMissingRequestCountsAsRemovedForManagersOnly()
+    {
+        using var f = new SeerrFixture { Permissions = JellyseerrPermission.REQUEST | JellyseerrPermission.MANAGE_REQUESTS, Reply = RequestOwners(getStatus: 404) };
+        Assert.Equal(200, Status(await f.Controller.RemoveRequest(5)));
+
+        // A plain user gets the answer they would get for someone else's request, so the ids
+        // of existing requests cannot be probed.
+        f.Permissions = JellyseerrPermission.REQUEST;
+        JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
+        Assert.Equal(403, Status(await f.Controller.RemoveRequest(5)));
+        Assert.DoesNotContain(f.Calls, c => c.Method == "DELETE");
+    }
+
+    [Fact]
+    public async Task AFailedDeleteIsReported()
+    {
+        using var f = new SeerrFixture { Reply = RequestOwners(deleteStatus: 500) };
+        Assert.NotEqual(200, Status(await f.Controller.RemoveRequest(5)));
+    }
+
+    [Fact]
+    public async Task AnUnlinkedUserCannotRemoveRequests()
+    {
+        using var f = new SeerrFixture { Reply = RequestOwners() };
+        f.SetUser(Guid.NewGuid());
+        Assert.Equal(404, Status(await f.Controller.RemoveRequest(5)));
+        Assert.DoesNotContain(f.Calls, c => c.Method == "DELETE");
+    }
+
+    [Theory]
+    [InlineData(JellyseerrPermission.REQUEST, false, true, false)]
+    [InlineData(JellyseerrPermission.REQUEST | JellyseerrPermission.MANAGE_REQUESTS, false, true, true)]
+    [InlineData(JellyseerrPermission.NONE, true, true, true)]
+    public async Task RequestRowsSayWhichRequestsTheCallerMayRemove(JellyseerrPermission permissions, bool admin, bool own, bool others)
+    {
+        using var f = GuardedSeerr(out _);
+        f.Permissions = permissions;
+        const string Requests = "{\"pageInfo\":{\"results\":2},\"results\":["
+            + "{\"id\":5,\"type\":\"movie\",\"status\":2,\"media\":{\"tmdbId\":603,\"status\":5},\"requestedBy\":{\"id\":27,\"displayName\":\"Me\"}},"
+            + "{\"id\":6,\"type\":\"movie\",\"status\":2,\"media\":{\"tmdbId\":604,\"status\":5},\"requestedBy\":{\"id\":38,\"displayName\":\"Them\"}}]}";
+        f.Reply = request => IntegrationTransport.Response(request.RequestUri!.AbsolutePath == "/api/v1/request" ? Requests : TmdbBody);
+        f.SetUser(f.UserId, admin);
+        var rows = Rows(await f.Controller.GetRequests(), "requests").EnumerateArray().ToList();
+        Assert.Equal(own, rows.Single(r => r.GetProperty("id").GetInt32() == 5).GetProperty("canRemove").GetBoolean());
+        Assert.Equal(others, rows.Single(r => r.GetProperty("id").GetInt32() == 6).GetProperty("canRemove").GetBoolean());
     }
 }

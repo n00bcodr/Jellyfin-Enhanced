@@ -281,7 +281,7 @@
           filter: drop-shadow(0 1px 2px rgba(0,0,0,0.35));
         }
         .je-request-external-links:empty { display: none; }
-        .je-request-approve-btn, .je-request-decline-btn {
+        .je-request-approve-btn, .je-request-decline-btn, .je-request-remove-btn {
           border: none;
           padding: 0.45em;
           border-radius: 50%;
@@ -298,10 +298,14 @@
         .je-request-decline-btn { background: #f44336; color: #fff; }
         .je-request-approve-btn:hover { background: #43a047; }
         .je-request-decline-btn:hover { background: #e53935; }
+        .je-request-remove-btn { background: rgba(255,255,255,0.12); color: #ff8a80; }
+        .je-request-remove-btn:hover { background: #c62828; color: #fff; }
         .je-request-approve-btn .material-icons,
-        .je-request-decline-btn .material-icons { font-size: 20px; }
+        .je-request-decline-btn .material-icons,
+        .je-request-remove-btn .material-icons { font-size: 20px; }
         .je-request-approve-btn:disabled,
-        .je-request-decline-btn:disabled { opacity: 0.5; cursor: default; }
+        .je-request-decline-btn:disabled,
+        .je-request-remove-btn:disabled { opacity: 0.5; cursor: default; }
         .je-issues-section h2 {
           font-size: 1.5em;
           margin-bottom: 1em;

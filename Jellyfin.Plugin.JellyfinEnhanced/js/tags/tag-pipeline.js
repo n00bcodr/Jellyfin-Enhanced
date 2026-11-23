@@ -74,14 +74,15 @@
     let reviewRatings = null;        // Map<"mediaType:tmdbKey", average> from the payload; null = unavailable
     let reviewRatingsRequestedAt = 0; // performance.now() when the request behind reviewRatings started
     const reviewRatingsListeners = new Set(); // called with the changed keys (Set, or null = all) when averages change
-    const PERSIST_SLICE = 250;       // entries per idle-slice write (each put clones its entry on this thread)
+    const PERSIST_SLICE = 250;       // most entries per idle-slice write (each put clones its entry on this thread)
+    const PERSIST_BUDGET_MS = 4;     // a background slice ends early once its puts took this long (slow devices write less per slice)
     const PERSIST_START_DELAY_MS = 1500; // let the page's first tag scans have the idle time before persisting
     // Shape of the stored entries (the server's tag cache schema they were
     // written under). A stored copy of another shape is dropped on restore and
     // downloaded in full, so new entry fields never wait for a server rebuild
     // that happens to change the cache version. Current schema: Awards, Logos and Custom matches.
     // Use the store identity in the bundle; standalone fallback has the same entry schema.
-    const STORED_ENTRY_SCHEMA = JE.tagCacheStore?.ENTRY_SCHEMA ?? 10;
+    const STORED_ENTRY_SCHEMA = JE.tagCacheStore?.ENTRY_SCHEMA ?? 52;
     const MEMORY_SOFT_CAP = 20000;
     // A full load comes in pages of this many entries (GET tag-cache?limit=&after=): no response, parse or
     // string holds the whole library. A server without paging answers the first request in full.
@@ -118,7 +119,7 @@
     }
     let activeBatch = [];               // entries whose request is currently in flight
     let requestQueue = [];               // { el, renderTarget, itemId, itemType, cardId, awaiting, reuse }
-    const cardReuse = new WeakMap();     // card image → times its card was reused for another item (see releaseReusedCards)
+    const cardReuse = new WeakMap();     // card image → invalidations from reuse or updated metadata
     // The server's effective data-affecting strip policy for /tag-data answers
     // ("none": nothing; SpoilerTagDataStripper.TagStripRevision): the page-load
     // bootstrap's value, then that of the latest batch answer (batches run one
@@ -180,6 +181,19 @@
         if (saved && saved.expires > Date.now()) return saved.entry;
         forgetItemFacts(id);
         return null;
+    }
+
+    /**
+     * Until when peekItemFacts answers for an item, as far as that is known
+     * ahead: Infinity while the server cache holds its entry (a replaced cache
+     * tells its renderers), the expiry of a fetched projection, 0 for none.
+     * @param {string} id - Normalized item id.
+     * @returns {number} Ms since the epoch, Infinity or 0.
+     */
+    function itemFactsExpiry(id) {
+        if (serverCache?.get(id)) return Infinity;
+        const saved = itemFacts.get(id);
+        return saved && saved.expires > Date.now() ? saved.expires : 0;
     }
 
     /**
@@ -563,10 +577,14 @@
             const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
             // Another tab already stored newer data: keep it.
             if (!await store.beginFullWrite(scope, token, { servedAt })) return;
-            for (let i = 0; i < entries.length; i += PERSIST_SLICE) {
+            for (let i = 0; i < entries.length;) {
                 await idleYield();
                 if (generation !== persistGeneration) return;
-                if (!await store.putManyIfOwner(scope, token, entries.slice(i, i + PERSIST_SLICE))) return;
+                const slice = entries.slice(i, i + PERSIST_SLICE);
+                // true: the whole slice; a number: the budget ended it early.
+                const wrote = await store.putManyIfOwner(scope, token, slice, PERSIST_BUDGET_MS);
+                if (!wrote) return;
+                i += wrote === true ? slice.length : wrote;
             }
             if (generation !== persistGeneration) return;
             if (await store.commitFullWrite(scope, token, meta)) {
@@ -993,7 +1011,7 @@
      * the logos it looks up and republishes once the first user turns the
      * Logos group on. Bounded by SERVER_CACHE_WAIT_DELAYS; a later call or
      * stopWaitingForServerCache() ends an earlier wait, and so does a user
-     * switch. Nothing is redrawn here: the caller decides.
+     * switch. Accepted deltas refresh the affected cards already on the page.
      * @param {(entries: Iterable<object>) => boolean} ready - Checked after each delta.
      * @param {{delays?: number[]}} [options] - Milliseconds before each delta (tests).
      * @returns {Promise<boolean>} True once `ready` holds; false when the server
@@ -1154,7 +1172,9 @@
             deltaIds.delete(id);
             storeMisses.add(id);
         }
+        const redrawn = [];
         for (const [id, entry] of newEntries) {
+            if (entryChanged(serverCache.get(id), entry)) redrawn.push(id);
             forgetItemFacts(id);
             serverCache.set(id, entry);
             storeMisses.delete(id);
@@ -1175,6 +1195,7 @@
                     try { renderer.onServerCacheRefresh(changedIds); } catch {}
                 }
             }
+            refreshVisibleCards(redrawn.concat(removed, dropped), dropped);
         }
         console.log(`${logPrefix} Access changed: +${newEntries.length} items, -${removed.length + dropped.length} no longer visible`);
         return true;
@@ -1243,6 +1264,7 @@
                             try { renderer.onServerCacheRefresh(null, { replaced: true }); } catch {}
                         }
                     }
+                    refreshVisibleCards();
                 } else if (revision !== serverFilterRevision) {
                     // Cards already show entries stripped the old way: the full
                     // invalidation also removes their overlays. Not awaited — it
@@ -1252,15 +1274,13 @@
                 } else {
                     console.log(`${logPrefix} ${why}, reloading full cache`);
                     await downloadFullCache({ fresh: true });
-                    // Clear all derived caches on full rebuild. The cards on the
-                    // page keep what they show (nothing is re-rendered here), so
-                    // a renderer that must not go stale is told the cache under
-                    // them was replaced and can redraw itself.
+                    // Clear derived caches and redraw cards from the replacement.
                     for (const [, renderer] of renderers) {
                         if (renderer.onServerCacheRefresh) {
                             try { renderer.onServerCacheRefresh(null, { replaced: true }); } catch {}
                         }
                     }
+                    refreshVisibleCards();
                 }
                 return;
             }
@@ -1269,7 +1289,9 @@
             // Items removed after the cursor (the server leaves out any stored again since).
             const removed = Array.isArray(resp.removed) ? resp.removed.filter(id => typeof id === 'string' && !(id in resp.items)) : [];
             if (newEntries.length > 0 || removed.length > 0) {
+                const redrawn = [];
                 for (const [id, entry] of newEntries) {
+                    if (entryChanged(serverCache.get(id), entry)) redrawn.push(id);
                     forgetItemFacts(id);
                     serverCache.set(id, entry);
                     storeMisses.delete(id);
@@ -1291,6 +1313,7 @@
                         try { renderer.onServerCacheRefresh(changedIds); } catch {}
                     }
                 }
+                refreshVisibleCards(redrawn.concat(removed));
                 console.log(`${logPrefix} Server cache updated: +${newEntries.length} items, -${removed.length} removed`);
             }
             settled = true;
@@ -1587,7 +1610,8 @@
         const epoch = JE.session?.getEpoch?.();
         const response = await ApiClient.ajax({
             type: 'POST',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+            // With the episode and collection-member dates: the Status renderer draws (and keeps) this answer.
+            url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`, { latestEpisode: true }),
             data: JSON.stringify([itemId]),
             contentType: 'application/json',
             dataType: 'json'
@@ -1605,6 +1629,7 @@
      * @param {{el: HTMLElement, itemId: string, itemType: string|null, reuse: number}} card
      * @param {object|undefined} serverEntry
      * @param {HTMLElement[]} hosts
+     * @returns {boolean} Whether there was anything to draw it from (the server entry, or a local cache).
      */
     function renderCard(card, serverEntry, hosts) {
         const { el, itemId, itemType } = card;
@@ -1633,15 +1658,17 @@
                 }
             }
             hosts.push(renderTarget);
-            return; // Fully rendered from server cache, skip queue
+            return true; // Fully rendered from server cache, skip queue
         }
 
         // Fall back to localStorage/hot cache, then batch fetch for misses
         let allCacheHits = true;
+        let anyCacheHit = false;
         for (const [, renderer] of renderers) {
             if (!renderer.isEnabled()) continue;
             if (renderer.renderFromCache) {
-                if (!renderer.renderFromCache(renderTarget, itemId)) allCacheHits = false;
+                if (renderer.renderFromCache(renderTarget, itemId)) anyCacheHit = true;
+                else allCacheHits = false;
             } else {
                 allCacheHits = false;
             }
@@ -1651,6 +1678,7 @@
         if (!allCacheHits || awaiting) {
             requestQueue.push({ el, renderTarget, itemId, itemType, cardId, awaiting, reuse: card.reuse });
         }
+        return anyCacheHit;
     }
 
     /**
@@ -1702,6 +1730,7 @@
         function renderChunk(chunk, entries) {
             const started = performance.now();
             const hosts = [];
+            let drawn = 0;
             for (const card of chunk) {
                 // Gone since classification (page changed): release it in case
                 // it comes back, exactly like a card skipped before marking.
@@ -1712,11 +1741,17 @@
                 // Reused for another item while its entry was looked up: it was
                 // released then, and the next scan renders the new item.
                 if (!stillShows(card)) continue;
-                renderCard(card, entries.get(card.itemId), hosts);
+                if (renderCard(card, entries.get(card.itemId), hosts)) drawn++;
             }
             // One coalesced layout pass for the slice instead of one per card.
             JE.core.tagRenderer.applyCornerStacking(hosts);
-            recordRenderCost(performance.now() - started, chunk.length);
+            // What a card costs is learnt from the cards that were drawn. A slice with nothing to draw from
+            // takes next to no time. While the server's tag data is still on its way (a first load) that
+            // says nothing of what its cards will cost: counted, it made the cost look like nothing, and the
+            // slice that then drew the page's cards took forty of them. With no data to wait for, cards
+            // that draw nothing are all there is to do, and are gone through as fast as they go.
+            if (drawn) recordRenderCost(performance.now() - started, drawn);
+            else if (!loadInFlight) recordRenderCost(performance.now() - started, chunk.length);
             continueScan();
         }
 
@@ -1741,20 +1776,26 @@
 
                 // Skip contexts that should never have tags
                 if (shouldSkipElement(el)) {
-                    processedCards.add(el);
+                    markProcessed(el);
                     continue;
                 }
 
                 const itemId = getItemId(el);
-                if (!itemId) continue;
-
-                const itemType = getItemType(el);
-                if (itemType && !MEDIA_TYPES.has(itemType)) {
-                    processedCards.add(el);
+                if (!itemId) {
+                    // Nothing else would bring the scan back to it: JE's own chips landing in other
+                    // cards no longer wake the body subscribers.
+                    awaitingIdentity.add(el);
+                    watchArtwork(el);
                     continue;
                 }
 
-                processedCards.add(el);
+                const itemType = getItemType(el);
+                if (itemType && !MEDIA_TYPES.has(itemType)) {
+                    markProcessed(el);
+                    continue;
+                }
+
+                markProcessed(el);
                 chunk.push({ el, itemId, itemType, reuse: cardReuse.get(el) || 0 });
                 ids.push(itemId);
             }
@@ -1774,7 +1815,8 @@
                     // Superseded while waiting: release the cards and scan again.
                     // The newer scan took its snapshot while these were still
                     // marked processed, so it won't pick them up by itself.
-                    for (const card of chunk) processedCards.delete(card.el);
+                    // Cards since invalidated by reuse or metadata have a new owner.
+                    for (const card of chunk) if (stillShows(card)) processedCards.delete(card.el);
                     scheduleScan();
                     return;
                 }
@@ -1812,8 +1854,8 @@
     }
 
     /**
-     * Whether a scanned or queued card still shows the item it was scanned
-     * for (it has not been reused for another item since).
+     * Whether a scanned or queued card still belongs to the item and metadata
+     * it was scanned for (neither reuse nor a cache refresh invalidated it).
      * @param {{el: HTMLElement, reuse: number}} card
      * @returns {boolean}
      */
@@ -1823,6 +1865,42 @@
 
     /** Card images whose item id lives on an ancestor's data-id / data-itemid. */
     const CARD_IMAGE_SELECTOR = '.cardImageContainer, div.listItemImage';
+
+    /** How the identity observer watches one scanned card image: its artwork (the inline style), with the old value. */
+    const ARTWORK_WATCH = { attributes: true, attributeFilter: ['style'], attributeOldValue: true };
+    /** @type {MutationObserver|null} The page's card identity observer (see releaseReusedCards). */
+    let identityObserver = null;
+    /** @type {WeakSet<HTMLElement>} Card images the identity observer watches the artwork of. */
+    let artworkWatched = new WeakSet();
+    /**
+     * Card images a scan passed over because nothing named their item yet: no
+     * item id on the card and no artwork to read one from. Their artwork is
+     * watched so the scan runs again when it arrives (see releaseReusedCards).
+     * @type {WeakSet<HTMLElement>}
+     */
+    let awaitingIdentity = new WeakSet();
+
+    /**
+     * Watch a scanned card image's artwork for a reuse in place. Only scanned
+     * images are watched, each on its own: a page-wide watch of `style` also
+     * heard every other inline style write on the page, such as a scroller
+     * moving its row on each wheel event and each animation frame.
+     * @param {HTMLElement} el - Card image or list row image.
+     */
+    function watchArtwork(el) {
+        if (!identityObserver || artworkWatched.has(el)) return;
+        artworkWatched.add(el);
+        identityObserver.observe(el, ARTWORK_WATCH);
+    }
+
+    /**
+     * Mark a card image scanned (see runScan) and watch its artwork.
+     * @param {HTMLElement} el - Card image or list row image.
+     */
+    function markProcessed(el) {
+        processedCards.add(el);
+        watchArtwork(el);
+    }
 
     /**
      * The item id in an image URL (".../Items/<id>/Images/..."), or ''.
@@ -1865,14 +1943,24 @@
      * scanned card under a changed identity (its layout controller, slots,
      * caption outlet and review key go with it, and lookups still in flight
      * for it are dropped by stillShows), then scan again so the new item
-     * renders.
+     * renders. The records are data-id / data-itemid changes anywhere on the
+     * page and artwork changes of the scanned card images (watchArtwork). A
+     * card image scanned before anything named its item (awaitingIdentity) is
+     * scanned again when its artwork arrives.
      * @param {MutationRecord[]} mutations - Attribute records with old values.
      */
     function releaseReusedCards(mutations) {
         let released = false;
         for (const record of mutations) {
-            if (!isIdentityChange(record)) continue;
             const target = /** @type {HTMLElement} */ (record.target);
+            // A card image scanned before anything named its item: its first artwork may (to
+            // isIdentityChange a first load is no change, rightly so for a card that had an id).
+            if (record.attributeName === 'style' && awaitingIdentity.has(target) && getItemId(target)) {
+                awaitingIdentity.delete(target);
+                released = true;
+                continue;
+            }
+            if (!isIdentityChange(record)) continue;
             const images = target.matches(CARD_IMAGE_SELECTOR)
                 ? [target]
                 : Array.from(target.querySelectorAll(CARD_IMAGE_SELECTOR));
@@ -1883,6 +1971,48 @@
                 processedCards.delete(el);
                 cardReuse.set(el, (cardReuse.get(el) || 0) + 1);
                 JE.core.tagLayout?.clearCard(owner);
+                released = true;
+            }
+        }
+        if (released) scheduleScan();
+    }
+
+    /**
+     * Whether a delta entry differs from the one memory holds. For a user under
+     * Spoiler Guard every guarded entry rides along with each delta, mostly
+     * unchanged; their cards must not be torn down and redrawn every time.
+     * An entry memory does not hold (a restored copy not yet read) counts as changed.
+     * @param {object|undefined} held - The entry in memory before the delta.
+     * @param {object} entry - The entry the delta brought.
+     * @returns {boolean}
+     */
+    function entryChanged(held, entry) {
+        if (!held) return true;
+        try { return JSON.stringify(held) !== JSON.stringify(entry); } catch { return true; }
+    }
+
+    /**
+     * Metadata updates invalidate both cached facts and the cards already drawn
+     * from them. Releasing only affected cards keeps unrelated overlays intact;
+     * advancing their reuse stamp also rejects an older batch still in flight.
+     * A card whose item left the cache is released like an updated one: the
+     * batch lookup, which enforces access, draws whatever the server still has
+     * for it (an item in a library excluded from the tag cache keeps its tags).
+     * @param {string[]|null} [updatedIds] - null means the server cache was replaced.
+     * @param {string[]} [hiddenIds] - Items the user can no longer see: cleared, never looked up.
+     */
+    function refreshVisibleCards(updatedIds = null, hiddenIds = []) {
+        const changed = updatedIds ? new Set(updatedIds) : null;
+        const hidden = new Set(hiddenIds);
+        let released = false;
+        for (const el of document.querySelectorAll(CARD_IMAGE_SELECTOR)) {
+            const itemId = getItemId(el);
+            if (!itemId || (changed && !changed.has(itemId))) continue;
+            cardReuse.set(el, (cardReuse.get(el) || 0) + 1);
+            JE.core.tagLayout?.clearCard(el.closest('.cardScalable') || el);
+            if (hidden.has(itemId)) markProcessed(el);
+            else {
+                processedCards.delete(el);
                 released = true;
             }
         }
@@ -1952,11 +2082,11 @@
             while (requestQueue.length > 0) {
                 if (myGeneration !== batchGeneration) break; // navigation happened
                 const batch = requestQueue.splice(0, SERVER_BATCH_LIMIT)
-                    // Drop cards removed from the DOM since they were queued (e.g. a
+                    // Drop cards invalidated or removed from the DOM since they were queued (e.g. a
                     // page like search re-renders its whole result set on every
                     // keystroke, on the same generation). Skipping them here avoids
                     // fetching and rendering tag data nobody will ever see.
-                    .filter((entry) => entry.el.isConnected);
+                    .filter((entry) => entry.el.isConnected && stillShows(entry));
                 if (batch.length === 0) continue;
                 activeBatch = batch;
                 // The transport can finish in the background, but a retired
@@ -2241,12 +2371,24 @@
         }, { priority: 0 });
 
         // Cards reused in place for another item (see releaseReusedCards):
-        // one attribute observer for the page, never one per card.
+        // one attribute observer for the page, never one per card. It hears
+        // the item id attributes page-wide, and the artwork of each scanned
+        // card image through that image's own registration (watchArtwork).
         const createObserver = JE.core?.dom?.createObserver || JE.helpers?.createObserver;
         if (typeof createObserver === 'function') {
-            createObserver('tag-pipeline-card-identity', releaseReusedCards, document.body, {
-                subtree: true, attributes: true, attributeFilter: ['data-id', 'data-itemid', 'style'], attributeOldValue: true,
+            const observer = createObserver('tag-pipeline-card-identity', releaseReusedCards, document.body, {
+                subtree: true, attributes: true, attributeFilter: ['data-id', 'data-itemid'], attributeOldValue: true,
             });
+            if (observer && typeof observer.observe === 'function') {
+                identityObserver = observer;
+                artworkWatched = new WeakSet();
+                // Images scanned before the observer existed, and ones a reset released that still hold tags.
+                for (const el of document.querySelectorAll(CARD_IMAGE_SELECTOR)) {
+                    const owner = el.closest('.cardScalable') || el;
+                    if (processedCards.has(el) || awaitingIdentity.has(/** @type {HTMLElement} */ (el))
+                        || Array.from(owner.children).some((c) => c.classList.contains('je-tag-host'))) watchArtwork(/** @type {HTMLElement} */ (el));
+                }
+            }
         }
 
         // Also trigger on navigation
@@ -2284,12 +2426,14 @@
             });
         }
 
-        // Inject CSS containment for all tag overlay containers.
-        // This tells the browser these elements are independent from the rest of the
-        // card layout, so hover transforms don't trigger re-layout/re-paint of overlays.
-        // will-change:transform promotes each container to its own compositor layer.
+        // Base CSS for the tag host and the group containers inside it.
+        // The containers used to carry `contain: layout style` (from when cards
+        // scaled on hover). It made each one a stacking context of its own,
+        // around six a card, which cost more to paint, composite and hit-test
+        // on every frame than it saved: they are flex containers positioned by
+        // their slot, so nothing about their layout or paint order needs it.
         if (JE.helpers?.addCSS) {
-            // Base CSS: tag host and containment
+            // Base CSS: tag host
             JE.helpers.addCSS('je-tag-pipeline-perf', `
                 .je-tag-host {
                     position: absolute !important;
@@ -2305,7 +2449,6 @@
                 .je-tag-host .age-rating-overlay-container,
                 .je-tag-host .status-overlay-container,
                 .je-tag-host .logo-overlay-container {
-                    contain: layout style;
                     pointer-events: none;
                     z-index: auto !important;
                 }
@@ -2382,6 +2525,7 @@
         lookupServerEntries,
         rememberItemFacts,
         peekItemFacts,
+        itemFactsExpiry,
         lookupItemFacts,
         peekSeasonFacts,
         /**

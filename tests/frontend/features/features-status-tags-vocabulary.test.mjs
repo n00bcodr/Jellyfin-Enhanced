@@ -181,7 +181,8 @@ const ROWS = [
   ['episode: a guarded episode (no air date) gets no finale', episode({ EpisodeNumber: 10, PremiereDate: null }), {},
     facts({ status: 'Ended', lastAired: { date: '2026-10-28', season: 3, episode: 10, type: 'finale' } }), null],
   ['episode: new episode by air date', episode({ PremiereDate: ago(2) }), {}, null, ['newEpisode', 'New Episode']],
-  ['episode: new episode by added date', episode({ DateCreated: ago(1) }), {}, null, ['newEpisode', 'New Episode']],
+  ['episode: recently added alone is Just Added, not New Episode', episode({ DateCreated: ago(1) }), {}, null, ['added', 'Just Added']],
+  ['episode: new episode by recent air date', episode({ PremiereDate: ago(1) }), {}, null, ['newEpisode', 'New Episode']],
   ['episode: just added when release badges are off', episode({ DateCreated: ago(1) }), { statusTagsNewRelease: false }, null, ['added', 'Just Added']],
   ['season: no fallback finale without a local last episode', season({ LatestEpisodeIndex: { Season: 2, Episode: 10, IsLast: false } }), {},
     facts({ lastAired: { date: '2026-10-28', season: 2, episode: 10 } }), null],
@@ -190,8 +191,12 @@ const ROWS = [
   ['episode: future air date is not a premiere', episode({ EpisodeNumber: 1, PremiereDate: NOW + 2 * DAY }), {}, null, null],
   ['series: future season premiere is not a new season', show({ SeasonPremiere: { Season: 2, Aired: NOW + 2 * DAY } }), {}, null, null],
   ['series: Jellyfin continuing is authoritative', show({ Status: 'Continuing' }), { statusTagsSeriesStatus: true }, facts({ status: 'Ended' }), ['returning', 'Returning']],
-  // Others: Just Added only
-  ['boxset: just added', { Type: 'BoxSet', DateCreated: ago(1) }, {}, null, ['added', 'Just Added']],
+  // Others: Just Added only. A collection reads its newest member's added date: Jellyfin
+  // creates automatic collections again on a library scan, which resets their own date.
+  ['boxset: just added by its newest member', { Type: 'BoxSet', DateCreated: OLD, LatestEpisodeAdded: ago(1) }, {}, null, ['added', 'Just Added']],
+  ['boxset: recreated by a scan, members all old', { Type: 'BoxSet', DateCreated: ago(1), LatestEpisodeAdded: OLD }, {}, null, null],
+  ['boxset: its own date alone is no badge', { Type: 'BoxSet', DateCreated: ago(1) }, {}, null, null],
+  ['video: just added by its own date', { Type: 'Video', DateCreated: ago(1) }, {}, null, ['added', 'Just Added']],
   ['boxset: no release badges', { Type: 'BoxSet', DateCreated: OLD, PremiereDate: ago(1) }, {}, null, null],
 ];
 
@@ -208,6 +213,26 @@ for (const [name, entry, settings, seriesFacts, expected] of ROWS) {
     if (expected) assert.ok(h.chip().classList.contains('status-tag'));
   });
 }
+
+for (const [name, plugin, expected] of [
+  ['the admin switch is on', { StatusTagsOnCollections: true }, ['added', 'Just Added']],
+  ['the setting is missing (an older server)', {}, ['added', 'Just Added']],
+  ['the admin turns status badges off for collections', { StatusTagsOnCollections: false }, null],
+]) {
+  test(`a collection whose newest member was added just now: ${name}`, async t => {
+    const h = setup(t, { plugin });
+    h.show({ Type: 'BoxSet', DateCreated: OLD, LatestEpisodeAdded: ago(1) }, h.hosts[0], 'item1');
+    await h.flush();
+    assert.deepEqual(h.chip() ? [h.key(), h.badge()] : null, expected);
+  });
+}
+
+test('turning collections off leaves a movie added just now with its badge', async t => {
+  const h = setup(t, { plugin: { StatusTagsOnCollections: false } });
+  h.show(movie({ DateCreated: ago(1) }), h.hosts[0], 'item1');
+  await h.flush();
+  assert.deepEqual([h.key(), h.badge()], ['added', 'Just Added']);
+});
 
 test('chips carry their kind as a modifier class and their compact label', async t => {
   const h = setup(t, { series: { [SERIES]: facts({ nextAired: { date: '2026-10-30', season: 1, episode: 2 } }) } });
@@ -470,7 +495,12 @@ for (const trigger of ['midnight', 'visible', 'focus', 'identical lookup']) {
     } else if (trigger === 'visible') h.document.dispatchEvent(new h.window.Event('visibilitychange'));
     else if (trigger === 'focus') h.window.dispatchEvent(new h.window.Event('focus'));
     else {
-      // Same card remains rendered; the observer dispatches a fresh lookup of identical facts.
+      // Same card remains rendered. Its rest ended with the facts' hour; scrolled away and back, the observer
+      // dispatches a fresh lookup of identical facts.
+      const rest = [...h.timers.values()].find(timer => timer.ms === 60 * 60 * 1000);
+      assert.ok(rest, 'one timer is armed for the end of the schedule facts\' hour');
+      rest.fn();
+      h.intersect(h.hosts[0], false);
       h.intersect(h.hosts[0]);
       await h.flush();
     }
@@ -538,6 +568,115 @@ for (const operation of ['remove', 'reuse', 'movie', 'user switch', 'cleanup', '
     }
   });
 }
+
+test('a card whose series is answered rests off the schedule observer, and one drawn for an answered series is never watched', async t => {
+  const OTHER = 'b'.repeat(32);
+  const h = setup(t, { cards: 4, autoIntersect: false, series: { [SERIES]: facts({ nextAired: { date: '2026-10-30', season: 1, episode: 2 } }) } });
+  h.show(show(), h.hosts[0], SERIES);
+  h.show(episode(), h.hosts[1], 'e1'); // the same series, never on screen
+  const io = h.observers[0];
+  assert.equal(io.targets.size, 2, 'both are watched while the series is unknown');
+  h.intersect(h.hosts[0]);
+  assert.equal(io.targets.has(h.hosts[0]), true, 'asked about: still watched');
+  await h.flush();
+  assert.deepEqual(h.seriesCalls, [[SERIES]]);
+  assert.equal(h.badge(h.hosts[0]), 'Airing Today');
+  assert.equal(io.targets.size, 0, 'answered: both cards of the series rest, on screen or not');
+  // A report that was queued before the rest changes nothing.
+  h.intersect(h.hosts[0], false);
+  h.intersect(h.hosts[0]);
+  await h.flush();
+  assert.equal(h.seriesCalls.length, 1);
+  // Drawn for the answered series: badged as it is drawn, never watched.
+  h.show(show(), h.hosts[2], SERIES);
+  assert.equal(h.badge(h.hosts[2]), 'Airing Today');
+  assert.equal(io.targets.has(h.hosts[2]), false);
+  // Drawn for a series not asked about yet: watched, and asked about once on screen.
+  h.show(show({ TmdbId: '200' }), h.hosts[3], OTHER);
+  assert.deepEqual([...io.targets], [h.hosts[3]]);
+  await h.flush();
+  assert.equal(h.seriesCalls.length, 1, 'off screen: no lookup');
+  h.intersect(h.hosts[3]);
+  await h.flush();
+  assert.deepEqual(h.seriesCalls.at(-1), [OTHER]);
+  assert.equal(io.targets.size, 0);
+  // A resting card that leaves the page or is reused is forgotten like a watched one.
+  h.hosts[0].closest('.card').remove();
+  h.hosts[1].closest('.card').dataset.id = 'recycled';
+  await Promise.resolve();
+  assert.equal(h.hosts[1].dataset.jeStatusLive, undefined);
+});
+
+test('a resting card is watched again when its series\' hour ends, and asks when it next comes on screen', async t => {
+  const HOUR = 60 * 60 * 1000;
+  const h = setup(t, { cards: 2, autoIntersect: false, captureTimers: true, series: { [SERIES]: facts({ nextAired: { date: '2026-10-30', season: 1, episode: 2 } }) } });
+  h.hosts.forEach(host => { h.show(show(), host, SERIES); h.intersect(host); });
+  await h.flush();
+  const io = h.observers[0];
+  assert.deepEqual(h.seriesCalls, [[SERIES]]);
+  assert.equal(io.targets.size, 0);
+  const rests = () => [...h.timers.values()].filter(timer => timer.ms === HOUR);
+  assert.equal(rests().length, 1, 'one timer for the end of the rest');
+  h.window.Date.now = () => NOW + HOUR + 1;
+  rests()[0].fn();
+  assert.equal(io.targets.size, 2, 'both are watched again');
+  // The first reports only say where the cards are: one stayed on screen, one had scrolled away.
+  h.intersect(h.hosts[0]);
+  h.intersect(h.hosts[1], false);
+  await h.flush();
+  assert.equal(h.seriesCalls.length, 1, 'the end of the hour itself asks nothing, as for a card that was watched all along');
+  h.intersect(h.hosts[1]);
+  await h.flush();
+  assert.deepEqual(h.seriesCalls, [[SERIES], [SERIES]], 'coming on screen asks');
+  assert.equal(io.targets.size, 0, 'answered again: both rest again');
+});
+
+for (const trigger of ['focus', 'a draw', 'a dropped cache']) {
+  test(`a resting card whose series' hour ended is watched again on ${trigger}`, async t => {
+    const HOUR = 60 * 60 * 1000;
+    const h = setup(t, { cards: 1, autoIntersect: false, captureTimers: true, series: { [SERIES]: facts({ nextAired: { date: '2026-10-30', season: 1, episode: 2 } }) } });
+    h.show(show(), h.hosts[0], SERIES);
+    h.intersect(h.hosts[0]);
+    await h.flush();
+    const io = h.observers[0];
+    assert.equal(io.targets.size, 0);
+    // The tab slept through the hour: the rest timer has not run.
+    if (trigger !== 'a dropped cache') h.window.Date.now = () => NOW + HOUR + 1;
+    if (trigger === 'focus') h.window.dispatchEvent(new h.window.Event('focus'));
+    else if (trigger === 'a draw') h.show(show(), h.hosts[0], SERIES);
+    else h.renderer.onServerCacheRefresh(null, {});
+    assert.equal(io.targets.has(h.hosts[0]), true);
+    h.intersect(h.hosts[0]);
+    await h.flush();
+    // A dropped cache marks the card's record stale (the pipeline draws it again); the others ask at once.
+    assert.equal(h.seriesCalls.length, trigger === 'a dropped cache' ? 1 : 2, 'on screen, it asks');
+  });
+}
+
+test('a card of an ended series stays watched until the parent facts its finale rules read are held', async t => {
+  let held = false;
+  const parents = [];
+  const h = setup(t, { cards: 1, autoIntersect: false, series: { [SERIES]: facts({ status: 'Ended', lastAired: { date: '2026-10-01', season: 1, episode: 10 } }) } });
+  Object.assign(h.JE.tagPipeline, {
+    lookupItemFacts: async ids => { parents.push(ids); },
+    peekItemFacts: () => (held ? { Type: 'Series' } : null),
+    itemFactsExpiry: () => (held ? Infinity : 0),
+  });
+  h.show(show(), h.hosts[0], SERIES);
+  h.intersect(h.hosts[0]);
+  await h.flush();
+  const io = h.observers[0];
+  assert.deepEqual(h.seriesCalls, [[SERIES]]);
+  assert.equal(io.targets.has(h.hosts[0]), true, 'no parent facts: coming on screen asks for them, so it is watched');
+  const before = parents.length;
+  h.intersect(h.hosts[0], false);
+  h.intersect(h.hosts[0]);
+  await h.flush();
+  assert.equal(parents.length, before + 1, 'and it does ask');
+  held = true;
+  h.intersect(h.hosts[0], false);
+  assert.equal(io.targets.has(h.hosts[0]), false, 'held: it rests');
+});
 
 test('late observer callbacks cannot reintroduce released intersection membership', async t => {
   const h = setup(t, { autoIntersect: false });
@@ -616,4 +755,20 @@ test('pagehide drops late schedule answers and pageshow resumes with a fresh lif
   assert.equal(h.timers.size, 0, 'late answer cannot restart timers');
   h.window.dispatchEvent(new h.window.Event('pageshow'));
   assert.equal(h.timers.size, 1, 'bfcache return rearms midnight');
+});
+
+// jellyfin-web dispatches a bubbling legacy `pagehide` (a CustomEvent) on each view it leaves during in-app
+// navigation, and window sees it with that view as its target. Only the page's own pagehide is a page exit,
+// and a back/forward-cache hide (persisted) may be shown again.
+for (const [label, hide, stops] of [
+  ['a view jellyfin-web leaves', h => h.hosts[0].dispatchEvent(new h.window.CustomEvent('pagehide', { bubbles: true })), false],
+  ['a back/forward cache hide', h => h.window.dispatchEvent(new h.window.PageTransitionEvent('pagehide', { persisted: true })), false],
+  ['the page being unloaded', h => h.window.dispatchEvent(new h.window.PageTransitionEvent('pagehide', { persisted: false })), true],
+]) test(`status timers ${stops ? 'stop' : 'keep running'} on the pagehide of ${label}`, async t => {
+  const h = setup(t, { captureTimers: true, series: { [SERIES]: { retry: true } } });
+  h.show(show(), h.hosts[0], SERIES);
+  await h.flush();
+  assert.equal(h.timers.size, 2, 'midnight plus one schedule retry');
+  hide(h);
+  assert.equal(h.timers.size, stops ? 0 : 2);
 });

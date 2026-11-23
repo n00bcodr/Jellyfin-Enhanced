@@ -22,7 +22,10 @@
  * write(value, config) to convert, onChange(value, config) returning more
  * fields to write, when(config) (disabled unless true), visible(config)
  * (hidden unless true), place: 'section' (the section draws it with
- * A.fieldHtml; the page still binds it) and break (start a new box).
+ * A.fieldHtml; the page still binds it), break (start a new box), wide
+ * (a text field for a long value, such as a URL, keeps its full width) and mask
+ * (a text field for a key: shown as dots until hovered or focused, like the
+ * main page's API keys, without type="password" so browsers do not offer to save it).
  * A section whose own editors write fields that are not declared above
  * names them in `writes: ['Field', …]` (one line).
  *
@@ -109,7 +112,7 @@
         { id: 'layout', icon: 'view_quilt', nameKey: 'Layout defaults', shortKey: 'Layout', descKey: 'The layout, label density, group order, positions and limits new users start with.', lead: 'card' },
         { id: 'groups', icon: 'label', nameKey: 'Groups', descKey: 'Turn each tag group on or off for new users, and open a group for its server settings.', lead: 'card' },
         { id: 'rules', icon: 'rule', nameKey: 'Rules', descKey: 'Give some cards a different look by library, type, genre or age rating.', lead: 'card' },
-        { id: 'colours', icon: 'palette', nameKey: 'Colours', descKey: 'The colours of the tags, on the web and in native posters.', lead: 'card' },
+        { id: 'colours', icon: 'palette', nameKey: 'Colours and text', descKey: 'The colours and words of the tags, on the web and in native posters, and which tags to hide.', lead: 'card' },
         { id: 'badges', icon: 'new_releases', nameKey: 'Status badges', shortKey: 'Badges', descKey: 'Which status badges new users start with, and how long a title counts as new.', lead: 'card' },
         { id: 'server', icon: 'dns', nameKey: 'Server', descKey: 'The tag data the server keeps, and tags drawn into poster images for other apps.', lead: 'card' },
     ];
@@ -433,7 +436,7 @@
             case 'number':
             case 'text':
                 return `<div class="je-ta-field" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${label}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
-                    + `<span class="je-ta-field-control"><input type="${f.secret ? 'password' : f.type}" id="${esc(f.id)}" ${data} value="${esc(value)}"${f.secret ? ' autocomplete="new-password" spellcheck="false"' : ''}${f.type === 'number' ? ` min="${f.min}" max="${f.max}" inputmode="numeric"` : ''}${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${f.unit ? `<span class="je-ta-unit">${tx(f.unit)}</span>` : ''}</span></div>`;
+                    + `<span class="je-ta-field-control${f.wide ? ' je-ta-field-control--wide' : ''}"><input type="${f.secret ? 'password' : f.type}" id="${esc(f.id)}" ${data} value="${esc(value)}"${f.secret ? ' autocomplete="new-password" spellcheck="false"' : ''}${f.mask ? ' class="je-ta-masked" autocomplete="off" spellcheck="false"' : ''}${f.type === 'number' ? ` min="${f.min}" max="${f.max}" inputmode="numeric"` : ''}${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${f.unit ? `<span class="je-ta-unit">${tx(f.unit)}</span>` : ''}</span></div>`;
             case 'textarea':
                 return `<div class="je-ta-field je-ta-field--block" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${label}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
                     + `<span class="je-ta-field-control"><textarea id="${esc(f.id)}" ${data} rows="${f.rows || 4}" spellcheck="false"${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${esc(value)}</textarea></span></div>`;
@@ -1042,12 +1045,15 @@
             const ownControls = hasOwnControls(s);
             const placement = JE.core?.tagLayout?.GROUPS?.includes(s.group.id)
                 ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="layout:placement-${esc(s.group.id)}"><span class="je-ta-link-text">${tx('{group} position and limit (Layout defaults)', { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '';
+            // Hidden tags live in the colour editor's tag list (#1043): every group with tags there points to it.
+            const hide = JE.core?.tagHidden?.GROUPS?.includes(s.group.id)
+                ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="colours" data-je-colours-group="${esc(s.group.id)}"><span class="je-ta-link-text">${tx('Hidden {group} tags (Colours and text)', { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '';
             if (!ownControls) {
                 // As every row: name first, the sample, then the switch on the right.
                 return `<div class="je-ta-grow" data-group="${esc(s.group.id)}" data-section="${esc(s.id)}" data-enabled="${on}" data-open="false" data-je-static>`
                     + '<div class="je-ta-grow-head">'
                     + `<div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc(s.id)}">${esc(name)}${enable ? ` ${perUserMark()}` : ''}</span><span class="je-ta-grow-sum"></span>`
-                    + `${scopesHtml(s.group.id)}${placement}</div>`
+                    + `${scopesHtml(s.group.id)}${placement}${hide}</div>`
                     + '<span class="je-ta-grow-sample" aria-hidden="true"></span>'
                     + (enable ? `<label class="je-ta-grow-check"><input type="checkbox" id="${esc(enable.id)}" data-je-field="${esc(enable.key)}" data-je-setting-id="${esc(enable.id)}" ${on ? 'checked' : ''} aria-label="${tx(enable.label)}"></label>` : '')
                     + '</div></div>';
@@ -1064,6 +1070,7 @@
                 + `<div class="je-ta-grow-body" id="jeTaGroup-${esc(s.group.id)}" role="region" aria-labelledby="jeTaSec-${esc(s.id)}" hidden>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}`
                 // Where it goes and how many show live on Layout defaults: say so, and go there.
                 + placement
+                + hide
                 + `${fieldsHtml(s.fields, config)}${scopesHtml(s.group.id)}<div class="je-ta-section-body"></div></div></div>`;
         }
 
@@ -1526,7 +1533,15 @@
                 const enable = (s.fields || []).find((f) => f.type === 'enable');
                 row.dataset.enabled = String(enable ? config[enable.key] === true : true);
                 const sum = row.querySelector('.je-ta-grow-sum');
-                if (sum) sum.textContent = s.group.summary ? s.group.summary(ctx) : '';
+                // A row says when its group hides tags for everyone (Hidden tags, set on the Colours tab).
+                const hiddenList = config.TagHiddenValues?.[s.group.id.charAt(0).toUpperCase() + s.group.id.slice(1)] ?? config.TagHiddenValues?.[s.group.id];
+                const hiddenCount = Array.isArray(hiddenList) ? hiddenList.length : 0;
+                // Age tiles stand for every rating sharing their colour: count the ratings, as the editor says.
+                const ages = s.group.id === 'ageRating' ? (JE.pluginConfig?.TagHiddenAgeRatings || []).length : 0;
+                const hiddenText = !hiddenCount ? '' : ages ? fmt(' · {n} ratings hidden', { n: ages }) : fmt(' · {n} {n|tag|tags} hidden', { n: hiddenCount });
+                if (sum) sum.textContent = (s.group.summary ? s.group.summary(ctx) : '') + hiddenText;
+                const hideLink = row.querySelector('[data-je-colours-group] .je-ta-link-text');
+                if (hideLink) hideLink.textContent = fmt(hiddenCount ? 'Hidden {group} tags (Colours and text)' : 'Hide individual {group} tags (Colours and text)', { group: fmt(s.title) });
                 const sample = row.querySelector('.je-ta-grow-sample');
                 if (sample) sample.innerHTML = (s.group.sample ? s.group.sample(ctx) : []).map(sampleChip).join('');
             }
@@ -1620,7 +1635,7 @@
          */
         async function confirmAction(text, title) {
             const mark = sessionMark();
-            const ok = options.confirm ? await options.confirm(text, title) : await askConfirm(text, title);
+            const ok = options.confirm ? await options.confirm(text, title) : await askOnPage(text, title);
             return !!ok && !disposed && sameSession(mark);
         }
 
@@ -1757,6 +1772,23 @@
         }
         openTab(start.tab || 'overview', { group: start.group });
         return ctx;
+    }
+
+    /**
+     * Ask from inside the tab: with the configuration page's own dialog (JEAdmin.confirm), which its other
+     * confirmations use too, and the dashboard's only when that page script is missing. Jellyfin's dialog adds a
+     * history entry and goes back when it closes, and the router then builds the configuration page a second time:
+     * a copy without the page's sidebar whose Media Tags tab never loads.
+     * @param {string} text
+     * @param {string} title
+     * @returns {Promise<boolean>}
+     */
+    function askOnPage(text, title) {
+        const admin = /** @type {{confirm?: (text: string, title: string) => Promise<boolean>}|undefined} */ (/** @type {any} */ (window).JEAdmin);
+        if (admin && typeof admin.confirm === 'function') {
+            try { return Promise.resolve(admin.confirm(text, title)).then((ok) => !!ok, () => false); } catch { /* fall through */ }
+        }
+        return askConfirm(text, title);
     }
 
     /**

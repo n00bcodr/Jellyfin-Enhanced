@@ -10,6 +10,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AutoResumeEnabled { get; set; }
         public bool AutoPipEnabled { get; set; }
         public bool LongPress2xEnabled { get; set; }
+        public bool SubtitleSyncButtonEnabled { get; set; }
         public bool PauseScreenEnabled { get; set; }
         public int PauseScreenDelaySeconds { get; set; } = 5;
         public bool AutoSkipIntro { get; set; }
@@ -413,6 +414,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     public class ProcessedWatchlistItems
     {
         public List<ProcessedWatchlistItem> Items { get; set; } = new List<ProcessedWatchlistItem>();
+    }
+
+    /// <summary>
+    /// Items that were on BOTH the user's Jellyfin and Seerr watchlists at the end of the last
+    /// removal-sync pass, stored in watchlist-sync-state.json. An item in this list that is now
+    /// missing from one side was removed there on purpose; an item on one side only that was
+    /// never in this list is a pending addition, never a removal.
+    /// </summary>
+    public class WatchlistSyncState
+    {
+        public List<string> Synced { get; set; } = new List<string>(); // "movie:603" / "tv:1399"
+        public System.DateTime? UpdatedAt { get; set; }
     }
 
     public class HiddenContentItem

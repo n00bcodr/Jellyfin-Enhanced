@@ -78,7 +78,7 @@ public class PrivacyFieldFilterTests
         var enumerations = 0;
         var lazy = Enumerable.Range(0, 2).Select(_ => { enumerations++; return f.Episode(); });
         var result = Assert.IsAssignableFrom<IEnumerable<BaseItemDto>>(await f.Invoke(lazy, "UserLibrary", "GetLatestMedia"));
-        Assert.All(result, item => { Assert.Equal("Season 2, Episode 3", item.Name); Assert.NotEqual("Secret plot", item.Overview); Assert.Null(item.Path); });
+        Assert.All(result, item => { Assert.Equal("Season 2, Episode 3", item.Name); Assert.NotEqual("Secret plot", item.Overview); Assert.Equal("/S02E03", item.Path); });
         Assert.All(result, item => Assert.Empty(item.Tags));
         Assert.Equal(2, enumerations);
     }
@@ -100,6 +100,27 @@ public class PrivacyFieldFilterTests
         Assert.Equal(25, query.TotalRecordCount); Assert.Equal(4, query.StartIndex);
         var other = f.Episode(); await f.Invoke(other, user: Guid.NewGuid());
         Assert.Equal("Secret plot", other.Overview);
+    }
+
+    [Fact]
+    public async Task HomeScreenSectionsRowsStripGuardedUnwatchedEpisodes()
+    {
+        using var f = new Fixture();
+        var hidden = f.Episode(); var watched = f.Episode(true);
+        var query = new QueryResult<BaseItemDto> { Items = [hidden, watched], TotalRecordCount = 2 };
+        Assert.Same(query, await f.Invoke(query, "HomeScreen", "GetSectionContent"));
+        Assert.Equal("Season 2, Episode 3", hidden.Name); Assert.NotEqual("Secret plot", hidden.Overview); Assert.Equal("/S02E03", hidden.Path);
+        Assert.Equal("Secret ending", watched.Name); Assert.Equal("Secret plot", watched.Overview);
+    }
+
+    [Fact]
+    public void GuardedEpisodeKeepsANeutralPathSoWebDownloadDoesNotThrow()
+    {
+        var dto = new BaseItemDto { SeriesName = "Show/Name", ParentIndexNumber = 1, IndexNumber = 2, Container = "mkv", Path = "/media/Show/The Secret Ending.mkv" };
+        var path = SpoilerFieldStripFilter.NeutralPath(dto);
+        Assert.Equal("/Show Name S01E02.mkv", path);
+        Assert.DoesNotContain("Secret", path);
+        Assert.Equal("/Item", SpoilerFieldStripFilter.NeutralPath(new BaseItemDto()));
     }
 
     [Fact]
@@ -189,7 +210,7 @@ public class PrivacyFieldFilterTests
         var dto = WithAuxiliaryFields(new BaseItemDto { Id = id, Type = Enum.Parse<BaseItemKind>(kind), Name = "Title", Overview = "Plot", UserData = new UserItemDataDto { Key = "test" } });
         await f.Invoke(dto, controller, action);
         Assert.Equal(Links().Select(l => l.Url), dto.ExternalUrls.Select(l => l.Url));
-        Assert.Null(dto.RemoteTrailers); Assert.Null(dto.Path);
+        Assert.Null(dto.RemoteTrailers); Assert.NotNull(dto.Path); Assert.DoesNotContain("Secret", dto.Path);
         Assert.Null(Assert.Single(dto.People).Role);
         Assert.Equal("Title", dto.Name);
     }
@@ -212,7 +233,7 @@ public class PrivacyFieldFilterTests
             dto.UserData!.UnplayedItemCount = 8;
         }
         await f.Invoke(dto, "UserLibrary", isExtra ? "GetLocalTrailers" : "GetItem");
-        Assert.Null(dto.ExternalUrls); Assert.Null(dto.RemoteTrailers); Assert.Null(dto.Path);
+        Assert.Null(dto.ExternalUrls); Assert.Null(dto.RemoteTrailers); Assert.NotNull(dto.Path); Assert.DoesNotContain("Secret", dto.Path);
         Assert.Null(Assert.Single(dto.People).Role);
     }
 

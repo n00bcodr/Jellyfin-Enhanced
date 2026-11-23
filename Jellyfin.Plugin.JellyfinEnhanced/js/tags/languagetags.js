@@ -234,8 +234,20 @@
     function buildGroup(languages, cap = 3, flagSource = JE.core.mediaLanguage.flagSrc) {
         const data = Array.isArray(languages) ? { audio: languages } : (languages || {});
         const conf = readSettings();
-        const audio = conf.audio ? resolveChips(data.audio, conf.style) : [];
-        const subtitles = conf.subtitles ? resolveChips(data.subtitles, conf.style) : [];
+        // Hidden languages (Hidden tags: a language's colour label, its canonical code)
+        // leave the flags and codes before they group; the Dual/Multi count below still
+        // counts every audio language (LanguageFlagRules.ResolveGroup). The layout drops
+        // hidden Subtitles and Dual/Multi chips by their kind.
+        const hidden = JE.core.tagHidden;
+        const M = JE.core.mediaLanguage;
+        const labelOf = (entry) => {
+            const code = typeof entry === 'string' ? entry : entry?.code ?? entry?.Code;
+            const base = code ? M.parseLanguageTag(String(code))?.base : null;
+            return base ? M.canonicalBase(base) : null;
+        };
+        const shown = (list) => (Array.isArray(list) && hidden?.any('language') ? list.filter((entry) => !hidden.hides('language', labelOf(entry))) : list);
+        const audio = conf.audio ? resolveChips(shown(data.audio), conf.style) : [];
+        const subtitles = conf.subtitles ? resolveChips(shown(data.subtitles), conf.style) : [];
         // Count languages rather than countries: Hindi and Tamil share a flag.
         const counted = conf.audio && conf.badge !== 'off' ? resolveChips(data.audio, 'codes')
             .filter(chip => JE.core.mediaLanguage.canonicalBase(JE.core.mediaLanguage.parseLanguageTag(chip.code)?.base) !== 'zxx') : [];
@@ -366,6 +378,11 @@
                     outline-offset: -1px;
                     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
                 }
+                /* A dimmed flag or chip paints late (its opacity makes it a layer).
+                   The chips beside one stay positioned so they still paint after
+                   it, its dark ring under their edge, as when every chip had a
+                   transform; without one in the group no chip needs a layer. */
+                .${containerClass}:has(.${partialFlagClass}) .language-chip { position: relative; }
                 .layout-mobile .${flagClass} {
                     width: calc(clamp(20px, 5vw, 26px) * var(--je-tag-scale, 1));
                 }

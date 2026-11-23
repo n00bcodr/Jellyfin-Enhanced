@@ -121,6 +121,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 fetched = KeepLastGood(cached, fetched);
                 _cache[key] = fetched;
                 ScheduleDebouncedSave();
+                // Posters read the server tag cache's copy of these scores: publish a change now, not at its next reconcile.
+                if (TagSourceRatings.FromMdblist(cached) != TagSourceRatings.FromMdblist(fetched)) TagCacheService.Instance?.PublishSourceRatings(tmdbId);
                 return fetched;
             }
             finally
@@ -258,8 +260,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 lock (_accountStatusLock)
                 {
+                    var nowUtc = DateTimeOffset.UtcNow;
                     if (_accountStatus != null &&
-                        DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(_accountStatus.FetchedAtUnixMs) < AccountStatusTtl)
+                        (nowUtc - DateTimeOffset.FromUnixTimeMilliseconds(_accountStatus.FetchedAtUnixMs) < AccountStatusTtl
+                            // Kept current by response headers, until the daily reset passes.
+                            || (nowUtc - DateTimeOffset.FromUnixTimeMilliseconds(_statusFedByHeadersUnixMs) < HeaderStatusTtl
+                                && nowUtc.ToUnixTimeSeconds() < _accountStatus.RateLimitResetUnixSeconds)))
                     {
                         return _accountStatus;
                     }
@@ -349,7 +355,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private async Task<MdblistCacheEntry> FetchFromMdblistAsync(string mediaType, string tmdbId, CancellationToken cancellationToken)
+        // Set after a 429: no request is sent before this instant (Retry-After).
+        private long _pausedUntilUnixMs;
+        // When the cached status was last refreshed from response headers.
+        private long _statusFedByHeadersUnixMs;
+        private static readonly TimeSpan HeaderStatusTtl = TimeSpan.FromMinutes(15);
+        private static readonly TimeSpan DefaultRetryAfter = TimeSpan.FromSeconds(60);
+        private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromHours(6);
+
+        /// <summary>Reads MDBList's own rate-limit answer off a response: the
+        /// X-RateLimit-* headers replace the locally counted quota (so /user is
+        /// polled far less), and a 429 pauses every call for Retry-After.</summary>
+        private void ObserveRateLimit(HttpResponseMessage response)
+        {
+            var headers = response.Headers;
+            lock (_accountStatusLock)
+            {
+                if (_accountStatus != null)
+                {
+                    if (headers.TryGetValues("X-RateLimit-Remaining", out var rem) && int.TryParse(rem.FirstOrDefault(), out var remaining))
+                    {
+                        _accountStatus.RateLimitRemaining = Math.Max(0, remaining);
+                        _statusFedByHeadersUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    }
+                    if (headers.TryGetValues("X-RateLimit-Limit", out var lim) && int.TryParse(lim.FirstOrDefault(), out var limit)) _accountStatus.RateLimit = limit;
+                    if (headers.TryGetValues("X-RateLimit-Reset", out var rst) && long.TryParse(rst.FirstOrDefault(), out var reset)) _accountStatus.RateLimitResetUnixSeconds = reset;
+                }
+
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    var wait = response.Headers.RetryAfter?.Delta
+                        ?? (response.Headers.RetryAfter?.Date is { } at ? at - DateTimeOffset.UtcNow : DefaultRetryAfter);
+                    if (wait < TimeSpan.FromSeconds(1)) wait = DefaultRetryAfter;
+                    if (wait > MaxRetryAfter) wait = MaxRetryAfter;
+                    _pausedUntilUnixMs = DateTimeOffset.UtcNow.Add(wait).ToUnixTimeMilliseconds();
+                    _logger.Warning($"[MDBList] Rate limited (429), pausing requests for {(int)wait.TotalSeconds}s");
+                }
+            }
+        }
+
+        /// <summary>True while a 429's Retry-After has not elapsed yet.</summary>
+        private bool IsPaused()
+        {
+            lock (_accountStatusLock) return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < _pausedUntilUnixMs;
+        }
+
+        private async Task<MdblistCacheEntry> FetchFromMdblistAsync(string mediaType, string tmdbId, CancellationToken cancellationToken, bool quotaGateHeld = false)
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var apiKey = JellyfinEnhanced.Instance?.Configuration?.MdblistApiKey;
@@ -361,7 +412,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Fail OPEN if account status is unknown (e.g. the one /user probe
             // itself failed); a defensive check layered on top of the real
             // request, not a hard requirement to proceed.
-            var status = await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);
+            if (IsPaused())
+            {
+                return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
+            }
+
+            var status = await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld).ConfigureAwait(false);
             if (status != null && status.RateLimitRemaining <= SafetyMargin)
             {
                 // Not a real "MDBList has no data" answer, so Confirmed=false
@@ -385,6 +441,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // same AccountStatusTtl window should still throttle correctly
                 // rather than all reading the same stale "remaining" value.
                 RecordQuotaSpent();
+                ObserveRateLimit(response);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -424,9 +481,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// sync to read from.
         ///
         /// Returns a tmdbId to parsed entry map for whichever requested ids
-        /// MDBList actually matched (an id absent from the result just has no
-        /// MDBList data, not an error). Returns null on failure (bad key,
-        /// network error, quota exhausted).
+        /// MDBList answered with scores (an absent id is not a "no match":
+        /// GetMediaBatchWithinReserveAsync asks its own lookup). Returns null
+        /// on failure (bad key, network error, quota exhausted, not a list).
         /// </summary>
         private async Task<Dictionary<string, MdblistCacheEntry>?> GetMediaBatchAsync(string mediaType, IReadOnlyList<string> tmdbIds, CancellationToken cancellationToken)
         {
@@ -434,6 +491,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var apiKey = JellyfinEnhanced.Instance?.Configuration?.MdblistApiKey;
             if (string.IsNullOrWhiteSpace(apiKey)) return null;
+
+            if (IsPaused()) return null;
 
             var status = await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false);
             if (status != null && status.RateLimitRemaining <= SafetyMargin)
@@ -462,6 +521,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // The request was made either way; see the matching comment in
                 // FetchFromMdblistAsync for why this decrements immediately.
                 RecordQuotaSpent();
+                ObserveRateLimit(response);
 
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
@@ -483,7 +543,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         // The array item's own top-level "id" is an internal
                         // MDBList id, not the tmdb id we requested by. Match
                         // results back to our request via Ids["tmdb"] instead.
-                        if (entry.Ids.TryGetValue("tmdb", out var tmdbIdStr) && !string.IsNullOrEmpty(tmdbIdStr))
+                        // An item with no score (MDBList's batch can return
+                        // "ratings": []) is left for the title's own lookup.
+                        if (entry.Ids.TryGetValue("tmdb", out var tmdbIdStr) && !string.IsNullOrEmpty(tmdbIdStr)
+                            && entry.Ratings.Any(r => r.Source != "master" && (r.Score ?? r.Value) != null))
                         {
                             result[tmdbIdStr] = entry;
                         }
@@ -491,7 +554,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 else
                 {
+                    // An error body ({"error": ...}) answers for no title.
                     _logger.Warning($"[MDBList] Media batch response for {mediaType} wasn't a JSON array as expected.");
+                    return null;
                 }
 
                 return result;
@@ -542,6 +607,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var results = await GetMediaBatchAsync(mediaType, tmdbIds, cancellationToken).ConfigureAwait(false);
+                // A title the batch answer leaves out or returns without scores is not a "no match": ask its own
+                // lookup (keyed by the request) within the same reserve. Past the reserve or after a failed lookup
+                // it is retried soon, keeping any last good scores.
+                var failed = false;
+                foreach (var id in results == null ? new List<string>() : tmdbIds.Distinct().Where(id => !results.ContainsKey(id)).ToList())
+                {
+                    var single = !failed && RemainingQuota() > Math.Max(SafetyMargin, reserve)
+                        ? await FetchFromMdblistAsync(mediaType, id, cancellationToken, quotaGateHeld: true).ConfigureAwait(false)
+                        : new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
+                    failed |= !single.Confirmed;
+                    results![id] = KeepLastGood(GetCachedEntry(mediaType, id), single);
+                }
+
                 return new MdblistReservedBatch(results == null ? MdblistReservedBatchStatus.Failed : MdblistReservedBatchStatus.Sent, RemainingQuota(), results);
             }
             finally { _backgroundQuotaGate.Release(); }
@@ -559,6 +637,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             await _backgroundQuotaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (IsPaused()) return null;
                 if (await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false) == null)
                     return null;
                 var remaining = RemainingQuota();
@@ -570,6 +649,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 using var request = new HttpRequestMessage(HttpMethod.Get, uri);
                 using var response = await _httpClientFactory.CreateClient().SendAsync(request, timeout.Token).ConfigureAwait(false);
                 RecordQuotaSpent();
+                ObserveRateLimit(response);
                 response.EnsureSuccessStatusCode();
                 await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
                 using var json = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token).ConfigureAwait(false);
@@ -717,10 +797,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 ratings.Add(new MdblistRatingSource { Source = "master", Value = masterScore, Score = masterScore });
             }
 
-            // Cross-provider IDs (imdb/tmdb/trakt/mal/anilist/...) so the display
+            // Cross-provider IDs (imdb/tmdb/trakt/mal/...) so the display
             // module can link each badge to its own site (see MdblistCacheEntry.Ids).
             // Values can be a string (imdb's "tt1234567") or a number (tmdb/trakt/
-            // mal/anilist) in MDBList's JSON; normalized to string either way.
+            // mal) in MDBList's JSON; normalized to string either way.
             var ids = new Dictionary<string, string>();
             if (item.TryGetProperty("ids", out var idsEl) && idsEl.ValueKind == JsonValueKind.Object)
             {

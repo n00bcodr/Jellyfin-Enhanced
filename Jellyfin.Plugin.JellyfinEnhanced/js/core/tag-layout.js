@@ -203,6 +203,12 @@
     const FIT_MAX_ROWS = 2;
     const CENTRE_SLOTS = new Set(['tc', 'bc', 'ml', 'mr', 'c']);
     /**
+     * Layouts whose resting slots can be laid out in flow (tags/tag-layout-styles.js
+     * buildFlowStyles). Summary and Minimal fade single slots on hover, which
+     * needs each slot to be a layer of its own.
+     */
+    const FLOW_LAYOUTS = new Set(['corners', 'bands', 'caption']);
+    /**
      * Column stacks outside Corners, per layout, and their inset from each card
      * edge (tags/tag-layout-styles.js): their chips are whole, so one wider than
      * the card is ellipsized at that inset by the fitting pass.
@@ -656,7 +662,17 @@
         cachedSettings = null;
         cachedLooks = null;
         lookSettingsCache.clear();
+        forgetPageCss();
     }
+
+    /** @type {boolean|null} whether the page's CSS leaves resting flow on (flowAllowedByPage) */
+    let flowAllowed = null;
+    /** @type {Map<string, boolean>} kind of element → whether the page's CSS makes it a layer of its own (layeredByPage) */
+    const flowVerdicts = new Map();
+    /** @type {Map<string, boolean>} kind of slot → whether the browser lays it out in flow exactly as positioned (laidOutAlike) */
+    const flowAlike = new Map();
+    /** Goes up whenever what was learnt of the page's CSS is forgotten: elements inspected under an older number are inspected again. */
+    let flowEpoch = 1;
 
     /** @type {{rules: Array<Object>, locks: Map<string, Object>, overrides: Map<string, Object>}|null} memoised rules, locks and item looks */
     let cachedLooks = null;
@@ -766,8 +782,12 @@
      * @property {HTMLElement|null} [described] - The card link whose aria-describedby names moreTip.
      * @property {string} lookKey - lookKey of the settings the card is presented with.
      * @property {boolean} [pendingPresentation] - A detached card needs presentation on reconnection.
+     * @property {boolean} [refit] - It is to be fitted again when the state it is waited out of ends (snapLater).
      * @property {string|null} shape - 'portrait', 'landscape' or 'list'; null until the
      *   fitting pass measured a card its classes don't classify (see shapeOfCard).
+     * @property {Set<HTMLElement>} layered - Elements of the card the page's CSS moves or makes a layer (layeredFlow).
+     * @property {string} kinds - The kinds of slot the card holds now (laidOutAlike).
+     * @property {string} flowKinds - The kinds it held when it was last let into flow.
      */
 
     /** @type {WeakMap<HTMLElement, CardController>} host → controller */
@@ -795,16 +815,44 @@
     }
 
     let resizeQueued = false;
+    /** How long a window size must hold before the page's CSS is asked about again (ms), and the timer that waits for it. */
+    const RESIZE_SETTLE_MS = 250;
+    /** @type {ReturnType<typeof setTimeout>|0} */
+    let resizeSettle = 0;
+    /** The window width the page's CSS was last asked about at. */
+    let probedWidth = typeof window !== 'undefined' ? window.innerWidth : 0;
+    /** The window width cards were last re-fitted for, and whether the window was taller than wide. */
+    let refitWidth = probedWidth;
+    let refitTall = typeof window !== 'undefined' ? window.innerHeight >= window.innerWidth : false;
 
-    /** Card sizes follow the window: re-fit every fitted card once per frame of resizing. */
+    /** Card sizes follow the window's width: re-fit every fitted card once per frame of resizing it (or of turning it). */
     function refitOnResize() {
+        // The page's CSS may answer differently at this size (a media query crossed): asked again once the size holds.
+        // (The width: a phone's address bar coming and going resizes the window on every scroll.)
+        if (resizeSettle) clearTimeout(resizeSettle);
+        resizeSettle = setTimeout(() => {
+            resizeSettle = 0;
+            if (window.innerWidth === probedWidth) return;
+            probedWidth = window.innerWidth;
+            queueReprobe();
+        }, RESIZE_SETTLE_MS);
+        // Tag sizes follow the window's width (vw units, media queries), its orientation and each card's own
+        // size, not the window's height. A resize that changes the height alone refits nothing: a card whose
+        // size did change is refitted by the size observer, and every card queued here would have its
+        // whole-pixel nudges taken off for the fit (scheduleFit), on a phone each time the address bar comes
+        // or goes.
+        const tall = window.innerHeight >= window.innerWidth;
+        if (window.innerWidth === refitWidth && tall === refitTall) return;
         if (resizeQueued) return;
         resizeQueued = true;
         requestAnimationFrame(() => {
             resizeQueued = false;
+            refitWidth = window.innerWidth;
+            refitTall = window.innerHeight >= window.innerWidth;
             for (const host of document.querySelectorAll('.je-tag-host')) {
                 const ctrl = controllers.get(/** @type {HTMLElement} */ (host));
-                if (ctrl) scheduleFit(ctrl);
+                if (!ctrl) continue;
+                scheduleFit(ctrl);
             }
         });
     }
@@ -975,7 +1023,7 @@
         }
         if (!ctrl && create) {
             injectStyles();
-            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: '', shape: shapeOfCard(host) };
+            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: '', shape: shapeOfCard(host), layered: new Set(), kinds: '', flowKinds: '' };
             controllers.set(host, ctrl);
         }
         return ctrl;
@@ -1217,6 +1265,8 @@
     function resumePresentation(target) {
         const ctrl = target ? controllerFor(target, false) : null;
         if (ctrl?.pendingPresentation && ctrl.host.isConnected) presentAll(ctrl);
+        // The status-tag painter let go of the card while it was off the page (tags/status-tag-backdrop.js).
+        if (ctrl?.host.isConnected) JE.statusTagBackdrop?.resume?.(ctrl.host);
     }
 
     // ── Representations ────────────────────────────────────────────────
@@ -1235,6 +1285,43 @@
         return text + (audio && keepChannels ? ` ${audio[2]}` : '');
     }
 
+    // Community, critic and user-review rating chips by their class (named sources carry data-je-rating-source).
+    const RATING_CHIP_LABELS = [['rating-tag-tmdb', 'community'], ['rating-tag-critic', 'critic'], ['rating-tag-userreview', 'userReview']];
+
+    /**
+     * Whether a chip is hidden (Hidden tags, JE.core.tagHidden): its Tag Styles label, read from the
+     * attributes the colours match it by, is on its group's list. Languages and logos are dropped by their
+     * renderers before their grouping and limit; a language chip is checked here only for its kind.
+     * @param {string} group
+     * @param {HTMLElement} chip - A child of the group's display copy.
+     * @returns {boolean}
+     */
+    function isHiddenChip(group, chip) {
+        const H = JE.core.tagHidden;
+        if (!H?.any(group)) return false;
+        switch (group) {
+            case 'quality': return H.hides(group, chip.dataset.quality);
+            case 'genre': return H.hides(group, chip.dataset.jeGenre);
+            case 'status': return H.hides(group, chip.dataset.jeStatus);
+            case 'awards': return H.hides(group, chip.dataset.jeAward);
+            case 'custom': return H.hides(group, chip.dataset.jeCustom);
+            case 'logos': return H.hides(group, chip.dataset.jeLogoStyle);
+            case 'ageRating': return H.hidesAgeRating(chip.querySelector('[rating]')?.getAttribute('rating') ?? chip.getAttribute('rating'));
+            case 'rating': {
+                const own = chip.dataset.jeRatingSource || chip.querySelector('[data-je-rating-source]')?.getAttribute('data-je-rating-source');
+                const label = own || RATING_CHIP_LABELS.find(([cls]) => chip.classList.contains(cls))?.[1];
+                return H.hides(group, label);
+            }
+            case 'language': {
+                const kind = chip.dataset.jeLanguage;
+                if (kind === 'subtitles') return H.hides(group, 'subtitles');
+                if (kind === 'countBadge') return H.hides(group, 'countBadge') || H.hides(group, chip.dataset.jeLanguageLabel);
+                return false;
+            }
+            default: return false;
+        }
+    }
+
     /**
      * Apply density and the cap to a group copy in place: compact shortens
      * quality and status labels and drops the critic chip next to a community score;
@@ -1244,6 +1331,10 @@
      * @param {TagLayoutSettings} conf
      */
     function applyDensityAndCap(group, node, conf) {
+        // Hidden tags leave first, so the next chips take their places within the limit.
+        for (const chip of Array.from(node.children)) {
+            if (isHiddenChip(group, /** @type {HTMLElement} */ (chip))) chip.remove();
+        }
         if (conf.density === 'compact') {
             if (group === 'quality') {
                 for (const chip of node.querySelectorAll('.quality-overlay-label')) {
@@ -1262,9 +1353,40 @@
                 }
             }
         }
+        applyTextOverrides(group, node);
         const cap = conf.caps[group];
         if (cap > 0) {
             while (node.children.length > cap) node.lastElementChild?.remove();
+        }
+    }
+
+    /**
+     * Tag text (JE.core.tagText): chips whose Tag Styles label has a text from the administrator show it
+     * instead of their own, in every density. Quality, genre, status and awards chips only.
+     * @param {string} group
+     * @param {HTMLElement} node - A group display copy.
+     */
+    function applyTextOverrides(group, node) {
+        const T = JE.core.tagText;
+        if (!T) return;
+        for (const chip of /** @type {HTMLElement[]} */ (Array.from(node.children))) {
+            let target = null;
+            let text = null;
+            if (group === 'quality') {
+                text = T.of(group, chip.dataset.quality);
+                target = chip;
+            } else if (group === 'genre') {
+                text = T.of(group, chip.dataset.jeGenre);
+                target = chip.querySelector('.genre-text');
+            } else if (group === 'status') {
+                text = T.of(group, chip.dataset.jeStatus);
+                target = chip;
+                delete chip.dataset.jeCompact;
+            } else if (group === 'awards') {
+                text = T.of(group, chip.dataset.jeAward);
+                target = chip.lastElementChild;
+            }
+            if (text && target) target.textContent = text;
         }
     }
 
@@ -1660,6 +1782,1690 @@
         else delete ctrl.host.dataset.jeIndicatorGap;
     }
 
+    /** @type {boolean|null} whether this browser has what the flow rules are written with (asked once) */
+    let flowSupport = null;
+
+    /**
+     * Whether the browser supports everything the resting flow rules use: a
+     * size container and its cqh unit, and `overflow: clip`. Without any of
+     * them cards keep the positioned layout.
+     * @returns {boolean}
+     */
+    function flowSupported() {
+        if (flowSupport === null) {
+            const css = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' ? CSS : null;
+            flowSupport = !!css && css.supports('container-type', 'size') && css.supports('max-height', '1cqh') && css.supports('overflow', 'clip');
+        }
+        return flowSupport;
+    }
+
+    /**
+     * Whether the page's own CSS leaves resting flow on: `:root {
+     * --je-tag-flow: off; }` keeps every card positioned. Read from the root
+     * once and kept until what is known of the page's CSS is next forgotten
+     * (forgetPageCss).
+     * @returns {boolean}
+     */
+    function flowAllowedByPage() {
+        if (flowAllowed === null) {
+            let value = '';
+            try { value = getComputedStyle(document.documentElement).getPropertyValue('--je-tag-flow'); } catch { value = ''; }
+            flowAllowed = String(value || '').trim().toLowerCase() !== 'off';
+        }
+        return flowAllowed;
+    }
+
+    /** @type {boolean|null} whether genre names float beside their icons, as the stylesheet has them (genreNamesFloat) */
+    let namesFloat = null;
+
+    /**
+     * Whether genre names float out of their icons (the stylesheet's absolute
+     * position), read from the first name a card shows and kept until what is
+     * known of the page's CSS is next forgotten. Custom CSS can show them
+     * inline instead (`position: static`, the documented recipe): they are
+     * then part of the resting card and cannot be left out of it.
+     * @param {HTMLElement} host - A host holding at least one genre name.
+     * @returns {boolean}
+     */
+    function genreNamesFloat(host) {
+        if (namesFloat === null) {
+            const name = host.querySelector('.genre-tag > .genre-text');
+            if (!name) return true;
+            let position = '';
+            try { position = getComputedStyle(name).position; } catch { position = ''; }
+            namesFloat = position !== 'static' && position !== 'relative';
+        }
+        return namesFloat;
+    }
+
+    /**
+     * Whether a card's resting tags may be laid out in flow, with nothing
+     * positioned inside the host (tags/tag-layout-styles.js buildFlowStyles),
+     * or stay positioned as they always were. Flow paints the same pixels only
+     * while nothing inside the host is a layer in its own right, so a card
+     * keeps the positioned layout when it has
+     *   - a layout or anchor that positions or fades slots one by one
+     *     (Summary, Minimal, the five centre anchors, Flush's clipped host);
+     *   - a dimmed "partial" language flag (its opacity makes it a layer, and
+     *     the chips after it must then be layers to paint over it);
+     *   - a status tag with the live backdrop filter (`data-je-blur` on the
+     *     host, tags/status-tag-backdrop.js): a filtered tag is a layer too;
+     *   - genre names custom CSS shows inline (genreNamesFloat);
+     *   - a context that is not a library card or list row (the previews
+     *     style their sample hosts themselves);
+     *   - a page whose CSS turns flow off (flowAllowedByPage).
+     * Floating genre names hang off a positioned icon: a flow card leaves them
+     * out while it rests. Any flow card is laid out positioned for as long
+     * as the pointer is on it with its tags on show, or focus is in it
+     * (goLive).
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @param {boolean} [read] - False while a card is being drawn: nothing is read from styles then, and
+     *   an answer that needs a read is null (flushAlike reads it in idle time).
+     * @returns {boolean|null}
+     */
+    function flowFor(ctrl, conf, read = true) {
+        if (!api.restingFlow || !FLOW_LAYOUTS.has(conf.layout) || !flowSupported()) return false;
+        // The page's switch is a style read: for a card that is being drawn it waits for the idle pass.
+        if (flowAllowed === null && !read) return null;
+        if (!flowAllowedByPage()) return false;
+        if (conf.layout === 'corners' && conf.edge === 'flush') return false;
+        const host = ctrl.host;
+        if (!host.closest('.card, .listItem')) return false;
+        const blur = host.dataset.jeBlur === '1';
+        let names = false;
+        for (const child of host.children) {
+            if (!child.classList.contains('je-tag-slot')) continue;
+            if (CENTRE_SLOTS.has(/** @type {HTMLElement} */ (child).dataset.jeSlot || '')) return false;
+            if (child.querySelector('.language-flag-partial')) return false;
+            if (blur && child.querySelector('.status-tag')) return false;
+            if (!names && child.querySelector('.genre-tag')) names = true;
+        }
+        if (!names) return true;
+        if (namesFloat === null && !read) return null;
+        return genreNamesFloat(host);
+    }
+
+    // ── The page's own CSS on a flow card ──────────────────────────────
+    // Custom CSS written against the positioned layout must keep working with
+    // nothing added to it. Two questions decide whether a card may rest in
+    // flow, each asked once per kind and remembered:
+    //   - does the browser lay its slots out in flow exactly as positioned?
+    //     Asked of the browser itself: a card of the kind is measured both
+    //     ways in idle time (flushAlike). A nudged group, a slot with
+    //     another inset or margin, a re-ordered or re-aligned stack, padding
+    //     on the host: whatever moves a box by any property answers no.
+    //   - is anything on it a layer of its own (translucent, transformed,
+    //     filtered, given a stacking order)? Read from its computed styles
+    //     (layeredFlow): flow paints in another order around such a box.
+    // A card that fails either keeps the positioned layout, where its CSS
+    // works as it always did.
+
+    /** Style sheets the page had when the answers were reached: another count means other rules. */
+    let flowSheets = -1;
+    let reprobeQueued = false;
+    /** @type {WeakSet<CardController>} cards that had no size when their layout was to be decided: decided when they get one (refitOnSizeChange) */
+    const unmeasured = new WeakSet();
+
+    /**
+     * Run after the next paint (the shared pass where the DOM module is
+     * loaded, so the layout read there is the one the paint just made).
+     * @param {() => void} fn
+     */
+    function afterPaint(fn) {
+        if (typeof JE.core.dom?.afterNextPaint === 'function') JE.core.dom.afterNextPaint(fn);
+        else requestAnimationFrame(fn);
+    }
+
+    /**
+     * Forget what was learnt of the page's CSS: the switch, how genre names
+     * are shown, and every answer about a kind of slot or element. Elements
+     * inspected before are inspected again (flowEpoch).
+     */
+    function forgetPageCss() {
+        flowAllowed = null;
+        namesFloat = null;
+        flowVerdicts.clear();
+        flowAlike.clear();
+        flowEpoch++;
+    }
+
+    /**
+     * Notice style sheets arriving or leaving after cards were drawn (custom
+     * CSS saved in the dashboard, a theme, a sheet JE injects late), at the
+     * next card placed: every kind on the page is asked about again after
+     * the next paint (reprobe). Text written into an existing sheet and a
+     * sheet pulled in by `@import` do not change the count: those apply
+     * from the next JE.reinitializeTagLayout().
+     */
+    function noteSheets() {
+        const sheets = document.styleSheets ? document.styleSheets.length : 0;
+        if (sheets === flowSheets) return;
+        const first = flowSheets < 0;
+        flowSheets = sheets;
+        if (!first) queueReprobe();
+    }
+
+    /**
+     * A card with no size (its page is hidden) has no boxes to compare: its
+     * resting layout is decided when the size observer first reports one.
+     * @param {CardController} ctrl
+     */
+    function awaitSize(ctrl) {
+        unmeasured.add(ctrl);
+        watchSize(ctrl.host);
+    }
+
+    /** Ask about every kind on the page again after the next paint (other style sheets, or a window size that may cross a media query). */
+    function queueReprobe() {
+        if (reprobeQueued) return;
+        reprobeQueued = true;
+        afterPaint(() => {
+            reprobeQueued = false;
+            reprobe();
+        });
+    }
+
+    /**
+     * The page's CSS may have changed under cards already drawn. What was
+     * learnt is forgotten and every card is decided again in the idle pass
+     * (flushAlike): one card of each kind is measured where it stands, and
+     * only cards whose answers changed are touched. A card resting in flow
+     * keeps its layout meanwhile.
+     */
+    function reprobe() {
+        forgetPageCss();
+        for (const el of document.querySelectorAll('.je-tag-host')) {
+            const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
+            if (!ctrl || !ctrl.layout) continue;
+            ctrl.layered.clear();
+            queueFlow(ctrl);
+        }
+    }
+
+    /**
+     * The z-index each group container's own stylesheet gives it. A group is
+     * a flex or grid item in either layout, so it stacks by that number the
+     * same way in both; inside a tag host the pipeline's base rules reset
+     * all but the custom group's to auto. Any other value is the page's
+     * (the awards container sets none).
+     */
+    const OWN_Z_INDEX = {
+        [CONTAINER_CLASS.quality]: '100', [CONTAINER_CLASS.genre]: '101', [CONTAINER_CLASS.language]: '101', [CONTAINER_CLASS.rating]: '10',
+        [CONTAINER_CLASS.ageRating]: '10', [CONTAINER_CLASS.status]: '10', [CONTAINER_CLASS.logos]: '10', [CONTAINER_CLASS.custom]: '10',
+    };
+
+    /** @param {Element} el @returns {string} Its class attribute (an SVG element's `className` is not a string). */
+    const classOf = (el) => el.getAttribute('class') || '';
+
+    /**
+     * What tells one kind of card from another for the page's CSS: the page
+     * it is on, the card's classes, item type and indicators, and the look
+     * its tags are drawn in.
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @returns {string}
+     */
+    function flowContext(ctrl, conf) {
+        const card = ctrl.host.closest('.card, .listItem');
+        const page = ctrl.host.closest('.page, .mainAnimatedPage');
+        const indicators = card ? card.querySelector('.cardIndicators') : null;
+        return `${page ? page.id || classOf(page) : ''}|${card ? classOf(card) : ''}|${card ? card.getAttribute('data-type') || '' : ''}`
+            + `|${indicators ? Array.from(indicators.children, classOf).join(',') : ''}`
+            + `|${conf.layout}|${conf.legacy ? 1 : 0}|${edgeOf(ctrl)}|${conf.tagScale}|${conf.tagGap}`;
+    }
+
+    // ── Laid out alike ─────────────────────────────────────────────────
+
+    /** Boxes are the same when no edge differs by more than this (CSS px): engines round a grid item and a positioned box a few hundredths apart. */
+    const ALIKE_PX = 0.1;
+    /** How often the browser was asked about a kind of slot, and an element's styles were read (performance checks and tests). */
+    const flowCounters = { probes: 0, inspections: 0 };
+    /** @type {Set<CardController>} cards holding a kind of slot the browser has not been asked about */
+    const pendingAlike = new Set();
+    let alikeScheduled = false;
+
+    /**
+     * A card's slots with the key of their kind: the card's context, the
+     * slot, and the classes of what it holds, in order.
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @returns {Array<[HTMLElement, string]>}
+     */
+    function slotKinds(ctrl, conf) {
+        const context = flowContext(ctrl, conf);
+        /** @type {Array<[HTMLElement, string]>} */
+        const kinds = [];
+        for (const child of ctrl.host.children) {
+            if (!child.classList.contains('je-tag-slot')) continue;
+            const slot = /** @type {HTMLElement} */ (child);
+            kinds.push([slot, `${context}|${slot.dataset.jeSlot || ''}|${Array.from(slot.children, classOf).join(',')}`]);
+        }
+        return kinds;
+    }
+
+    /** @type {WeakSet<HTMLElement>} hosts waiting for an image of theirs to load before they are asked about (awaitImages) */
+    const awaitingImages = new WeakSet();
+
+    /**
+     * Whether a slot holds an image that has not finished loading (a flag, a
+     * logo): its chips do not have the boxes they will have, and two layouts
+     * of empty boxes prove nothing.
+     * @param {HTMLElement} slot
+     * @returns {boolean}
+     */
+    function imagesLoading(slot) {
+        for (const img of slot.querySelectorAll('img')) if (!(/** @type {HTMLImageElement} */ (img)).complete) return true;
+        return false;
+    }
+
+    /**
+     * Decide a card's layout again when one of its images has loaded or
+     * failed (neither event bubbles: heard on the way down to it).
+     * @param {CardController} ctrl
+     */
+    function awaitImages(ctrl) {
+        const host = ctrl.host;
+        if (awaitingImages.has(host)) return;
+        awaitingImages.add(host);
+        const settled = () => {
+            host.removeEventListener('load', settled, true);
+            host.removeEventListener('error', settled, true);
+            awaitingImages.delete(host);
+            if (!host.isConnected || controllers.get(host) !== ctrl || !ctrl.layout) return;
+            syncFlow(ctrl, resolveLayout(ctrl));
+            // Its container has another size: where the whole-pixel pass put it no longer holds.
+            snapAgain(ctrl);
+        };
+        host.addEventListener('load', settled, true);
+        host.addEventListener('error', settled, true);
+    }
+
+    /**
+     * The kinds of slot of a card that can be asked about now; a card with a
+     * slot whose images are still loading is asked about that slot later.
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @returns {Array<[HTMLElement, string]>}
+     */
+    function measurableKinds(ctrl, conf) {
+        const kinds = slotKinds(ctrl, conf);
+        const ready = kinds.filter(([slot]) => !imagesLoading(slot));
+        if (ready.length < kinds.length) awaitImages(ctrl);
+        return ready;
+    }
+
+    /**
+     * Whether the browser lays every slot of a card out in flow exactly as
+     * positioned, from what is remembered. A kind not asked about yet
+     * answers null (flushAlike asks).
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @returns {boolean|null}
+     */
+    function laidOutAlike(ctrl, conf) {
+        let known = true;
+        let differs = false;
+        let kinds = '';
+        for (const [, key] of slotKinds(ctrl, conf)) {
+            kinds += `${key}\n`;
+            const alike = flowAlike.get(key);
+            if (alike === false) differs = true;
+            if (alike === undefined) known = false;
+        }
+        ctrl.kinds = kinds;
+        if (differs) return false;
+        return known ? true : null;
+    }
+
+    /** How many cards were ever queued for the idle pass, and how many had been when it was last scheduled. */
+    let flowQueued = 0;
+    let flowSeen = 0;
+    /** The idle pass runs at the latest this long after it was asked for (ms). */
+    const FLOW_IDLE_TIMEOUT_MS = 2000;
+    /**
+     * The idle pass works through its cards in slices: each takes about this
+     * much script time (ms), then gives the thread back, and the next runs
+     * in a later idle period. A page of cards decided and measured in one go
+     * was one long task, and the frame that then laid all of them out again
+     * (in flow, on their pixels) another; a slice's frame costs about twice
+     * the slice, so both stay well under a long task on any device.
+     */
+    const IDLE_SLICE_MS = 12;
+    /** A slice takes this many cards at least, whatever is left of the idle period, and no more than the most. */
+    const IDLE_SLICE_MIN_CARDS = 2;
+    const IDLE_SLICE_MAX_CARDS = 48;
+    /**
+     * What a card that is only measured again, or only marked, counts for
+     * beside one whose resting layout is decided: it reads a few boxes of a
+     * layout that stands, where the other is asked about, marked, nudged
+     * and laid out again by the frame that follows.
+     */
+    const IDLE_LIGHT_CARD = 0.25;
+    /** A slice that is not the first runs at the latest this long after the one before it (ms). */
+    const IDLE_NEXT_TIMEOUT_MS = 500;
+    /** What a card costs a slice on this device (ms), learnt from the slices that ran; the first assumes this. */
+    let idleMsPerCard = 1.5;
+    /**
+     * Cards another card's answer has freed for flow (flushAlike): marked in
+     * the slices that follow, a slice's worth at a time like any card.
+     * @type {Set<CardController>}
+     */
+    const pendingFreed = new Set();
+
+    /**
+     * Have a card's resting layout decided in idle time (flushAlike): what
+     * decides it has to be read from the page, and a card that is being
+     * drawn reads nothing.
+     * @param {CardController} ctrl
+     */
+    function queueFlow(ctrl) {
+        pendingAlike.add(ctrl);
+        flowQueued++;
+        scheduleAlike();
+    }
+
+    /**
+     * Run the idle pass when the browser is next idle.
+     * @param {boolean} [next] - For the slice after one that just ran: it need not wait as long.
+     */
+    function scheduleAlike(next = false) {
+        if (alikeScheduled) return;
+        alikeScheduled = true;
+        flowSeen = flowQueued;
+        if (typeof requestIdleCallback === 'function') requestIdleCallback((deadline) => flushIdle(deadline), { timeout: next ? IDLE_NEXT_TIMEOUT_MS : FLOW_IDLE_TIMEOUT_MS });
+        else setTimeout(flushIdle, next ? 16 : 200);
+    }
+
+    /**
+     * How long the next slice of the idle pass may take (ms): a slice's
+     * time, and no more than the idle period has left.
+     * @param {IdleDeadline} [deadline] - The idle period's (none where there is no requestIdleCallback).
+     * @returns {number}
+     */
+    function idleSliceRoom(deadline) {
+        let room = IDLE_SLICE_MS;
+        try {
+            // Run because it had waited too long, not because the browser is idle: half a slice.
+            if (deadline && deadline.didTimeout) room = IDLE_SLICE_MS / 2;
+            else if (deadline && typeof deadline.timeRemaining === 'function') room = Math.min(IDLE_SLICE_MS, deadline.timeRemaining());
+        } catch { /* a deadline that cannot be read: a whole slice */ }
+        return room;
+    }
+
+    /**
+     * How many cards fit in a slice's time at what a card has cost so far:
+     * two at least, so the pass always ends.
+     * @param {number} room - ms.
+     * @returns {number}
+     */
+    function idleSliceCards(room) {
+        return Math.max(IDLE_SLICE_MIN_CARDS, Math.min(IDLE_SLICE_MAX_CARDS, Math.floor(room / Math.max(idleMsPerCard, 0.05))));
+    }
+
+    /**
+     * The idle pass. Nothing is read from the page while cards are being
+     * drawn; here, once a whole idle period has passed with no card queued,
+     * the queued cards' resting layout is decided (flushAlike) and their
+     * group containers are moved onto whole pixels (measureSnap,
+     * applySnap): one layout for both, and one paint. It takes a slice of
+     * the cards at a time (idleSliceCards) and leaves the rest to the idle
+     * periods that follow, so neither the pass nor the frame after it is a
+     * long task. A slice writes to its own cards only, and each card is
+     * laid out by itself (Jellyfin's image box is contained), so no slice
+     * undoes a layout an earlier one paid for.
+     * @param {IdleDeadline} [deadline]
+     */
+    function flushIdle(deadline) {
+        alikeScheduled = false;
+        if (flowQueued !== flowSeen) { scheduleAlike(); return; }
+        const began = performance.now();
+        const room = idleSliceRoom(deadline);
+        // One slice of cards that had something done to them. Cards with nothing to do (hidden, under the
+        // pointer, about to be fitted, gone) take no time and leave nothing for a frame to do: after a slice of
+        // those alone the next follows at once, while the slice's time lasts.
+        for (;;) {
+            const started = performance.now();
+            const worked = idleSlice(idleSliceCards(room - (started - began)));
+            // What a card costs is learnt from cards that were worked on: counted, the others made a card look
+            // free, and the slice after a run of them took every card it was allowed.
+            if (worked > 0) idleMsPerCard = idleMsPerCard * 0.5 + ((performance.now() - started) / worked) * 0.5;
+            const more = pendingAlike.size > 0 || pendingFreed.size > 0 || (pendingSnap.size > 0 && snapReady());
+            if (!more) return;
+            if (worked > 0 || performance.now() - began >= room) break;
+        }
+        scheduleAlike(true);
+    }
+
+    /**
+     * One slice of the idle pass (flushIdle).
+     * @param {number} count - How many cards it takes (one only measured again, or only marked, counts for a quarter).
+     * @returns {number} How many of them had something done (counted the same way): the rest cost nothing.
+     */
+    function idleSlice(count) {
+        const snapping = pendingSnap.size > 0 && snapReady();
+        // The cards waiting to be measured in the order they came (one queued again to be checked in flow comes
+        // after every card that has not had its turn), then those waiting for their resting layout alone, then
+        // those an answer has freed.
+        /** @type {CardController[]} */
+        const measuring = [];
+        /** @type {CardController[]} */
+        const deciding = [];
+        /** @type {CardController[]} */
+        const freed = [];
+        let taken = 0;
+        if (snapping) {
+            for (const ctrl of pendingSnap) {
+                if (taken >= count) break;
+                measuring.push(ctrl);
+                if (pendingAlike.has(ctrl)) { deciding.push(ctrl); taken += 1; } else taken += IDLE_LIGHT_CARD;
+            }
+        }
+        for (const ctrl of pendingAlike) {
+            if (taken >= count) break;
+            if (snapping && pendingSnap.has(ctrl)) continue;
+            deciding.push(ctrl);
+            taken += 1;
+        }
+        for (const ctrl of pendingFreed) {
+            if (taken >= count) break;
+            freed.push(ctrl);
+            taken += IDLE_LIGHT_CARD;
+        }
+        for (const ctrl of measuring) pendingSnap.delete(ctrl);
+        for (const ctrl of deciding) { pendingAlike.delete(ctrl); pendingFreed.delete(ctrl); }
+        for (const ctrl of freed) pendingFreed.delete(ctrl);
+        // Measured first, while the layout the last frame made still stands, and written with the marks below,
+        // so the browser lays the cards out once for both. A card whose layout the marks change lies where it
+        // lay to within what the comparison allows, which is more than a layout unit: it is queued again
+        // (markFlow) and checked in a later idle period, when the reading is free.
+        const measuredBefore = snapCounters.cards;
+        const plans = measuring.length ? measureSnap(measuring) : null;
+        const measured = snapCounters.cards - measuredBefore;
+        const decided = flushAlike(deciding);
+        // Cards an earlier slice's answers freed: nothing of theirs is read, their kinds are known.
+        let marked = 0;
+        for (const ctrl of freed) {
+            if (!ctrl.host.isConnected || controllers.get(ctrl.host) !== ctrl || !ctrl.layout || ctrl.host.dataset.jeFlow === '1') continue;
+            if (decideFlow(ctrl, resolveLayout(ctrl)) === true) { markFlow(ctrl, true, true); marked++; }
+        }
+        if (plans) applySnap(plans);
+        return decided + IDLE_LIGHT_CARD * (Math.max(0, measured - decided) + marked);
+    }
+
+    /**
+     * The boxes of some slots of a host, from the host's corner (reads only):
+     * each slot, what it holds, and the chips of each group. Null for a slot whose quality or language group the page's
+     * CSS no longer clips (positioned state only): flow would clip it again.
+     * @param {HTMLElement} host
+     * @param {Array<[HTMLElement, string]>} slots
+     * @param {boolean} positioned - The host is laid out positioned now.
+     * @returns {Array<number[]|null>}
+     */
+    function boxesOf(host, slots, positioned) {
+        const origin = host.getBoundingClientRect();
+        return slots.map(([slot]) => {
+            /** @type {number[]} */
+            const boxes = [];
+            const add = (el) => {
+                const r = el.getBoundingClientRect();
+                boxes.push(r.left - origin.left, r.top - origin.top, r.width, r.height);
+            };
+            add(slot);
+            for (const node of slot.children) {
+                if (positioned && (node.classList.contains(CONTAINER_CLASS.quality) || node.classList.contains(CONTAINER_CLASS.language))) {
+                    let cs;
+                    try { cs = getComputedStyle(node); } catch { cs = null; }
+                    if (cs && ((cs.overflowX && cs.overflowX !== 'hidden') || (cs.overflowY && cs.overflowY !== 'hidden'))) return null;
+                }
+                // Its chips too: a genre icon is positioned in one layout and not in the other.
+                add(node);
+                for (const chip of node.children) add(chip);
+            }
+            return boxes;
+        });
+    }
+
+    /**
+     * Measure cards both ways and remember, for each kind of slot asked
+     * about, whether every box came out the same: each card's boxes in the
+     * layout it has (reads), the mark flipped on all of them (writes), their
+     * boxes again (one layout for all), and the mark put back. A card that
+     * also shows kinds of element not seen before has their styles read
+     * while it is laid out in flow (layeredFlow). Nothing is painted in
+     * between.
+     * @param {Array<{host: HTMLElement, slots: Array<[HTMLElement, string]>, ctrl: CardController|null, conf: TagLayoutSettings}>} probes
+     */
+    function askBrowser(probes) {
+        if (!probes.length) return;
+        const marked = probes.map((probe) => probe.host.dataset.jeFlow === '1');
+        const flip = (host, flow) => {
+            if (flow) host.dataset.jeFlow = '1';
+            else delete host.dataset.jeFlow;
+        };
+        const first = probes.map((probe, i) => boxesOf(probe.host, probe.slots, !marked[i]));
+        probes.forEach((probe, i) => { if (marked[i] && probe.ctrl) layeredFlow(probe.ctrl, probe.conf, true); });
+        probes.forEach((probe, i) => flip(probe.host, !marked[i]));
+        const second = probes.map((probe, i) => boxesOf(probe.host, probe.slots, marked[i]));
+        probes.forEach((probe, i) => { if (!marked[i] && probe.ctrl) layeredFlow(probe.ctrl, probe.conf, true); });
+        probes.forEach((probe, i) => {
+            probe.slots.forEach(([, key], k) => {
+                const a = first[i][k], b = second[i][k];
+                flowAlike.set(key, !!a && !!b && a.length === b.length && a.every((value, at) => Math.abs(value - b[at]) <= ALIKE_PX));
+            });
+            flip(probe.host, marked[i]);
+            flowCounters.probes += probe.slots.length;
+        });
+    }
+
+    /**
+     * The idle pass: decide the resting layout of every card queued for it.
+     * Nothing is read from the page while cards are being drawn; here, once
+     * a whole idle period has passed with no card queued, the page's switch
+     * is read, one card of each kind of slot not answered yet is measured
+     * both ways, the styles of kinds of element not seen yet are read, and
+     * every queued card is marked for flow or left positioned.
+     * @param {CardController[]} [cards] - The cards of this slice, already taken off the queue (default: every queued card).
+     * @returns {number} How many of them were decided (the others had nothing done: gone, hidden, under the pointer).
+     */
+    function flushAlike(cards) {
+        if (!cards) { cards = Array.from(pendingAlike); pendingAlike.clear(); }
+        const list = cards.filter((c) => c.host.isConnected && controllers.get(c.host) === c && c.layout);
+        /** @type {Array<{host: HTMLElement, slots: Array<[HTMLElement, string]>, ctrl: CardController|null, conf: TagLayoutSettings}>} */
+        const probes = [];
+        const claimed = new Set();
+        /** @type {Array<[CardController, TagLayoutSettings]>} */
+        const deciding = [];
+        for (const ctrl of list) {
+            const host = ctrl.host;
+            // A live card is not at rest: decided when it is. A hidden one has no boxes to compare: when it gets a
+            // size. Unless an earlier slice has answered for every kind it holds: then it is marked as the cards
+            // those answers freed are, with nothing of its own read.
+            const waits = !!host.dataset.jeLive || !(host.clientWidth > 0);
+            if (waits) {
+                if (decideFlow(ctrl, resolveLayout(ctrl)) === true) markFlow(ctrl, true, true);
+                else if (!host.dataset.jeLive) awaitSize(ctrl);
+                continue;
+            }
+            const conf = resolveLayout(ctrl);
+            deciding.push([ctrl, conf]);
+            if (flowFor(ctrl, conf, true) !== true) continue;
+            const slots = measurableKinds(ctrl, conf).filter(([, key]) => !flowAlike.has(key) && !claimed.has(key));
+            for (const [, key] of slots) claimed.add(key);
+            // Kinds of element no card has shown yet: their styles are read on this card.
+            const fresh = new Set();
+            layeredFlow(ctrl, conf, false, fresh);
+            let inspect = false;
+            for (const key of fresh) if (!claimed.has(key)) { claimed.add(key); inspect = true; }
+            if (slots.length || inspect) probes.push({ host, slots, ctrl: inspect ? ctrl : null, conf });
+        }
+        askBrowser(probes);
+        for (const [ctrl, conf] of deciding) {
+            const flow = decideFlow(ctrl, conf);
+            // Still not known (an image of the card is loading): it stays as it is and is decided when that settles.
+            if (flow !== null) markFlow(ctrl, flow, true);
+        }
+        // The answers reach every card they free, not only the ones that asked: those take their turn in the
+        // slices that follow (flushIdle), like any card.
+        if (!probes.length) return deciding.length;
+        for (const el of document.querySelectorAll('.je-tag-host:not([data-je-flow])')) {
+            const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
+            if (!ctrl || !ctrl.layout || pendingAlike.has(ctrl) || pendingFreed.has(ctrl)) continue;
+            if (decideFlow(ctrl, resolveLayout(ctrl)) === true) pendingFreed.add(ctrl);
+        }
+        return deciding.length;
+    }
+
+    // ── Layers of the page's making ────────────────────────────────────
+
+    /**
+     * A reader of an element's computed values that forces no layout: the
+     * typed style map where the browser has one (`getComputedStyle` lays the
+     * page out to answer for a transform or an offset, whatever its value).
+     * @param {Element} el
+     * @returns {((property: string) => string)|null}
+     */
+    function styleReader(el) {
+        try {
+            if (typeof el.computedStyleMap === 'function') {
+                const map = el.computedStyleMap();
+                return (property) => {
+                    // The map throws for a property the browser does not know (an older one without
+                    // unprefixed mask-image or backdrop-filter): unknown is unset.
+                    try {
+                        const value = map.get(property);
+                        return value === null || value === undefined ? '' : String(value);
+                    } catch {
+                        return '';
+                    }
+                };
+            }
+            const cs = getComputedStyle(el);
+            return (property) => cs.getPropertyValue(property);
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Whether the page's CSS, read from a flow card's element, makes that
+     * element a layer of its own: positioned, transformed, translucent,
+     * filtered, masked, isolated or given a stacking order other than its
+     * group's own. A flow card paints such a box in another order than the
+     * positioned layout does. Reads styles only (styleReader).
+     * @param {Element} el
+     * @returns {boolean}
+     */
+    function layeredByPage(el) {
+        const read = styleReader(el);
+        if (!read) return false;
+        const off = (property, none) => {
+            const value = read(property);
+            return !!value && value !== none;
+        };
+        if (off('position', 'static') || off('transform', 'none') || off('translate', 'none') || off('rotate', 'none') || off('scale', 'none')
+            || off('opacity', '1') || off('filter', 'none') || off('backdrop-filter', 'none') || off('mix-blend-mode', 'normal')
+            || off('clip-path', 'none') || off('mask-image', 'none') || off('perspective', 'none') || off('will-change', 'auto')
+            || off('isolation', 'auto') || /paint|layout|strict|content/.test(read('contain') || '')) return true;
+        const z = read('z-index');
+        return !!z && z !== 'auto' && z !== OWN_Z_INDEX[el.classList[0]];
+    }
+
+    /** @type {WeakMap<Element, string>} slots and what they hold, with the stamp they were inspected under (layeredFlow) */
+    const inspected = new WeakMap();
+
+    /**
+     * Whether anything on a flow card is a layer of the page's making
+     * (layeredByPage). Looks only at the slots and group nodes it has not
+     * seen as they are (a node is seen again when it gains or loses
+     * elements, as the fitting pass's "+N" does), and asks the styles once
+     * per kind of element: the card's context, the slot, the group, the chip
+     * it is part of, its tag and classes. On a settled page that is a map
+     * lookup per new element.
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @param {boolean} read - Read the styles of kinds not seen yet. The host must then be marked for flow
+     *   and not live, so the styles read are a flow card's. False (a card being drawn, or one being
+     *   decided from what is remembered): nothing is read, and a kind not seen yet makes the answer null.
+     * @param {Set<string>} [fresh] - Receives the keys of the kinds not seen yet.
+     * @returns {boolean|null}
+     */
+    function layeredFlow(ctrl, conf, read, fresh) {
+        const host = ctrl.host;
+        let context = '';
+        let unknown = false;
+        /**
+         * @param {Element} el
+         * @param {string} where - Slot, group and enclosing chip.
+         * @param {boolean} [passing] - The element is in a passing state of JE's own (a fading slot): never
+         *   read, and not offered to the idle pass as the one to read its kind from.
+         * @returns {boolean} False when its kind has not been seen and is not read now.
+         */
+        const look = (el, where, passing = false) => {
+            if (!context) context = flowContext(ctrl, conf);
+            const key = `${context}|${where}|${el.tagName}|${classOf(el)}`;
+            let layered = flowVerdicts.get(key);
+            if (layered === undefined) {
+                if (!read || passing) {
+                    unknown = true;
+                    if (fresh && !passing) fresh.add(key);
+                    return false;
+                }
+                layered = layeredByPage(el);
+                flowVerdicts.set(key, layered);
+                flowCounters.inspections++;
+            }
+            if (layered) ctrl.layered.add(/** @type {HTMLElement} */ (el));
+            return true;
+        };
+        // Hide Tags on Hover fades the slots of the card under the pointer: an opacity read then is JE's
+        // own and passing, and would be remembered against every card of the kind.
+        // (Told from where the pointer is and was: asking a slot for its animations lays the page out.)
+        const hides = hidesOnHover(host);
+        let hovered = false;
+        if (hides) { try { hovered = !!host.closest('.card, .listItem')?.matches(':hover'); } catch { hovered = false; } }
+        const easingBack = hides && !hovered && lastLeft.host === host && performance.now() - lastLeft.at < REST_AFTER_MS;
+        let fading = false;
+        for (const child of host.children) {
+            if (!child.classList.contains('je-tag-slot')) continue;
+            const slot = /** @type {HTMLElement} */ (child).dataset.jeSlot || '';
+            if (inspected.get(child) !== `${flowEpoch}`) {
+                // Another card of the kind answers for a fading slot; with none, it is read once the pointer has gone.
+                if (look(child, `${slot}|slot`, hovered || easingBack)) inspected.set(child, `${flowEpoch}`);
+                else if (hovered || easingBack) fading = true;
+            }
+            for (const node of child.children) {
+                const parts = node.getElementsByTagName('*');
+                const stamp = `${flowEpoch}:${parts.length}`;
+                if (inspected.get(node) === stamp) continue;
+                const group = /** @type {HTMLElement} */ (node).dataset.jeGroup || classOf(node);
+                let seen = look(node, `${slot}|${group}`);
+                for (const part of Array.from(parts)) {
+                    // A genre's floating name is JE's own (left out of a resting card); the inside of an inline SVG paints with it.
+                    if (part.namespaceURI !== 'http://www.w3.org/1999/xhtml' && part.localName !== 'svg') continue;
+                    if (part.classList.contains('genre-text')) continue;
+                    // The chip it belongs to: a rule can tell `.rating-tag-critic .rating-text` from another chip's.
+                    let chip = part;
+                    while (chip.parentElement && chip.parentElement !== node) chip = chip.parentElement;
+                    if (!look(part, `${slot}|${group}|${chip === part ? '' : classOf(chip)}`)) seen = false;
+                }
+                if (seen) inspected.set(node, stamp);
+            }
+        }
+        if (fading) inspectLater(ctrl, hovered);
+        if (ctrl.layered.size > 0) return true;
+        return unknown ? null : false;
+    }
+
+    /** @type {WeakSet<HTMLElement>} hosts whose slots were fading when they were to be inspected: looked at when the pointer has left */
+    const uninspected = new WeakSet();
+    /** The host of the card the pointer last left, and when (performance.now()): its slots ease back for a moment. */
+    const lastLeft = { host: /** @type {HTMLElement|null} */ (null), at: 0 };
+    /** @type {WeakMap<HTMLElement, ReturnType<typeof setTimeout>>} hosts due another look once their slots have faded back */
+    const inspectTimers = new WeakMap();
+
+    /**
+     * Inspect a card's slots once they are no longer fading: after the
+     * pointer has left the card (the pointerout handler), or shortly, when
+     * it already has and the slots are easing back.
+     * @param {CardController} ctrl
+     * @param {boolean} hovered
+     */
+    function inspectLater(ctrl, hovered) {
+        const host = ctrl.host;
+        if (hovered) { uninspected.add(host); return; }
+        if (inspectTimers.has(host)) return;
+        inspectTimers.set(host, setTimeout(() => {
+            inspectTimers.delete(host);
+            if (host.isConnected && controllers.get(host) === ctrl && ctrl.layout) syncFlow(ctrl, resolveLayout(ctrl));
+        }, REST_AFTER_MS));
+    }
+
+    /**
+     * Whether a card may rest in flow, from what is remembered: nothing is
+     * read from the page. Null when the page has to be asked first (its
+     * switch, how it shows genre names, a kind of slot or of element not
+     * seen yet); flushAlike asks in idle time. A card that is hovered or
+     * focused when its tags arrive is live at once (and is inspected once it
+     * rests).
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     * @returns {boolean|null}
+     */
+    function decideFlow(ctrl, conf) {
+        const host = ctrl.host;
+        const alike = laidOutAlike(ctrl, conf);
+        const eligible = flowFor(ctrl, conf, false);
+        if (eligible !== true) return eligible;
+        // What the page layered last time and is still on the card keeps it positioned, with nothing to re-read.
+        for (const el of ctrl.layered) if (!host.contains(el)) ctrl.layered.delete(el);
+        if (ctrl.layered.size > 0) return false;
+        if (alike !== true) return alike;
+        if (!host.dataset.jeLive && notAtRest(host)) host.dataset.jeLive = '1';
+        // A live mark nothing will take off: the card was removed while focused and put back.
+        else if (host.dataset.jeLive && !restTimers.has(host) && lingering !== host && !notAtRest(host)) delete host.dataset.jeLive;
+        if (host.dataset.jeLive) return true;
+        const layered = layeredFlow(ctrl, conf, false);
+        return layered === null ? null : !layered;
+    }
+
+    /**
+     * Put the resting flow mark on a card's host or take it off.
+     * @param {CardController} ctrl
+     * @param {boolean} flow
+     * @param {boolean} [measure] - The idle pass is settling the card's resting layout: its whole-pixel nudges
+     *   are measured again as it then lies (the two layouts agree to within what the comparison allows, which
+     *   is more than a layout unit). Not for a card that changes layout for a moment under the pointer or
+     *   focus: that would read its layout on every hover.
+     */
+    function markFlow(ctrl, flow, measure = false) {
+        const host = ctrl.host;
+        if (flow !== (host.dataset.jeFlow === '1')) {
+            if (flow) host.dataset.jeFlow = '1';
+            else delete host.dataset.jeFlow;
+            if (measure && snapSupported()) pendingSnap.add(ctrl);
+        }
+        if (flow) ctrl.flowKinds = ctrl.kinds;
+    }
+
+    /**
+     * Mark (or unmark) a card's host for the resting flow rules, after its
+     * groups were placed or removed. This runs while the card is being
+     * drawn, so it reads nothing from the page: a card of kinds already
+     * answered is marked or left positioned at once, and any other stays
+     * positioned, as every card always was, until the idle pass has asked
+     * the page (flushAlike). A card resting in flow that holds what it held
+     * when it was let in keeps its layout while it is asked about again
+     * (only the answers were forgotten: a style sheet came, the width
+     * changed), instead of being laid out twice to get back there.
+     * @param {CardController} ctrl
+     * @param {TagLayoutSettings} conf
+     */
+    function syncFlow(ctrl, conf) {
+        const host = ctrl.host;
+        noteSheets();
+        const flow = decideFlow(ctrl, conf);
+        if (flow !== null) {
+            markFlow(ctrl, flow);
+            return;
+        }
+        queueFlow(ctrl);
+        if (host.dataset.jeFlow === '1' && ctrl.flowKinds === ctrl.kinds) return;
+        markFlow(ctrl, false);
+    }
+
+
+    // ── Whole pixels ───────────────────────────────────────────────────
+    // Chromium paints a box that has layout and style containment from a
+    // whole pixel: the box's corner is rounded to one, and everything
+    // inside is placed from there. Seven group containers had that
+    // containment, at the price of a paint property node for each on every
+    // card. Without it a container whose corner falls between two pixels
+    // paints its chips a fraction of a pixel off, which shows in their
+    // edges and in the anti-aliasing of their text. So each of those
+    // containers is moved by that fraction instead (--je-snap-x and
+    // --je-snap-y, a pair of margins that cancel: tags/tag-layout-styles.js):
+    // its corner then lies on the pixel the contained box was painted from,
+    // and the card paints the same pixels with no containment, layer or
+    // stacking context added.
+    //
+    // A card is measured once its tags have been drawn and the page has come
+    // to rest, in the idle pass that settles resting layouts: one pass for
+    // every card queued (reads, then writes). It is measured again only when
+    // its size changes (the size observer that refits cards), an image in
+    // its tags loads or a font arrives: no layout is read while a page
+    // loads, scrolls or the pointer moves. A card the fitting pass is about
+    // to measure is un-nudged first, so that pass reads the layout as it is
+    // without the nudge.
+    //
+    // Firefox and WebKit paint a contained box where they paint a plain one
+    // (measured: nothing differs between them), so nothing is nudged there.
+
+    /** The groups whose containers had layout and style containment. */
+    const SNAPPED_GROUPS = new Set(['genre', 'quality', 'language', 'rating', 'ageRating', 'status', 'logos']);
+    /** A size that differs by less than this is the same size (CSS px; a layout unit is several times this on any screen). */
+    const SNAP_SAME_PX = 0.002;
+    /** A card whose size is changing is measured once it has kept a size for this long (ms). */
+    const SNAP_SETTLE_MS = 120;
+    /** What ends a state a card cannot be measured in (snapLater). */
+    const SNAP_AGAIN_EVENTS = ['pointerleave', 'focusout', 'transitionend', 'transitioncancel', 'animationend', 'animationcancel'];
+    /** A plain move as a computed transform. */
+    const MOVE_ONLY = /^matrix\(1, 0, 0, 1, (-?[\d.e-]+), (-?[\d.e-]+)\)$/;
+    /** @type {WeakMap<HTMLElement, {x: number, y: number, vx: string, vy: string, left: string}>} container → how far it is moved (CSS px) and the values written */
+    const nudges = new WeakMap();
+    /** The written values and the custom properties that carry them. @type {Array<['vx'|'vy'|'left', string]>} */
+    const SNAP_PROPERTIES = [['vx', '--je-snap-x'], ['vy', '--je-snap-y'], ['left', '--je-band-left']];
+    /** @type {Set<CardController>} cards to measure in the next pass */
+    const pendingSnap = new Set();
+    /** @type {ReturnType<typeof setTimeout>|0} */
+    let snapSettle = 0;
+    /** @type {boolean|null} */
+    let snapSupport = null;
+    /** Layout pixels per CSS pixel: the grid boxes are snapped to. 0 until the browser has said (watchScale). */
+    let layoutScale = 0;
+    /** @type {ResizeObserver|null} */
+    let scaleObserver = null;
+    /** @type {ResizeObserver|null} the top bands of Bands cards (watchBand) */
+    let bandObserver = null;
+    /** @type {WeakMap<Element, number[]>} top band → the room inside its padding [width, height], as its observer last reported it */
+    const bandSizes = new WeakMap();
+    /**
+     * top band → what the last pass found in it: the height inside its padding, and what it held (bandSignature).
+     * (A measured box and an observer's report are not the same number to the last layout unit, so the height
+     * is only held against a report for a whole line more or less: BAND_LINE_PX.)
+     * @type {WeakMap<Element, {height: number, held: string}>}
+     */
+    const bandRooms = new WeakMap();
+    /** @type {WeakMap<Element, number>} top band → when its groups' margins across were last written or taken off (performance.now) */
+    const bandWrites = new WeakMap();
+    /** @type {WeakSet<Element>} top bands whose margins changed their own lines: left as they are across until they change size for another reason */
+    const bandHeld = new WeakSet();
+    /** A band that gains or loses a line within this long of its margins being written, holding what it held, did so because of them (ms). */
+    const BAND_OWN_MS = 1000;
+    /** A band this much taller or shorter than the pass measured it has a line more or less (CSS px; a line is a chip's height at least). */
+    const BAND_LINE_PX = 1;
+    /** @type {WeakSet<HTMLElement>} hosts waiting for a state they cannot be measured in to end */
+    const snapWaiting = new WeakSet();
+    const snapCounters = { passes: 0, cards: 0, moved: 0, deferred: 0, passMs: 0, held: 0 };
+
+    /**
+     * Whether containers are nudged here: an engine that paints a contained
+     * box from a whole pixel (Chromium's family) and can say which grid it
+     * snaps to (`devicePixelContentBoxSize`, Chromium 84).
+     * @returns {boolean}
+     */
+    function snapSupported() {
+        if (snapSupport === null) {
+            snapSupport = false;
+            try {
+                snapSupport = navigator.vendor === 'Google Inc.' && typeof ResizeObserver === 'function'
+                    && typeof ResizeObserverEntry === 'function' && 'devicePixelContentBoxSize' in ResizeObserverEntry.prototype;
+            } catch { snapSupport = false; }
+            // Registered so that they are not inherited: writing one on a container restyles the container, not
+            // every chip inside it. As any value ('*'), not as a length: a registered length is kept to six
+            // decimals, which is coarser than a layout unit on a dense screen. (plugin.js registers them as the
+            // page starts, when that restyles nothing: registering one restyles every element of the page.
+            // This is for a page that came by another loader.)
+            if (snapSupport) {
+                for (const [, name] of SNAP_PROPERTIES) {
+                    try { CSS.registerProperty({ name, syntax: '*', inherits: false }); } catch { /* registered already, or not registrable: it is inherited then, which draws the same */ }
+                }
+            }
+        }
+        return snapSupport && api.wholePixels;
+    }
+
+    /**
+     * Learn the grid the browser snaps boxes to, and hear when it changes
+     * (browser zoom, a window moved to another screen). It is the device
+     * pixel ratio, except under an emulated one (the developer tools' device
+     * mode): boxes still snap in CSS pixels there, which the root's size in
+     * device pixels shows.
+     */
+    function watchScale() {
+        if (scaleObserver || typeof ResizeObserver !== 'function') return;
+        try {
+            scaleObserver = new ResizeObserver((entries) => {
+                const entry = entries[entries.length - 1];
+                const css = entry.contentBoxSize?.[0]?.inlineSize;
+                const device = entry.devicePixelContentBoxSize?.[0]?.inlineSize;
+                if (!(css > 0 && device > 0)) return;
+                const ratio = window.devicePixelRatio || 1;
+                // The same within a pixel over the root's width: the ratio is real.
+                const scale = Math.abs(device - css * ratio) <= 1 ? ratio : Math.round(device / css * 100) / 100;
+                if (scale === layoutScale) return;
+                const first = !layoutScale;
+                layoutScale = scale;
+                // Another grid: every card's containers land elsewhere on it.
+                if (!first) for (const el of document.querySelectorAll('.je-tag-host')) {
+                    const ctrl = controllers.get(/** @type {HTMLElement} */ (el));
+                    if (ctrl && ctrl.layout) pendingSnap.add(ctrl);
+                }
+                if (pendingSnap.size) scheduleSnapPass();
+            });
+            scaleObserver.observe(document.documentElement, { box: 'device-pixel-content-box' });
+            watchFonts();
+        } catch {
+            scaleObserver = null;
+            snapSupport = false;
+        }
+    }
+
+    /** Whether fonts arriving are heard (watchFonts). */
+    let fontsWatched = false;
+    /** Faces come in bursts (a family's weights, a script's subsets): the cards are gone through once, this long after the first (ms). */
+    const FONTS_SETTLE_MS = 150;
+    /** @type {ReturnType<typeof setTimeout>|0} */
+    let fontsDue = 0;
+    /**
+     * The characters the faces that arrived since the cards were last gone
+     * through can draw ([from, to] code points); null: not known, so any.
+     * @type {number[][]|null}
+     */
+    let fontRanges = [];
+
+    /**
+     * @param {string} text - A font face's unicode-range ("U+0000-00FF, U+0131, U+4??").
+     * @returns {number[][]} [from, to] code points.
+     */
+    function unicodeRanges(text) {
+        const ranges = [];
+        for (const part of String(text || 'U+0-10FFFF').split(',')) {
+            const found = /U\+([0-9a-f?]+)(?:-([0-9a-f]+))?/i.exec(part);
+            if (!found) continue;
+            const from = parseInt(found[1].replace(/\?/g, '0'), 16);
+            const to = found[2] ? parseInt(found[2], 16) : parseInt(found[1].replace(/\?/g, 'F'), 16);
+            if (from <= to) ranges.push([from, to]);
+        }
+        return ranges;
+    }
+
+    /**
+     * A font that arrives after tags were drawn gives chips other widths:
+     * an icon is a word until its font has come, several times as wide. A
+     * card fitted before that hid chips there is room for (a "+1" where the
+     * chip fits), and nothing else would fit it again; and every
+     * right-aligned container has another corner. So when fonts have
+     * arrived, the cards they concern are fitted again where they are
+     * fitted, and measured again for their whole pixels otherwise.
+     *
+     * A page loads fonts all the time that no tag is drawn in: Jellyfin's
+     * text font comes in a hundred subsets, one for each script a title
+     * needs, as titles scroll into view. A card is concerned only if a face
+     * that arrived can draw a character of its tags' text, and a load that
+     * brought no face (it failed) concerns none.
+     */
+    function watchFonts() {
+        if (fontsWatched) return;
+        fontsWatched = true;
+        try {
+            document.fonts?.addEventListener?.('loadingdone', (event) => {
+                const faces = /** @type {any} */ (event)?.fontfaces;
+                if (faces && !faces.length) return;
+                if (!faces) fontRanges = null;
+                else if (fontRanges) {
+                    try { for (const face of faces) fontRanges.push(...unicodeRanges(face.unicodeRange)); } catch { fontRanges = null; }
+                }
+                if (!fontsDue) fontsDue = setTimeout(refitForFonts, FONTS_SETTLE_MS);
+            });
+        } catch { /* no font loading to hear of */ }
+    }
+
+    /** Go through the cards the fonts that arrived concern (watchFonts). */
+    function refitForFonts() {
+        fontsDue = 0;
+        const ranges = fontRanges;
+        fontRanges = [];
+        /** @type {Map<number, boolean>} whether a character can be drawn by a face that arrived */
+        const drawn = new Map();
+        const concerns = (/** @type {HTMLElement} */ host) => {
+            if (!ranges) return true;
+            const text = host.textContent || '';
+            for (let i = 0; i < text.length; i++) {
+                const code = /** @type {number} */ (text.codePointAt(i));
+                if (code > 0xffff) i++;
+                if (code <= 0x20) continue;
+                let can = drawn.get(code);
+                if (can === undefined) { can = ranges.some(([from, to]) => code >= from && code <= to); drawn.set(code, can); }
+                if (can) return true;
+            }
+            return false;
+        };
+        for (const el of document.querySelectorAll('.je-tag-host')) {
+            const host = /** @type {HTMLElement} */ (el);
+            const ctrl = controllers.get(host);
+            if (!ctrl || !ctrl.layout || !concerns(host)) continue;
+            // Under the pointer or holding focus a theme may have the card zoomed, and widths read then are
+            // scaled against room that is not: it is fitted when that is over (snapLater).
+            const card = host.closest('.card, .listItem') || host.parentElement;
+            let busy = false;
+            try { busy = !!card && card.matches(':hover, :focus-within'); } catch { busy = false; }
+            if (busy) { ctrl.refit = true; snapLater(ctrl); continue; }
+            // (A card that is fitted is measured after its fit; scheduleFit takes its nudges off for it.)
+            scheduleFit(ctrl);
+            if (!pendingFit.has(ctrl) && snapSupported()) snapAgain(ctrl);
+        }
+    }
+
+    /**
+     * Whether cards can be measured now: whole pixels are done here, and
+     * the browser has said which grid it snaps to. (Where they are not done
+     * nothing waits; while the grid is not known the cards wait, and the
+     * pass runs when the browser has said.)
+     * @returns {boolean}
+     */
+    function snapReady() {
+        if (!snapSupported()) { pendingSnap.clear(); return false; }
+        if (!layoutScale) { watchScale(); return false; }
+        return true;
+    }
+
+    /**
+     * Run the pass with the idle pass (flushIdle): when the browser is idle
+     * and no card has been drawn for a whole idle period. A page that is
+     * loading or scrolling new cards in is measured once, when it has come
+     * to rest, not after every batch of cards.
+     */
+    function scheduleSnapPass() {
+        flowQueued++;
+        scheduleAlike();
+    }
+
+    /**
+     * Queue a card for the next whole-pixel pass.
+     * @param {CardController} ctrl
+     * @param {boolean} [settle] - Its size is changing: wait until it has kept one (a window being resized
+     *   reports every card on every frame).
+     */
+    function scheduleSnap(ctrl, settle = false) {
+        if (!snapSupported()) return;
+        watchScale();
+        pendingSnap.add(ctrl);
+        if (!settle) { scheduleSnapPass(); return; }
+        if (snapSettle) clearTimeout(snapSettle);
+        snapSettle = setTimeout(() => {
+            snapSettle = 0;
+            scheduleSnapPass();
+        }, SNAP_SETTLE_MS);
+    }
+
+    /**
+     * Take a card's nudges off (writes only): the fitting pass is about to
+     * measure it, and reads the layout as it is without them.
+     * @param {CardController} ctrl
+     */
+    function unsnap(ctrl) {
+        for (const slot of ctrl.host.children) {
+            for (const node of slot.children) {
+                if (!nudges.has(/** @type {HTMLElement} */ (node))) continue;
+                nudges.delete(/** @type {HTMLElement} */ (node));
+                for (const [, name] of SNAP_PROPERTIES) /** @type {HTMLElement} */ (node).style.removeProperty(name);
+            }
+        }
+    }
+
+    /**
+     * A card the whole-pixel pass measured has another size now (the size
+     * observer, refitOnSizeChange): its containers lie elsewhere. Bands'
+     * margins given as lengths (bandNudges) do not follow a size that
+     * changes, so they come off at once, before the frame is painted.
+     * @param {CardController} ctrl
+     */
+    function snapAgain(ctrl) {
+        if (ctrl.layout === 'bands') unsnap(ctrl);
+        scheduleSnap(ctrl, true);
+    }
+
+    /**
+     * Size observer of the top bands: the room inside a band's padding,
+     * which follows Jellyfin's indicators, is what its groups are spread
+     * over.
+     * @param {ResizeObserverEntry[]} entries
+     */
+    function onBandSizes(entries) {
+        for (const entry of entries) {
+            const slot = /** @type {HTMLElement} */ (entry.target);
+            if (!slot.isConnected) {
+                bandObserver?.unobserve(slot);
+                bandsWatched.delete(slot);
+                bandSizes.delete(slot);
+                continue;
+            }
+            const seen = bandSizes.get(slot);
+            const { width, height } = entry.contentRect;
+            bandSizes.set(slot, [width, height]);
+            const host = /** @type {HTMLElement|null} */ (slot.closest('.je-tag-host'));
+            const ctrl = host ? controllers.get(host) : null;
+            if (!ctrl || !ctrl.layout) continue;
+            // A band must never gain or lose a line because of its nudges (bandNudges keeps a group from
+            // changing lines). Should one do so all the same, it is left as it is across from then on:
+            // measured again it would get the same margins, change lines again, and so on without end.
+            // The margins are to blame only where nothing else explains it: they were written a moment ago,
+            // and the band holds exactly what the pass measured, in the room it measured. A tag drawn late or
+            // an image that arrived changes what it holds, and is measured again like any other change.
+            const wrote = bandWrites.get(slot);
+            const recent = wrote !== undefined && performance.now() - wrote < BAND_OWN_MS;
+            const room = bandRooms.get(slot);
+            const own = recent && room !== undefined && bandSignature(slot) === room.held;
+            const lines = own && Math.abs(height - /** @type {{height: number}} */ (room).height) >= BAND_LINE_PX;
+            // The first report is the size the last pass measured in, unless its margins have changed the lines since.
+            const changed = seen ? Math.abs(seen[0] - width) >= SNAP_SAME_PX || Math.abs(seen[1] - height) >= SNAP_SAME_PX : lines;
+            if (!changed) continue;
+            if (bandHeld.has(slot)) {
+                // Its size coming back as the margins come off is still its own doing; any other change frees it.
+                if (own) continue;
+                bandHeld.delete(slot);
+            } else if (lines) {
+                bandHeld.add(slot);
+                snapCounters.held++;
+            }
+            snapAgain(ctrl);
+            // (snapAgain took the margins off: the size report that follows is this band's own too.)
+            if (bandHeld.has(slot)) bandWrites.set(slot, performance.now());
+        }
+    }
+
+    /**
+     * What a top band holds, for telling a change of its lines that its
+     * margins made from any other (reads only; where it is asked, the
+     * layout stands): the room across inside its padding, and the size of
+     * every item laid out in it, in layout units, and its gap. Margins
+     * move items and change none of this.
+     * @param {HTMLElement} slot
+     * @returns {string}
+     */
+    function bandSignature(slot) {
+        try {
+            const style = getComputedStyle(slot);
+            const box = slot.getBoundingClientRect();
+            const pad = (/** @type {string} */ side) => parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
+            const rects = [];
+            for (const child of slot.children) {
+                const rect = child.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) rects.push(rect);
+            }
+            return bandHolds(box.width - pad('left') - pad('right'), style.columnGap, rects);
+        } catch {
+            return '';
+        }
+    }
+
+    /**
+     * @param {number} room - The room across inside the band's padding, CSS px.
+     * @param {string} gap - The band's computed column gap.
+     * @param {Array<{width: number, height: number}>} rects - The boxes of the items laid out in it, in order.
+     * @returns {string} bandSignature's text for them.
+     */
+    function bandHolds(room, gap, rects) {
+        return `${toUnits(room)}:${gap}:${rects.map((rect) => `${toUnits(rect.width)}x${toUnits(rect.height)}`).join(',')}`;
+    }
+
+    /** @type {WeakSet<Element>} top bands being watched */
+    const bandsWatched = new WeakSet();
+
+    /** @param {HTMLElement} slot - A top band the pass measured (bandNudges notes the room it found in it). */
+    function watchBand(slot) {
+        if (bandsWatched.has(slot)) return;
+        bandsWatched.add(slot);
+        bandObserver ??= new ResizeObserver(onBandSizes);
+        bandObserver.observe(slot);
+    }
+
+    /**
+     * Have the size observer watch a card the pass measured, and note the
+     * size it measured at: another size queues the card again
+     * (refitOnSizeChange).
+     * @param {HTMLElement} host
+     * @param {number} width - 0 for a card that was not laid out: any size it gets is another.
+     * @param {number} height
+     */
+    function noteSnapSize(host, width, height) {
+        watchSize(host);
+        const sizes = fittedWidths.get(host);
+        if (!sizes) return;
+        // In the observer's own units where it has reported (they differ from the box by any padding of the page's).
+        const known = width > 0 && sizes.observed >= 0;
+        sizes.snapWidth = known ? sizes.observed : width;
+        sizes.snapHeight = known ? sizes.observedHeight : height;
+    }
+
+    /**
+     * A box this far (CSS px) from the size the observer reported for it is
+     * scaled. A report and a measured box differ by a layout unit at most
+     * (a 64th of a pixel), and by two for a card hundreds of thousands of
+     * pixels down the page, where a measured box is that coarse.
+     */
+    const SCALED_PX = 0.05;
+
+    /**
+     * Whether a card's box is not the size it is laid out at: it is scaled
+     * (hovered or focused under a theme, animating), and distances read
+     * then are scaled too.
+     * @param {HTMLElement} host
+     * @param {DOMRect} rect
+     * @returns {boolean}
+     */
+    function scaled(host, rect) {
+        // The size observer reports the box as it is laid out, to the layout unit: against that, a card a
+        // fraction of a pixel off its size shows (the last frames of a zoom on its way back, when it would be
+        // measured and nudged for a size it is about to leave). The report is used where it agrees with the
+        // layout's size in whole pixels, which is always known; without one, that rounding is all there is, and
+        // a scale that hides inside it is taken for none.
+        const sizes = fittedWidths.get(host);
+        const width = host.offsetWidth;
+        const height = host.offsetHeight;
+        if (sizes && sizes.boxWidth !== undefined && sizes.boxHeight !== undefined) {
+            // (The report is inline size first: in a vertical writing mode that is the height. Either way round.)
+            let agrees = false;
+            for (const [across, down] of [[sizes.boxWidth, sizes.boxHeight], [sizes.boxHeight, sizes.boxWidth]]) {
+                if (Math.abs(across - width) > 0.5 || Math.abs(down - height) > 0.5) continue;
+                agrees = true;
+                if (Math.abs(rect.width - across) <= SCALED_PX && Math.abs(rect.height - down) <= SCALED_PX) return false;
+            }
+            if (agrees) return true;
+        }
+        return Math.abs(rect.width - width) > 0.51 || Math.abs(rect.height - height) > 0.51;
+    }
+
+    /**
+     * Measure a card again when the state it could not be measured in ends
+     * (the pointer leaves, focus leaves, an animation finishes).
+     * @param {CardController} ctrl
+     */
+    function snapLater(ctrl) {
+        const host = ctrl.host;
+        const card = host.closest('.card, .listItem') || host.parentElement;
+        if (!card || snapWaiting.has(host)) return;
+        snapWaiting.add(host);
+        snapCounters.deferred++;
+        /** @param {string} state */
+        const inState = (state) => { try { return card.matches(state); } catch { return false; } };
+        /** Whether a transition of a transform is still running in the card: it is on its way back to its own size. */
+        const settling = () => {
+            try {
+                return card.getAnimations({ subtree: true }).some((animation) => animation.playState === 'running'
+                    && /^(?:transform|scale|translate|rotate|zoom)$/.test(/** @type {any} */ (animation).transitionProperty || ''));
+            } catch {
+                return false;
+            }
+        };
+        /** @param {Event} event */
+        const again = (event) => {
+            // The listeners hear the card's descendants too (neither pointerleave nor the end of a transition is
+            // the card's own alone). Only what ends the state counts: the pointer leaving the card itself, focus
+            // going outside it, or a transition or animation finishing once neither is on it any more. A pointer
+            // moving between the card's buttons, or the transition that brought the card to its hover size,
+            // must not have it measured. Nor is it measured on its way back: the pointer has left, the card is
+            // still a hair larger than its own size, and that reads as not scaled (scaled). The end of that
+            // transition is what is waited for then.
+            if (event.type === 'pointerleave') {
+                if (event.target !== card || settling()) return;
+            } else if (event.type === 'focusout') {
+                const to = /** @type {FocusEvent} */ (event).relatedTarget;
+                if ((to instanceof Node && card.contains(to)) || settling()) return;
+            } else if (inState(':hover') || inState(':focus-within')) {
+                return;
+            }
+            for (const type of SNAP_AGAIN_EVENTS) card.removeEventListener(type, again, true);
+            snapWaiting.delete(host);
+            if (!(host.isConnected && controllers.get(host) === ctrl && ctrl.layout)) return;
+            // (A font arrived meanwhile: its fit waited too.)
+            if (ctrl.refit) { ctrl.refit = false; scheduleFit(ctrl); }
+            scheduleSnap(ctrl, true);
+        };
+        for (const type of SNAP_AGAIN_EVENTS) card.addEventListener(type, again, true);
+    }
+
+    /**
+     * Whether an element starts a pixel grid of its own: the browser snaps
+     * the boxes inside it from its own (snapped) corner, not from the page's.
+     * Measured on Chromium 145: paint containment, layout with style
+     * containment (Jellyfin's `.cardScalable`), content-visibility,
+     * `will-change: transform` or `scale` (a home row's scroll slider), and
+     * here any transform that is more than a move. (The same rule places the
+     * status tags' pictures: tags/status-tag-backdrop.js.)
+     * @param {CSSStyleDeclaration} style
+     * @param {boolean} moves - Its transform is none or a plain move.
+     * @returns {boolean}
+     */
+    function startsPixelGrid(style, moves) {
+        const contain = style.contain || '';
+        const paint = /\b(?:paint|content|strict)\b/.test(contain);
+        const layout = /\b(?:layout|content|strict)\b/.test(contain);
+        const styled = /\b(?:style|content|strict)\b/.test(contain) || (!!style.containerType && style.containerType !== 'normal');
+        return paint || (layout && styled) || /\b(?:transform|scale|rotate)\b/.test(style.willChange || '')
+            || (!!style.contentVisibility && style.contentVisibility !== 'visible') || !moves;
+    }
+
+    /**
+     * What an element's styles say of the pixel grid, kept until what is
+     * known of the page's CSS is next forgotten (forgetPageCss): whether it
+     * starts one. (An element that makes a plain move is read on every pass:
+     * the move is its own, and may differ the next time.)
+     * @type {WeakMap<Element, {epoch: number, starts: boolean, move: number[]|null}>}
+     */
+    const gridFacts = new WeakMap();
+
+    /** A plain move as a computed `translate`: one or two lengths in px or percentages of the element's own box (a third of 0px allowed). */
+    const TRANSLATE_PX = /^(-?[\d.e-]+)(px|%)(?: (-?[\d.e-]+)(px|%))?(?: 0px)?$/;
+    /** A computed `scale` or `rotate` that changes nothing: it starts no grid (measured on Chromium 145). */
+    const NO_SCALE = /^(?:none|1(?: 1){0,2})$/;
+    const NO_ROTATE = /^(?:none|(?:.* )?0deg)$/;
+
+    /** @param {Element} el @returns {{epoch: number, starts: boolean, move: number[]|null}} */
+    function gridFact(el) {
+        let fact = gridFacts.get(el);
+        if (fact && fact.epoch === flowEpoch) return fact;
+        fact = { epoch: flowEpoch, starts: false, move: null };
+        try {
+            const style = getComputedStyle(el);
+            const transform = style.transform || 'none';
+            const matrix = transform === 'none' ? null : MOVE_ONLY.exec(transform);
+            // The properties of their own (translate, scale, rotate) are not part of the computed transform.
+            // (A translate the browser reports as a calc() does not say how far it moves: it is taken for a
+            // grid of its own, which is an approximation. A percentage is of the element's own box.)
+            const translate = style.translate && style.translate !== 'none' ? style.translate : '';
+            const shift = translate ? TRANSLATE_PX.exec(translate) : null;
+            const turned = !NO_SCALE.test(style.scale || 'none') || !NO_ROTATE.test(style.rotate || 'none');
+            const moves = (transform === 'none' || !!matrix) && (!translate || !!shift) && !turned;
+            fact.starts = startsPixelGrid(style, moves);
+            if (!fact.starts && (matrix || shift)) {
+                let dx = 0;
+                let dy = 0;
+                if (shift) {
+                    const box = shift[2] === '%' || shift[4] === '%' ? el.getBoundingClientRect() : null;
+                    dx = Number(shift[1]) * (shift[2] === '%' && box ? box.width / 100 : 1);
+                    dy = Number(shift[3] || 0) * (shift[4] === '%' && box ? box.height / 100 : 1);
+                }
+                fact.move = [(matrix ? Number(matrix[1]) : 0) + dx, (matrix ? Number(matrix[2]) : 0) + dy];
+            }
+        } catch { /* no styles to read: it starts nothing */ }
+        // How far an element is moved can change from one frame to the next (a row that slides, a transition): read each pass.
+        if (!fact.move) gridFacts.set(el, fact);
+        return fact;
+    }
+
+    /**
+     * Where the pixel grid of an element's children starts (reads only):
+     * the corner of the nearest element that starts one, itself included,
+     * else the page's. A plain move in between moves the grid with it.
+     * @param {Element|null} el
+     * @param {Map<Element, {x: number, y: number}>} memo - One pass's answers.
+     * @returns {{x: number, y: number}} In viewport CSS pixels.
+     */
+    function gridOrigin(el, memo) {
+        if (!el || el === document.documentElement) return { x: 0, y: 0 };
+        const known = memo.get(el);
+        if (known) return known;
+        const fact = gridFact(el);
+        let origin;
+        if (fact.starts) {
+            const rect = el.getBoundingClientRect();
+            origin = { x: rect.left, y: rect.top };
+        } else {
+            const up = gridOrigin(el.parentElement, memo);
+            origin = fact.move ? { x: up.x + fact.move[0], y: up.y + fact.move[1] } : up;
+        }
+        memo.set(el, origin);
+        return origin;
+    }
+
+    /**
+     * How far a coordinate is from the whole pixel a contained box there
+     * was painted from. Layout works in 64ths of a pixel, and rounds a half
+     * up.
+     * @param {number} value - CSS px from the grid's corner.
+     * @returns {number} Layout units (64ths of a layout pixel) to move by.
+     */
+    function snapUnits(value) {
+        const units = Math.round(value * layoutScale * 64);
+        return Math.floor(units / 64 + 0.5) * 64 - units;
+    }
+
+    /** @param {number} units - Layout units. @returns {number} CSS px. */
+    const unitsToPx = (units) => units / 64 / layoutScale;
+
+    /** @param {number} px - CSS px. @returns {number} Layout units, to the nearest. */
+    const toUnits = (px) => Math.round(px * layoutScale * 64);
+
+    /**
+     * Bands' top band spreads its groups with auto margins: the band's first
+     * group has one on its right, every other group one on its left, and
+     * the browser shares a line's free space among them in whole layout
+     * units, one after the other. A group moved through its other margin
+     * changes that sharing, and with it where the groups between the ends
+     * of the line land. So the line's first and last group are moved
+     * through the margin they have (they are held by the line's ends), and
+     * each group in between gets its auto margin as a length, what it
+     * measures now plus the nudge (--je-band-left): it then sits a fixed
+     * distance from the group after it, and the line lies exactly as it
+     * did, each group moved by its own fraction. Lengths do not follow a
+     * card that changes size, so the size observer takes them off the
+     * moment one does (snapAgain).
+     * @param {HTMLElement} slot
+     * @param {{x: number, y: number}} origin - The corner of the slot's pixel grid.
+     * @param {Array<{node: HTMLElement, rect: DOMRect, ux: number, uy: number, dx: number, dy: number, group: boolean}>} items - Every item of the band that has a box, in order: its groups, and anything else laid out with them.
+     * @returns {Array<{vx: number, left: number}|null>} For each item its --je-snap-x and --je-band-left (0: none), in CSS px; null for one that stays as it is.
+     */
+    function bandNudges(slot, origin, items) {
+        /** @type {Array<{vx: number, left: number}|null>} */
+        const out = new Array(items.length).fill(null);
+        let gap = 0;
+        let start = 0;
+        let end = 0;
+        try {
+            const style = getComputedStyle(slot);
+            const box = slot.getBoundingClientRect();
+            const pad = (/** @type {string} */ side) => parseFloat(style.getPropertyValue(`padding-${side}`)) || 0;
+            // (A length becomes layout units by dropping what is left over.)
+            gap = Math.floor((parseFloat(style.columnGap) || 0) * layoutScale * 64 + 1e-3);
+            start = toUnits(box.left + pad('left') - origin.x);
+            end = toUnits(box.right - pad('right') - origin.x);
+            // What this pass found: a report of another number of lines, of a band that holds the same, is held against it.
+            bandRooms.set(slot, { height: box.height - pad('top') - pad('bottom'), held: bandHolds(box.width - pad('left') - pad('right'), style.columnGap, items.map((item) => item.rect)) });
+        } catch { return out; }
+        /** @type {number[][]} */
+        const lines = [];
+        items.forEach((item, i) => {
+            const line = lines[lines.length - 1];
+            if (line && Math.abs(items[line[0]].uy - item.uy) < 1) line.push(i);
+            else lines.push([i]);
+        });
+        /** A CSS pixel, in layout units: the least an auto margin must hold to give some up. */
+        const pixel = 64 * layoutScale;
+        // Each line: the margins it would get (null: it stays as it is), the free space its auto margins hold
+        // between them, and how much of the line the margins would give back.
+        const plans = lines.map((line) => {
+            const n = line.length;
+            const x = line.map((i) => toUnits(items[i].ux));
+            const w = line.map((i) => toUnits(items[i].rect.width));
+            const d = line.map((i) => toUnits(items[i].dx));
+            const free = end - start - w.reduce((sum, width) => sum + width, 0) - gap * (n - 1);
+            /** @type {{values: Array<{vx: number, left: number}>|null, free: number, gives: number, head: number, headNudge: number}} */
+            const plan = { values: null, free, gives: 0, head: w[0], headNudge: d[0] };
+            // Something on the line that is not a group has no auto margin: the line stays as it is.
+            if (line.some((i) => !items[i].group)) return plan;
+            // The line starts with the band's first group: it is held by the line's start, and two auto margins lie between it and the next.
+            const first = items[line[0]].node === slot.firstElementChild;
+            /** The auto margin (or two) between a group and the next. */
+            const between = (/** @type {number} */ j) => x[j + 1] - (x[j] + w[j]) - gap;
+            // Room: every auto margin holds a pixel at least, so none runs out and wraps a group.
+            let roomy = first ? n === 1 || between(0) >= 2 * pixel : x[0] - start >= pixel;
+            for (let j = first ? 1 : 0; j < n - 1; j++) roomy = roomy && between(j) >= pixel;
+            if (!roomy) return plan;
+            const lengths = (/** @type {number} */ j) => j >= (first ? 2 : 1);
+            // (--je-snap-x is the left margin of the band's first group and minus the right margin of the others.)
+            plan.values = line.map((_, j) => ({ vx: unitsToPx(d[j]), left: lengths(j) ? unitsToPx(between(j - 1) + d[j]) : 0 }));
+            const taken = d.reduce((sum, nudge, j) => sum + (first && j === 0 ? nudge : -nudge) + (lengths(j) ? between(j - 1) + nudge : 0), 0);
+            plan.gives = Math.max(0, -taken);
+            return plan;
+        });
+        // No group may change lines. The first group of a line came down because it is wider than what was left
+        // of the line above; pushed from its right it is as much narrower for the line breaking as it moves
+        // right, and the margins of the line above can give room back. Where the two together come within an
+        // eighth of a pixel of letting it up, both lines stay as they are: a group that came up would change
+        // the band's height, the nudges would come off for that, and it would go down again. (The sums are
+        // exact in layout units; the slack is for a margin that comes out a unit off what was written.)
+        const slack = Math.max(4, Math.round(pixel / 8));
+        for (let k = 0; k + 1 < plans.length; k++) {
+            const above = plans[k];
+            const below = plans[k + 1];
+            if (!above.values && !below.values) continue;
+            const room = above.free + (above.values ? above.gives : 0);
+            const needs = below.head - (below.values ? Math.max(0, below.headNudge) : 0) + gap;
+            if (room + slack >= needs) { above.values = null; below.values = null; }
+        }
+        plans.forEach((plan, k) => { if (plan.values) lines[k].forEach((i, j) => { out[i] = /** @type {Array<{vx: number, left: number}>} */ (plan.values)[j]; }); });
+        return out;
+    }
+
+    /** A container's nudge as worked out by measureSnap, in CSS px; `band`: the top band it stands in. @typedef {{node: HTMLElement, x: number, y: number, vx: number, left: number, band: Element|null}} SnapPlan */
+
+    /**
+     * The whole-pixel pass, reads: for every queued card, how far each of
+     * its containers is from the pixel it was painted from when it was
+     * contained.
+     * @param {CardController[]} [cards] - The cards of this slice, already taken off the queue (default: every queued card).
+     * @returns {SnapPlan[]|null} The nudges to write (applySnap); null when nothing could be measured yet.
+     */
+    function measureSnap(cards) {
+        if (!snapReady()) return null;
+        if (!cards) { cards = Array.from(pendingSnap); pendingSnap.clear(); }
+        const started = performance.now();
+        const list = cards.filter((c) => c.host.isConnected && controllers.get(c.host) === c && c.layout);
+        /** @type {SnapPlan[]} */
+        const plans = [];
+        const memo = new Map();
+        for (const ctrl of list) {
+            // About to be fitted: measured after that pass (flushFit queues it again).
+            if (pendingFit.has(ctrl)) continue;
+            const host = ctrl.host;
+            const hostRect = host.getBoundingClientRect();
+            // Not laid out (a hidden page): its size observer queues it when it is.
+            if (!(hostRect.width > 0 && hostRect.height > 0)) { noteSnapSize(host, 0, 0); continue; }
+            if (scaled(host, hostRect)) { snapLater(ctrl); continue; }
+            snapCounters.cards++;
+            let any = false;
+            let loading = false;
+            for (const slot of host.children) {
+                if (!slot.classList.contains('je-tag-slot')) continue;
+                const band = ctrl.layout === 'bands' && /** @type {HTMLElement} */ (slot).dataset.jeSlot === 'top';
+                /** @type {Array<{node: HTMLElement, rect: DOMRect, ux: number, uy: number, dx: number, dy: number, group: boolean}>} */
+                const items = [];
+                /** @type {{x: number, y: number}|null} */
+                let origin = null;
+                for (const child of slot.children) {
+                    const node = /** @type {HTMLElement} */ (child);
+                    const group = node.dataset.jeGroup;
+                    const snapped = !!group && SNAPPED_GROUPS.has(group);
+                    // In the band every item takes part: one that is not nudged still has to stay where it is.
+                    if (!snapped && !band) continue;
+                    const was = nudges.get(node);
+                    const rect = node.getBoundingClientRect();
+                    // No box (its chips are the slot's own items, it is hidden, its image has not loaded): nothing is
+                    // painted from its corner.
+                    if (!(rect.width > 0 && rect.height > 0)) {
+                        if (was) plans.push({ node, x: 0, y: 0, vx: 0, left: 0, band: null });
+                        continue;
+                    }
+                    origin ??= gridOrigin(slot, memo);
+                    // Where it would be without the nudge it has.
+                    const ux = rect.left - origin.x - (was ? was.x : 0);
+                    const uy = rect.top - origin.y - (was ? was.y : 0);
+                    items.push({ node, rect, ux, uy, dx: snapped ? unitsToPx(snapUnits(ux)) : 0, dy: snapped ? unitsToPx(snapUnits(uy)) : 0, group: !!group });
+                }
+                // An image still loading gives its container another size when it arrives: measured again then.
+                if (!loading && imagesLoading(slot)) loading = true;
+                if (!items.length) continue;
+                any = true;
+                if (band) watchBand(/** @type {HTMLElement} */ (slot));
+                // (A held band takes no margins across: see onBandSizes.)
+                const values = !band || !origin ? null : bandHeld.has(slot) ? items.map(() => null) : bandNudges(/** @type {HTMLElement} */ (slot), origin, items);
+                items.forEach((item, i) => {
+                    if (!item.group) return;
+                    if (!values) { plans.push({ node: item.node, x: item.dx, y: item.dy, vx: item.dx, left: 0, band: null }); return; }
+                    // A band line that could not take its nudges keeps its groups where they are across; up and down nothing is shared.
+                    const value = values[i];
+                    plans.push({ node: item.node, x: value ? item.dx : 0, y: item.dy, vx: value ? value.vx : 0, left: value ? value.left : 0, band: slot });
+                });
+            }
+            if (any) noteSnapSize(host, hostRect.width, hostRect.height);
+            if (loading) awaitImages(ctrl);
+        }
+        snapCounters.passes++;
+        snapCounters.passMs += performance.now() - started;
+        return plans;
+    }
+
+    /**
+     * The whole-pixel pass, writes: the nudges that changed.
+     * @param {SnapPlan[]} plans
+     */
+    function applySnap(plans) {
+        for (const plan of plans) {
+            const { node } = plan;
+            const was = nudges.get(node);
+            // The shortest text that reads back as the same number: the margin then comes out on the layout unit meant.
+            const next = { x: plan.x, y: plan.y, vx: plan.vx ? `${plan.vx}px` : '', vy: plan.y ? `${plan.y}px` : '', left: plan.left ? `${plan.left}px` : '' };
+            for (const [key, name] of SNAP_PROPERTIES) {
+                if ((was ? was[key] : '') === next[key]) continue;
+                if (next[key]) node.style.setProperty(name, next[key]);
+                else node.style.removeProperty(name);
+                snapCounters.moved++;
+                // A band's margins across are what could change its size (onBandSizes).
+                if (plan.band && key !== 'vy') bandWrites.set(plan.band, performance.now());
+            }
+            if (next.vx || next.vy || next.left) nudges.set(node, next);
+            else nudges.delete(node);
+        }
+    }
+
+    /** The whole-pixel pass in one go: reads, then writes. */
+    function flushSnap() {
+        const plans = measureSnap();
+        if (plans) applySnap(plans);
+    }
+
     /**
      * Remove every representation, slot, pill and outlet a card owns.
      * @param {CardController} ctrl
@@ -1685,6 +3491,18 @@
         delete ctrl.host.dataset.jeShape;
         delete ctrl.host.dataset.jeEdge;
         delete ctrl.host.dataset.jeGenreBound;
+        delete ctrl.host.dataset.jeFlow;
+        // A host left live (a touch leaves its card hovered) goes with the card; the pointer still on it makes the next card live again.
+        delete ctrl.host.dataset.jeLive;
+        const due = restTimers.get(ctrl.host);
+        if (due !== undefined) { clearTimeout(due); restTimers.delete(ctrl.host); }
+        if (lingering === ctrl.host) lingering = null;
+        ctrl.layered.clear();
+        ctrl.kinds = '';
+        ctrl.flowKinds = '';
+        pendingAlike.delete(ctrl);
+        pendingFreed.delete(ctrl);
+        pendingSnap.delete(ctrl);
     }
 
     /**
@@ -1729,7 +3547,9 @@
         for (const group of groups) presentGroup(ctrl, conf, group);
         refreshPill(ctrl, conf);
         syncIndicatorGap(ctrl, conf);
+        syncFlow(ctrl, conf);
         scheduleFit(ctrl);
+        scheduleSnap(ctrl);
         // Poster preset: the card's colours follow its artwork (tags/tag-poster-colours.js).
         JE.tagPosterColours?.track(ctrl.host);
     }
@@ -1984,7 +3804,10 @@
      */
     function scheduleFit(ctrl) {
         if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || centreSlots(ctrl).length || cornerLanguageGroups(ctrl).length || indicatorGapsToMeasure(ctrl) || needsShape(ctrl) || needsRadius(ctrl))) return;
+        watchFonts();
         pendingFit.add(ctrl);
+        // The pass measures the layout as it is without the whole-pixel nudges, which are worked out again after it.
+        unsnap(ctrl);
         watchSize(ctrl.host);
         if (fitScheduled) return;
         fitScheduled = true;
@@ -2005,7 +3828,10 @@
      * `measured` is the size a pass read when it was a pixel or more off the
      * last observation (the card changed after the frame observed it): the
      * next observation reports that change, and is the size that pass fitted.
-     * @type {WeakMap<HTMLElement, {observed: number, observedHeight: number, fitted: number, fittedHeight: number, measured: {width: number, height: number}|null}>}
+     * `snapWidth` and `snapHeight` are the size the whole-pixel pass last
+     * measured the card at (noteSnapSize; undefined: it never did).
+     * `boxWidth` and `boxHeight` are the border box as last observed (scaled).
+     * @type {WeakMap<HTMLElement, {observed: number, observedHeight: number, fitted: number, fittedHeight: number, measured: {width: number, height: number}|null, snapWidth?: number, snapHeight?: number, boxWidth?: number, boxHeight?: number}>}
      */
     const fittedWidths = new WeakMap();
     /** Observed sizes closer than this are the same size (float noise, below a layout unit). */
@@ -2014,8 +3840,10 @@
     /**
      * Refit a card whenever its own size changes, not only when the window
      * resizes: a cached view shown again (0 → N), a card measured while its
-     * view was hidden, a scrollbar appearing. Only cards scheduleFit accepted
-     * are watched, so cards that never needed a fit never start fitting.
+     * view was hidden, a scrollbar appearing. Cards scheduleFit accepted are
+     * watched, and cards the whole-pixel pass measured (noteSnapSize); a
+     * card that never needed a fit still never starts fitting (scheduleFit
+     * turns it away).
      * @param {HTMLElement} host
      */
     function watchSize(host) {
@@ -2050,8 +3878,20 @@
             const width = entry.contentRect.width;
             const height = entry.contentRect.height;
             if (width <= 0) continue;
+            // Its resting layout was left undecided while it had no size (a page drawn hidden).
+            if (unmeasured.delete(ctrl)) syncFlow(ctrl, resolveLayout(ctrl));
             sizes.observed = width;
             sizes.observedHeight = height;
+            // The whole box as it is laid out (scaled), where the browser says.
+            const box = entry.borderBoxSize && entry.borderBoxSize[0];
+            sizes.boxWidth = box ? box.inlineSize : undefined;
+            sizes.boxHeight = box ? box.blockSize : undefined;
+            // Another size than the whole-pixel pass measured at (flushSnap): the card's containers lie elsewhere.
+            if (sizes.snapWidth !== undefined && (Math.abs(width - sizes.snapWidth) >= SNAP_SAME_PX || Math.abs(height - /** @type {number} */ (sizes.snapHeight)) >= SNAP_SAME_PX)) {
+                sizes.snapWidth = width;
+                sizes.snapHeight = height;
+                snapAgain(ctrl);
+            }
             // The first observation reports the size the queued fit is about to use.
             if (sizes.fitted < 0) { sizes.fitted = width; sizes.fittedHeight = height; continue; }
             // The change the last pass already measured and fitted (in whole pixels).
@@ -2171,6 +4011,8 @@
         } finally {
             fitting = false;
         }
+        // What was fitted is laid out by the next frame: its whole-pixel nudges are measured once the page is at rest again.
+        for (const ctrl of list) scheduleSnap(ctrl);
         // Genre names asked for while this pass was pending, and those of revealed
         // cards it changed, are bounded against the fitted chips.
         const bound = new Set(genreAfterFit);
@@ -2215,7 +4057,11 @@
         const cornerReserve = width(['tl', 'tr']);
         let topReserve = cornerReserve;
         let overlayBottom = 0;
-        for (const overlay of scalable?.querySelectorAll('.cardIndicators > *, .countIndicator, .playedIndicator') || []) {
+        // A flush status chip (Leaving soon, Just added) sits over the count and watched badges, at the top edge,
+        // instead of working around them (see the z-index rule in tag-layout-styles.js).
+        const statusRow = flush && centres.find((el) => el.dataset.jeSlot === 'tc');
+        const overBadges = !!statusRow && !!slotChips(statusRow)[0]?.classList?.contains('status-tag');
+        for (const overlay of overBadges ? [] : scalable?.querySelectorAll('.cardIndicators > *, .countIndicator, .playedIndicator') || []) {
             // Jellyfin sometimes wraps a tiny indicator in a full-width box.
             // Its leaf supplies the actual obstruction, rather than that box.
             if (flush && overlay.querySelector('.countIndicator, .playedIndicator')) continue;
@@ -2836,7 +4682,10 @@
         if (!host) return;
         const ctrl = controllers.get(host);
         if (ctrl && fitScheduled && pendingFit.has(ctrl)) { genreAfterFit.add(host); return; }
-        const names = /** @type {HTMLElement[]} */ (Array.from(host.querySelectorAll(':scope > .je-tag-slot:not([data-je-slot="hover"]) .genre-tag > .genre-text')));
+        // A card resting in flow does not render its genre names (focus alone never showed them): there is
+        // nothing to bound until the pointer makes it live, and boxes read now would all be empty.
+        const resting = host.dataset.jeFlow === '1' && !host.dataset.jeLive;
+        const names = /** @type {HTMLElement[]} */ (resting ? [] : Array.from(host.querySelectorAll(':scope > .je-tag-slot:not([data-je-slot="hover"]) .genre-tag > .genre-text')));
         const tip = /** @type {HTMLElement|null} */ (host.querySelector(':scope > .je-tag-more-tip'));
         if (names.length === 0 && !tip) return;
         if (tip) {
@@ -2966,17 +4815,148 @@
      */
     function onReveal(event) {
         const target = /** @type {Element|null} */ (event.target instanceof Element ? event.target : null);
-        const card = target?.closest('.card');
-        if (!card || card === revealedCard) return;
+        const pointer = event.type === 'pointerover';
+        const card = target?.closest('.card, .listItem');
+        // A host found still under the pointer when it was due back in flow (a touch leaves its card
+        // hovered and sends no pointerout later): looked at again now that the pointer is elsewhere.
+        if (pointer && lingering && !(card && card.contains(lingering))) {
+            const left = lingering.closest('.card, .listItem');
+            lingering = null;
+            if (left) restLater(left);
+        }
+        if (!card) return;
+        const host = /** @type {HTMLElement|null} */ (card.querySelector('.je-tag-host'));
+        // The pointer on a card whose tags hide on hover reveals nothing (the
+        // host is transparent while it is there): no bound to place, and no
+        // layout to force for it on every card a scroll moves under the
+        // pointer. The card is not recorded, so focus moving into it (which
+        // does show its names once the pointer leaves) still bounds it.
+        if (pointer && hidesOnHover(host)) return;
+        // A card the pointer is on or that holds focus is laid out positioned,
+        // as it always was: its genre names can float from their icons, and
+        // CSS written for a hovered or focused card finds what it was written
+        // against. Flow is for cards at rest.
+        const live = goLive(host);
+        if (card === revealedCard && !live) return;
         revealedCard = card;
-        fitReveal(/** @type {HTMLElement|null} */ (card.querySelector('.je-tag-host')));
+        try {
+            fitReveal(host);
+        } finally {
+            // Whatever the bound did, the names must not stay held at their starting opacity.
+            if (live) showNames(/** @type {HTMLElement} */ (host));
+        }
+    }
+
+    /** How long after the pointer leaves a card its host goes back to flow: past the names' 0.12s fade. */
+    const REST_AFTER_MS = 200;
+    /** @type {HTMLElement|null} a live host whose card was still hovered when it was due back in flow (see onReveal) */
+    let lingering = null;
+    /** @type {WeakMap<HTMLElement, ReturnType<typeof setTimeout>>} hosts due back in flow */
+    const restTimers = new WeakMap();
+
+    /**
+     * Whether a card is not at rest: it holds focus, or the pointer is on it
+     * and reveals rather than hides its tags.
+     * @param {HTMLElement} host
+     * @returns {boolean}
+     */
+    function notAtRest(host) {
+        try {
+            const card = host.closest('.card, .listItem');
+            return !!card && (card.matches(':focus-within') || (!hidesOnHover(host) && card.matches(':hover')));
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Lay a flow card out positioned while the pointer is on it or it holds
+     * focus (data-je-live; the stylesheet's flow rules skip a live host). It
+     * starts as "in", which holds genre names at opacity 0 for one style
+     * pass: an element that was not rendered has nothing to fade in from.
+     * showNames() then lets them fade.
+     * @param {HTMLElement|null} host
+     * @returns {boolean} True when the host went live now.
+     */
+    function goLive(host) {
+        if (!host || host.dataset.jeFlow !== '1') return false;
+        const due = restTimers.get(host);
+        if (due !== undefined) { clearTimeout(due); restTimers.delete(host); }
+        if (host.dataset.jeLive) return false;
+        host.dataset.jeLive = 'in';
+        return true;
+    }
+
+    /**
+     * Let a host that just went live fade its genre names in (the styles
+     * are read once first, so the browser has their starting opacity).
+     * @param {HTMLElement} host
+     */
+    function showNames(host) {
+        if (host.dataset.jeLive !== 'in') return;
+        const name = host.querySelector('.genre-tag > .genre-text');
+        try { if (name) void getComputedStyle(name).opacity; } catch { /* no styles to read: nothing to fade from */ }
+        host.dataset.jeLive = '1';
+    }
+
+    /**
+     * Put a live host back in flow once the pointer has left its card and the
+     * names have faded (unless the pointer came back meanwhile).
+     * @param {Element} card
+     */
+    function restLater(card) {
+        const host = /** @type {HTMLElement|null} */ (card.querySelector('.je-tag-host[data-je-live]'));
+        if (!host || restTimers.has(host)) return;
+        restTimers.set(host, setTimeout(() => {
+            restTimers.delete(host);
+            // Still focused: its focusout comes. Still hovered: a pointer that leaves says so, a touch does not (lingering).
+            if (notAtRest(host)) {
+                let over = false;
+                try { over = card.matches(':hover'); } catch { over = false; }
+                if (over) lingering = host;
+                return;
+            }
+            delete host.dataset.jeLive;
+            // What was placed while the card was live has not been asked about or inspected.
+            const ctrl = controllers.get(host);
+            if (ctrl && host.isConnected) syncFlow(ctrl, resolveLayout(ctrl));
+        }, REST_AFTER_MS));
+    }
+
+    /**
+     * Whether the pointer hides this card's tags instead of revealing them:
+     * "Hide tags on hover" is on and the card's layout has no hover reveal of
+     * its own (the stylesheet rules keyed off body.je-tags-hide-on-hover).
+     * @param {HTMLElement|null} host
+     * @returns {boolean}
+     */
+    function hidesOnHover(host) {
+        if (!host || !document.body?.classList.contains('je-tags-hide-on-hover')) return false;
+        const layout = host.dataset.jeLayout;
+        return layout !== 'summary' && layout !== 'minimal';
     }
     if (typeof document !== 'undefined' && document.addEventListener) {
         document.addEventListener('pointerover', onReveal, { passive: true });
         document.addEventListener('focusin', onReveal);
         document.addEventListener('pointerout', (event) => {
-            if (revealedCard && !(event.relatedTarget instanceof Node && revealedCard.contains(event.relatedTarget))) revealedCard = null;
+            const to = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+            if (revealedCard && !(to && revealedCard.contains(to))) revealedCard = null;
+            // A card the pointer leaves (it may have gone live as its tags arrived, never "revealed").
+            const card = event.target instanceof Element ? event.target.closest('.card, .listItem') : null;
+            if (!card || (to && card.contains(to))) return;
+            restLater(card);
+            // Its slots were fading under the pointer when they were to be inspected: once they are back.
+            const host = /** @type {HTMLElement|null} */ (card.querySelector('.je-tag-host'));
+            lastLeft.host = host;
+            lastLeft.at = performance.now();
+            const ctrl = host && uninspected.delete(host) ? controllers.get(host) : null;
+            if (ctrl) inspectLater(ctrl, false);
         }, { passive: true });
+        document.addEventListener('focusout', (event) => {
+            const to = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+            const card = event.target instanceof Element ? event.target.closest('.card, .listItem') : null;
+            if (card && !(to && card.contains(to))) restLater(card);
+        });
     }
 
     // ── Hidden chip names ──────────────────────────────────────────────
@@ -3089,7 +5069,9 @@
             presentGroup(ctrl, conf, group);
             if (conf.layout === 'summary') refreshPill(ctrl, conf);
             syncIndicatorGap(ctrl, conf);
+            syncFlow(ctrl, conf);
             scheduleFit(ctrl);
+            scheduleSnap(ctrl);
         }
         return true;
     }
@@ -3109,7 +5091,9 @@
         const conf = resolveLayout(ctrl);
         if (conf.layout === 'summary') refreshPill(ctrl, conf);
         syncIndicatorGap(ctrl, conf);
+        syncFlow(ctrl, conf);
         scheduleFit(ctrl);
+        scheduleSnap(ctrl);
     }
 
     /**
@@ -3460,6 +5444,36 @@
         POSITION_SETTINGS,
         /** @type {Function|null} set by tags/tag-layout-styles.js */
         buildStyles: null,
+        /**
+         * Whether resting cards may be laid out in flow (flowFor). Off, every
+         * card keeps the positioned layout; refreshPresentation() applies a change
+         * to cards already on the page (the pixel-comparison harness flips it).
+         */
+        restingFlow: true,
+        /**
+         * Decide a card's resting layout again: something outside this module changed what it may be
+         * (a status tag gained or lost its live backdrop filter, tags/status-tag-backdrop.js).
+         * @param {HTMLElement} host
+         */
+        syncFlowOf(host) {
+            const ctrl = host ? controllers.get(host) : null;
+            if (ctrl && ctrl.layout) syncFlow(ctrl, resolveLayout(ctrl));
+        },
+        /** @returns {{alike: number, verdicts: number, probes: number, inspections: number}} What is remembered of the page's CSS, and how often it was asked (performance checks). */
+        flowStats: () => ({ alike: flowAlike.size, verdicts: flowVerdicts.size, ...flowCounters }),
+        /**
+         * Whether group containers are nudged to the whole pixel they were painted from when they
+         * were contained (flushSnap). Off, they stay where the layout puts them;
+         * refreshPresentation() applies a change to cards already on the page (the
+         * pixel-comparison harness flips it).
+         */
+        wholePixels: true,
+        /** Run the pending whole-pixel pass now (tests; the page runs it in idle time). */
+        flushSnap,
+        /** @returns {{passes: number, cards: number, moved: number, deferred: number, passMs: number, scale: number, waiting: number}} Counts of the whole-pixel pass and the time its reads took (performance checks). */
+        snapStats: () => ({ ...snapCounters, scale: layoutScale, waiting: pendingSnap.size }),
+        /** @returns {{waiting: number, msPerCard: number}} What the idle pass still has to do, and what a card costs a slice (performance checks). */
+        idleStats: () => ({ waiting: pendingAlike.size + pendingFreed.size + pendingSnap.size, msPerCard: idleMsPerCard }),
         normalizeGroup,
         readEdge,
         normalizeSettings,

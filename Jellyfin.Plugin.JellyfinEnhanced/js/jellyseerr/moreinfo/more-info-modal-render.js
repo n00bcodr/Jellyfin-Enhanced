@@ -209,23 +209,22 @@ function buildRightPanel(data, mediaType, { budget, revenue, releaseDate, tmdbId
  * Build streaming providers section
  */
 function buildStreamingProviders(data) {
-    // Early exit if TMDB is not configured
-    if (!JE?.pluginConfig?.TmdbEnabled) {
-        return '';
-    }
-
-    // Resolve region: prefer Elsewhere user setting → plugin fallback → US
-    const region = (JE?.userConfig?.elsewhere?.Region || JE?.pluginConfig?.DEFAULT_REGION || 'US')?.toUpperCase();
-
-    // watchProviders is already the array of region objects
+    // watchProviders comes from Seerr's own title detail, so no TMDB key is needed.
     if (!Array.isArray(data.watchProviders)) return '';
 
+    // Region: the user's Seerr streaming region when the admin option is on,
+    // otherwise their Elsewhere region, then the admin default.
+    const adminDefault = String(JE?.pluginConfig?.DEFAULT_REGION || 'US').toUpperCase();
+    const followSeerr = !!JE?.pluginConfig?.ElsewhereUseSeerrRegion && !!JE?.pluginConfig?.JellyseerrEnabled;
+    const seerrRegion = followSeerr ? (JE?.jellyseerrAPI?.streamingRegion || null) : null;
+    const region = seerrRegion || String(JE?.userConfig?.elsewhere?.Region || '').toUpperCase() || adminDefault;
+
     let regionNode = data.watchProviders.find(r => r.iso_3166_1 === region);
-    if (!regionNode) {
-        regionNode = data.watchProviders.find(r => r.iso_3166_1 === 'US');
-    }
-    if (!regionNode && data.watchProviders.length > 0) {
-        regionNode = data.watchProviders[0];
+    // With TMDB the row falls back to another region's list; on Seerr data it
+    // shows only the user's region, as Seerr does.
+    if (JE?.pluginConfig?.TmdbEnabled) {
+        if (!regionNode) regionNode = data.watchProviders.find(r => r.iso_3166_1 === 'US');
+        if (!regionNode && data.watchProviders.length > 0) regionNode = data.watchProviders[0];
     }
 
     if (!regionNode || !regionNode.flatrate?.length) return '';
@@ -246,7 +245,7 @@ function buildStreamingProviders(data) {
     return `
         <div class="je-more-info-stat-row">
             <div class="je-more-info-stat-label">${JE.t('jellyseerr_modal_streaming')}</div>
-            <div class="je-more-info-providers-list">
+            <div class="je-more-info-providers-list" title="${escapeHtml(regionNode.iso_3166_1 || region)}">
                 ${uniqueProviders.map(p => `<img src="https://image.tmdb.org/t/p/w92${p.logoPath}" alt="${escapeHtml(p.name)}" title="${escapeHtml(p.name)}" />`).join('')}
             </div>
         </div>

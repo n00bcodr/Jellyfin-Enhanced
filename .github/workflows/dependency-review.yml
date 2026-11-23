@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
 
@@ -40,7 +40,9 @@ jobs:
           # Actions used by this repo (GPL-3.0-only comes from Jellyfin.Controller/Model,
           # the rest are MIT/Apache-2.0). `deny-licenses` is deprecated upstream in favor
           # of this allow-list model: https://github.com/actions/dependency-review-action/issues/997
-          allow-licenses: MIT, Apache-2.0, GPL-3.0-only
+          # BSD-2-Clause, BSD-3-Clause and MPL-2.0 come from the MkDocs toolchain pinned in
+          # .github/docs/requirements.txt (docs build only, never shipped).
+          allow-licenses: MIT, Apache-2.0, GPL-3.0-only, BSD-2-Clause, BSD-3-Clause, MPL-2.0
           # Allow the CI-only TruffleHog GitHub Action despite its AGPL license classification,
           # and the test-only Moq mocking library (BSD-3-Clause; tests/backend, never shipped).
           allow-dependencies-licenses: pkg:githubactions/trufflesecurity/trufflehog, pkg:nuget/Moq

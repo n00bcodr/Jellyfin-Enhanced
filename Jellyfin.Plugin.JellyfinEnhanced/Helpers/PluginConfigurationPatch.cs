@@ -20,6 +20,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
     public static class PluginConfigurationPatch
     {
         /// <summary>
+        /// Whether a credential is never sent back to the page after a save. Every credential is: the Maintainerr
+        /// key belongs to the Services tab's form now, not to a field of the Media Tags page
+        /// (<see cref="MediaTagsPortable.IsSecret"/>).
+        /// </summary>
+        private static bool IsWriteOnly(string key) => MediaTagsPortable.IsSecret(key);
+
+        /// <summary>
         /// The largest request body the patch endpoint reads. The page usually sends a few fields at a time; an
         /// imported settings document (<see cref="MediaTagsPortable"/>) sends every field it changes in one patch,
         /// with the values read before, so the import is written or refused as a whole.
@@ -103,7 +110,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     foreach (var (key, property) in properties)
                     {
                         if (key == nameof(PluginConfiguration.TagLookItemOverrides) && itemMutation != null) continue;
-                        if (MediaTagsPortable.IsSecret(key) || expected == null || !expected.TryGetValue(key, out var before)) continue;
+                        if (IsWriteOnly(key) || expected == null || !expected.TryGetValue(key, out var before)) continue;
                         var now = ToNode(property.GetValue(current), property.PropertyType, options);
                         if (!JsonNode.DeepEquals(now, JsonNode.Parse(before.GetRawText()))
                             && !JsonNode.DeepEquals(now, JsonNode.Parse(changes[key].GetRawText())))
@@ -152,7 +159,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 // The stored values, as the save normalised them, before any later save.
                 saved =>
                 {
-                    foreach (var (key, property) in properties) stored[key] = MediaTagsPortable.IsSecret(key) ? JsonValue.Create(string.Empty) : ToNode(property.GetValue(saved), property.PropertyType, options);
+                    foreach (var (key, property) in properties) stored[key] = IsWriteOnly(key) ? JsonValue.Create(string.Empty) : ToNode(property.GetValue(saved), property.PropertyType, options);
                 });
             if (mutationError != null) return new Result { Error = mutationError };
             if (conflicts.Count > 0) return new Result { Conflicts = conflicts };

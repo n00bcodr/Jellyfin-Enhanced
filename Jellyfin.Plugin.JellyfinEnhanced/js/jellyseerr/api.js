@@ -295,7 +295,8 @@
     api.search = async function(query, page = 1, options = {}) {
         const { skipCache = false, signal, throwOnError = false } = options;
         try {
-            const lang = (navigator.language || 'en').split('-')[0];
+            // Keep the region: TMDB reads a bare "pt" as Portugal and "zh" as simplified Chinese.
+            const lang = navigator.language || 'en';
             const data = await get(`/search?query=${encodeURIComponent(query)}&page=${page}&language=${lang}`, { skipCache, signal });
 
             // Filter out people results before returning (immutable — don't mutate cached response)
@@ -857,11 +858,12 @@
     };
 
     /**
-     * Adds requested media to the pending watchlist.
-     * The item will be automatically added to the watchlist when it appears in the library.
-     * @param {number} tmdbId - The TMDB ID of the media.
+     * Puts a just-requested title on the user's Seerr watchlist, when "Requested media goes on the
+     * requester's watchlist" is on. The Jellyfin watchlist is filled later by WatchlistMonitor, when
+     * the title reaches the library.
+     * @param {number|string} tmdbId - The TMDB ID of the media.
      * @param {string} mediaType - 'movie' or 'tv'.
-     * @returns {Promise<boolean>} - True if successfully queued, false otherwise.
+     * @returns {Promise<boolean>} - True if it is on the Seerr watchlist (including already there), false otherwise.
      */
     api.addToWatchlist = async function(tmdbId, mediaType) {
         try {
@@ -877,11 +879,19 @@
                 return false;
             }
 
-            // WatchlistMonitor service automatically handles adding requested items to watchlist
-            console.debug(`${logPrefix} Request tracked - WatchlistMonitor will automatically add TMDB ${tmdbId} (${mediaType}) to watchlist when it appears in library`);
+            const id = parseInt(tmdbId, 10);
+            if (!(id > 0) || (mediaType !== 'movie' && mediaType !== 'tv')) return false;
+
+            try {
+                await post('/watchlist', { tmdbId: id, mediaType });
+            } catch (error) {
+                // 409: Seerr already has it on the user's watchlist.
+                if (error && error.status === 409) return true;
+                throw error;
+            }
             return true;
         } catch (error) {
-            console.error(`${logPrefix} Error queuing item for watchlist:`, error);
+            console.error(`${logPrefix} Error adding the request to the Seerr watchlist:`, error);
             return false;
         }
     };
@@ -1049,6 +1059,18 @@
         return baseUrl;
     };
 
+    // The signed-in user's Seerr "Streaming Region" (own setting, else Seerr's
+    // global), resolved once per user session. Null until known or when unset.
+    let streamingRegionPromise = null;
+    api.streamingRegion = null;
+    api.getStreamingRegion = function() {
+        if (!streamingRegionPromise) {
+            streamingRegionPromise = JE.core.api.fetch(ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/streaming-region'))
+                .then(data => { api.streamingRegion = /^[A-Z]{2}$/.test(data?.region || '') ? data.region : null; return api.streamingRegion; })
+                .catch(() => { streamingRegionPromise = null; return null; });
+        }
+        return streamingRegionPromise;
+    };
     // The Seerr identity (linked user, permissions, override rules) is
     // per-Jellyfin-user; a sticky success cached for user A must not answer
     // for user B after an SPA user switch.
@@ -1057,9 +1079,15 @@
         cachedUserStatusAt = 0;
         cachedOverrideRules = null;
         overrideRulesCachedAt = 0;
+        streamingRegionPromise = null;
+        api.streamingRegion = null;
         // Allow the status banner to surface again for the new user.
         window.__JE_userStatusBannerShown = null;
     });
+
+    // Resolve early when the admin option is on, so sync readers (discovery filters,
+    // poster icons, More Info) already have the region by the time they render.
+    if (JE.pluginConfig?.ElsewhereUseSeerrRegion && JE.pluginConfig?.JellyseerrEnabled) api.getStreamingRegion();
 
     // Expose the API module on the global JE object
     JE.jellyseerrAPI = api;

@@ -307,13 +307,19 @@ ${r.Content}` : r.Content,
          * any other tag, so tags never show up as text.
          */
         function htmlToMarkdown(text) {
-            return String(text)
+            let out = String(text)
                 .replace(/<a\s[^>]*?href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)')
                 .replace(/<(strong|b)>([\s\S]*?)<\/\1>/gi, '**$2**')
                 .replace(/<(em|i)>([\s\S]*?)<\/\1>/gi, '*$2*')
                 .replace(/<br\s*\/?>/gi, '\n')
-                .replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
-                .replace(/<\/?[a-z][^>]*>/gi, '');
+                .replace(/<\/p>\s*<p[^>]*>/gi, '\n\n');
+            // Strip until stable so removing one tag can't assemble another (e.g. "<<b>script>").
+            let prev;
+            do {
+                prev = out;
+                out = out.replace(/<\/?[a-z][^>]*>/gi, '');
+            } while (out !== prev);
+            return out;
         }
 
         /**

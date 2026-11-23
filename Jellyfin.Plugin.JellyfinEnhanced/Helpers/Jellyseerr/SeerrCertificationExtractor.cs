@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
@@ -8,10 +9,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
     /// Extracts the content-rating certification from a Seerr movie/TV detail
     /// payload (<c>/api/v1/movie/{id}</c> or <c>/api/v1/tv/{id}</c>) or from TMDB's
     /// dedicated <c>/movie/{id}/release_dates</c> and <c>/tv/{id}/content_ratings</c>
-    /// responses. Only certifications from the requested country are used for
-    /// enforcement. A missing local certification stays unrated so the user's
-    /// block-unrated policy applies; a permissive foreign rating must not bypass it.
-    /// The ISO is returned alongside the certification for country-specific scoring.
+    /// responses, picked the way Jellyfin's TMDB providers fill an item's rating
+    /// (the same in Jellyfin 10.11 and 12): the requested country's certification,
+    /// else the US one, and for a series else the first listed. A title with none
+    /// stays unrated, so the user's block-unrated policy applies as it does in the
+    /// library. The ISO is returned alongside the certification.
     ///
     /// Adapted from Jellyfin-Canopy (GPL-3.0), Helpers/Seerr/SeerrCertificationExtractor.cs.
     /// </summary>
@@ -24,7 +26,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
 
         /// <summary>
         /// Reads the certification for <paramref name="mediaType"/> ("movie" or "tv")
-        /// from a detail object for <paramref name="region"/> only.
+        /// from a detail object for <paramref name="region"/>, falling back as Jellyfin does.
         /// </summary>
         public static CertificationResult Extract(JsonElement detail, string? mediaType, string region)
         {
@@ -40,7 +42,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 : ExtractTv(detail, normalizedRegion);
         }
 
-        // For movies: releases.results[].release_dates[].certification
+        // For movies: releases.results[].release_dates[].certification; the country's,
+        // else the US one, skipping entries without one (Jellyfin's TmdbMovieProvider).
         private static CertificationResult ExtractMovie(JsonElement detail, string region)
         {
             if (!TryGetResultsArray(detail, "releases", out var results))
@@ -48,7 +51,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 return default;
             }
 
-            foreach (var entry in RegionEntries(results, region))
+            foreach (var entry in RegionEntries(results, region).Concat(RegionEntries(results, "US")))
             {
                 var result = MovieCertFromEntry(entry);
                 if (!string.IsNullOrWhiteSpace(result.Certification))
@@ -105,7 +108,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 : new CertificationResult(cert, ReadString(regionRelease, "iso_3166_1"));
         }
 
-        // For TV: contentRatings.results[].rating
+        // For TV: contentRatings.results[].rating, from the country's first entry, else
+        // the first US entry, else the first entry listed (Jellyfin's TmdbSeriesProvider).
+        // The entry picked decides: an empty rating there leaves the title unrated, as
+        // Jellyfin stores it as a bare country prefix that no rating table knows.
         private static CertificationResult ExtractTv(JsonElement detail, string region)
         {
             if (!TryGetResultsArray(detail, "contentRatings", out var results))
@@ -113,13 +119,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 return default;
             }
 
-            foreach (var entry in RegionEntries(results, region))
+            var candidates = new[]
             {
-                var rating = ReadString(entry, "rating");
-                if (!string.IsNullOrWhiteSpace(rating))
+                RegionEntries(results, region).FirstOrDefault(),
+                RegionEntries(results, "US").FirstOrDefault(),
+                results.EnumerateArray().FirstOrDefault(),
+            };
+            foreach (var entry in candidates)
+            {
+#if JF12
+                // Jellyfin 12 moves on from an entry that carries no rating at all.
+                if (ReadString(entry, "rating") == null)
                 {
-                    return new CertificationResult(rating, ReadString(entry, "iso_3166_1"));
+                    continue;
                 }
+#else
+                // Jellyfin 10.11 takes the entry whatever its rating.
+                if (entry.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+#endif
+                var rating = ReadString(entry, "rating");
+                return string.IsNullOrWhiteSpace(rating)
+                    ? default
+                    : new CertificationResult(rating, ReadString(entry, "iso_3166_1"));
             }
 
             return default;

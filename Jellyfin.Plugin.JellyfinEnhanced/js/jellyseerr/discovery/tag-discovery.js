@@ -24,7 +24,8 @@
             return null;
         }
         try {
-            const params = new URLSearchParams(hash.split('?')[1]);
+            // (The query ends where the page's own fragment starts, see discovery-address.js.)
+            const params = new URLSearchParams((hash.split('?')[1] || '').split('#')[0]);
             if (params.get('type') !== 'tag') return null;
             return decodeURIComponent(params.get('tag') || '');
         } catch (error) {
@@ -76,7 +77,7 @@
     /**
      * Resolves the TMDB keyword id (used for both feeds) + section title.
      * @param {{id: string, signal: AbortSignal}} ctx
-     * @returns {Promise<{tvId: number, movieId: number, title: string}|null>}
+     * @returns {Promise<{tvId: number, movieId: number, title: string, name: string}|null>}
      */
     async function resolveFeeds({ id: tagName, signal }) {
         const status = await JE.jellyseerrAPI?.checkUserStatus();
@@ -94,7 +95,8 @@
         return {
             tvId: keywordId,
             movieId: keywordId,
-            title: JE.t('discovery_more_with_tag', { tag: tagName })
+            title: JE.t('discovery_more_with_tag', { tag: tagName }),
+            name: tagName
         };
     }
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createHarness, plain, jsRoot } from '../helpers/harness.mjs';
 
 function setup(t, settings = {}, plugin = {}) {
@@ -87,11 +87,17 @@ test('tag cache reference docs name the schema number in exactly one place', () 
   const server = readFileSync(`${jsRoot}/../Services/TagCacheService.cs`, 'utf8');
   const schema = Number(server.match(/CurrentCacheSchemaVersion = (\d+);/)[1]);
   const numbered = [];
-  for (const file of ['advanced/api.md', 'advanced/project-structure.md', 'enhanced/tags.md']) {
+  // The Tags & Badges guide is several pages; together they point to the constant and never name the number.
+  const tagPages = readdirSync(`${jsRoot}/../../docs/enhanced`).filter(name => /^tags(-[a-z]+)?\.md$/.test(name)).map(name => `enhanced/${name}`);
+  let tagGuidePointsToConstant = false;
+  for (const file of ['advanced/api.md', 'advanced/project-structure.md', ...tagPages]) {
     const doc = readFileSync(`${jsRoot}/../../docs/${file}`, 'utf8');
     for (const match of doc.matchAll(/[Ss]chema (\d+)/g)) numbered.push(`${file}: ${match[0]}`);
-    if (file !== 'advanced/api.md') assert.match(doc, /current (?:tag )?cache schema \(`CurrentCacheSchemaVersion`/, `${file} points to the model constant`);
+    const points = /current (?:tag )?cache schema \(`CurrentCacheSchemaVersion`/.test(doc);
+    if (file === 'advanced/project-structure.md') assert.ok(points, `${file} points to the model constant`);
+    if (file.startsWith('enhanced/')) tagGuidePointsToConstant ||= points;
   }
+  assert.ok(tagGuidePointsToConstant, 'the Tags & Badges pages point to the model constant');
   // A schema bump updates this one sentence; every other reference names the constant.
   assert.deepEqual(numbered, [`advanced/api.md: Schema ${schema}`]);
   const api = readFileSync(`${jsRoot}/../../docs/advanced/api.md`, 'utf8');

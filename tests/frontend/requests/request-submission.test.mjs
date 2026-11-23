@@ -444,3 +444,36 @@ test('collection request modal escapes titles, skips owned movies and stops at t
   assert.deepEqual(h.calls.map(call => call[1].body.mediaId), [2]);
   assert.equal(dialogs.length, 1);
 });
+
+const on = { AddRequestedMediaToWatchlist: true, JellyseerrEnabled: true };
+const watchlistCalls = h => h.calls.filter(([url]) => url === '/jellyseerr/watchlist');
+
+for (const type of ['movie', 'tv']) test(`a ${type} request also goes on the Seerr watchlist when the setting is on`, async t => {
+  const h = setup(t, { config: on });
+  if (type === 'tv') await h.api.requestTvSeasons('42', [1]); else await h.api.requestMedia('42', 'movie');
+  assert.deepEqual(watchlistCalls(h), [['/jellyseerr/watchlist', { method: 'POST', skipRetry: true, body: { tmdbId: 42, mediaType: type } }]]);
+});
+
+for (const config of [{}, { AddRequestedMediaToWatchlist: true }, { JellyseerrEnabled: true }]) test(`no Seerr watchlist call unless both settings are on (${JSON.stringify(config)})`, async t => {
+  const h = setup(t, { config });
+  await h.api.requestMedia('42', 'movie');
+  assert.deepEqual(watchlistCalls(h), []);
+});
+
+test('a title already on the Seerr watchlist (409) is fine, and any other failure never fails the request', async t => {
+  for (const status of [409, 500]) {
+    const failure = Object.assign(new Error('rejected'), { status });
+    const h = setup(t, { config: on, post: async url => { if (url === '/jellyseerr/watchlist') throw failure; return { id: 7 }; } });
+    // Only a genuine failure is logged; "already on the list" is not.
+    if (status !== 409) h.expectConsoleError(/Seerr watchlist/);
+    assert.equal((await h.api.requestMedia('42', 'movie')).id, 7);
+    assert.equal(await h.api.addToWatchlist('42', 'movie'), status === 409);
+    assert.equal(h.events.length, 1);
+  }
+});
+
+test('addToWatchlist rejects an invalid id or media type without calling Seerr', async t => {
+  const h = setup(t, { config: on });
+  for (const [id, type] of [['abc', 'movie'], [0, 'movie'], [5, 'person'], [5, undefined]]) assert.equal(await h.api.addToWatchlist(id, type), false);
+  assert.deepEqual(watchlistCalls(h), []);
+});

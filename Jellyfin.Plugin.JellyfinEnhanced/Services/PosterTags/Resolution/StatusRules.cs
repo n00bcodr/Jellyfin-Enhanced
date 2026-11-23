@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
 /// <summary>Live, caller-filtered inputs for the pure status decision. No remote data is persisted in the tag cache.</summary>
 /// <param name="WeeklyRank">The rank came from Seerr's weekly list ("#N This Week"), not TMDB's daily one.</param>
-public sealed record PosterStatusContext(DateTimeOffset Now, SeriesSchedule? Schedule = null, int? Rank = null, TagCacheEntry? Series = null, bool WeeklyRank = false);
+public sealed record PosterStatusContext(DateTimeOffset Now, SeriesSchedule? Schedule = null, int? Rank = null, TagCacheEntry? Series = null, bool WeeklyRank = false, bool WatchedAll = false);
 
 /// <summary>
 /// The statustags.js first-match decision, with the same embedded vocabulary, thresholds and translated labels.
@@ -57,6 +57,7 @@ public static class StatusRules
     public static StatusTag? Resolve(TagCacheEntry data, PosterTagSettings settings, PosterStatusContext context)
     {
         if (!settings.Shows(PosterTagGroup.Status)) return null;
+        if (data.Type == "BoxSet" && !settings.StatusOnCollections) return null;
         var now = context.Now.ToUnixTimeMilliseconds();
         var today = LocalDate(context.Now, settings.StatusTimeZone);
         var justAddedMs = settings.StatusJustAddedDays * Thresholds.DayMs;
@@ -71,8 +72,10 @@ public static class StatusRules
         bool AiredWithin(long? ms, long windowMs) => PremiereDay(ms) is { } day && day <= today && (long)(today.DayNumber - day.DayNumber) * Thresholds.DayMs <= windowMs;
         var newRelease = AiredWithin(data.PremiereDate, newReleaseMs);
         var comingSoon = PremiereDay(data.PremiereDate) > today;
-        var addedRecently = Within(data.DateCreated, now, justAddedMs);
-        var newEpisode = Within(data.LatestEpisodeAdded, now, justAddedMs) && data.DateCreated is { } created && now - created > justAddedMs;
+        // A collection is recreated by library scans (a fresh DateCreated every time), so its newest member's date stands in.
+        var addedRecently = Within(data.Type == "BoxSet" ? data.LatestEpisodeAdded : data.DateCreated, now, justAddedMs);
+        // Not for a viewer who has watched all of it (the web checks the card's played check).
+        var newEpisode = Within(data.LatestEpisodeAdded, now, justAddedMs) && data.DateCreated is { } created && now - created > justAddedMs && !context.WatchedAll;
         var nextDay = AirDate(facts?.NextAired?.Date);
         var lastDay = AirDate(facts?.LastAired?.Date);
         var daysToNext = nextDay?.DayNumber - today.DayNumber;
@@ -96,7 +99,9 @@ public static class StatusRules
                 if (showSchedule && daysToNext == 0) return Badge("airing_today");
                 if (showMilestones && final != null && Ended(facts!.Status) && finalRecently
                     && data.LatestEpisodeIndex is { } index && index.Season == final.Season && index.Episode == final.Episode)
-                    return Badge("series_finale");
+                    // A show released in one drop (premiere and finale days apart) is binge ready, not finishing a run.
+                    return Badge(PremiereDay(data.PremiereDate) is { } first && AirDate(final.Date) is { } finalDate
+                        && finalDate.DayNumber - first.DayNumber <= 3 ? "binge_ready" : "series_finale");
                 if (showMilestones && data.SeasonPremiere is { Season: > 1 } sp && AiredWithin(sp.Aired, newReleaseMs)) return Badge("new_season");
                 if (showSchedule && daysToNext is >= 1 && daysToNext <= Thresholds.AirsWithinDays)
                     return Badge("airs_date", FormatAirDay(nextDay!.Value, daysToNext.Value, settings));
@@ -128,7 +133,7 @@ public static class StatusRules
                     && Holds(final.Episode) && Ended(facts!.Status)) return Badge("series_finale");
                 if (showMilestones && aired && facts?.LastAired is { } lastEpisode && lastRecently
                     && episodeSeason == lastEpisode.Season && Holds(lastEpisode.Episode) && LastEndsSeason(facts, data.EpisodeIndex?.IsLast == true)) return Badge("season_finale");
-                if (showNew && (AiredWithin(data.PremiereDate, justAddedMs) || addedRecently)) return Badge("new_episode");
+                if (showNew && AiredWithin(data.PremiereDate, justAddedMs)) return Badge("new_episode");
                 break;
             case "BoxSet":
             case "Video":

@@ -311,6 +311,31 @@
         );
     }
 
+    /** @type {Element|null} The legacy header last measured as rendered; forgotten on the next navigation. */
+    let renderedLegacyHeader = null;
+    let legacyHeaderWatched = false;
+
+    /** Forget the rendered legacy header on every navigation (the video page and the login page hide it). */
+    function watchLegacyHeader() {
+        if (legacyHeaderWatched || !JE.core?.navigation?.onNavigate) return;
+        legacyHeaderWatched = true;
+        JE.core.navigation.onNavigate(() => { renderedLegacyHeader = null; });
+    }
+
+    /**
+     * Whether an element sits inside (or is) an element hidden by its own
+     * inline `display: none`, read from the markup without a style or layout
+     * pass. False says nothing: a stylesheet may still hide it.
+     * @param {Element} element
+     * @returns {boolean}
+     */
+    function hiddenByInlineStyle(element) {
+        for (let node = element; node && node !== document.body; node = node.parentElement) {
+            if (/** @type {HTMLElement} */ (node).style?.display === 'none') return true;
+        }
+        return false;
+    }
+
     /**
      * Finds (or creates) the container plugin buttons should be injected into.
      *
@@ -328,7 +353,20 @@
      */
     function getHeaderRightContainer() {
         const legacy = document.querySelector('.headerRight:not([data-je-header-fallback])');
-        if (legacy && legacy.offsetParent !== null) {
+        // offsetParent needs an up-to-date layout, and this runs many times while
+        // the page is still being built (every feature that adds a header button,
+        // every header-actions pass): each call laid the whole document out again.
+        // The Modern layout hides the legacy header with an inline display:none
+        // wrapper, which the markup alone answers; a header that is not hidden
+        // that way (the Legacy layout, a theme's own rule) is measured once a
+        // navigation, and only a rendered answer is kept: a header not ready
+        // yet is asked again, so early retries still find it.
+        if (legacy && !hiddenByInlineStyle(legacy)
+            && (legacy === renderedLegacyHeader || legacy.offsetParent !== null)) {
+            if (renderedLegacyHeader !== legacy) {
+                renderedLegacyHeader = legacy;
+                watchLegacyHeader();
+            }
             attachDrawerAutoClose(legacy);
             return legacy;
         }

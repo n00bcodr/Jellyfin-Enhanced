@@ -923,10 +923,10 @@ test('the save indicator keeps keyboard focus when Retry is used: on the indicat
 
 for (const choice of ['keep', 'theirs']) {
   test(`the save indicator keeps keyboard focus after ${choice === 'keep' ? 'Keep mine' : 'Take theirs'}`, async t => {
-    const h = setup(t, { config: { LeavingSoonCollections: 'Original' } });
+    const h = setup(t, { config: { AwardsTagsImdbList: 'ls000001' } });
     await settleMany(h, 4);
-    h.ctx.set('LeavingSoonCollections', 'Draft');
-    h.server.LeavingSoonCollections = 'Remote';
+    h.ctx.set('AwardsTagsImdbList', 'ls000002');
+    h.server.AwardsTagsImdbList = 'ls000003';
     assert.equal(await h.ctx.flush(), false);
     const chip = h.$('#jeTaSaved');
     assert.equal(chip.dataset.state, 'conflict');
@@ -936,7 +936,7 @@ for (const choice of ['keep', 'theirs']) {
     await h.ctx.flush();
     await settleMany(h, 4);
     assert.equal(chip.dataset.state, 'saved');
-    assert.equal(h.server.LeavingSoonCollections, choice === 'keep' ? 'Draft' : 'Remote');
+    assert.equal(h.server.AwardsTagsImdbList, choice === 'keep' ? 'ls000002' : 'ls000003');
     assert.ok(chip.contains(h.document.activeElement), 'focus stays on the indicator');
   });
 }

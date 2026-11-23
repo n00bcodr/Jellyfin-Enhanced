@@ -87,6 +87,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs",
       "category": "Configuration"
     },
@@ -96,6 +100,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagTextOverrides.cs",
       "category": "Configuration"
     },
     {
@@ -147,6 +155,22 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/RemovalControllerBase.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ActivityPlaybackConsumer.cs",
       "category": "EventHandlers"
     },
@@ -191,6 +215,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/DiscoveryFilterProfiles.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/JellyseerrPermissionHelper.cs",
       "category": "Helpers"
     },
@@ -220,6 +248,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrTagSignatureExtractor.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrWatchlistReader.cs",
       "category": "Helpers"
     },
     {
@@ -371,6 +403,10 @@
       "category": "PluginPages"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/LeavingSoonPage.html",
+      "category": "PluginPages"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/RecommendationsPage.html",
       "category": "PluginPages"
     },
@@ -388,6 +424,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/AudioLanguageTagsSyncTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/AutoRequestRemovalTask.cs",
       "category": "ScheduledTasks"
     },
     {
@@ -436,6 +476,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/WatchlistRemovalSyncTask.cs",
       "category": "ScheduledTasks"
     },
     {
@@ -495,6 +539,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/DiscoverFilters.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/DoesTheDogDieService.cs",
       "category": "Services"
     },
@@ -519,7 +567,19 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/LeavingSoonHomeSection.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/LeavingSoonService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintainerrActions.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintainerrHttp.cs",
       "category": "Services"
     },
     {
@@ -707,6 +767,18 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrActions.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrApi.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/RequestRemovalPlanner.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ReviewAuthorCache.cs",
       "category": "Services"
     },
@@ -887,6 +959,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WatchlistSyncPlanner.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WhatsNewService.cs",
       "category": "Services"
     },
@@ -964,6 +1040,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/awards/awards.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/component-groups.json",
       "category": "js"
     },
     {
@@ -1279,6 +1359,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/osd-playback.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/osd-rating.js",
       "category": "js"
     },
@@ -1292,6 +1376,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/playback.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/subtitle-sync.js",
       "category": "js"
     },
     {
@@ -1435,6 +1523,14 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/extras/leavingsoon-custom-tab.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/extras/leavingsoon-page.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/extras/login-image.js",
       "category": "js"
     },
@@ -1459,11 +1555,43 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-address.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-base.js",
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-busy.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-filter-panel.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-filter-utils.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-filters.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-menu.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-roles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-section.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-styles.js",
       "category": "js"
     },
     {
@@ -1803,6 +1931,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/maintainerr-item-menu.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/peopletags.js",
       "category": "js"
     },
@@ -1828,6 +1960,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-short-dates.json",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-tag-backdrop.js",
       "category": "js"
     },
     {
@@ -2073,6 +2209,15 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/jellyseerr/quota",
       "method": "GetJellyseerrQuota",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/jellyseerr/streaming-region",
+      "method": "GetSeerrStreamingRegion",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
@@ -2397,6 +2542,33 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/jellyseerr/filters/languages",
+      "method": "GetSeerrFilterLanguages",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/jellyseerr/filters/certifications/{mediaType}",
+      "method": "GetSeerrFilterCertifications",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/jellyseerr/filters/watchproviders/{mediaType}",
+      "method": "GetSeerrFilterWatchProviders",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/jellyseerr/discover/genreslider/movie",
       "method": "GetMovieGenreSlider",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
@@ -2453,6 +2625,15 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/jellyseerr/watchlist",
       "method": "GetJellyseerrWatchlist",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/jellyseerr/watchlist",
+      "method": "AddJellyseerrWatchlist",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
@@ -2594,6 +2775,15 @@
       "verb": "POST",
       "path": "/JellyfinEnhanced/usage/track",
       "method": "TrackUsage",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/usage/fields",
+      "method": "GetUsageReportedFields",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
@@ -2844,6 +3034,38 @@
       "verb": "DELETE",
       "path": "/JellyfinEnhanced/user-settings/{userId}/media-tags/presets/{presetId}",
       "method": "DeleteMediaTagsPreset",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/discovery-filter-profiles",
+      "method": "GetDiscoveryFilterProfiles",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/discovery-filter-profiles",
+      "method": "SaveDiscoveryFilterProfile",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "RequestSizeLimit(DiscoveryFilterProfiles.MaxRequestBytes)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/discovery-filter-profiles/{profileId}",
+      "method": "DeleteDiscoveryFilterProfile",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize",
@@ -3516,6 +3738,15 @@
       ]
     },
     {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/ElsewhereBrandingIcon",
+      "method": "GetElsewhereBrandingIcon",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "AllowAnonymous"
+      ]
+    },
+    {
       "verb": "POST",
       "path": "/JellyfinEnhanced/DeleteBrandingImage",
       "method": "DeleteBrandingImage",
@@ -3653,6 +3884,15 @@
       ]
     },
     {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/arr/requests/{requestId}",
+      "method": "RemoveRequest",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
       "verb": "GET",
       "path": "/JellyfinEnhanced/arr/calendar",
       "method": "GetCalendarEvents",
@@ -3727,6 +3967,158 @@
       "method": "GetView",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/leaving-soon/items",
+      "method": "Items",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/leaving-soon/list",
+      "method": "List",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/LeavingSoonController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/maintainerr/item/{itemId}",
+      "method": "GetState",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/maintainerr/mark",
+      "method": "Mark",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/maintainerr/unmark",
+      "method": "Unmark",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/maintainerr/postpone",
+      "method": "Postpone",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/MaintainerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/reclaimerr/item/{itemId}",
+      "method": "GetState",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/mark",
+      "method": "Mark",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/unmark",
+      "method": "Unmark",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/postpone",
+      "method": "Postpone",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/request",
+      "method": "RequestRemoval",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/requests/{requestId:int}/approve",
+      "method": "Approve",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/requests/{requestId:int}/deny",
+      "method": "Deny",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/reclaimerr/user-audit",
+      "method": "UserAudit",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/reclaimerr/import-users",
+      "method": "ImportUsers",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ReclaimerrController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
     }
   ],
   "configuration_properties": [
@@ -4004,6 +4396,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ElsewhereUseSeerrRegion",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ElsewhereCustomBrandingText",
       "type": "string",
       "initializer": null,
@@ -4077,6 +4477,14 @@
     {
       "class": "PluginConfiguration",
       "name": "LongPress2xEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "SubtitleSyncButtonEnabled",
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "false",
@@ -5276,6 +5684,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "StatusTagsOnCollections",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "StatusTagsJustAddedDays",
       "type": "int",
       "initializer": "7",
@@ -5324,6 +5740,54 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "LeavingSoonMaintainerrEnabled",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrEnabled",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrUrl",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrToken",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrUserRequests",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ReclaimerrUserHeader",
+      "type": "string",
+      "initializer": "\"Remote-User\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "LeavingSoonCollections",
       "type": "string",
       "initializer": "string.Empty",
@@ -5336,6 +5800,78 @@
       "type": "int",
       "initializer": "6",
       "constructor_assignment": "6",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonMaintainerrActions",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonHomeRow",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonHideWatched",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonPageEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonPageUsePluginPages",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonPageUseCustomTabs",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonPageUseNativeTab",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonPageAutoCreateCustomTab",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonPageCustomTabJeOwned",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -5374,6 +5910,22 @@
       "class": "PluginConfiguration",
       "name": "TagGroupScopes",
       "type": "TagGroupScopes?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagHiddenValues",
+      "type": "TagHiddenValues?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagTextOverrides",
+      "type": "string?",
       "initializer": null,
       "constructor_assignment": "null",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
@@ -5605,6 +6157,86 @@
     {
       "class": "PluginConfiguration",
       "name": "JellyseerrShowNetworkDiscovery",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterYear",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterScore",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterVotes",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterRuntime",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterGenres",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterLanguage",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterContentRating",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterStreaming",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterKeywords",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "JellyseerrFilterRole",
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "true",
@@ -6148,6 +6780,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "AutoRequestRemovalEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "AddRequestedMediaToWatchlist",
       "type": "bool",
       "initializer": null,
@@ -6176,6 +6816,14 @@
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "WatchlistRemovalSync",
+      "type": "string",
+      "initializer": null,
+      "constructor_assignment": "\"jellyfin\"",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -7299,6 +7947,78 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
+      "class": "TagHiddenValues",
+      "name": "Quality",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "AgeRating",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Rating",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Genre",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Status",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Language",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Awards",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Logos",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
+      "class": "TagHiddenValues",
+      "name": "Custom",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagHiddenValues.cs"
+    },
+    {
       "class": "TagLayoutGroupSlot",
       "name": "Group",
       "type": "string",
@@ -7821,6 +8541,14 @@
     {
       "class": "JellyfinEnhancedUserSettings",
       "name": "LongPress2xEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "SubtitleSyncButtonEnabled",
       "type": "bool",
       "initializer": null,
       "constructor_assignment": null,
@@ -9299,6 +10027,22 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
+      "class": "WatchlistSyncState",
+      "name": "Synced",
+      "type": "List<string>",
+      "initializer": "new List<string>()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "WatchlistSyncState",
+      "name": "UpdatedAt",
+      "type": "System.DateTime?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
       "class": "HiddenContentItem",
       "name": "ItemId",
       "type": "string",
@@ -9673,6 +10417,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
     },
     {
+      "literal": "watchlist-sync-state.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
+    },
+    {
       "literal": "Jellyfin.Plugin.JellyfinEnhanced.js.locales.{baseLang}.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
     },
@@ -9757,6 +10505,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ContinueWatchingPlaybackEvents.cs"
     },
     {
+      "literal": "discovery-filter-profiles.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/DiscoveryFilterProfiles.cs"
+    },
+    {
       "literal": "matroska-languages.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MatroskaLanguageCache.cs"
     },
@@ -9767,6 +10519,10 @@
     {
       "literal": "config.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.cs"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/RefreshLeavingSoonTagsTask.cs"
     },
     {
       "literal": "bookmark.json",
@@ -9787,6 +10543,10 @@
     {
       "literal": "<hash>.meta.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/CdnAssetService.cs"
+    },
+    {
+      "literal": "component-groups.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientScriptBundle.cs"
     },
     {
       "literal": "component-scripts.json",
@@ -9863,6 +10623,10 @@
     {
       "literal": "quality-colours.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/TagStyles.cs"
+    },
+    {
+      "literal": "/openapi.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/ReclaimerrApi.cs"
     },
     {
       "literal": "spoilerblur.json",
@@ -10022,6 +10786,11 @@
       "key": "JellyfinEnhancedAudioLanguageTagsSync"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/AutoRequestRemovalTask.cs",
+      "class": "AutoRequestRemovalTask",
+      "key": "JellyfinEnhancedAutoRequestRemoval"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/BuildTagCacheTask.cs",
       "class": "BuildTagCacheTask",
       "key": "JellyfinEnhancedBuildTagCache"
@@ -10075,6 +10844,11 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
       "class": "SpoilerApplyExistingTitlesTask",
       "key": "JellyfinEnhancedSpoilerApplyExistingTitles"
+    },
+    {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/WatchlistRemovalSyncTask.cs",
+      "class": "WatchlistRemovalSyncTask",
+      "key": "JellyfinEnhancedWatchlistRemovalSync"
     },
     {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/StartupService.cs",
@@ -10185,11 +10959,11 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 468,
-    "routes": 198,
-    "configuration_properties": 741,
-    "storage_references": 86,
-    "scheduled_tasks": 15,
+    "files": 502,
+    "routes": 224,
+    "configuration_properties": 785,
+    "storage_references": 91,
+    "scheduled_tasks": 17,
     "locales": 33
   }
 }

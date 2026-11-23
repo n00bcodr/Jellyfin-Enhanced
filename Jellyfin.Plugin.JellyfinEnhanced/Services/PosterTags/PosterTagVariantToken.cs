@@ -24,6 +24,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// watched state), so no client may keep it.
         /// </summary>
         SpoilerScoped = 2,
+
+        /// <summary>The viewer had watched all of the image owner when the token was minted (hides its "New Episode" badge).</summary>
+        WatchedAll = 4,
     }
 
     /// <summary>A parsed variant token.</summary>
@@ -126,7 +129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             var flags = (PosterTagVariantFlags)Convert.ToInt32(token.Substring(0, 1), 16);
             // Unknown bits come from a newer token format: never accept them.
-            if ((flags & ~(PosterTagVariantFlags.TopRightOffset | PosterTagVariantFlags.SpoilerScoped)) != 0) return false;
+            if ((flags & ~(PosterTagVariantFlags.TopRightOffset | PosterTagVariantFlags.SpoilerScoped | PosterTagVariantFlags.WatchedAll)) != 0) return false;
             variant = new PosterTagVariant(flags, token.Substring(1, 6), token.Substring(7, MacHexLength));
             return true;
         }

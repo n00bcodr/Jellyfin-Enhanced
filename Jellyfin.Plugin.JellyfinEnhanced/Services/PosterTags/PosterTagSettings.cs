@@ -41,7 +41,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// Version of the resolution rules, part of <see cref="Digest"/>. Bump it when a change to
         /// the resolver changes the tags produced for the same settings and data.
         /// </summary>
-        public const string ResolverVersion = "39";
+        public const string ResolverVersion = "40";
 
         private static readonly JsonSerializerSettings LenientRead = new() { NullValueHandling = NullValueHandling.Ignore };
 
@@ -130,6 +130,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public bool StatusScenes { get; private init; }
         /// <summary>Leaving soon family: the user's switch, while a Leaving soon source is set.</summary>
         public bool StatusLeaving { get; private init; }
+        /// <summary>Admin switch: whether a collection (box set) can carry a status badge.</summary>
+        public bool StatusOnCollections { get; private init; } = true;
         public int StatusJustAddedDays { get; private init; }
         public int StatusNewReleaseDays { get; private init; }
         public bool StatusRemoteEnabled { get; private init; }
@@ -357,6 +359,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The administrator's "Where to show" defaults (normalized; null when none is set).</summary>
         public TagGroupScopes? AdminScopes { get; private init; }
 
+        /// <summary>The Tag Styles labels whose chips never draw (Hidden tags, the administrator's).</summary>
+        public TagHiddenSet Hidden { get; private init; } = TagHiddenSet.Empty;
+
+        /// <summary>The texts shown instead of a tag's own (Tag text, the administrator's).</summary>
+        public TagTextSet Texts { get; private init; } = TagTextSet.Empty;
+
         /// <summary>
         /// Whether a group shows on a card of this item type (its "Where to show" switch for the type: personal,
         /// else the administrator's, else on). Rating keeps its own switches (RatingRules.IsExcludedByScope); the
@@ -561,6 +569,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 StatusSeriesStatus = user.StatusTagsSeriesStatus,
                 StatusScenes = user.StatusTagsScenes,
                 StatusLeaving = user.StatusTagsLeaving && LeavingSoonService.Configured(config),
+                StatusOnCollections = config.StatusTagsOnCollections,
                 StatusJustAddedDays = Math.Clamp(config.StatusTagsJustAddedDays, StatusRules.Thresholds.MinWindowDays, StatusRules.Thresholds.MaxWindowDays),
                 StatusNewReleaseDays = Math.Clamp(config.StatusTagsNewReleaseDays, StatusRules.Thresholds.MinWindowDays, StatusRules.Thresholds.MaxWindowDays),
                 StatusRemoteEnabled = config.StatusTagsEnabled && !string.IsNullOrWhiteSpace(config.TMDB_API_KEY),
@@ -639,6 +648,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 UsesJellyfinAudioPreference = usesJellyfin,
                 PersonalScopes = TagLayoutRules.NormalizeScopes(user.TagGroupScopes),
                 AdminScopes = TagLayoutRules.NormalizeScopes(config.TagGroupScopes),
+                Hidden = TagHiddenSet.For(config.TagHiddenValues),
+                Texts = TagTextSet.For(config.TagTextOverrides),
                 RatingTagsOnMovies = TagLayoutRules.RatingScope(user, config, "movies"),
                 RatingTagsOnSeries = TagLayoutRules.RatingScope(user, config, "series"),
                 RatingTagsOnSeasons = TagLayoutRules.RatingScope(user, config, "seasons"),
@@ -988,6 +999,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _ => "language",
         };
 
+        /// <summary>The native group of a layout group id (the inverse of <see cref="LayoutGroupId"/>).</summary>
+        private static PosterTagGroup GroupOf(string id) => id switch
+        {
+            "quality" => PosterTagGroup.Quality,
+            "genre" => PosterTagGroup.Genre,
+            "rating" => PosterTagGroup.Rating,
+            "ageRating" => PosterTagGroup.AgeRating,
+            "awards" => PosterTagGroup.Awards,
+            "status" => PosterTagGroup.Status,
+            "logos" => PosterTagGroup.Logos,
+            "custom" => PosterTagGroup.Custom,
+            _ => PosterTagGroup.Language,
+        };
+
         /// <summary>
         /// core/tag-layout.js normalizeSettings, reduced to static native layouts: Bands uses its active
         /// profile and density; title/hover layouts use the user's own full-label Corners
@@ -1295,6 +1320,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["rating.userReviewDash"] = Bool(UserReviewChipEnabled && ShowUserRatingDash);
             }
 
+            // Hidden tags: only for a shown group that hides something, so a document without a list keeps
+            // its digest (and every poster URL).
+            foreach (var group in TagHiddenRules.Groups)
+            {
+                if (Hidden.Any(group) && Shows(GroupOf(group))) values["hidden." + group] = Hidden.DigestOf(group);
+            }
+
+            // Tag text: same rule as hidden tags, a shown group with overrides only.
+            foreach (var group in TagTextRules.Groups)
+            {
+                if (Texts.Any(group) && Shows(GroupOf(group))) values["text." + group] = Texts.DigestOf(group);
+            }
+
             // "Where to show": only switches that hide a shown group on some item type, so a document
             // that never set one keeps its digest (and every poster URL).
             foreach (var group in TagLayoutRules.ScopedGroups)
@@ -1331,6 +1369,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["status.remote"] = Bool(StatusRemoteEnabled);
                 // Only when on, so every existing variant keeps its token.
                 if (StatusLeaving) values["status.leaving"] = Bool(StatusLeaving);
+                // Only when off, for the same reason.
+                if (!StatusOnCollections) values["status.collections"] = Bool(false);
                 values["status.locale"] = StatusCulture.Name;
                 values["status.timeZone"] = StatusTimeZone.Id;
             }

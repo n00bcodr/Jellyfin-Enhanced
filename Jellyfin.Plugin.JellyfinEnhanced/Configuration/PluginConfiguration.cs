@@ -50,6 +50,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             DEFAULT_PROVIDERS = "";
             IGNORE_PROVIDERS = "";
             ElsewhereSeasonProviders = true;
+            ElsewhereUseSeerrRegion = false;
             ElsewhereCustomBrandingText = "";
             ElsewhereCustomBrandingImageUrl = "";
 
@@ -63,6 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoSkipIntro = false;
             AutoSkipOutro = false;
             LongPress2xEnabled = false;
+            SubtitleSyncButtonEnabled = false;
             RandomButtonEnabled = true;
             RandomIncludeMovies = true;
             RandomIncludeShows = true;
@@ -191,6 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             StatusTagsMilestones = true;
             StatusTagsSeriesStatus = false;
             StatusTagsScenes = false;
+            StatusTagsOnCollections = true;
             StatusTagsJustAddedDays = 7;
             StatusTagsNewReleaseDays = 30;
             StatusTagsLeaving = false;
@@ -201,6 +204,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagGroupOrder = null;
             TagGroupCaps = null;
             TagGroupScopes = null;
+            TagHiddenValues = null;
+            TagTextOverrides = null;
             TagLabelDensity = "full";
             TagScale = "default";
             TagGap = "default";
@@ -242,6 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 new Shortcut { Name = "DecreaseSubtitleOffset", Key = "[", Label = "Decrease Subtitle Offset", Category = "Player" },
                 new Shortcut { Name = "IncreaseSubtitleOffset", Key = "]", Label = "Increase Subtitle Offset", Category = "Player" },
                 new Shortcut { Name = "JumpToLastPosition", Key = "Z", Label = "Jump to Last Position", Category = "Player" },
+                new Shortcut { Name = "SubtitleSync", Key = "Shift+S", Label = "Sync Subtitles", Category = "Player" },
                 new Shortcut { Name = "JumpToPercentage", Key = "0-9", Label = "Jump to % of video", Category = "Player" }
             };
 
@@ -259,6 +265,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowRecommended = true;
             JellyseerrShowRequestMoreOnSeries = true;
             JellyseerrShowNetworkDiscovery = true;
+            JellyseerrFilterYear = true;
+            JellyseerrFilterScore = true;
+            JellyseerrFilterVotes = true;
+            JellyseerrFilterRuntime = true;
+            JellyseerrFilterGenres = true;
+            JellyseerrFilterLanguage = true;
+            JellyseerrFilterContentRating = true;
+            JellyseerrFilterStreaming = true;
+            JellyseerrFilterKeywords = true;
+            JellyseerrFilterRole = true;
             JellyseerrShowGenreDiscovery = true;
             JellyseerrShowTagDiscovery = true;
             JellyseerrShowPersonDiscovery = true;
@@ -344,11 +360,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoMovieRequestCustomRootFolder = ""; // Root folder path for "custom" mode
             AutoMovieRequestFallbackOn4k = true; // When original mode finds a 4K profile, fall back to default instead
 
+            // Auto Request Removal Settings
+            AutoRequestRemovalEnabled = false; // Delete a Seerr request once its requester has watched it
+
             // Watchlist Settings
             AddRequestedMediaToWatchlist = false;
             SyncJellyseerrWatchlist = false;
             SyncJellyfinWatchlistToSeerr = false;
             PreventWatchlistReAddition = true;
+            WatchlistRemovalSync = "jellyfin";
             WatchlistMemoryRetentionDays = 365;
 
             // Bookmarks Settings
@@ -588,6 +608,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string DEFAULT_PROVIDERS { get; set; }
         public string IGNORE_PROVIDERS { get; set; }
         public bool ElsewhereSeasonProviders { get; set; }
+        public bool ElsewhereUseSeerrRegion { get; set; }
         public string ElsewhereCustomBrandingText { get; set; }
         public string ElsewhereCustomBrandingImageUrl { get; set; }
         public long ClearLocalStorageTimestamp { get; set; }
@@ -600,6 +621,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AutoSkipIntro { get; set; }
         public bool AutoSkipOutro { get; set; }
         public bool LongPress2xEnabled { get; set; }
+
+        /// <summary>Default for the player's Subtitle Sync button (lists the subtitle lines to sync to, search or jump to).</summary>
+        public bool SubtitleSyncButtonEnabled { get; set; }
         public bool RandomButtonEnabled { get; set; }
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }
@@ -924,6 +948,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Default for the lowest-priority series status badge (Returning, Ended, Cancelled).</summary>
         public bool StatusTagsSeriesStatus { get; set; } = false;
         public bool StatusTagsScenes { get; set; } = false;
+        /// <summary>Admin-only: whether collections (box sets) can carry status badges. On, a collection shows Just Added when one of its members was added recently (never by its own date, which is reset when a tool creates it again).</summary>
+        public bool StatusTagsOnCollections { get; set; } = true;
         /// <summary>Admin-only: days an item counts as "Just Added" (or a series/season's latest episode as "New Episode"). 1-365.</summary>
         public int StatusTagsJustAddedDays { get; set; } = 7;
         /// <summary>Admin-only: days after its premiere date a Movie/Series counts as "New Movie"/"New Series". 1-365.</summary>
@@ -939,10 +965,59 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string LeavingSoonMaintainerrUrl { get; set; } = string.Empty;
         /// <summary>Maintainerr API key. A secret: never in public config, responses, logs or exports.</summary>
         public string LeavingSoonMaintainerrApiKey { get; set; } = string.Empty;
+        /// <summary>
+        /// Maintainerr is the removal tool behind Leaving soon and the item menu. On by default (it was the only
+        /// tool). Off while <see cref="ReclaimerrEnabled"/> is on: at most one of the two is active, so they never clash.
+        /// </summary>
+        public bool LeavingSoonMaintainerrEnabled { get; set; } = true;
+        /// <summary>Reclaimerr is the removal tool (the Maintainerr settings are kept but paused).</summary>
+        public bool ReclaimerrEnabled { get; set; } = false;
+        /// <summary>Reclaimerr base URL (http/https).</summary>
+        public string ReclaimerrUrl { get; set; } = string.Empty;
+        /// <summary>
+        /// Reclaimerr API token (<c>rcl_...</c>) for everything the plugin reads and does in Reclaimerr 0.6.15 or newer: the
+        /// <c>candidates:manage</c>, <c>scheduled_deletions:manage</c>, <c>delete_requests:manage</c>, <c>media:read</c> and
+        /// <c>users:manage</c> scopes. A secret: never in public config, responses, logs or exports.
+        /// </summary>
+        public string ReclaimerrToken { get; set; } = string.Empty;
+        /// <summary>
+        /// Let users request removals: a request is filed as the Jellyfin user's own Reclaimerr account (the one linked to
+        /// them, found by their Jellyfin user id) through Reclaimerr's trusted-proxy sign-in (<c>FORWARD_AUTH_*</c>, the header
+        /// below, from an address it trusts), because Reclaimerr's token API cannot file a request for someone else.
+        /// A new name, off by default: the earlier "act as the user" switch defaulted on while requests also needed a service
+        /// account, so its saved value is no opt-in to this.
+        /// </summary>
+        public bool ReclaimerrUserRequests { get; set; } = false;
+        /// <summary>The header Reclaimerr reads the user name from (its <c>FORWARD_AUTH_USER_HEADER</c>, default <c>Remote-User</c>).</summary>
+        public string ReclaimerrUserHeader { get; set; } = "Remote-User";
         /// <summary>Existing Jellyfin collection names (one per line or comma separated) whose members count as leaving.</summary>
         public string LeavingSoonCollections { get; set; } = string.Empty;
         /// <summary>Hours between Leaving soon refreshes (1-168).</summary>
         public int LeavingSoonRefreshHours { get; set; } = 6;
+        /// <summary>
+        /// Administrators mark, keep and postpone removals from the item menu (writes to Maintainerr's manual
+        /// collections). Needs the Maintainerr URL. On by default: the menu rows only appear for administrators.
+        /// </summary>
+        public bool LeavingSoonMaintainerrActions { get; set; } = true;
+        /// <summary>
+        /// A "Leaving soon" row on the Home Screen Sections home page (registered with that plugin when it is
+        /// installed), listing Maintainerr's members soonest removal first. Needs the Maintainerr URL.
+        /// </summary>
+        public bool LeavingSoonHomeRow { get; set; } = true;
+        /// <summary>
+        /// Leave titles a user has already watched out of the Leaving soon home row. Its own switch because Home
+        /// Screen Sections keeps its "Hide Watched" checkbox disabled for every section another plugin registers.
+        /// </summary>
+        public bool LeavingSoonHideWatched { get; set; }
+        // The Leaving soon page: everything leaving, with days left, for every user (administrators also manage it).
+        // Placement like the other pages: a native Home tab, Plugin Pages or Custom Tabs.
+        /// <summary>The Leaving soon page is available. Needs a removal tool (Maintainerr or Reclaimerr) that is on.</summary>
+        public bool LeavingSoonPageEnabled { get; set; }
+        public bool LeavingSoonPageUsePluginPages { get; set; }
+        public bool LeavingSoonPageUseCustomTabs { get; set; }
+        public bool LeavingSoonPageUseNativeTab { get; set; }
+        public bool LeavingSoonPageAutoCreateCustomTab { get; set; }
+        public bool LeavingSoonPageCustomTabJeOwned { get; set; }
         /// <summary>Starting poster tag layout for new users (corners, bands, caption, summary, minimal).</summary>
         [AnalyticsInclude]
         public string TagLayout { get; set; } = "corners";
@@ -954,6 +1029,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public TagGroupCaps? TagGroupCaps { get; set; }
         /// <summary>Where each tag group shows by default (item types and home rows); null shows every group everywhere.</summary>
         public TagGroupScopes? TagGroupScopes { get; set; }
+        /// <summary>Tag Styles labels whose chips never draw, per group (Hidden tags, set on the Colours tab); null hides nothing.</summary>
+        public TagHiddenValues? TagHiddenValues { get; set; }
+        /// <summary>Text shown instead of a tag's own, JSON {"status":{"seasonFinale":"End of Season"}} (Tag text, set on the Colours tab); null keeps every tag's own text.</summary>
+        public string? TagTextOverrides { get; set; }
         /// <summary>Starting label density (full or compact).</summary>
         [AnalyticsInclude]
         public string TagLabelDensity { get; set; } = "full";
@@ -1019,6 +1098,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrShowRecommended { get; set; }
         public bool JellyseerrShowRequestMoreOnSeries { get; set; }
         public bool JellyseerrShowNetworkDiscovery { get; set; }
+        public bool JellyseerrFilterYear { get; set; }
+        public bool JellyseerrFilterScore { get; set; }
+        public bool JellyseerrFilterVotes { get; set; }
+        public bool JellyseerrFilterRuntime { get; set; }
+        public bool JellyseerrFilterGenres { get; set; }
+        public bool JellyseerrFilterLanguage { get; set; }
+        public bool JellyseerrFilterContentRating { get; set; }
+        public bool JellyseerrFilterStreaming { get; set; }
+        public bool JellyseerrFilterKeywords { get; set; }
+        public bool JellyseerrFilterRole { get; set; }
         public bool JellyseerrShowGenreDiscovery { get; set; }
         public bool JellyseerrShowTagDiscovery { get; set; }
         public bool JellyseerrShowPersonDiscovery { get; set; }
@@ -1119,11 +1208,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string AutoMovieRequestCustomRootFolder { get; set; } // Root folder path for "custom" mode
         public bool AutoMovieRequestFallbackOn4k { get; set; } // When original mode finds a 4K profile, fall back to default
 
+        // Auto Request Removal Settings
+        public bool AutoRequestRemovalEnabled { get; set; } // Delete a Seerr request once its requester has watched it
+
         // Watchlist Settings
         public bool AddRequestedMediaToWatchlist { get; set; }
         public bool SyncJellyseerrWatchlist { get; set; }
         public bool SyncJellyfinWatchlistToSeerr { get; set; }
         public bool PreventWatchlistReAddition { get; set; }
+        // Which side's removals are mirrored to the other: "off", "jellyfin", "seerr" or "both".
+        public string WatchlistRemovalSync { get; set; }
         public int WatchlistMemoryRetentionDays { get; set; }
 
         // User Import Settings

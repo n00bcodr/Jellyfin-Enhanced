@@ -110,17 +110,30 @@
     // cue/clock rate for the whole of playback.
     const PLAYER_NOISE_SELECTOR = '.osdPositionText, .osdDurationText, .startTimeText, .endTimeText, .endsAtText, .videoSubtitlesInner, .videoSecondarySubtitlesInner';
 
+    // A card's tag host (.je-tag-host, tags/tag-pipeline.js resolveRenderTarget)
+    // holds nothing but the tag chips JE itself draws, and they keep changing
+    // on a settled page: a status badge lands when a lookup answers as its card
+    // scrolls into view, a live pass swaps one. No subscriber looks inside a
+    // host (the tag modules keep their own state), yet each of those writes
+    // used to wake every subscriber after the next paint (tab and sidebar
+    // watchers, header layout, a full card scan), over and over while the page
+    // was being scrolled. The host itself being added to or removed from a
+    // card is still reported: its record's target is the card.
+    const OWN_NOISE_SELECTOR = '.je-tag-host';
+
+    const NOISE_SELECTOR = `${PLAYER_NOISE_SELECTOR}, ${OWN_NOISE_SELECTOR}`;
+
     /**
      * Whether a mutation record is one the subscribers should hear about: it
      * added or removed nodes, somewhere other than inside the player's clock
-     * and subtitle cue nodes.
+     * and subtitle cue nodes or a card's tag host.
      * @param {MutationRecord} record
      * @returns {boolean}
      */
     function isStructuralChange(record) {
         if (record.addedNodes.length === 0 && record.removedNodes.length === 0) return false;
         const target = record.target;
-        return !(target.nodeType === 1 && /** @type {Element} */ (target).closest(PLAYER_NOISE_SELECTOR));
+        return !(target.nodeType === 1 && /** @type {Element} */ (target).closest(NOISE_SELECTOR));
     }
 
     function ensureBodyObserver() {
@@ -129,7 +142,8 @@
             // Fast-path: skip dispatch entirely if no nodes were added or removed.
             // This filters out attribute changes, text changes, hover effects, focus
             // changes, etc. that fire frequently but never add new content — and
-            // the player's clock/cue rewrites, which add nodes nobody listens for.
+            // the player's clock/cue rewrites and JE's own tag chips, which add
+            // nodes nobody listens for.
             let hasStructuralChange = false;
             for (let i = 0; i < mutations.length; i++) {
                 if (isStructuralChange(mutations[i])) {

@@ -1349,13 +1349,21 @@
 .je-new-badge .material-icons {
     font-size: 11px !important;
 }
-/* Checkbox labels are a fixed-height single row, so a badge squeezes long label text into a
-   narrow column. Let the badge wrap under the text instead when the row runs out of room. */
-
+/* Checkbox labels are a single row, so a badge squeezes long label text into a narrow column.
+   On small widths let the row wrap: badge on its own line, then the text with the icon and switch. */
+@media (max-width: 600px) {
+    #JellyfinEnhancedForm .jea-section .jea-toggle { flex-wrap: wrap; }
+    #JellyfinEnhancedForm .jea-section .jea-toggle > .je-new-badge { flex: 0 0 auto; margin-left: 0; }
+    #JellyfinEnhancedForm .jea-section .jea-toggle > span:first-of-type { flex: 1 1 8em; min-width: 8em; }
+}
 
 /* Expander summaries spread their items apart; keep the badge beside the title. */
 .je-details-section > summary > .je-new-badge {
     margin-left: 0;
+    margin-right: auto;
+}
+.jea-group > summary > .je-new-badge {
+    margin-left: 8px;
     margin-right: auto;
 }
 /* Text field and dropdown cards are a flex column, which would stretch the badge into a
@@ -1388,6 +1396,10 @@
 }
 #JellyfinEnhancedForm.je-search-mode > .jellyfin-tab-content.je-tab-name-match {
     order: -1;
+}
+/* Every tab is shown inline-block in search mode (so the grid gap does not apply): space the cards by margin. */
+#JellyfinEnhancedPage #JellyfinEnhancedForm.je-search-mode > .jellyfin-tab-content > fieldset {
+    margin: 0 0 20px !important;
 }
 .je-search-match {
     background-color: rgba(255,200,0,0.35);
@@ -1997,6 +2009,11 @@ body.je-has-kefintweaks  .je-installed-badge[data-plugin="kefintweaks"]  { displ
     border-radius: 999px;
     font-size: 0.82em;
     word-break: break-word;
+}
+/* Users a check never reached: neither a problem nor known to be fine, so not the green of the checked ones. */
+.je-audit-unchecked-names li {
+    background: rgba(158,158,158,0.18);
+    color: var(--je-text-muted);
 }
 .je-audit-error {
     color: #f44336;
@@ -2660,6 +2677,7 @@ div#bazarrMappingsValidationResult {
 .jea-nav-tree { display: none; margin: 2px 0 6px 18px; padding-left: 10px; border-left: 1px solid var(--je-border); flex-direction: column; gap: 1px; }
 .jellyfin-tab-button.active + .jea-nav-tree { display: flex; }
 .jea-nav-leaf { display: block; padding: 5px 10px; border-radius: 6px; font-size: .84em; line-height: 1.35; color: inherit; opacity: .65; text-decoration: none; position: relative; }
+.jea-nav-leaf[hidden] { display: none; }
 .jea-nav-leaf:hover { opacity: 1; background: var(--je-surface-3); }
 .jea-nav-leaf.on { opacity: 1; font-weight: 600; background: color-mix(in srgb, var(--jea-accent) 14%, transparent); }
 .jea-nav-leaf.on::before { content: ""; position: absolute; left: -11px; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--jea-accent); }
@@ -2882,3 +2900,16 @@ div#bazarrMappingsValidationResult {
 }
 #JellyfinEnhancedPage .jellyfin-tab-button[data-je-mt-state="error"] h3::after { background: #ef5350; }
 #JellyfinEnhancedPage .je-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Media Tags matches in the settings search: the tab is drawn outside the form, so its hits are listed apart. */
+.je-mt-search-results { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+.je-mt-search-results[hidden] { display: none; }
+.je-mt-search-hit {
+    display: flex; flex-direction: column; gap: 2px; text-align: left; cursor: pointer;
+    padding: 10px 14px; border-radius: 8px; color: inherit; font: inherit;
+    background: transparent; border: 1px solid var(--je-border);
+}
+.je-mt-search-hit:hover, .je-mt-search-hit:focus-visible { border-color: var(--primary-accent-color, #00a4dc); }
+.je-mt-search-hit span { opacity: 0.7; font-size: 0.85em; }
+
+#JellyfinEnhancedForm .jea-section a.jea-analytics { color: inherit; text-decoration: none; cursor: pointer; }

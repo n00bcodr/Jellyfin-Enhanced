@@ -319,6 +319,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
+        /// <summary>
+        /// Moves a per-user file whose content does not parse aside to <c>.corrupt-{ts}</c>, as the
+        /// strict read does, for callers that read with <c>quarantineCorrupt: false</c> and decide
+        /// themselves. Callers hold <see cref="GetUserFileLock"/>.
+        /// </summary>
+        public void QuarantineUserConfiguration(string userId, string fileName)
+        {
+            var configPath = ResolveUserFile(userId, fileName);
+            if (File.Exists(configPath)) BackupCorruptFile(configPath);
+        }
+
         private void BackupCorruptFile(string filePath)
         {
             try
@@ -942,6 +953,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 _logger.Error($"Error recording processed watchlist item {mediaType}:{tmdbId} for user {userId}: {ex.Message}");
                 return false;
             }
+        }
+
+        /// Gets the last-synced watchlist state used by the removal sync. A missing or unreadable
+        /// file reads as empty, which the removal sync treats as a first run (nothing is removed).
+        public WatchlistSyncState GetWatchlistSyncState(Guid userId)
+        {
+            return GetUserConfiguration<WatchlistSyncState>(userId.ToString(), "watchlist-sync-state.json");
+        }
+
+        /// Saves the last-synced watchlist state for a user.
+        public void SaveWatchlistSyncState(Guid userId, WatchlistSyncState state)
+        {
+            SaveUserConfiguration(userId.ToString(), "watchlist-sync-state.json", state);
         }
 
         /// Cleans up old processed watchlist items (older than specified days).

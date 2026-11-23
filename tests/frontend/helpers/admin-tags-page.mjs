@@ -64,7 +64,6 @@ function serverPatch(server, body) {
   if (Object.keys(conflicts).length) throw { status: 409, json: async () => ({ conflicts }) };
   Object.assign(server, structuredClone(body.Changes));
   const values = structuredClone(body.Changes);
-  if ('LeavingSoonMaintainerrApiKey' in values) values.LeavingSoonMaintainerrApiKey = '';
   return { values };
 }
 

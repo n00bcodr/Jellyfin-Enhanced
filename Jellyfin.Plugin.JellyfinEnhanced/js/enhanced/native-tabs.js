@@ -55,10 +55,24 @@
     var RESERVED_ID_PREFIX = 'je-native-tab-reserved-';
     var DEEP_LINK_PARAM = 'jeTab';
 
+    /**
+     * A Home address without the fragment the Recommendations filters may add after its query (see
+     * discovery-address.js): what a deep link is. Dialogs push the address without it, and the filters
+     * change it in place, neither of which is a new link to follow.
+     * @param {string} hash
+     * @returns {string}
+     */
+    function linkOf(hash) {
+        var mark = String(hash || '').indexOf('#', 1);
+        return mark < 0 ? String(hash || '') : String(hash).slice(0, mark);
+    }
+
     function isOnHomePage() {
         var hash = window.location.hash;
         return hash === '' || hash === '#/home' || hash === '#/home.html'
-            || hash.indexOf('#/home?') !== -1 || hash.indexOf('#/home.html?') !== -1;
+            || hash.indexOf('#/home?') !== -1 || hash.indexOf('#/home.html?') !== -1
+            // (Or only the Recommendations filters' fragment after it: see discovery-address.js.)
+            || hash.indexOf('#/home#') === 0 || hash.indexOf('#/home.html#') === 0;
     }
 
     /** The shared parent of all native `.tabContent.pageTabContent` panels (Home's page root). */
@@ -453,7 +467,8 @@
      * @returns {string|null} Its decoded value, or null when absent.
      */
     function hashParam(name) {
-        var match = new RegExp('[?&]' + name + '=([^&]*)').exec(window.location.hash);
+        // (The query ends where the Recommendations filters' fragment starts, see discovery-address.js.)
+        var match = new RegExp('[?&]' + name + '=([^&#]*)').exec(window.location.hash);
         if (!match) return null;
         try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
     }
@@ -461,7 +476,7 @@
     /** @returns {string} The current Home route (`#/home` or `#/home.html`) without its query. */
     function homeRoute() {
         var hash = window.location.hash;
-        return hash.indexOf('#/home') === 0 ? hash.split('?')[0] : '#/home';
+        return hash.indexOf('#/home') === 0 ? '#' + hash.slice(1).split(/[?#]/)[0] : '#/home';
     }
 
     /**
@@ -482,7 +497,7 @@
             var urlIndex = parseInt(hashParam('tab'), 10);
             var picked = parseInt(e.detail?.selectedTabIndex, 10);
             if (picked !== (isNaN(urlIndex) ? 0 : urlIndex) || Date.now() - lastTabStripInput < 1000) {
-                userPickedHash = window.location.hash;
+                userPickedHash = linkOf(window.location.hash);
             }
         });
         // tabchange fires once the index is recorded (120 ms after a click);
@@ -550,7 +565,11 @@
     function syncDeepLink(slider, root) {
         var wantedId = hashParam(DEEP_LINK_PARAM);
         var wantedIndex = parseInt(hashParam('tab'), 10);
-        var entry = wantedId != null ? entries.find(function (e) { return e.id === wantedId; }) : null;
+        // Our links always carry tab=N (N >= 2) next to jeTab. Without it the user is on Home or
+        // Favorites and a header script (KefinTweaks' header tabs) kept the old jeTab in the URL:
+        // honouring it would pull the user back to our tab right after they left it.
+        var linkedToOwnTab = !isNaN(wantedIndex) && wantedIndex >= 2;
+        var entry = wantedId != null && linkedToOwnTab ? entries.find(function (e) { return e.id === wantedId; }) : null;
         if (entry && entry.index != null && entry.index !== wantedIndex) {
             // Rewrite in place rather than navigate: a router navigation builds
             // a new Home page, and Custom Tabs fills its legacy-layout panels
@@ -559,30 +578,39 @@
             var staleHash = window.location.hash;
             // Local copy: replaceState notifies JE's navigation listeners
             // synchronously, and ours clears rewrittenHash once it has seen it.
-            var freshHash = deepLinkHash(entry);
-            rewrittenHash = freshHash;
+            // Only the tab's own pairs are corrected: the others (the
+            // Recommendations category open on it, its filters) stay.
+            // (Their fragment, after the query, too: see discovery-address.js.)
+            var mark = staleHash.indexOf('#', 1);
+            var fragment = mark < 0 ? '' : staleHash.slice(mark);
+            var query = mark < 0 ? staleHash : staleHash.slice(0, mark);
+            var others = (query.split('?')[1] || '').split('&').filter(function (pair) {
+                return pair !== '' && !/^(?:tab|jeTab)=/.test(pair);
+            });
+            var freshHash = deepLinkHash(entry) + others.map(function (pair) { return '&' + pair; }).join('') + fragment;
+            rewrittenHash = linkOf(freshHash);
             history.replaceState(history.state, '', window.location.pathname + window.location.search + freshHash);
             wantedIndex = entry.index;
-            if (userPickedHash === staleHash) userPickedHash = freshHash;
+            if (userPickedHash === linkOf(staleHash)) userPickedHash = linkOf(freshHash);
             // Our tab moved after this link was already followed: only the URL
             // needed updating. Re-selecting it would undo whatever the user
             // clicked since (tab clicks leave the URL alone).
-            if (appliedDeepLink && appliedDeepLink.hash === staleHash &&
+            if (appliedDeepLink && appliedDeepLink.hash === linkOf(staleHash) &&
                 appliedDeepLink.panel === document.getElementById(OWN_ID_PREFIX + 'panel-' + entry.id)) {
-                appliedDeepLink.hash = window.location.hash;
+                appliedDeepLink.hash = linkOf(window.location.hash);
                 appliedDeepLink.btn = document.getElementById(OWN_ID_PREFIX + 'btn-' + entry.id);
             }
         }
         // Home(0) and Favorites(1) exist before Jellyfin selects, so they always complete.
         if (isNaN(wantedIndex) || wantedIndex < 2) return;
-        if (userPickedHash === window.location.hash) return;
+        if (userPickedHash === linkOf(window.location.hash)) return;
 
         var tabsElem = slider.closest('[is="emby-tabs"]') || document.querySelector('[is="emby-tabs"]');
         var btn = tabsElem?.querySelectorAll('.emby-tab-button')[wantedIndex];
         var panel = root.querySelectorAll('.tabContent')[wantedIndex];
         if (!tabsElem?.selectedIndex || !btn || !panel ||
             slotIndex(btn) !== wantedIndex || slotIndex(panel) !== wantedIndex) return;
-        var hash = window.location.hash;
+        var hash = linkOf(window.location.hash);
         // Consume a deep link once per page/header. Reapplying it for every
         // content mutation would undo a later click on Home or Favorites.
         if (appliedDeepLink && appliedDeepLink.hash === hash && appliedDeepLink.root === root &&
@@ -720,13 +748,55 @@
         }
     };
 
+    // Jellyfin treats every Home URL (?tab=N included) as the start page, so the Android app's
+    // back button exits the app from one of our tabs. The app's Back calls
+    // NavigationHelper.goBack(), which calls NativeInterface.exitApp() directly when the router
+    // cannot go back (AppHost.exit is not involved). On one of our tabs we select the Home tab
+    // instead (or close an open overlay), and the app exits as usual from there. NavigationHelper is injected by the app,
+    // so it is wrapped once it exists; other clients never define it.
+    (function wrapAppBack() {
+        var tries = 0;
+        function wrap() {
+            var nav = window.NavigationHelper;
+            if (!nav || typeof nav.goBack !== 'function') return false;
+            if (nav.goBack.__jeTabsBack) return true;
+            var original = nav.goBack;
+            nav.goBack = function () {
+                var active = isOnHomePage() && document.querySelector('.tabContent.pageTabContent.is-active');
+                var home = document.querySelector('.emby-tabs-slider .emby-tab-button[data-index="0"]');
+                var router = window.Emby && window.Emby.Page;
+                var canGoBack = router && typeof router.canGoBack === 'function' && router.canGoBack();
+                // The Recommendations category page and the More Info modal each hold a history
+                // entry and close on popstate, but this Back never reaches history on a Home URL.
+                if (!canGoBack && document.querySelector('.je-more-info-modal, #je-recommendations-category-page:not(.hide)')) {
+                    history.back();
+                    return;
+                }
+                if (!canGoBack && active && home && isOwnSlot(active)) {
+                    // The URL still says ?tab=N. Spend that deep link now: Jellyfin only reports
+                    // the tab change ~120 ms after the click, and syncDeepLink would re-select N.
+                    userPickedHash = linkOf(window.location.hash);
+                    home.click();
+                    return;
+                }
+                return original.apply(this, arguments);
+            };
+            nav.goBack.__jeTabsBack = true;
+            return true;
+        }
+        if (wrap()) return;
+        var timer = setInterval(function () {
+            if (wrap() || ++tries > 40) clearInterval(timer);
+        }, 500);
+    })();
+
     // A replacement Home root can arrive hidden and be revealed after the
     // view event. Child mutations alone miss that final class-only transition.
     JE.helpers.observeTabContainers('native-tabs', '.tabContent.pageTabContent[data-index="0"]', scheduleInject);
     // Re-inject on every navigation (hashchange, popstate AND pushState navs
     // the old raw hashchange listener missed).
     JE.core.navigation.onNavigate(function () {
-        if (window.location.hash !== rewrittenHash) {
+        if (linkOf(window.location.hash) !== rewrittenHash) {
             appliedDeepLink = null;
             userPickedHash = null;
         }

@@ -367,6 +367,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     statusTagsConfig.StatusTagsNewReleaseDays = Math.Clamp(statusTagsConfig.StatusTagsNewReleaseDays, 1, 365);
                 }
 
+                // Leaving soon source (Services tab, Maintainerr): a value the field's contract refuses keeps the
+                // stored one, since a save can come from anywhere (API, restored backup).
+                if (configuration is PluginConfiguration leavingConfig)
+                {
+                    var leavingProblems = Services.LeavingSoonService.NormalizeSource(leavingConfig, Configuration);
+                    foreach (var problem in leavingProblems)
+                        _logger.Warning($"Jellyfin Enhanced: Leaving soon setting not saved ({problem}); keeping the current value.");
+                }
+
                 // Logos tag group: unknown modes, regions and maximums fall back to the defaults.
                 if (configuration is PluginConfiguration logosConfig) LogoTagRules.Normalize(logosConfig);
                 // Custom tag rules: unknown match types dropped, values and labels trimmed,
@@ -614,6 +623,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
             bool catchUpExists = config.Value<JArray>("pages")!
                 .Any(x => x.Value<string>("Id") == $"{namespaceName}.CatchUpPage");
+            bool leavingSoonExists = config.Value<JArray>("pages")!
+                .Any(x => x.Value<string>("Id") == $"{namespaceName}.LeavingSoonPage");
 
             bool recommendationsExists = config.Value<JArray>("pages")!
                 .Any(x => x.Value<string>("Id") == $"{namespaceName}.RecommendationsPage");
@@ -756,6 +767,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 }
             }
 
+            // The Leaving soon page: added when enabled and using Plugin Pages, removed otherwise.
+            if (!leavingSoonExists && pluginConfig.LeavingSoonPageEnabled && pluginConfig.LeavingSoonPageUsePluginPages)
+            {
+                config.Value<JArray>("pages")!.Add(new JObject
+                {
+                    { "Id", $"{namespaceName}.LeavingSoonPage" },
+                    { "Url", $"{(supportsSubUrls ? "" : rootUrl)}/JellyfinEnhanced/leavingSoonPage" },
+                    { "DisplayText", "Leaving Soon" },
+                    { "Icon", "auto_delete" },
+                    { "Version", pluginPageConfigVersion }
+                });
+            }
+            else if (leavingSoonExists && (!pluginConfig.LeavingSoonPageEnabled || !pluginConfig.LeavingSoonPageUsePluginPages))
+            {
+                var leavingSoonPage = config.Value<JArray>("pages")!
+                    .FirstOrDefault(x => x.Value<string>("Id") == $"{namespaceName}.LeavingSoonPage");
+                if (leavingSoonPage != null)
+                {
+                    config.Value<JArray>("pages")!.Remove(leavingSoonPage);
+                }
+            }
+
             // Only add the catch up page if it's enabled and using plugin pages
             if (!catchUpExists && pluginConfig.CatchUpEnabled && pluginConfig.CatchUpUsePluginPages)
             {
@@ -794,7 +827,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             {
                 try
                 {
-                    foreach (var suffix in new[] { "CalendarPage", "DownloadsPage", "BookmarksPage", "HiddenContentPage", "ActivityPage", "CatchUpPage", "RecommendationsPage" })
+                    foreach (var suffix in new[] { "CalendarPage", "DownloadsPage", "BookmarksPage", "HiddenContentPage", "ActivityPage", "CatchUpPage", "LeavingSoonPage", "RecommendationsPage" })
                     {
                         var id = $"{namespaceName}.{suffix}";
                         removePage.Invoke(null, new object[] { id });
@@ -918,6 +951,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 new PluginPageInfo {
                     Name = "catchUpPage",
                     EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.CatchUpPage.html"
+                },
+                new PluginPageInfo {
+                    Name = "leavingSoonPage",
+                    EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.LeavingSoonPage.html"
                 }
             };
         }

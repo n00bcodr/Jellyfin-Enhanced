@@ -95,7 +95,6 @@
           this.createOverlay();
           this.setupKeyboardAccessibility();
           this.setupVideoObserver();
-          this.setupInteractionListeners();
         }
 
         getCredentials() {
@@ -536,6 +535,8 @@
         setupKeyboardAccessibility() {
           // Space/Enter resumes when overlay visible
           this.keyboardListener = (e) => {
+            // Keys typed in a JE dialog that handles its own keys (subtitle sync) are its own.
+            if (e.target && typeof e.target.closest === 'function' && e.target.closest('[data-je-own-keys]')) return;
             if (this.overlay.getAttribute('aria-hidden') === 'false') {
               if (JE.core.ui.isTvLayout() && this.handleRemoteKey(e)) return;
               if (e.code === 'Space' || e.code === 'Enter') {
@@ -591,6 +592,13 @@
               return;
             }
 
+            // A JE dialog that handles its own keys is open (subtitle sync): showing the pause
+            // screen would take its focus. Try again once it has closed.
+            if (document.querySelector('[data-je-own-keys]')) {
+              this.pauseScreenTimer = setTimeout(tryShowWhenIdle, 500);
+              return;
+            }
+
             const idleFor = Date.now() - this.lastUserInteractionAt;
             if (idleFor >= this.pauseScreenDelayMs) {
               if (this.syncing) {
@@ -614,7 +622,16 @@
           this.pauseScreenTimer = setTimeout(tryShowWhenIdle, this.pauseScreenDelayMs);
         }
 
+        /**
+         * Listen for the interaction that postpones the overlay, for as long
+         * as there is a video (handleVideoChange to clearState). The time of
+         * the last interaction is only read while a video is paused, and a
+         * pause sets it itself, so without a video these seven document
+         * listeners (wheel and mousemove among them) ran on every page for
+         * nothing.
+         */
         setupInteractionListeners() {
+          if (this.interactionListeners) return;
           // Track last mouse position for movement threshold
           let lastMouseX = null;
           let lastMouseY = null;
@@ -668,10 +685,21 @@
           }
         }
 
+        /** Stop listening for interaction (no video, or teardown). */
+        removeInteractionListeners() {
+          if (!this.interactionListeners) return;
+          this.interactionListeners.forEach(({ event, listener }) => {
+            document.removeEventListener(event, listener);
+          });
+          this.interactionListeners = null;
+        }
+
         async handleVideoChange(video) {
           this.clearState();
           this.currentVideo = video;
           this.cleanupListeners = this.attachVideoListeners(video);
+          this.lastUserInteractionAt = Date.now();
+          this.setupInteractionListeners();
 
           // Clear item cache on video change so a new item always fetches fresh data
           this.itemCache.clear();
@@ -1002,26 +1030,26 @@
         getLogoUrls(item, domain, itemId) {
           const urls = [];
           if (item.ImageTags?.Logo) {
-            urls.push(`${domain}/Items/${itemId}/Images/Logo?tag=${item.ImageTags.Logo}`);
+            urls.push(`${domain}/Items/${encodeURIComponent(itemId)}/Images/Logo?tag=${encodeURIComponent(item.ImageTags.Logo)}`);
           }
-          if (item.ParentId) urls.push(`${domain}/Items/${item.ParentId}/Images/Logo`);
-          if (item.SeriesId) urls.push(`${domain}/Items/${item.SeriesId}/Images/Logo`);
+          if (item.ParentId) urls.push(`${domain}/Items/${encodeURIComponent(item.ParentId)}/Images/Logo`);
+          if (item.SeriesId) urls.push(`${domain}/Items/${encodeURIComponent(item.SeriesId)}/Images/Logo`);
           return urls;
         }
 
         getDiscUrls(item, domain, itemId) {
-          const urls = [`${domain}/Items/${itemId}/Images/Disc`];
-          if (item.ParentId) urls.push(`${domain}/Items/${item.ParentId}/Images/Disc`);
-          if (item.SeriesId) urls.push(`${domain}/Items/${item.SeriesId}/Images/Disc`);
+          const urls = [`${domain}/Items/${encodeURIComponent(itemId)}/Images/Disc`];
+          if (item.ParentId) urls.push(`${domain}/Items/${encodeURIComponent(item.ParentId)}/Images/Disc`);
+          if (item.SeriesId) urls.push(`${domain}/Items/${encodeURIComponent(item.SeriesId)}/Images/Disc`);
           return urls;
         }
 
         getBackdropUrls(item, domain, itemId) {
           const urls = [
-            `${domain}/Items/${itemId}/Images/Backdrop`,
+            `${domain}/Items/${encodeURIComponent(itemId)}/Images/Backdrop`,
           ];
-          if (item.ParentId) urls.push(`${domain}/Items/${item.ParentId}/Images/Backdrop`);
-          if (item.SeriesId) urls.push(`${domain}/Items/${item.SeriesId}/Images/Backdrop`);
+          if (item.ParentId) urls.push(`${domain}/Items/${encodeURIComponent(item.ParentId)}/Images/Backdrop`);
+          if (item.SeriesId) urls.push(`${domain}/Items/${encodeURIComponent(item.SeriesId)}/Images/Backdrop`);
           return urls;
         }
 
@@ -1041,6 +1069,7 @@
           this.currentItemId = null;
           this.readyItemId = null;
           this.currentVideo = null;
+          this.removeInteractionListeners();
         }
 
         destroy() {
@@ -1053,12 +1082,7 @@
           if (this.observer) { this.observer.unsubscribe(); this.observer = null; }
 
           // Clean up interaction listeners
-          if (this.interactionListeners) {
-            this.interactionListeners.forEach(({ event, listener }) => {
-              document.removeEventListener(event, listener);
-            });
-            this.interactionListeners = null;
-          }
+          this.removeInteractionListeners();
 
           // Revoke blob URLs
           for (const url of this.imgBlobCache.values()) URL.revokeObjectURL(url);

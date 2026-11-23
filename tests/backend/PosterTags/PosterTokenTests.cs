@@ -27,7 +27,7 @@ public class PosterTokenTests : IDisposable
         const string version10Digest = "5c28225fcda7dccf";
         const string version11Digest = "223695b6d0444ff8";
         var settings = PosterTagSettings.FromSettingsJson("{\"LanguageTagsEnabled\":true,\"LanguageTagsShowSubtitles\":true,\"LanguageTagsStyle\":\"codes\"}", new());
-        Assert.Equal("39", PosterTagSettings.ResolverVersion);
+        Assert.Equal("40", PosterTagSettings.ResolverVersion);
         Assert.Equal("9.6", PosterTagComposer.PixelVersion);
         var service = Tokens();
         var old = service.Mint(user, item, version10Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
@@ -145,7 +145,7 @@ public class PosterTokenTests : IDisposable
     [InlineData("")]
     [InlineData("abcdef")]
     [InlineData("0000000000000000000000G")]
-    [InlineData("40000000000000000000000")]
+    [InlineData("80000000000000000000000")]
     [InlineData("000000000000000000000000")]
     public void Invalid_token_shapes_are_rejected(string? token) => Assert.False(PosterTagVariantToken.TryParse(token, out _));
 

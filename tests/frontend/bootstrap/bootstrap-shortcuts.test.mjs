@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, loadKeyCombo, plain } from '../helpers/harness.mjs';
 
-function setup(t, disabled = false) {
+function setup(t, disabled = false, shortcuts = { Shortcuts: [] }) {
   const actions = [], saves = [];
   const h = createHarness({ html: '<video></video><input id="typing"><div id="help"><div><kbd tabindex="0" class="shortcut-key" data-action="CycleAudioTracks">A</kbd></div><div></div></div>',
     JE: { pluginConfig: { DisableAllShortcuts: disabled }, currentSettings: {}, state: { activeShortcuts: { CycleAudioTracks: 'A', CycleSubtitleTracks: 'S', GoToHome: 'H', JumpToPercentage: '' } },
-      userConfig: { shortcuts: { Shortcuts: [] } }, t: key => key, saveUserSettings: (...args) => saves.push(args),
+      userConfig: { shortcuts }, t: key => key, saveUserSettings: (...args) => saves.push(args),
       isVideoPage: () => true, cycleAudioTrack: () => actions.push('audio'), cycleSubtitleTrack: () => actions.push('subtitle'),
       showEnhancedPanel: () => actions.push('panel'),
       injectGlobalStyles() {}, addPluginMenuButton() {}, addUserMenuLink() {}, addRandomButton() {}, applySavedStylesWhenReady() {},
@@ -96,4 +96,13 @@ test('administrator disabling shortcuts leaves panel key available but player bi
   h.press(h.document.body, 'a'); h.press(h.document.body, '?');
   assert.deepEqual(h.actions, ['panel']);
   h.key.focus(); h.press(h.key, 'z'); assert.equal(h.saves.length, 0);
+});
+
+// The overrides are saved whole: when they did not load (null), a rebind would replace every stored one.
+test('shortcut overrides that did not load cannot be rebound, disabled or reset', t => {
+  const h = setup(t, false, null);
+  for (const press of ['q', 'Delete', 'Backspace']) { h.key.focus(); h.press(h.key, press); }
+  assert.equal(h.saves.length, 0);
+  assert.equal(h.JE.state.activeShortcuts.CycleAudioTracks, 'A');
+  assert.equal(h.JE.userConfig.shortcuts, null);
 });
