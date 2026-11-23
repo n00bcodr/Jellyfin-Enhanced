@@ -29,6 +29,9 @@ moreInfoModal.open = async function(tmdbId, mediaType) {
         // Fetch details first so the modal can open immediately
         const data = await internal.fetchMediaDetails(tmdbId, mediaType);
         if (generation !== openGeneration) return;
+        // The streaming row follows the user's Seerr streaming region (cached after the first open).
+        if (JE?.pluginConfig?.ElsewhereUseSeerrRegion) await JE.jellyseerrAPI?.getStreamingRegion?.();
+        if (generation !== openGeneration) return;
         if (!data) {
             internal.showError('Failed to load media information');
             return;

@@ -50,7 +50,9 @@
   function isOnHomePage() {
     var hash = window.location.hash;
     return hash === '' || hash === '#/home' || hash === '#/home.html'
-      || hash.indexOf('#/home?') !== -1 || hash.indexOf('#/home.html?') !== -1;
+      || hash.indexOf('#/home?') !== -1 || hash.indexOf('#/home.html?') !== -1
+      // (Or only the Recommendations filters' fragment after it: see discovery-address.js.)
+      || hash.indexOf('#/home#') === 0 || hash.indexOf('#/home.html#') === 0;
   }
 
   /** Wait for JE.recommendationsPage to be ready before initializing (30s timeout). */
@@ -113,11 +115,10 @@
     function tryMount() {
       if (!isOnHomePage()) return;
 
+      // A rendered container that is only hidden (another Home tab, or the category page over
+      // #indexPage) keeps its content; remounting wiped it and reloaded every row on return.
       var container = findActiveContainer();
-      if (!container) {
-        lastMountedContainer = null;
-        return;
-      }
+      if (!container) return;
 
       var shouldMount = container !== lastMountedContainer
         || !container.hasChildNodes()

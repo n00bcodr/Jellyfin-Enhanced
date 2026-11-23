@@ -46,6 +46,10 @@ function snapshot(page, settings, view) {
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       JE.core.tagLayout.flushFit();
     }
+    // The whole-pixel pass follows a fit after the next paint: settled here too, so the DOM compared below is
+    // the one the page comes to rest in (with the containers' nudges, where the browser has any).
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    JE.core.tagLayout.flushSnap();
     const wrapping = '.je-tag-caption, .je-tag-slot[data-je-slot="bottom"], .je-tag-slot[data-je-slot="hover"], .je-tag-slot[data-je-slot="tc"], .je-tag-slot[data-je-slot="bc"]';
     const slots = Array.from(document.querySelectorAll(wrapping)).map((slot) => {
       const chips = Array.from(slot.querySelectorAll(':scope > [data-je-group] > *')).filter((c) => !c.classList.contains('je-tag-more'));

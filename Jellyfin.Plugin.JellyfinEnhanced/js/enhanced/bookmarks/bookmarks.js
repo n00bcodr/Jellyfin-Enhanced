@@ -612,14 +612,58 @@
       : `${m}:${s.toString().padStart(2, '0')}`;
   }
 
+  // Jellyfin Desktop and Jellyfin Media Player play through mpv and have no <video>: their position,
+  // duration and seeking go through jellyfin-web's OSD (enhanced/player/osd-playback.js).
+
+  /**
+   * The player's position in seconds.
+   * @param {HTMLVideoElement|null} video
+   * @returns {number|null} Null when a player without a <video> shows no position.
+   */
+  function playerPositionSeconds(video) {
+    if (video) return video.currentTime || 0;
+    const position = JE.internals?.osdPlayback?.positionSeconds?.();
+    return typeof position === 'number' ? position : null;
+  }
+
+  /**
+   * The playing item's duration in seconds.
+   * @param {HTMLVideoElement|null} video
+   * @returns {number|null}
+   */
+  function playerDurationSeconds(video) {
+    if (video) return video.duration;
+    const duration = JE.internals?.osdPlayback?.durationSeconds?.();
+    return typeof duration === 'number' ? duration : null;
+  }
+
+  /**
+   * Seeks the player.
+   * @param {HTMLVideoElement|null} video
+   * @param {number} seconds
+   * @returns {boolean} False when a player without a <video> could not be sought.
+   */
+  function seekPlayer(video, seconds) {
+    if (video) {
+      video.currentTime = seconds;
+      return true;
+    }
+    return !!JE.internals?.osdPlayback?.seekTo?.(seconds);
+  }
+
   /**
    * Create visual bookmark markers in video OSD
+   * @param {HTMLVideoElement|null} video The player's element, or null for a player without one.
+   * @param {Array} bookmarksList
    */
   function createBookmarkMarkers(video, bookmarksList) {
     console.log(`${logPrefix} createBookmarkMarkers called - video:`, !!video, 'bookmarks:', bookmarksList.length);
 
-    if (!video || !bookmarksList.length) {
-      console.log(`${logPrefix} Early return - no video or no bookmarks`);
+    if (!bookmarksList.length) {
+      // Still clear markers drawn for an earlier list (e.g. the last bookmark
+      // was just deleted), so none stay on the seek bar
+      document.querySelectorAll('.videoOsdBottom .je-bookmark-marker').forEach(el => el.remove());
+      console.log(`${logPrefix} Early return - no bookmarks`);
       return;
     }
 
@@ -654,7 +698,7 @@
     console.log(`${logPrefix} Removing ${existingMarkers.length} existing markers`);
     existingMarkers.forEach(el => el.remove());
 
-    const duration = video.duration;
+    const duration = playerDurationSeconds(video);
     if (!duration || !isFinite(duration)) {
       console.log(`${logPrefix} Invalid duration:`, duration);
       return;
@@ -699,7 +743,7 @@
       // Click to jump to bookmark
       marker.addEventListener('click', (e) => {
         e.stopPropagation();
-        video.currentTime = bookmark.timestamp;
+        if (!seekPlayer(document.querySelector('.videoPlayerContainer video') || video, bookmark.timestamp)) return;
         JE.toast(`${JE.t('toast_jumped_to_bookmark')}: ${formatTimestamp(bookmark.timestamp)}`, 2000);
       });
 
@@ -717,8 +761,8 @@
     console.log(`${logPrefix} updateBookmarkMarkersForCurrentVideo called`);
 
     const video = document.querySelector('.videoPlayerContainer video');
-    if (!video) {
-      console.log(`${logPrefix} No video element found`);
+    if (!video && playerDurationSeconds(null) === null) {
+      console.log(`${logPrefix} No video element or OSD duration found`);
       return;
     }
 
@@ -753,7 +797,12 @@
    */
   async function showBookmarkModal(mode = 'add', existingBookmark = null) {
     const video = document.querySelector('.videoPlayerContainer video');
-    const currentTime = video?.currentTime || 0;
+    const currentTime = playerPositionSeconds(video);
+    if (mode === 'add' && currentTime === null) {
+      // Never save a bookmark at a position that could not be read.
+      JE.toast(JE.t('toast_player_unsupported'), 3000);
+      return;
+    }
 
     const itemData = getCurrentItemData();
     if (!itemData) {
@@ -777,7 +826,7 @@
 
     const isEdit = mode === 'edit' && existingBookmark;
     const title = isEdit ? JE.t('bookmark_edit_title') : (mode === 'view' ? 'Your Bookmarks' : JE.t('bookmark_add_title'));
-    const timestamp = isEdit ? existingBookmark.timestamp : currentTime;
+    const timestamp = isEdit ? existingBookmark.timestamp : (currentTime ?? 0);
     const label = isEdit ? existingBookmark.label : '';
 
     const formHtml = `
@@ -1201,8 +1250,7 @@
       btn.addEventListener('click', () => {
         const bookmarkId = btn.dataset.bookmarkId;
         const bookmark = existingBookmarks.find(bm => bm.id === bookmarkId);
-        if (bookmark && video) {
-          video.currentTime = bookmark.timestamp;
+        if (bookmark && seekPlayer(document.querySelector('.videoPlayerContainer video') || video, bookmark.timestamp)) {
           JE.toast(`${JE.t('toast_jumped_to_bookmark')}: ${formatTimestamp(bookmark.timestamp)}`, 2000);
           closeDialog();
         }
@@ -1308,7 +1356,10 @@
 
       function getOsdKey() {
         const video = document.querySelector('.videoPlayerContainer video');
-        return video?.currentSrc || video?.src || window.location.href;
+        if (video) return video.currentSrc || video.src || window.location.href;
+        // A player without a <video>: the item the OSD shows.
+        const osdItem = JE.internals?.osdPlayback?.itemKey?.();
+        return osdItem === null || osdItem === undefined ? null : `${window.location.href}|${osdItem}`;
       }
 
       // Debounced OSD injection - prevents rapid re-injection
@@ -1319,8 +1370,9 @@
         const video = document.querySelector('.videoPlayerContainer video');
         const currentOsdKey = getOsdKey();
 
-        // Only inject if OSD exists and we haven't already injected for this video
-        if (osdBottom && video && currentOsdKey !== lastInjectedOsdKey) {
+        // Only inject if OSD exists and we haven't already injected for this video (a player
+        // without a <video> once its OSD shows the item's duration)
+        if (osdBottom && (video || currentOsdKey) && currentOsdKey !== lastInjectedOsdKey) {
           updateBookmarkMarkersForCurrentVideo();
           addOsdBookmarkButton();
           lastInjectedOsdKey = currentOsdKey;

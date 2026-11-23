@@ -194,19 +194,21 @@ test('addresses open the tab at their section: the tab\'s own, older jeSection i
 test('links to the page itself (the Display card, the tab\'s own links) open in place, without navigating', async (t) => {
   const h = boot(t);
   await h.settle();
-  const before = h.window.location.hash;
+  // The address follows the open section (replaceState, no navigation), so compare the page it names, not the whole hash.
+  const page = () => h.window.location.hash.split('&')[0];
+  const before = page();
   const link = h.document.querySelector('#mediaTagsCard .je-media-tags-card-link[href$="tab=colours"]');
   assert.ok(link, 'the Display card links to the Colours section');
   link.click();
   await h.until(() => h.root.dataset.tab === 'colours', 'the card link opened Colours');
-  assert.equal(h.window.location.hash, before, 'the page was not navigated (unsaved changes elsewhere would be lost)');
+  assert.equal(page(), before, 'the page was not navigated (unsaved changes elsewhere would be lost)');
   // The tab's link to a main-page setting (Status badges → TMDB key, in Connections › Services) opens there in place too.
   h.root.querySelector('#jeTaTab-badges').click();
   const tmdb = h.root.querySelector('a[href*="tab=services"]');
   assert.ok(tmdb);
   tmdb.click();
   await h.settle();
-  assert.equal(h.window.location.hash, before);
+  assert.equal(page(), before);
   assert.ok(h.document.getElementById('services').classList.contains('active'), 'the Services tab opened');
   // The Enhanced panel's pointer (outside the page, over it): opened in place too.
   const hub = h.document.createElement('a');
@@ -214,7 +216,7 @@ test('links to the page itself (the Display card, the tab\'s own links) open in 
   h.document.body.appendChild(hub);
   hub.click();
   await h.until(() => h.root.dataset.tab === 'server', 'the panel pointer opened Server');
-  assert.equal(h.window.location.hash, before);
+  assert.equal(page(), before);
   // A link inside another (older) view of a page is that view's business.
   const other = h.document.createElement('div');
   other.dataset.role = 'page';
@@ -337,8 +339,7 @@ test('searching and clearing the search leaves the Media Tags tab as it was', as
   const input = h.document.getElementById('settingsSearchInput');
   input.value = 'rating';
   input.dispatchEvent(new h.window.Event('input', { bubbles: true }));
-  await sleep(250);
-  assert.ok(h.form.classList.contains('je-search-mode'));
+  await h.until(() => h.form.classList.contains('je-search-mode'), 'the search debounce ran');
   input.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await h.settle();
   assert.equal(h.form.classList.contains('je-search-mode'), false);
@@ -455,4 +456,30 @@ test('a tab that cannot be drawn says so, and its message and button name the sa
   button.click();
   await h.until();
   assert.equal(h.root.querySelector('[role="alert"]'), null, 'Retry draws the tab');
+});
+
+test('the tab\'s confirmations use the page\'s own dialog, not Jellyfin\'s, which builds the page again when it closes', async (t) => {
+  const h = boot(t);
+  const asked = [];
+  let answer = false;
+  h.window.JEAdmin.confirm = async (text, title) => { asked.push(title); return answer; };
+  h.window.Dashboard.confirm = () => assert.fail('Jellyfin\'s dialog adds a history entry and goes back when it closes');
+  await h.settle();
+  h.tabButton('media-tags').click();
+  await h.until(() => h.root.querySelector('#jeTaApplyAll'), 'the Overview drew');
+  const resets = () => h.calls.filter((c) => c.kind === 'post' && c.path.endsWith('/reset-all-users-settings')).length;
+  // Cancel: nothing is applied.
+  h.root.querySelector('#jeTaApplyAll').click();
+  await h.settle(40);
+  assert.deepEqual(asked, ['Apply defaults to all users']);
+  assert.equal(resets(), 0);
+  // Confirmed: the defaults go to every user.
+  answer = true;
+  h.root.querySelector('#jeTaApplyAll').click();
+  await h.until(() => resets() === 1, 'the defaults were applied');
+  // The other confirmations in the tab ask the same way.
+  answer = false;
+  h.root.querySelector('[data-ov="rebuild"]').click();
+  await h.settle(40);
+  assert.deepEqual(asked, ['Apply defaults to all users', 'Apply defaults to all users', 'Rebuild the server tag cache?']);
 });

@@ -23,6 +23,7 @@
   const hydrateExternalLinks = P.hydrateExternalLinks;
   const loadAllData = P.loadAllData;
   const handleRequestAction = P.handleRequestAction;
+  const handleRemoveRequest = P.handleRemoveRequest;
 
   function buildRequestsSection() {
     let html = "";
@@ -435,6 +436,14 @@
         e.preventDefault();
         e.stopPropagation();
         handleRequestAction(declineBtn, 'decline');
+        return;
+      }
+
+      const removeBtn = e.target.closest('.je-request-remove-btn');
+      if (removeBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleRemoveRequest(removeBtn);
         return;
       }
 

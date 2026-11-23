@@ -240,3 +240,14 @@ test('subscribing during priority dispatch does not revisit the current subscrib
  JE.core.dom.onBodyMutation('first',()=>{calls++;if(calls===1)JE.core.dom.onBodyMutation('new',()=>{}, {priority:2});},{priority:1});
  document.body.append(document.createElement('div'));await Promise.resolve();assert.equal(calls,1);
 });
+
+test('chips drawn inside a card tag host do not wake body subscribers; the host coming or going does',async t=>{
+  const {JE,document}=setup(t,{html:'<div class="cardScalable"><div class="je-tag-host"><div class="je-tag-slot"></div></div></div>'},['dom-observer']);let calls=0;
+  JE.core.dom.onBodyMutation('test',()=>calls++,{priority:1});
+  const slot=document.querySelector('.je-tag-slot');
+  slot.append(document.createElement('div'));await Promise.resolve();assert.equal(calls,0,'a chip added');
+  slot.firstChild.remove();await Promise.resolve();assert.equal(calls,0,'a chip removed');
+  slot.append(document.createElement('div'));document.body.append(document.createElement('div'));await Promise.resolve();
+  assert.equal(calls,1,'a batch with other content is still dispatched');
+  document.querySelector('.je-tag-host').remove();await Promise.resolve();assert.equal(calls,2,'the host itself');
+});

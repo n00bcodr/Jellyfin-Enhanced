@@ -30,6 +30,8 @@
     let progressTimer = null;
     let hardTimeout = null;
     let isHidden = false;
+    /** @type {HTMLCollectionOf<Element>|null} Live .bar-loading collection, created on first use. */
+    let barLoadingElements = null;
 
     /**
      * Installs preemptive CSS to hide competing splash screens before rendering
@@ -88,7 +90,19 @@
      * Removes any media-bar splash elements from the DOM
      */
     function removeMediaBarSplash() {
-        const mediaBarElements = document.querySelectorAll('#page-loader, .bar-loading:not(.je-loading)');
+        // Polled for a while after the splash goes (see hideSplashScreen), so
+        // it asks the document's id and class indexes instead of matching a
+        // selector list against every element on each tick.
+        const mediaBarElements = [];
+        const loader = document.getElementById('page-loader');
+        if (loader) {
+            // An id can be duplicated; the index only answers with the first.
+            mediaBarElements.push(...document.querySelectorAll('#page-loader'));
+        }
+        barLoadingElements ??= document.getElementsByClassName('bar-loading');
+        for (const element of barLoadingElements) {
+            if (!element.classList.contains('je-loading')) mediaBarElements.push(element);
+        }
         mediaBarElements.forEach(element => {
             if (element && element.parentNode) {
                 console.log('🪼 Jellyfin Enhanced: Removing media-bar splash element');

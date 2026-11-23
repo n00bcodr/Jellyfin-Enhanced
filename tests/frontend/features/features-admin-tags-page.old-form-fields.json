@@ -94,10 +94,7 @@
     "statusTagsScenes": "StatusTagsScenes",
     "statusTagsLeaving": "StatusTagsLeaving",
     "statusTagsDirectPlay": "StatusTagsDirectPlay",
-    "leavingSoonMaintainerrUrl": "LeavingSoonMaintainerrUrl",
-    "leavingSoonMaintainerrApiKey": "LeavingSoonMaintainerrApiKey",
-    "leavingSoonCollections": "LeavingSoonCollections",
-    "leavingSoonRefreshHours": "LeavingSoonRefreshHours"
+    "leavingSoonCollections": "LeavingSoonCollections"
   },
   "unmapped": [
     "ratingTagsSources",

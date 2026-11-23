@@ -48,6 +48,9 @@
      */
     function placeSection(anchor, section, page) {
         if (page === 'detail') {
+            // Detail sections are flex children; some themes give Jellyfin's own lists a positive
+            // `order`, which would put this section above them. Keep it last.
+            section.style.order = '99';
             const view = anchor.closest('.itemDetailPage') ?? anchor;
             (view.querySelector('.detailPagePrimaryContent .detailSection') ?? anchor).appendChild(section);
             attachJoin(section, false);

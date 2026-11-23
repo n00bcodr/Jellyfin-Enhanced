@@ -1533,8 +1533,10 @@
         },
         buildCss() {
             // Generate CSS rules from the color configuration
-            const rules = Object.entries(qualityColors).map(([k, v]) => {
-                return JE.core.tagRenderer.chipBaseCss(`.${overlayClass}`) + `.${containerClass} .${overlayClass}[data-quality="${k}"] {
+            // The chip box (padding, font size, media queries) is the same for every colour, so it is written
+            // once; only the two colours differ per quality.
+            const rules = JE.core.tagRenderer.chipBaseCss(`.${overlayClass}`) + Object.entries(qualityColors).map(([k, v]) => {
+                return `.${containerClass} .${overlayClass}[data-quality="${k}"] {
                     background: ${v.bg} !important;
                     color: ${v.text} !important;
                 }`;
@@ -1717,22 +1719,20 @@
         document.addEventListener('viewshow', () => {
             clearInterval(versionPickerTimer);
             const id = detailId();
-            const want = id && selectedSourceFor(id);
-            if (!want) return;
+            if (!id || !selectedSourceFor(id)) return;
             const owner = sourcePrefKey();
-            // Jellyfin fills the picker after the page shows.
+            // Jellyfin fills the picker after the page shows, and can fill it again (a refresh of the
+            // item) after we selected: keep the picker on the current pick for the whole window, so the
+            // poster (which follows the pick) and the picker cannot disagree. The pick is read on every
+            // tick, so a version the user chooses meanwhile is never undone.
             let tries = 0;
             const timer = versionPickerTimer = setInterval(() => {
-                if (detailId() !== id || sourcePrefKey() !== owner) { clearInterval(timer); return; }
+                if (detailId() !== id || sourcePrefKey() !== owner || ++tries > 30) { clearInterval(timer); return; }
+                const want = selectedSourceFor(id);
                 const select = document.querySelector('#itemDetailPage:not(.hide) .selectSource');
-                if (select && select.options.length > 1) {
-                    clearInterval(timer);
-                    if (select.value !== want && [...select.options].some((o) => o.value === want)) {
-                        select.value = want;
-                        select.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                } else if (++tries > 20) {
-                    clearInterval(timer);
+                if (want && select && select.options.length > 1 && select.value !== want && [...select.options].some((o) => o.value === want)) {
+                    select.value = want;
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             }, 300);
         });

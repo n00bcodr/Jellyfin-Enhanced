@@ -14,20 +14,61 @@
             console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: Feature is disabled in plugin settings.');
             return;
         }
+        /**
+         * The URL the custom branding icon loads from. An uploaded icon wins over the
+         * URL setting. Root-relative paths to Jellyfin's own routes (/web/…,
+         * /JellyfinEnhanced/…) are resolved through ApiClient so they keep working
+         * when Jellyfin runs under a base path such as /jellyfin. Keep in step with
+         * resolveElsewhereIconUrl in Configuration/configPage.html.
+         * @param {string} configuredUrl - The Custom Branding Icon URL setting.
+         * @param {string} uploadVersion - Upload version from public-config; empty when none.
+         * @returns {string} The icon URL, or '' for no icon.
+         */
+        function resolveBrandingIconUrl(configuredUrl, uploadVersion) {
+            const api = window.ApiClient;
+            const serverUrl = (path, params) => {
+                if (!api || typeof api.getUrl !== 'function') return null;
+                try {
+                    return api.getUrl(path, params);
+                } catch (e) {
+                    return null;
+                }
+            };
+            if (uploadVersion) {
+                const uploaded = serverUrl('/JellyfinEnhanced/ElsewhereBrandingIcon', { v: uploadVersion });
+                if (uploaded) return uploaded;
+            }
+            const url = String(configuredUrl || '').trim();
+            if (/^\/(web|JellyfinEnhanced)\//i.test(url)) {
+                return serverUrl(url) || url;
+            }
+            return url;
+        }
+
         // --- Configuration ---
         const TmdbEnabled = !!JE.pluginConfig.TmdbEnabled;
         const DEFAULT_REGION = JE.pluginConfig.DEFAULT_REGION || 'US';
         const DEFAULT_PROVIDERS = JE.pluginConfig.DEFAULT_PROVIDERS ? JE.pluginConfig.DEFAULT_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
         const IGNORE_PROVIDERS = JE.pluginConfig.IGNORE_PROVIDERS ? JE.pluginConfig.IGNORE_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
         const ELSEWHERE_CUSTOM_BRANDING_TEXT = JE.pluginConfig.ElsewhereCustomBrandingText || '';
-        const ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL = JE.pluginConfig.ElsewhereCustomBrandingImageUrl || '';
-        const SEASON_PROVIDERS_ADMIN = JE.pluginConfig.ElsewhereSeasonProviders !== false;
+        const ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL = resolveBrandingIconUrl(
+            JE.pluginConfig.ElsewhereCustomBrandingImageUrl,
+            JE.pluginConfig.ElsewhereCustomBrandingIconVersion);
+        // Without a TMDB key, provider data comes from Seerr's movie/tv detail
+        // (its watchProviders field). Seerr has no per-season providers.
+        const UseSeerrProviders = !TmdbEnabled && !!JE.pluginConfig.JellyseerrEnabled;
+        const SEASON_PROVIDERS_ADMIN = TmdbEnabled && JE.pluginConfig.ElsewhereSeasonProviders !== false;
 
-        if (!TmdbEnabled) {
-            console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: TMDB is not configured, skipping initialization');
+        if (!TmdbEnabled && !UseSeerrProviders) {
+            console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: Neither TMDB nor Seerr is configured, skipping initialization');
             return;
         }
 
+        // Admin option: providers use the user's Seerr "Streaming Region" instead
+        // of the Default Region / the user's Elsewhere country.
+        const FollowSeerrRegion = !!JE.pluginConfig.ElsewhereUseSeerrRegion && !!JE.pluginConfig.JellyseerrEnabled;
+        let seerrRegion = null;
+        let savedRegion = ''; // the user's own pick, kept untouched while Seerr's region is in effect
         let userRegion = DEFAULT_REGION;
         let userRegions = []; // Multiple regions for search
         let userServices = []; // Empty by default - will show all services from settings region
@@ -355,6 +396,7 @@
                         <label style="font-weight: 600; color: #ccc;">${JE.t('elsewhere_settings_country')}</label>
                         <button type="button" id="reset-region-btn" title="Reset to plugin default" style="display: flex; align-items: center; justify-content: center; background: transparent; border: none; color: #999; cursor: pointer; padding: 2px; border-radius: 4px;"></button>
                     </div>
+                    <div id="seerr-region-note" style="display: none; margin-bottom: 6px; font-size: 12px; color: #999;"></div>
                     <select id="region-select" style="width: 100%; padding: 12px; border: 1px solid #444; border-radius: 6px; background: #2a2a2a; color: #fff; font-size: 14px;">
                         ${Object.entries(availableRegions).map(([code, name]) =>
                             `<option value="${code}" ${code === userRegion ? 'selected' : ''}>${name}</option>`
@@ -422,7 +464,7 @@
             };
 
             document.getElementById('save-settings').onclick = () => {
-                userRegion = document.getElementById('region-select').value;
+                if (!(FollowSeerrRegion && seerrRegion)) userRegion = document.getElementById('region-select').value;
 
                 // Get selected regions from autocomplete
                 const selectedRegions = [];
@@ -448,7 +490,7 @@
                 modal.style.display = 'none';
 
                 const elsewhereSettings = {
-                    Region: userRegion,
+                    Region: (FollowSeerrRegion && seerrRegion) ? savedRegion : userRegion,
                     Regions: userRegions,
                     Services: userServices,
                     SeasonProviders: userSeasonProviders
@@ -467,7 +509,8 @@
         // Load saved settings
         function loadSettings() {
             const settings = JE.userConfig.elsewhere || {};
-            userRegion = settings.Region || DEFAULT_REGION;
+            savedRegion = settings.Region || '';
+            userRegion = (FollowSeerrRegion && seerrRegion) || savedRegion || DEFAULT_REGION;
             userRegions = settings.Regions || [];
             userServices = settings.Services || [];
             userSeasonProviders = settings.SeasonProviders !== false;
@@ -478,7 +521,47 @@
         // This closure survives an SPA logout/login, so re-read the incoming
         // user's saved regions/services once their config has been reloaded —
         // otherwise user B keeps browsing with user A's Elsewhere preferences.
-        document.addEventListener('je:user-data-loaded', loadSettings);
+        document.addEventListener('je:user-data-loaded', () => {
+            loadSettings();
+            refreshSeerrRegion();
+        });
+
+        // Following Seerr: the country comes from the user's Seerr "Streaming
+        // Region", so the picker is locked and says so. A failure keeps the
+        // saved/default region.
+        // True once Seerr's streaming region is the one in effect (option on and region known).
+        function followingSeerrRegion() { return FollowSeerrRegion && !!seerrRegion; }
+
+        function updateSeerrRegionNote() {
+            const note = document.getElementById('seerr-region-note');
+            const select = document.getElementById('region-select');
+            const active = FollowSeerrRegion && !!seerrRegion;
+            if (select) select.disabled = active;
+            // "Other Countries" is ignored while Seerr's region is in effect.
+            const others = document.getElementById('regions-autocomplete');
+            if (others?.parentElement) others.parentElement.style.display = active ? 'none' : '';
+            if (!note) return;
+            if (!active) {
+                note.style.display = 'none';
+                return;
+            }
+            note.textContent = JE.t('elsewhere_settings_seerr_region', { region: availableRegions[seerrRegion] || seerrRegion });
+            note.style.display = '';
+        }
+
+        async function refreshSeerrRegion() {
+            if (!FollowSeerrRegion) return;
+            try {
+                const data = await JE.core.api.fetch(ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/streaming-region'));
+                seerrRegion = /^[A-Z]{2}$/.test(data?.region || '') ? data.region : null;
+            } catch (e) {
+                seerrRegion = null;
+            }
+            loadSettings();
+            const select = document.getElementById('region-select');
+            if (select) select.value = userRegion;
+            updateSeerrRegionNote();
+        }
 
         function createServiceBadge(service, tmdbId, mediaType) {
             const badge = document.createElement('div');
@@ -535,7 +618,36 @@
         // Fetch streaming data. Kept in the core response cache (30 minutes,
         // dropped on a user switch; the same key the Seerr TMDB helper would use)
         // so revisiting a title costs no request — the server keeps it for hours.
+        // Seerr returns watchProviders as [{iso_3166_1, link, flatrate:[{id,name,logoPath}]}];
+        // reshape to TMDB's {results:{REGION:{link,flatrate:[{provider_name,logo_path}]}}}
+        function seerrToTmdbProviders(detail) {
+            const conv = list => (list || []).map(p => ({
+                provider_id: p.id,
+                provider_name: p.name,
+                logo_path: p.logoPath,
+                display_priority: p.displayPriority
+            }));
+            const results = {};
+            (detail?.watchProviders || []).forEach(r => {
+                results[r.iso_3166_1] = {
+                    link: r.link,
+                    flatrate: conv(r.flatrate),
+                    rent: conv(r.rent),
+                    buy: conv(r.buy),
+                    ads: conv(r.ads)
+                };
+            });
+            return { results };
+        }
+
         function fetchStreamingData(tmdbId, mediaType, callback) {
+            if (UseSeerrProviders) {
+                const seerrUrl = ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr/${mediaType}/${tmdbId}`);
+                JE.core.api.fetch(seerrUrl, { cacheKey: `seerr-providers:${mediaType}:${tmdbId}` })
+                    .then(detail => callback(null, seerrToTmdbProviders(detail)))
+                    .catch(error => callback(error.message || 'Could not load streaming info from Seerr.'));
+                return;
+            }
             const path = `/${mediaType}/${tmdbId}/watch/providers`;
             const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`);
             JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` })
@@ -820,10 +932,6 @@
 
                 // Add custom icon if URL is provided
                 if (ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL) {
-                    title.style.display = 'flex';
-                    title.style.alignItems = 'center';
-                    title.style.gap = '8px';
-
                     const icon = document.createElement('img');
                     icon.src = ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL;
                     icon.alt = 'Custom Branding';
@@ -834,7 +942,12 @@
                         object-fit: contain;
                         margin-left: 4px;
                     `;
-                    icon.onerror = () => icon.style.display = 'none';
+                    icon.onerror = () => {
+                        icon.style.display = 'none';
+                        console.warn(JE.pluginConfig.ElsewhereCustomBrandingIconVersion
+                            ? `🪼 Jellyfin Enhanced: the uploaded Elsewhere custom branding icon failed to load from "${ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL}". Re-upload it in the plugin settings.`
+                            : `🪼 Jellyfin Enhanced: Elsewhere custom branding icon failed to load from "${ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL}". It must be a web address the browser can open, not a server file path.`);
+                    };
                     title.appendChild(icon);
                 }
             } else {
@@ -853,6 +966,13 @@
                 display: flex;
                 align-items: flex-end;
             `;
+
+            // The cssText above replaces every inline style, so centre the
+            // custom branding icon against the message after it.
+            if (title.querySelector('.elsewhere-custom-branding-icon')) {
+                title.style.alignItems = 'center';
+                title.style.gap = '8px';
+            }
 
             // Add JustWatch link if available and has filtered services
             if (hasFilteredServices && linkUrl) {
@@ -1037,7 +1157,7 @@
                     }
 
                     // Show results for multiple regions
-                    const regionsToSearch = userRegions.length > 0 ? userRegions : [userRegion];
+                    const regionsToSearch = (!followingSeerrRegion() && userRegions.length > 0) ? userRegions : [userRegion];
 
                     let hasAnyResults = false;
                     const unavailableRegions = [];
@@ -1372,6 +1492,7 @@
         // --- Initialization ---
         loadRegionsAndProviders();
         loadSettings();
+        refreshSeerrRegion();
 
         // Use deferred initialization with requestIdleCallback
         if (typeof requestIdleCallback !== 'undefined') {

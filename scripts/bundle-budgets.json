@@ -1,0 +1,316 @@
+{
+  "description": "Budget for what a cold Home load downloads and runs under the component-group loader (js/plugin.js, js/component-groups.json). Checked by tests/frontend/bootstrap/bootstrap-bundle-budget.test.mjs, which boots the real loader with the real manifest and groups file for each scenario and reads the groups it asks for before JE.initialized. Per scenario: the exact list of groups, the module count, raw bytes (sum of the module files) and gzip bytes (level 9 of the module files concatenated in run order). Scenarios: allFeaturesOn (every user-facing feature on as on the performance-review lab, every poster tag type on, JE native Home tabs for the pages, administrator), defaults (PluginConfiguration.cs stock defaults, a user with no saved settings), tagsOnly (defaults plus the nine poster tag types). Also: core's raw bytes, allFeaturesOn's share of the whole manifest's raw bytes, and a ceiling for any one group other than core, tags, seerr and settings. HOW TO UPDATE: run `node scripts/bundle-budgets.mjs` to print today's numbers. When the group list of a scenario changes on purpose, copy it into measured.scenarios. To change a limit, add a history entry (date, change, measured, limits, reason) and copy its limits into `limits`: `limits` is always the last entry's. It is a ratchet: lowering a limit needs no reason; an entry that raises any limit must say why in `reason`. Headroom is about 3% over the measured value.",
+  "limits": {
+    "scenarios": {
+      "allFeaturesOn": {
+        "maxModules": 74,
+        "maxRawBytes": 2018000,
+        "maxGzipBytes": 506000
+      },
+      "defaults": {
+        "maxModules": 33,
+        "maxRawBytes": 636000,
+        "maxGzipBytes": 165000
+      },
+      "tagsOnly": {
+        "maxModules": 54,
+        "maxRawBytes": 1699000,
+        "maxGzipBytes": 431000
+      }
+    },
+    "coreMaxRawBytes": 488000,
+    "allFeaturesOnMaxShareOfManifestRaw": 0.45,
+    "groupMaxRawBytes": 270000
+  },
+  "measured": {
+    "manifest": {
+      "modules": 196,
+      "rawBytes": 5323415,
+      "gzipBytes": 1268436
+    },
+    "scenarios": {
+      "allFeaturesOn": {
+        "groups": [
+          "core",
+          "tags",
+          "tag-direct-play",
+          "tag-poster-colours",
+          "spoiler-guard",
+          "hidden-content",
+          "seerr-api",
+          "theme-selector",
+          "active-streams"
+        ],
+        "modules": 71,
+        "rawBytes": 1990100,
+        "gzipBytes": 500146
+      },
+      "defaults": {
+        "groups": [
+          "core",
+          "bookmarks",
+          "bookmarks-library"
+        ],
+        "modules": 32,
+        "rawBytes": 621025,
+        "gzipBytes": 160867
+      },
+      "tagsOnly": {
+        "groups": [
+          "core",
+          "tags",
+          "bookmarks",
+          "bookmarks-library"
+        ],
+        "modules": 52,
+        "rawBytes": 1680243,
+        "gzipBytes": 426807
+      }
+    },
+    "coreRawBytes": 477752,
+    "largestOtherGroup": {
+      "id": "player",
+      "rawBytes": 262195
+    },
+    "allFeaturesOnShareOfManifestRaw": 0.3738
+  },
+  "history": [
+    {
+      "date": "2026-11-18",
+      "change": "lazy feature bundles (branch perf/lazy-feature-bundles): component modules load in groups, on demand",
+      "measured": {
+        "manifest": {
+          "modules": 195,
+          "rawBytes": 5079163,
+          "gzipBytes": 1203464
+        },
+        "scenarios": {
+          "allFeaturesOn": {
+            "groups": [
+              "core",
+              "tags",
+              "tag-direct-play",
+              "tag-poster-colours",
+              "spoiler-guard",
+              "hidden-content",
+              "seerr-api",
+              "theme-selector",
+              "active-streams"
+            ],
+            "modules": 71,
+            "rawBytes": 1843263,
+            "gzipBytes": 459854
+          },
+          "defaults": {
+            "groups": [
+              "core",
+              "bookmarks",
+              "bookmarks-library"
+            ],
+            "modules": 32,
+            "rawBytes": 616641,
+            "gzipBytes": 159523
+          },
+          "tagsOnly": {
+            "groups": [
+              "core",
+              "tags",
+              "bookmarks",
+              "bookmarks-library"
+            ],
+            "modules": 52,
+            "rawBytes": 1546229,
+            "gzipBytes": 389816
+          }
+        },
+        "coreRawBytes": 473368,
+        "largestOtherGroup": {
+          "id": "player",
+          "rawBytes": 261472
+        },
+        "allFeaturesOnShareOfManifestRaw": 0.3629
+      },
+      "limits": {
+        "scenarios": {
+          "allFeaturesOn": {
+            "maxModules": 74,
+            "maxRawBytes": 1899000,
+            "maxGzipBytes": 474000
+          },
+          "defaults": {
+            "maxModules": 33,
+            "maxRawBytes": 636000,
+            "maxGzipBytes": 165000
+          },
+          "tagsOnly": {
+            "maxModules": 54,
+            "maxRawBytes": 1593000,
+            "maxGzipBytes": 402000
+          }
+        },
+        "coreMaxRawBytes": 488000,
+        "allFeaturesOnMaxShareOfManifestRaw": 0.45,
+        "groupMaxRawBytes": 270000
+      },
+      "reason": "First budget: today's measured values plus about 3% headroom; allFeaturesOn must stay at or below 45% of the manifest's raw bytes. Before the split every page downloaded and ran the single bundle, 5,078,353 raw bytes / 195 modules."
+    },
+    {
+      "date": "2026-11-19",
+      "change": "home-screen tag performance: resting flow layout with custom CSS detection, observers that let answered cards go",
+      "measured": {
+        "manifest": {
+          "modules": 195,
+          "rawBytes": 5140042,
+          "gzipBytes": 1219492
+        },
+        "scenarios": {
+          "allFeaturesOn": {
+            "groups": [
+              "core",
+              "tags",
+              "tag-direct-play",
+              "tag-poster-colours",
+              "spoiler-guard",
+              "hidden-content",
+              "seerr-api",
+              "theme-selector",
+              "active-streams"
+            ],
+            "modules": 71,
+            "rawBytes": 1903419,
+            "gzipBytes": 476115
+          },
+          "defaults": {
+            "groups": [
+              "core",
+              "bookmarks",
+              "bookmarks-library"
+            ],
+            "modules": 32,
+            "rawBytes": 621025,
+            "gzipBytes": 160867
+          },
+          "tagsOnly": {
+            "groups": [
+              "core",
+              "tags",
+              "bookmarks",
+              "bookmarks-library"
+            ],
+            "modules": 52,
+            "rawBytes": 1596553,
+            "gzipBytes": 403535
+          }
+        },
+        "coreRawBytes": 477752,
+        "largestOtherGroup": {
+          "id": "player",
+          "rawBytes": 262195
+        },
+        "allFeaturesOnShareOfManifestRaw": 0.3703
+      },
+      "limits": {
+        "scenarios": {
+          "allFeaturesOn": {
+            "maxModules": 74,
+            "maxRawBytes": 1961000,
+            "maxGzipBytes": 491000
+          },
+          "defaults": {
+            "maxModules": 33,
+            "maxRawBytes": 636000,
+            "maxGzipBytes": 165000
+          },
+          "tagsOnly": {
+            "maxModules": 54,
+            "maxRawBytes": 1645000,
+            "maxGzipBytes": 416000
+          }
+        },
+        "coreMaxRawBytes": 488000,
+        "allFeaturesOnMaxShareOfManifestRaw": 0.45,
+        "groupMaxRawBytes": 270000
+      },
+      "reason": "Code the poster tags gained at boot since the first budget (allFeaturesOn +60,156 raw / +16,261 gzip bytes, tagsOnly +50,324 / +13,719): core/tag-layout.js +25.0 KB (the resting flow layout and the custom CSS detection that keeps a moved or layered card positioned), tags/tag-direct-play.js +9.8 KB and tags/statustags.js +7.7 KB (observers that release answered cards), tags/tag-layout-styles.js +6.1 KB, tags/tag-pipeline.js +5.6 KB, about 6 KB elsewhere. Limits for allFeaturesOn and tagsOnly are the new measured values plus about 3% headroom; every other limit is unchanged."
+    },
+    {
+      "date": "2026-11-19",
+      "change": "home-screen tag performance: whole-pixel nudge of group containers, resting layout decided in idle time, live backdrop filter until a status tag's picture stands in",
+      "measured": {
+        "manifest": {
+          "modules": 196,
+          "rawBytes": 5292083,
+          "gzipBytes": 1259874
+        },
+        "scenarios": {
+          "allFeaturesOn": {
+            "groups": [
+              "core",
+              "tags",
+              "tag-direct-play",
+              "tag-poster-colours",
+              "spoiler-guard",
+              "hidden-content",
+              "seerr-api",
+              "theme-selector",
+              "active-streams"
+            ],
+            "modules": 71,
+            "rawBytes": 1959183,
+            "gzipBytes": 491043
+          },
+          "defaults": {
+            "groups": [
+              "core",
+              "bookmarks",
+              "bookmarks-library"
+            ],
+            "modules": 32,
+            "rawBytes": 621025,
+            "gzipBytes": 160867
+          },
+          "tagsOnly": {
+            "groups": [
+              "core",
+              "tags",
+              "bookmarks",
+              "bookmarks-library"
+            ],
+            "modules": 52,
+            "rawBytes": 1649326,
+            "gzipBytes": 417752
+          }
+        },
+        "coreRawBytes": 477752,
+        "largestOtherGroup": {
+          "id": "player",
+          "rawBytes": 262195
+        },
+        "allFeaturesOnShareOfManifestRaw": 0.3702
+      },
+      "limits": {
+        "scenarios": {
+          "allFeaturesOn": {
+            "maxModules": 74,
+            "maxRawBytes": 2018000,
+            "maxGzipBytes": 506000
+          },
+          "defaults": {
+            "maxModules": 33,
+            "maxRawBytes": 636000,
+            "maxGzipBytes": 165000
+          },
+          "tagsOnly": {
+            "maxModules": 54,
+            "maxRawBytes": 1699000,
+            "maxGzipBytes": 431000
+          }
+        },
+        "coreMaxRawBytes": 488000,
+        "allFeaturesOnMaxShareOfManifestRaw": 0.45,
+        "groupMaxRawBytes": 270000
+      },
+      "reason": "Code the poster tags gained at boot since the last entry (allFeaturesOn +55,764 raw / +14,928 gzip bytes, tagsOnly +52,773 / +14,217): core/tag-layout.js +48.3 KB, of which about 28 KB is the whole-pixel pass (each group container that used to have layout containment is moved to the pixel it was painted from, so cards paint as before without the containment: measuring, the size observer, Bands' auto margins) and about 20 KB the custom CSS check answered by laying a card out both ways, in idle time rather than while cards are drawn; tags/statustags.js +4.9 KB (a status tag keeps the live filter until its picture stands in; fetching the painter group) and tags/tag-direct-play.js +3.0 KB (weakly held cards, looking again after navigation); under 1 KB each elsewhere. The status tag painter itself (94 KB) is a component group of its own and is not in these scenarios. Limits for allFeaturesOn and tagsOnly are the new measured values plus about 3% headroom; every other limit is unchanged."
+    }
+  ]
+}
