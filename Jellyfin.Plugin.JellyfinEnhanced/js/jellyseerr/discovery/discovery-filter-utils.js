@@ -20,6 +20,8 @@
     ];
     // Per header's tabs: the All / Movies / Series choice, for the Filters menu to offer where the tabs are out of sight.
     const typePickers = new WeakMap();
+    // Per sort button: redraws it after its order was set from elsewhere (a saved profile).
+    const sortPainters = new WeakMap();
 
     /**
      * A translated string, in English where the key has no translation, with its {placeholders} filled.
@@ -254,6 +256,8 @@
                 choices: buttons.map(entry => ({ id: entry.mode, name: entry.label, selected: entry.mode === getFilterMode(moduleName) }))
             }),
             choose,
+            // Redraws the tabs after the type was set from elsewhere (a saved profile).
+            paint,
             // (Known from what puts them out of sight, a held header at a phone's width, as the stylesheet has
             // it: their own style is no guide while they are still fading.)
             tabsShowing: () => !(container.closest('.jellyseerr-discovery-header')?.hasAttribute('data-stuck')
@@ -305,6 +309,7 @@
             button.setAttribute('aria-label', `${sortLabel}: ${current}`);
         };
         paint();
+        sortPainters.set(button, paint);
         button.addEventListener('click', () => {
             const current = getSortMode(moduleName);
             button.setAttribute('aria-expanded', 'true');
@@ -386,9 +391,11 @@
             meta.appendChild(summary);
         }
         if (onSortChange) {
-            // (On a genre's page that genre is given: its Genres list says so.)
+            // (On a genre's page that genre is given: its Genres list says so. A tag's page names its keyword in its own
+            // request, and a title can't be checked for keywords, so its keywords are matched by all of what is ticked.)
             const filters = JE.discoveryFilters?.createFiltersControl?.(header, moduleName, scope,
-                () => onSortChange(getSortMode(moduleName)), moduleName === 'genre' ? subject : undefined);
+                () => onSortChange(getSortMode(moduleName)), moduleName === 'genre' ? subject : undefined,
+                undefined, moduleName === 'tag' ? ['keywords'] : [], sectionProfiles(header, moduleName, scope, onFilterChange, onSortChange));
             if (filters) bar.appendChild(filters);
             bar.appendChild(createSortControl(moduleName, onSortChange));
         }
@@ -396,6 +403,80 @@
         header.append(name, meta);
         if (showFilter) addFilterControl(header, moduleName, onFilterChange);
         return header;
+    }
+
+    /**
+     * The Filters button for a page of its own (the Recommendations page and its category pages), with its
+     * menu and its line of what is set (after `header`, inside what `place` gives).
+     * @param {HTMLElement} header - The page's header (the line of what is set goes after it)
+     * @param {string} moduleName - Module name for the runtime state
+     * @param {'feed'|'person'|'loaded'} scope - Which further filters the page can offer
+     * @param {Function} onChange - Reloads the page
+     * @param {{ownGenre?: string, place?: function(): (HTMLElement|null), fixedAll?: string[],
+     *   profiles?: {read: function(): string, apply: function(string): void}}} [options] - A genre's page names its
+     *   genre; `place` is the page the button narrows; `fixedAll`: the lists its request names itself; `profiles`: the
+     *   page's side of the saved filters
+     * @returns {HTMLElement|null}
+     */
+    function createFiltersButton(header, moduleName, scope, onChange, options = {}) {
+        return JE.discoveryFilters?.createFiltersControl?.(header, moduleName, scope, onChange, options.ownGenre, options.place,
+            options.fixedAll ?? [], options.profiles ?? null) ?? null;
+    }
+
+    /**
+     * The further filters set for a module (beyond All / Movies / Series).
+     * @param {string} moduleName
+     * @returns {object} The FilterSelection ({} when nothing is set)
+     */
+    function getFilters(moduleName) {
+        return JE.discoveryFilters?.selectionOf?.(moduleName) ?? {};
+    }
+
+    /**
+     * Sets a module's further filters as a whole; the caller redraws its controls and reloads.
+     * @param {string} moduleName
+     * @param {object} selection - The FilterSelection
+     */
+    function setFilters(moduleName, selection) {
+        JE.discoveryFilters?.setSelection?.(moduleName, selection);
+    }
+
+    /**
+     * Takes a module's further filters away; the caller redraws its controls and reloads.
+     * @param {string} moduleName
+     */
+    function clearFilters(moduleName) {
+        JE.discoveryFilters?.setSelection?.(moduleName, {});
+    }
+
+    /**
+     * A section's side of the saved filters: what is set now, in the address form, and applying a profile's (its type
+     * where the tabs are offered, its order and its further filters), then the section's own reload.
+     * @param {HTMLElement} header - The section's header
+     * @param {string} moduleName
+     * @param {'feed'|'person'} scope
+     * @param {Function} [onFilterChange] - The section's type change
+     * @param {Function} onSortChange - The section's reload
+     * @returns {{read: function(): string, apply: function(string): void}|null}
+     */
+    function sectionProfiles(header, moduleName, scope, onFilterChange, onSortChange) {
+        const address = JE.discoveryAddress;
+        if (!address) return null;
+        return {
+            read: () => address.filterPairs(address.current(moduleName, moduleName), true).join('&'),
+            apply(text) {
+                const wanted = address.filtersOf(text, scope);
+                const tabs = header.querySelector('[data-type-group]');
+                if (tabs) setFilterMode(moduleName, wanted.mode);
+                if (wanted.sort) setSortMode(moduleName, wanted.sort); else resetSortMode(moduleName);
+                JE.discoveryFilters?.setSelection?.(moduleName, wanted.selection);
+                typePickers.get(tabs)?.paint?.();
+                sortPainters.get(header.querySelector('.jellyseerr-sort-btn'))?.();
+                JE.discoveryFilters?.repaint?.(header);
+                onSortChange(getSortMode(moduleName));
+                if (tabs) onFilterChange?.(getFilterMode(moduleName));
+            }
+        };
     }
 
     /**
@@ -1058,10 +1139,18 @@
                 if (type === 'detail') {
                     // Jellyfin 12 dropped the .detailPageContent wrapper; fall back to
                     // .detailPageSecondaryContainer, then the page itself.
-                    const detailContent = document.querySelector('.itemDetailPage:not(.hide) .detailPageContent') ||
-                                          document.querySelector('.itemDetailPage:not(.hide) .detailPageSecondaryContainer') ||
-                                          document.querySelector('.itemDetailPage:not(.hide)');
-                    return detailContent;
+                    const contentOf = pageEl => pageEl.querySelector('.detailPageContent') ||
+                                                pageEl.querySelector('.detailPageSecondaryContainer') || pageEl;
+                    // The page the router just showed is this navigation's. Otherwise the visible
+                    // one, but not the page that was showing when the navigation started: while the
+                    // router builds a new page (Back to an address its cache doesn't hold), that one
+                    // is still the old title's, until the bounded wait below.
+                    const view = getView?.();
+                    if (view?.classList.contains('itemDetailPage')) return contentOf(view);
+                    for (const pageEl of document.querySelectorAll('.itemDetailPage:not(.hide)')) {
+                        if (allowStale || !isStalePage || !isStalePage(pageEl)) return contentOf(pageEl);
+                    }
+                    return null;
                 }
                 // List page. Prefer the view element the router just showed (it is
                 // the page for this navigation by definition). Otherwise take the
@@ -1231,6 +1320,10 @@
         typePickerOf,
         createSortControl,
         createSectionHeader,
+        createFiltersButton,
+        getFilters,
+        setFilters,
+        clearFilters,
         feedQuery,
         keepByFilters,
         hasMoreFilters,

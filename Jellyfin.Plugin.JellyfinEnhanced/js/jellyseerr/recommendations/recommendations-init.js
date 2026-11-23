@@ -21,9 +21,13 @@
   function handleNavigation() {
     const hash = window.location.hash;
 
+    // A category's own address (opened from the Home tab; Back and Forward between the
+    // tab and its categories) is the category page's to follow.
+    if (P.followUrl?.()) return;
+
     if (state.categoryPageVisible) hideCategoryPage();
 
-    if (hash === "#/recommendations") {
+    if (P.isPageHash(hash)) {
       showPage();
     } else if (state.pageVisible) {
       hidePage();
@@ -38,6 +42,13 @@
     }
     if (state.categoryPageVisible && targetPage.id !== "je-recommendations-category-page" && targetPage.id !== "je-recommendations-page") {
       hideCategoryPage();
+    }
+    // The router showing Home (a reload, a link, Back from a title, Forward) at a category's
+    // address: that page opens over it once the router is done. (Not the page a category gave
+    // back on closing, which no longer names one.)
+    if (!e.detail?.jeRestored && targetPage.id !== "je-recommendations-category-page"
+      && JE.discoveryAddress?.isHomeHash(window.location.hash) && JE.discoveryAddress.categoryOfHash(window.location.hash)) {
+      requestAnimationFrame(() => { P.followUrl?.(); });
     }
   }
 

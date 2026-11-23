@@ -76,8 +76,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             var radarrTags = new Dictionary<int, List<string>>();
             var sonarrTags = new Dictionary<string, List<string>>();
 
+            // An instance that could not be read is unknown, not "no tags": its service's items keep
+            // their tags this run, so an outage or a rejected API key cannot strip them from the library.
+            var radarrFailed = config.IsRadarrInstancesCorrupt();
+            var sonarrFailed = config.IsSonarrInstancesCorrupt();
+
             // Fetch tags from all configured Radarr instances
-            if (config.IsRadarrInstancesCorrupt())
+            if (radarrFailed)
             {
                 _logger.Error("RadarrInstances config is corrupt JSON — no Radarr tags will sync this run. "
                     + "Admin must open the Arr Links config page and reset the corrupt value.");
@@ -92,6 +97,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     {
                         _logger.Info($"Fetching tags from Radarr instance: {instance.Name}");
                         var instanceTags = await radarrService.GetMovieTagsByTmdbId(instance.Url, instance.ApiKey, cancellationToken);
+                        if (instanceTags == null)
+                        {
+                            radarrFailed = true;
+                            continue;
+                        }
                         _logger.Info($"Fetched {instanceTags.Count} movie tag mappings from {instance.Name}");
                         foreach (var kvp in instanceTags)
                         {
@@ -112,6 +122,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     catch (OperationCanceledException) { throw; }
                     catch (Exception ex)
                     {
+                        radarrFailed = true;
                         _logger.Error($"Failed to sync tags from Radarr instance {instance.Name}: {ex.Message}");
                     }
                 }
@@ -125,11 +136,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     _logger.Info("No Radarr instances configured, skipping Radarr sync");
             }
 
+            if (radarrFailed)
+                _logger.Warning("Radarr could not be read: movie tags already on items are left as they are this run");
+
             progress?.Report(25);
             cancellationToken.ThrowIfCancellationRequested();
 
             // Fetch tags from all configured Sonarr instances
-            if (config.IsSonarrInstancesCorrupt())
+            if (sonarrFailed)
             {
                 _logger.Error("SonarrInstances config is corrupt JSON — no Sonarr tags will sync this run. "
                     + "Admin must open the Arr Links config page and reset the corrupt value.");
@@ -144,6 +158,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     {
                         _logger.Info($"Fetching tags from Sonarr instance: {instance.Name}");
                         var instanceTags = await sonarrService.GetSeriesTagsByTvdbId(instance.Url, instance.ApiKey, cancellationToken);
+                        if (instanceTags == null)
+                        {
+                            sonarrFailed = true;
+                            continue;
+                        }
                         _logger.Info($"Fetched {instanceTags.Count} series tag mappings from {instance.Name}");
                         foreach (var kvp in instanceTags)
                         {
@@ -164,6 +183,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     catch (OperationCanceledException) { throw; }
                     catch (Exception ex)
                     {
+                        sonarrFailed = true;
                         _logger.Error($"Failed to sync tags from Sonarr instance {instance.Name}: {ex.Message}");
                     }
                 }
@@ -176,6 +196,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 else
                     _logger.Info("No Sonarr instances configured, skipping Sonarr sync");
             }
+
+            if (sonarrFailed)
+                _logger.Warning("Sonarr could not be read: series tags already on items are left as they are this run");
 
             progress?.Report(50);
             cancellationToken.ThrowIfCancellationRequested();
@@ -195,7 +218,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             var processedItems = 0;
             var updatedItemNames = new List<string>(); // Track updated items for batch logging
 
-            string tagPrefix = config.ArrTagsPrefix ?? "Requested by: ";
+            // A blank prefix would match every tag in the clean-up below: use the server default,
+            // the prefix the details-page tag links also fall back to.
+            string tagPrefix = string.IsNullOrEmpty(config.ArrTagsPrefix) ? "JE Arr Tag: " : config.ArrTagsPrefix;
             bool clearOldTags = config.ArrTagsClearOldTags;
 
             // Parse sync filter - if empty, sync all tags
@@ -244,8 +269,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 var existingTags = item.Tags?.ToList() ?? new List<string>();
                 var modified = false;
 
-                // Clear old tags with the prefix if enabled
-                if (clearOldTags)
+                // Clear old tags with the prefix if enabled, except on the items of a service that
+                // could not be read this run (movies for Radarr, series for Sonarr)
+                if (clearOldTags && !(item is Movie ? radarrFailed : sonarrFailed))
                 {
                     var tagsToRemove = existingTags
                         .Where(t => t.StartsWith(tagPrefix, StringComparison.OrdinalIgnoreCase))
@@ -319,6 +345,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
             _logger.Info($"Arr Tags Sync completed. Updated {updatedCount} items out of {totalItems}");
             progress?.Report(100);
+
+            // The run kept the tags of a service it could not read. Show it as failed in Scheduled Tasks, so an
+            // instance that stays down (or one retired but still enabled) is noticed rather than leaving its
+            // service's tags uncleaned run after run with only a log line to say so.
+            if (radarrFailed || sonarrFailed)
+            {
+                var unread = radarrFailed && sonarrFailed ? "Radarr and Sonarr" : radarrFailed ? "Radarr" : "Sonarr";
+                throw new InvalidOperationException(
+                    $"{unread} could not be read: the tags already on its items were kept and the other tags were synced. "
+                    + "Check that every enabled instance answers, or disable an instance that is no longer used.");
+            }
         }
     }
 }

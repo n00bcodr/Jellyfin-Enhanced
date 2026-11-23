@@ -152,6 +152,25 @@
     let intersectingCards = new WeakSet();
     /** @type {Set<HTMLElement>} Targets explicitly released when removed or recycled. */
     const observedSeriesCards = new Set();
+    /**
+     * Schedule-reading cards taken off the viewport observer while nothing can
+     * be asked for them (restSeriesCard): they stay in observedSeriesCards, are
+     * in no intersection set, and go back under the observer when that ends.
+     * @type {WeakSet<HTMLElement>}
+     */
+    let restingSeriesCards = new WeakSet();
+    /**
+     * Cards put back under the observer because their rest ended by itself.
+     * The observer's first report for them only says where they are: a card
+     * that was on screen all along asks when it next comes on screen or is
+     * drawn, as it would have had it never rested.
+     * @type {WeakSet<HTMLElement>}
+     */
+    let resumedSeriesCards = new WeakSet();
+    /** @type {ReturnType<typeof setTimeout>|null} One timer for the earliest end of a rest. */
+    let seriesRestTimer = null;
+    /** @type {number} When that timer fires (ms since the epoch), or 0. */
+    let seriesRestAt = 0;
     /** @type {MutationObserver|null} Shared removal/identity watcher for schedule targets. */
     let seriesTargetObserver = null;
 
@@ -974,6 +993,93 @@
         ctx.hot?.set(itemId, entry);
     }
 
+    // ── The blurred backdrop ───────────────────────────────────────────
+    // A status tag is a 72% dark pill over the card's artwork, and the
+    // artwork behind it is blurred. That blur is a picture painted under the
+    // tag by tags/status-tag-backdrop.js (JE.statusTagBackdrop), a component
+    // group of its own that is fetched when the first status tag is drawn: a
+    // page that shows none never downloads it. A tag does not wait for it: it
+    // is drawn at once with the live backdrop filter (`data-je-blur` on its
+    // host), which the painter takes off once its picture stands in.
+
+    /** The component group holding tags/status-tag-backdrop.js (js/component-groups.json). */
+    const BACKDROP_GROUP = 'tag-status-backdrop';
+    /** After a request that brought no painter, the next one waits this long, doubling up to the cap (ms). */
+    const BACKDROP_RETRY_MS = 5000;
+    const BACKDROP_RETRY_MAX_MS = 60000;
+    /** True while a request for the painter is out. */
+    let backdropAsked = false;
+    /** The pause before the next request (0 until one failed), when it ends (ms since the epoch) and its timer. */
+    let backdropPause = 0;
+    let backdropNotBefore = 0;
+    let backdropTimer = 0;
+
+    /**
+     * Have the status tag of a card backed by its blurred picture: by the
+     * painter when it is loaded, otherwise once it has arrived (it takes up
+     * every status tag on the page when it starts).
+     * @param {HTMLElement|null} host - The card's .je-tag-host.
+     */
+    function trackBackdrop(host) {
+        if (!host) return;
+        if (JE.statusTagBackdrop) {
+            JE.statusTagBackdrop.track(host);
+            return;
+        }
+        // No painter (yet): the tag has the live filter, as it always had. The painter takes the mark
+        // off once its picture stands in; without one (an old loader's failure, no loader) it stays.
+        if (host.dataset.jeBlur !== '1') {
+            host.dataset.jeBlur = '1';
+            JE.core?.tagLayout?.syncFlowOf?.(host);
+        }
+        if (Date.now() >= backdropNotBefore) askForBackdrop();
+    }
+
+    /**
+     * Ask the loader for the painter, once at a time. It is fetched like the
+     * boot bundle, when the page is idle and at low priority: the tags are
+     * drawn already, and their pictures can wait for the page. A request
+     * that brings nothing (offline, a server that restarted) is made again
+     * after a pause that doubles, by the next tag drawn or, on a page that
+     * has settled, by a timer while a status tag is still there.
+     */
+    function askForBackdrop() {
+        if (backdropAsked || JE.statusTagBackdrop || typeof JE.loader?.ensure !== 'function') return;
+        backdropAsked = true;
+        if (backdropTimer) clearTimeout(backdropTimer);
+        backdropTimer = 0;
+        let asked;
+        try {
+            asked = Promise.resolve(JE.loader.ensure([BACKDROP_GROUP], { pace: 'boot' }));
+        } catch {
+            asked = Promise.resolve();
+        }
+        asked.catch(() => {}).then(() => {
+            backdropAsked = false;
+            if (JE.statusTagBackdrop) return;
+            // The group ran and left no painter (its file threw): asking again would bring nothing.
+            let ran = false;
+            try { ran = JE.loader.state?.()[BACKDROP_GROUP] === 'ready'; } catch { ran = false; }
+            if (ran) { backdropNotBefore = Infinity; return; }
+            backdropPause = Math.min(BACKDROP_RETRY_MAX_MS, backdropPause ? backdropPause * 2 : BACKDROP_RETRY_MS);
+            backdropNotBefore = Date.now() + backdropPause;
+            backdropTimer = setTimeout(() => {
+                backdropTimer = 0;
+                if (document.querySelector(`.je-tag-host .${tagClass}`)) askForBackdrop();
+            }, backdropPause);
+        });
+    }
+
+    /**
+     * The .je-tag-host a render target's badges are placed in (core/tag-layout.js), if it has one.
+     * @param {HTMLElement} el
+     * @returns {HTMLElement|null}
+     */
+    function hostOf(el) {
+        if (el.classList?.contains('je-tag-host')) return el;
+        return /** @type {HTMLElement|null} */ (Array.from(el.children || []).find((child) => child.classList.contains('je-tag-host')) || null);
+    }
+
     /**
      * Create and append the status badge to a card.
      * @param {Object} ctx - Factory context.
@@ -1015,7 +1121,8 @@
         }
         container.appendChild(tag);
 
-        ctx.commitOverlay(el, container);
+        // The badge's blurred backdrop follows once the card is laid out (see "The blurred backdrop").
+        if (ctx.commitOverlay(el, container)) trackBackdrop(hostOf(el));
     }
 
     /**
@@ -1086,12 +1193,16 @@
                         forgetSeriesCard(host);
                         continue;
                     }
+                    // A report queued before the card was taken off the observer.
+                    if (restingSeriesCards.has(host)) continue;
+                    const whereOnly = resumedSeriesCards.delete(host);
                     if (isIntersecting) intersectingCards.add(host);
                     else intersectingCards.delete(host);
-                    if (isIntersecting && eligibleSeriesCard(host, card)) {
+                    if (isIntersecting && !whereOnly && eligibleSeriesCard(host, card)) {
                         requestSeries(ctx, card.data.seriesId);
                         armSeriesRetry(ctx);
                     }
+                    restSeriesCard(ctx, host);
                 }
             });
             seriesObserver = observer;
@@ -1107,10 +1218,117 @@
         }
         if (seriesObserver && !observedSeriesCards.has(el)) {
             observedSeriesCards.add(el);
-            seriesObserver.observe(el);
+            // Nothing to ask for it (a page drawn again within the hour): never watched at all.
+            if (!restSeriesCard(ctx, el)) seriesObserver.observe(el);
+        } else if (restingSeriesCards.has(el)) {
+            // Drawn again while resting: watched once more as soon as something can be asked for it.
+            if (!seriesRestUntil(liveCards.get(el))) resumeSeriesCard(el, false);
+        } else {
+            // Put back a moment ago and not reported yet: that report asks, as this draw would have.
+            resumedSeriesCards.delete(el);
         }
         const card = liveCards.get(el);
         if (eligibleSeriesCard(el, card)) requestSeries(ctx, card.data.seriesId);
+    }
+
+    /**
+     * Until when nothing can be asked for a schedule-reading card: its series'
+     * facts are fresh (not loading, not due a retry) and, for an ended series,
+     * the parent facts the finale rules read are held (requestSeries asks for
+     * them whenever such a card comes on screen without them).
+     * @param {{data: StatusData}|undefined} card - The card's live record.
+     * @returns {number} Ms since the epoch, or 0 when something can be asked now.
+     */
+    function seriesRestUntil(card) {
+        const id = card?.data.seriesId;
+        const known = id ? seriesInfo.get(id) : null;
+        if (!known || known.loading || known.retry || !(Date.now() < known.expires)) return 0;
+        if (!TMDB_ENDED.has(known.facts?.status) || !JE.tagPipeline?.lookupItemFacts) return known.expires;
+        const parentUntil = JE.tagPipeline.itemFactsExpiry?.(id) || 0;
+        return parentUntil > Date.now() ? Math.min(known.expires, parentUntil) : 0;
+    }
+
+    /**
+     * Take a schedule-reading card off the viewport observer while nothing can
+     * be asked for it (seriesRestUntil): where it is then decides nothing, and
+     * a page of such cards costs the browser no intersection work while it is
+     * scrolled. One timer puts the cards back when the earliest rest ends.
+     * @param {Object} ctx - Factory context.
+     * @param {HTMLElement} el
+     * @returns {boolean} Whether the card rests (now or already).
+     */
+    function restSeriesCard(ctx, el) {
+        if (restingSeriesCards.has(el)) return true;
+        if (!seriesObserver || !observedSeriesCards.has(el)) return false;
+        const until = seriesRestUntil(liveCards.get(el));
+        if (!until) return false;
+        restingSeriesCards.add(el);
+        resumedSeriesCards.delete(el);
+        intersectingCards.delete(el);
+        seriesObserver.unobserve(el);
+        armSeriesRest(ctx, until);
+        return true;
+    }
+
+    /**
+     * Put a resting card back under the viewport observer.
+     * @param {HTMLElement} el
+     * @param {boolean} whereOnly - Its rest ended by itself: the first report only says where the card is
+     *   (see resumedSeriesCards). False when the card was drawn again or the tab came back: on screen, it asks.
+     * @returns {void}
+     */
+    function resumeSeriesCard(el, whereOnly) {
+        if (!restingSeriesCards.delete(el)) return;
+        if (whereOnly) resumedSeriesCards.add(el);
+        else resumedSeriesCards.delete(el);
+        seriesObserver?.observe(el);
+    }
+
+    /**
+     * Put back every resting card for which something can be asked again, and
+     * arm the timer for the next end of a rest.
+     * @param {Object} ctx - Factory context.
+     * @param {boolean} [whereOnly=true] - See resumeSeriesCard.
+     * @returns {void}
+     */
+    function checkSeriesRest(ctx, whereOnly = true) {
+        if (seriesRestTimer !== null) clearTimeout(seriesRestTimer);
+        seriesRestTimer = null;
+        seriesRestAt = 0;
+        let next = 0;
+        for (const el of observedSeriesCards) {
+            if (!restingSeriesCards.has(el)) continue;
+            const until = seriesRestUntil(liveCards.get(el));
+            if (!until) resumeSeriesCard(el, whereOnly);
+            else if (!next || until < next) next = until;
+        }
+        if (next) armSeriesRest(ctx, next);
+    }
+
+    /**
+     * Check the resting cards at this time at the latest.
+     * @param {Object} ctx - Factory context.
+     * @param {number} at - Ms since the epoch.
+     * @returns {void}
+     */
+    function armSeriesRest(ctx, at) {
+        if (seriesRestTimer !== null && seriesRestAt <= at) return;
+        if (seriesRestTimer !== null) clearTimeout(seriesRestTimer);
+        seriesRestAt = at;
+        seriesRestTimer = setTimeout(() => {
+            seriesRestTimer = null;
+            seriesRestAt = 0;
+            checkSeriesRest(ctx);
+        }, Math.max(0, at - Date.now()));
+    }
+
+    /**
+     * Rest every watched card whose series was just answered.
+     * @param {Object} ctx - Factory context.
+     * @returns {void}
+     */
+    function restAnsweredSeriesCards(ctx) {
+        for (const el of observedSeriesCards) restSeriesCard(ctx, el);
     }
 
     /** @param {HTMLElement} el @returns {string|null} Current pipeline card identity. */
@@ -1124,6 +1342,8 @@
         seriesObserver?.unobserve(el);
         observedSeriesCards.delete(el);
         intersectingCards.delete(el);
+        restingSeriesCards.delete(el);
+        resumedSeriesCards.delete(el);
     }
 
     /** @param {HTMLElement} el @returns {void} Forget a removed or recycled card's live data. */
@@ -1141,6 +1361,8 @@
         seriesTargetObserver?.disconnect();
         seriesTargetObserver = null;
         intersectingCards = new WeakSet();
+        restingSeriesCards = new WeakSet();
+        resumedSeriesCards = new WeakSet();
     }
 
     /** @param {HTMLElement} el @param {Object|undefined} card @returns {boolean} */
@@ -1208,9 +1430,11 @@
             if (replacedAt.size + updatedIds.length > REPLACED_AT_CAP) {
                 staleBelowRev = trackRev;
                 replacedAt.clear();
-                return;
+            } else {
+                for (const id of updatedIds) replacedAt.set(normId(id), trackRev);
             }
-            for (const id of updatedIds) replacedAt.set(normId(id), trackRev);
+            // A resting card whose parent facts left the cache can ask again.
+            checkSeriesRest(ctx);
             return;
         }
         staleBelowRev = trackRev;
@@ -1220,6 +1444,8 @@
         seriesQueue.clear();
         parentFactsQueue.clear();
         parentFactsLoads.clear();
+        // No series is known any more: every resting card can ask again.
+        checkSeriesRest(ctx);
         ctx.clearPersistent();
         ctx.hot?.clear();
         if (info?.replaced && JE.currentSettings?.statusTagsEnabled) JE.reinitializeStatusTags();
@@ -1232,16 +1458,23 @@
      * or a card that falls back to its library badge or none). Each badge
      * goes through the layout controller, which re-presents its card;
      * overlays it does not manage are re-stacked in one pass.
+     *
+     * Data about single items (a direct-play answer) names them: the pass then
+     * reads only the cards of those items, and is not the page's pass of the
+     * day (renderedDay stays, so the next full pass still runs).
      * @param {Object} ctx - Factory context.
+     * @param {Iterable<string>} [itemIds] - The only items whose cards can have changed; omitted, every card.
      * @returns {void}
      */
-    function applyLivePass(ctx) {
+    function applyLivePass(ctx, itemIds) {
         if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
-        renderedDay = localDay(Date.now());
+        const only = itemIds ? new Set(Array.from(itemIds, normId)) : null;
+        if (!only) renderedDay = localDay(Date.now());
         const hosts = [];
         document.querySelectorAll(LIVE_SELECTOR).forEach((el) => {
             const card = liveCards.get(/** @type {HTMLElement} */ (el));
-            if (!card || ctx.shouldIgnore(el) || el.closest('.je-hidden')) return;
+            if (!card || (only && !only.has(card.id))) return;
+            if (ctx.shouldIgnore(el) || el.closest('.je-hidden')) return;
             if (!isCurrentRecord(card) || card.domId !== cardIdentity(el)) {
                 forgetSeriesCard(/** @type {HTMLElement} */ (el));
                 return;
@@ -1360,6 +1593,7 @@
                 if (epoch !== seriesEpoch) return;
                 for (const id of ids) parentFactsLoads.delete(id);
                 if (batch.some(id => JE.tagPipeline.peekItemFacts(id))) applyLivePass(ctx);
+                restAnsweredSeriesCards(ctx);
             }
         } finally {
             parentFactsLoading = false;
@@ -1451,6 +1685,7 @@
         }
         if (changed || renderedDay !== localDay(Date.now())) applyLivePass(ctx);
         armSeriesRetry(ctx);
+        restAnsweredSeriesCards(ctx);
     }
 
     /**
@@ -1495,6 +1730,10 @@
     function refreshCalendar(ctx) {
         if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
         applyLivePass(ctx);
+        // Rests that ended while the tab slept (its timers and the observer's reports wait for it):
+        // those cards go back under the observer, and the ones on screen ask when it reports them.
+        for (const el of observedSeriesCards) resumedSeriesCards.delete(el);
+        checkSeriesRest(ctx, false);
         for (const [id] of seriesInfo) if (hasVisibleSeries(id)) requestSeries(ctx, id);
         armMidnight(ctx);
         armSeriesRetry(ctx);
@@ -1507,10 +1746,11 @@
     function stopStatus() {
         statusActive = false;
         seriesEpoch++;
-        for (const timer of [midnightTimer, seriesTimer, seriesRetryTimer, parentFactsTimer]) {
+        for (const timer of [midnightTimer, seriesTimer, seriesRetryTimer, parentFactsTimer, seriesRestTimer]) {
             if (timer !== null) clearTimeout(timer);
         }
-        midnightTimer = seriesTimer = seriesRetryTimer = parentFactsTimer = null;
+        midnightTimer = seriesTimer = seriesRetryTimer = parentFactsTimer = seriesRestTimer = null;
+        seriesRestAt = 0;
         seriesQueue.clear();
         parentFactsQueue.clear();
         parentFactsLoads.clear();
@@ -1530,9 +1770,14 @@
         armMidnight(ctx);
     }
 
-    /** One live pass for the direct-play answers a slice applied (one stable callback, so a slice runs it once). */
-    function onDirectPlayAnswer() {
-        if (statusCtx) applyLivePass(statusCtx);
+    /**
+     * One live pass for the direct-play answers a slice applied (one stable
+     * callback, so a slice runs it once), over the cards of the items answered.
+     * @param {Set<string>} [itemIds] - The items answered (tags/tag-direct-play.js); omitted, every card.
+     * @returns {void}
+     */
+    function onDirectPlayAnswer(itemIds) {
+        if (statusCtx) applyLivePass(statusCtx, itemIds);
     }
 
     /** @type {Object} Factory spec — everything status-specific lives here. */
@@ -1584,6 +1829,15 @@
                     text-overflow: ellipsis;
                     max-width: 100%;
                     pointer-events: none;
+                }
+                /* A filtered tag is a compositor layer and promotes whatever paints over it. On
+                   a card, a resting tag has the blurred artwork painted under it as a picture
+                   instead: its host carries data-je-blur for as long as the live filter has to
+                   stand in (see "The blurred backdrop" above). Tags drawn anywhere else (a
+                   sample, a caption) keep the filter. */
+                .je-tag-host:not([data-je-blur]) .${tagClass} {
+                    -webkit-backdrop-filter: none;
+                    backdrop-filter: none;
                 }
                 .${tagClass}--trending .${tagClass}-rank { color: #ffd166; }
                 /* Only the direct-play warning takes hover, for its tooltip. */
@@ -1712,7 +1966,12 @@
                 if (!document.hidden) refreshCalendar(statusCtx);
             });
             window.addEventListener('focus', () => refreshCalendar(statusCtx));
-            window.addEventListener('pagehide', stopStatus);
+            // Only the page's own pagehide (its target is the document, or window when scripted):
+            // jellyfin-web dispatches a bubbling `pagehide` on each view it leaves, and a
+            // back/forward-cache hide (persisted) may be shown again.
+            window.addEventListener('pagehide', (event) => {
+                if ((event.target === window || event.target === document) && !event.persisted) stopStatus();
+            });
             window.addEventListener('pageshow', () => JE.reinitializeStatusTags());
         }
 

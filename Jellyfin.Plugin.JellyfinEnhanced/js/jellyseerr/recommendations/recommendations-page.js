@@ -15,6 +15,15 @@
   // recommendations-category.js loads after this module — resolve at call time.
   const hideCategoryPage = (...args) => P.hideCategoryPage(...args);
 
+  /**
+   * Whether an address is this page's own: `#/recommendations`, with or without a query (its filters).
+   * @param {string} hash
+   * @returns {boolean}
+   */
+  function isPageHash(hash) {
+    return /^#\/recommendations(?:\?[^#]*)?(?:#.*)?$/.test(String(hash || ''));
+  }
+
   function createPageContainer() {
     let page = document.getElementById("je-recommendations-page");
     if (!page) {
@@ -55,7 +64,8 @@
 
     const page = createPageContainer();
 
-    if (window.location.hash !== "#/recommendations") {
+    // (Its address may carry the page's filters: see discovery-address.js.)
+    if (!isPageHash(window.location.hash)) {
       history.pushState({ page: "recommendations" }, JE.t("recommendations_title"), "#/recommendations");
     }
 
@@ -95,6 +105,7 @@
     }
   }
 
+  P.isPageHash = isPageHash;
   P.createPageContainer = createPageContainer;
   P.showPage = showPage;
   P.hidePage = hidePage;

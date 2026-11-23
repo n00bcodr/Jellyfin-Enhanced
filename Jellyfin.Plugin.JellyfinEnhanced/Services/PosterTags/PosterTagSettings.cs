@@ -359,6 +359,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The administrator's "Where to show" defaults (normalized; null when none is set).</summary>
         public TagGroupScopes? AdminScopes { get; private init; }
 
+        /// <summary>The Tag Styles labels whose chips never draw (Hidden tags, the administrator's).</summary>
+        public TagHiddenSet Hidden { get; private init; } = TagHiddenSet.Empty;
+
+        /// <summary>The texts shown instead of a tag's own (Tag text, the administrator's).</summary>
+        public TagTextSet Texts { get; private init; } = TagTextSet.Empty;
+
         /// <summary>
         /// Whether a group shows on a card of this item type (its "Where to show" switch for the type: personal,
         /// else the administrator's, else on). Rating keeps its own switches (RatingRules.IsExcludedByScope); the
@@ -642,6 +648,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 UsesJellyfinAudioPreference = usesJellyfin,
                 PersonalScopes = TagLayoutRules.NormalizeScopes(user.TagGroupScopes),
                 AdminScopes = TagLayoutRules.NormalizeScopes(config.TagGroupScopes),
+                Hidden = TagHiddenSet.For(config.TagHiddenValues),
+                Texts = TagTextSet.For(config.TagTextOverrides),
                 RatingTagsOnMovies = TagLayoutRules.RatingScope(user, config, "movies"),
                 RatingTagsOnSeries = TagLayoutRules.RatingScope(user, config, "series"),
                 RatingTagsOnSeasons = TagLayoutRules.RatingScope(user, config, "seasons"),
@@ -991,6 +999,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _ => "language",
         };
 
+        /// <summary>The native group of a layout group id (the inverse of <see cref="LayoutGroupId"/>).</summary>
+        private static PosterTagGroup GroupOf(string id) => id switch
+        {
+            "quality" => PosterTagGroup.Quality,
+            "genre" => PosterTagGroup.Genre,
+            "rating" => PosterTagGroup.Rating,
+            "ageRating" => PosterTagGroup.AgeRating,
+            "awards" => PosterTagGroup.Awards,
+            "status" => PosterTagGroup.Status,
+            "logos" => PosterTagGroup.Logos,
+            "custom" => PosterTagGroup.Custom,
+            _ => PosterTagGroup.Language,
+        };
+
         /// <summary>
         /// core/tag-layout.js normalizeSettings, reduced to static native layouts: Bands uses its active
         /// profile and density; title/hover layouts use the user's own full-label Corners
@@ -1296,6 +1318,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["rating.onEpisodes"] = Bool(RatingTagsOnEpisodes);
                 values["rating.userReviewChip"] = Bool(UserReviewChipEnabled);
                 values["rating.userReviewDash"] = Bool(UserReviewChipEnabled && ShowUserRatingDash);
+            }
+
+            // Hidden tags: only for a shown group that hides something, so a document without a list keeps
+            // its digest (and every poster URL).
+            foreach (var group in TagHiddenRules.Groups)
+            {
+                if (Hidden.Any(group) && Shows(GroupOf(group))) values["hidden." + group] = Hidden.DigestOf(group);
+            }
+
+            // Tag text: same rule as hidden tags, a shown group with overrides only.
+            foreach (var group in TagTextRules.Groups)
+            {
+                if (Texts.Any(group) && Shows(GroupOf(group))) values["text." + group] = Texts.DigestOf(group);
             }
 
             // "Where to show": only switches that hide a shown group on some item type, so a document

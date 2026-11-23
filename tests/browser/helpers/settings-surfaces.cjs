@@ -103,7 +103,7 @@ async function hub(page, options = {}) {
   await page.evaluate(() => {
     const others = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle', 'randomButtonToggle', 'randomUnwatchedOnly',
       'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle', 'showAudioLanguagesToggle', 'removeContinueWatchingToggle', 'pauseScreenToggle',
-      'disableCustomSubtitleStyles', 'longPress2xEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
+      'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSyncButtonEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
     document.body.innerHTML = `<div hidden>${others.map((id) => `<input type="checkbox" id="${id}">`).join('')}<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button></div><button id="opener">open</button>`;
   });
   await load(page, [...CORE, 'enhanced/config.js', 'enhanced/icons.js', 'enhanced/helpers.js']);

@@ -75,14 +75,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         private static readonly Dictionary<string, int> TextLimits = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["TagStyleOverrides"] = TagStyleSet.MaxDocumentLength,
+            ["TagTextOverrides"] = TagTextRules.MaxDocumentLength,
             ["NativePosterTagsWebClientNames"] = 4096,
             ["TagCacheExcludedLibraryIds"] = 8192,
             ["LanguageTagsPriority"] = 256,
             ["QualityTagsPreferredAudioLanguage"] = 32,
             // Characters never outnumber UTF-8 bytes: the byte cap (on the canonical text too) is the real limit.
             ["TagOfferedPresets"] = MediaTagsPortable.MaxOfferedPresetsBytes,
-            ["LeavingSoonMaintainerrUrl"] = 512,
-            ["LeavingSoonMaintainerrApiKey"] = 256,
             ["LeavingSoonCollections"] = 4096,
         };
 
@@ -131,20 +130,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     error = "must be empty or a valid two-letter region";
                     return false;
                 case "AwardsTagsRefreshHours":
-                case "LeavingSoonRefreshHours":
                     return InRange((int)value!, 1, 168, out error);
-                case "LeavingSoonMaintainerrUrl":
-                    var url = (value as string)?.Trim();
-                    normalized = url;
-                    if (url != null && (url.Length == 0 || LeavingSoonService.IsMaintainerrUrl(url))) return true;
-                    error = "must be empty or an http(s) address without credentials, query or fragment";
-                    return false;
-                case "LeavingSoonMaintainerrApiKey":
-                    var key = (value as string)?.Trim();
-                    normalized = key;
-                    if (key != null && key.All(c => c > ' ' && c < '\u007f')) return true;
-                    error = "must be printable ASCII without spaces";
-                    return false;
                 case "LeavingSoonCollections":
                     var names = value as string;
                     normalized = names?.Trim();
@@ -239,6 +225,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 case "TagStyleOverrides":
                     if (TagStyleSet.TryValidate(value as string, null, out _, out error)) return true;
                     return false;
+                case "TagTextOverrides":
+                    if (!TagTextRules.TryValidate(value as string, out error)) return false;
+                    normalized = TagTextRules.Normalize(value as string);
+                    return true;
                 case "TagStylePreset":
                     // The administrator's preset has no empty "follow" value (only a user's document has one).
                     if (string.IsNullOrWhiteSpace(value as string))
@@ -278,6 +268,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     return true;
                 case "TagGroupScopes":
                     normalized = TagLayoutRules.NormalizeScopes((TagGroupScopes?)value);
+                    return true;
+                case "TagHiddenValues":
+                    normalized = TagHiddenRules.Normalize((TagHiddenValues?)value);
                     return true;
                 case "TagShapeOverrides":
                     normalized = TagShapeRules.Normalize((TagShapeOverrides?)value);

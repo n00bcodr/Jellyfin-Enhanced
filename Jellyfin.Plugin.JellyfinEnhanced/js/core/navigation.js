@@ -10,8 +10,14 @@
 // navs and missing pushState navs entirely. This module patches history once,
 // listens once, dedupes, and fans out to registered callbacks.
 //
+// A page's own state kept in a fragment after its address (the Seerr filters, see
+// discovery-address.js) is written with setAddressQuietly, which is no
+// navigation; a jellyfin-web dialog's history entry on the page is given the
+// page's address (dispatchNavigate).
+//
 // Public surface: JE.core.navigation { onNavigate, offNavigate, onViewPage,
-// getCurrentView }. JE.helpers keeps thin aliases for unmigrated callers.
+// getCurrentView, setAddressQuietly }. JE.helpers keeps thin aliases for
+// unmigrated callers.
 (function(JE) {
     'use strict';
 
@@ -28,6 +34,13 @@
     // the same URL change. Only dispatch when the URL actually moved.
     let lastDispatchedHref = null;
 
+    // History's own methods as they were before the patch below, for an address
+    // change that is not a navigation (setAddressQuietly).
+    /** @type {Function|null} */
+    let unpatchedPush = null;
+    /** @type {Function|null} */
+    let unpatchedReplace = null;
+
     /**
      * Patch history.pushState / history.replaceState to emit a 'je:navigate'
      * event. Jellyfin's SPA router calls pushState for some transitions
@@ -41,6 +54,8 @@
 
         const _push = history.pushState.bind(history);
         const _replace = history.replaceState.bind(history);
+        unpatchedPush = _push;
+        unpatchedReplace = _replace;
 
         // Some host pages (e.g. third-party custom-tabs plugins reacting to DOM
         // mutations) call pushState repeatedly for a URL that hasn't changed.
@@ -63,6 +78,50 @@
         };
     }
 
+
+    /**
+     * An address without the fragment a page keeps its own state in (`#/route?query#state`, see
+     * discovery-address.js): the part jellyfin-web's router reads.
+     * @param {string} href
+     * @returns {string}
+     */
+    function routerPart(href) {
+        const at = String(href).indexOf('#');
+        const mark = at < 0 ? -1 : String(href).indexOf('#', at + 1);
+        return mark < 0 ? String(href) : String(href).slice(0, mark);
+    }
+
+    /**
+     * Whether the history entry is one a jellyfin-web dialog wrote (its router state lists the open dialogs).
+     * @returns {boolean}
+     */
+    function isDialogEntry() {
+        return Array.isArray(history.state?.usr?.dialogs);
+    }
+
+    /**
+     * An address's route (`…#/home`), without its query and fragment.
+     * @param {string} href
+     * @returns {string}
+     */
+    function routeOf(href) {
+        const text = String(href);
+        const at = text.indexOf('#');
+        return at < 0 ? text : text.slice(0, at + 1) + text.slice(at + 1).split(/[?#]/)[0];
+    }
+
+    /**
+     * A page as the plugin's pages tell them apart: the router's part of its address, and the page a
+     * fragment opens over it (the Recommendations category), not the filters it shows.
+     * @param {string} href
+     * @returns {string}
+     */
+    function pageOf(href) {
+        const head = routerPart(href);
+        const category = /(?:^|[#&])jeCategory=([^&]*)/.exec(String(href).slice(head.length));
+        return `${head}#${category ? category[1] : ''}`;
+    }
+
     /**
      * Fan a navigation event out to all subscribers, at most once per URL
      * change (popstate + hashchange pairs collapse to one dispatch).
@@ -70,6 +129,20 @@
      */
     function dispatchNavigate(event) {
         if (window.location.href === lastDispatchedHref) return;
+        // A jellyfin-web dialog opened on the page (an item's "…" menu) pushes an entry at the address its router
+        // last saw, which lacks the page's own fragment (its Seerr filters, the Recommendations category, see
+        // discovery-address.js) and can lag behind its query (a tab number corrected in place). The entry gets
+        // the page's address as it is shown: the page is still there, and closing the dialog and a reload on its
+        // entry find the page as it was. Back or Forward onto such an entry of the page shown gives it the page's
+        // address as it is now (its filters may have changed since): the same page, not a navigation.
+        if (lastDispatchedHref !== null && isDialogEntry()) {
+            const href = window.location.href;
+            const pushed = event?.type === 'je:navigate';
+            if (pushed ? routeOf(href) === routeOf(lastDispatchedHref) : pageOf(href) === pageOf(lastDispatchedHref)) {
+                (unpatchedReplace || history.replaceState.bind(history))(history.state, '', lastDispatchedHref);
+                return;
+            }
+        }
         lastDispatchedHref = window.location.href;
         for (const callback of navCallbacks) {
             try {
@@ -78,6 +151,21 @@
                 console.error(`${logPrefix} Error in onNavigate callback:`, err);
             }
         }
+    }
+
+    /**
+     * Changes the address without it being a navigation for the plugin: no 'je:navigate', and the
+     * address counts as already seen, so its features keep what they show. For what a page keeps in
+     * its own address (a Seerr section's filters, the Recommendations category page), which must not
+     * tear that page's features down. The browser's Back and Forward to and from it still navigate.
+     * @param {*} state - The history entry's state (keep `history.state` when replacing: the router's own is in it)
+     * @param {string} url - The new address
+     * @param {boolean} [push=false] - Add a history entry (else the current one is replaced)
+     */
+    function setAddressQuietly(state, url, push = false) {
+        const change = push ? (unpatchedPush || history.pushState.bind(history)) : (unpatchedReplace || history.replaceState.bind(history));
+        change(state, '', url);
+        lastDispatchedHref = window.location.href;
     }
 
     /**
@@ -287,6 +375,11 @@
             notifyViewHandlers(getCurrentView() || undefined, viewEl, window.location.hash, rawEvent);
         });
 
+        // The address the page opened at is already where it is: a popstate or hashchange that lands on it
+        // again (a dialog's own history entry popped by Back, such as the Seerr More Info modal's) is not a
+        // navigation. Unseeded, the first one after a reload or an opened link would tear every page feature down.
+        lastDispatchedHref = window.location.href;
+
         // Navigation sources → single deduplicated dispatch
         window.addEventListener('je:navigate', dispatchNavigate);
         window.addEventListener('hashchange', dispatchNavigate);
@@ -307,6 +400,7 @@
         offNavigate,
         onViewPage,
         getCurrentView,
+        setAddressQuietly,
         /** @returns {number} Number of registered onViewPage handlers. */
         getViewHandlerCount: () => viewHandlers.length,
         /** @returns {number} Number of registered onNavigate callbacks. */

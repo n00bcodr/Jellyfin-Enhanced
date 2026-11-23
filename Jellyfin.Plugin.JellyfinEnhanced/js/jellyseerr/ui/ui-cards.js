@@ -426,7 +426,7 @@
             moreInfoLoaded: !!JE.jellyseerrMoreInfo,
             // Admin opt-in: an available item's poster goes straight to Jellyfin.
             availablePostersLinkToJellyfin: !!(config && config.JellyseerrAvailablePosterLinksToJellyfin),
-            showProviderIcons: !!(config && config.ShowElsewhereOnJellyseerr && config.TmdbEnabled),
+            showProviderIcons: !!(config && config.ShowElsewhereOnJellyseerr && (config.TmdbEnabled || config.JellyseerrEnabled)),
             posterNotFoundUrl: JE.cdn.url('ibb', 'fdbkXQdP/jellyseerr-poster-not-found.png'),
             seerrIconUrl: JE.cdn.selfhst('svg/seerr.svg'),
             showHideButtons,
@@ -817,7 +817,8 @@
         }
         JE.hiddenContent.confirmAndHide({
             itemId: state.jellyfinMediaId || '',
-            name: escapeHtml(item.title || item.name),
+            // Stored and shown as text by Hidden Content: the title itself, not HTML.
+            name: item.title || item.name || '',
             type: item.mediaType === 'tv' ? 'Series' : 'Movie',
             tmdbId: item.id,
             posterPath: item.posterPath || ''

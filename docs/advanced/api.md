@@ -4,7 +4,7 @@ Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal sett
 
 To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.
 
-This reference covers the 202 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
+This reference covers the 224 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
 
 Paths in endpoint tables are relative to `/JellyfinEnhanced/`. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.
 
@@ -413,6 +413,8 @@ The bookmark GET/POST pair is listed in [Bookmarks API endpoints](#bookmarks-api
 
 Settings, shortcuts, Elsewhere, and bookmark whole-file saves do not strict-read the previous document.
 
+The Hidden Content and shortcuts GETs, and the same two documents in `bootstrap`, never answer an empty document for a stored file they cannot read, because clients save both whole. A read error returns `500` (in `bootstrap`, the document is null, which Jellyfin's serializer leaves out of `UserSettings`) and leaves the file as it is. Content that does not parse is first moved aside to `.corrupt-<timestamp>`, as a save would, so the next read returns the defaults.
+
 Hidden Content and raw Spoiler Guard saves lock and strict-read first: corruption returns `503` with backup/retry guidance, temporary I/O failures `500`.
 
 Raw Spoiler Guard POST has a **2 MiB** request limit and at most **1000 entries in each** of `Series`, `Movies`, `Collections`, `PendingTmdb`; exceeding the dictionary cap returns `413`.
@@ -443,6 +445,7 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `AutoResumeEnabled` | Boolean | `false` |
 | `AutoPipEnabled` | Boolean | `false` |
 | `LongPress2xEnabled` | Boolean | `false` |
+| `SubtitleSyncButtonEnabled` | Boolean | `false` |
 | `PauseScreenEnabled` | Boolean | `false` |
 | `PauseScreenDelaySeconds` | Integer | `5` |
 | `AutoSkipIntro` | Boolean | `false` |
@@ -506,6 +509,7 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `RatingTagsOnContinueWatching` | Boolean | `true` |
 | `RatingTagsOnNextUp` | Boolean | `true` |
 | `TagGroupScopes` | Object or null: per group (`Quality`, `Genre`, `Language`, `AgeRating`, `Status`, `Awards`, `Logos`, `Custom`) an object of nullable Booleans `Movies`, `Series`, `Seasons`, `Episodes`, `ContinueWatching`, `NextUp`. Administrator defaults: an unset switch means on (the page stores only switches turned off); Rating's administrator switches stay `RatingTagsOn…`. Personal document: an unset switch follows the administrator, Rating included (`TagGroupScopes.Rating`); an older personal `RatingTagsOn…` set to `false` still counts as the user's choice and `true` follows (`TagLayoutRules.RatingScope`). New users are no longer given copies of the administrator's Rating switches. People Tags have none. Native posters apply the item types (`TagLayoutRules.ScopeAllows`), and a switch that hides a group enters the native settings digest (`scope.<group>`), so poster URLs retire. Empty sets are normalized away; portable documents carry it. | `null` |
+| `TagHiddenValues` | Object or null: per group (`Quality`, `AgeRating`, `Rating`, `Genre`, `Status`, `Language`, `Awards`, `Logos`, `Custom`) a string array of Tag Styles labels whose chips never draw (the **Hide** switches of the Colours tab). Only catalog labels are kept (`TagHiddenRules.Normalize`; the language `flag` and `code` styles are not hideable); an empty result is `null`. A label hides exactly the chips it colours: a genre label every spelling (`other`: every genre without an icon), an age board every rating on it, a logo style every logo of that kind. The public configuration also returns `TagHiddenAgeRatings`, the ratings on the hidden boards. Native posters apply it (`TagHiddenRules`); a shown group that hides something enters the native settings digest (`hidden.<group>`), so poster URLs retire. | `null` |
 | `RatingTagsShowCommunity` | Boolean | `true` |
 | `RatingTagsShowCritic` | Boolean | `true` |
 | `AgeRatingTagsPosition` | String | `"bottom-right"` |
@@ -544,6 +548,24 @@ The table below gives the `UserSettings` **model defaults** used when properties
 `TagScale` and `TagGap` are presentation-only settings, normalized case-insensitively on save. An unknown global value becomes `default`; null inherits the administrator's validated choice, then `default`. Version-0 documents always render at default size/gap. Promotion writes explicit `default` values so changing another layout setting does not adopt new administrator sizing. New-user seeding and reset-all copy the administrator's values. A shape's optional `TagScale`/`TagGap` uses the same choices, with unknown values normalized to null (inherit). Shape fields also round-trip inside rule/lock `Shapes`. Native posters use global size/gap in their rendering metrics and settings digest, with shape overrides still web-only. These fields do not change `TagCacheEntry` or its schema.
 
 The web client keeps these nullable fields null while they inherit: the settings panel shows the administrator's current value for `ShowEditionTag`, `ShowLowQualitySourceTag`, the three technical category switches (`ShowRuntimeTag`, `ShowAspectRatioTag`, `ShowFrameRateTag`), `ShowVersionsTag`, the three display modes, minimum resolution, Hide SDR, the eleven `*TagOrder` fields and `SeriesQualityAggregation`, and saves `null` for each one the user has not changed, so a save, an import or its **Undo** never pins today's administrator default. Inheriting is a state, not a value comparison: any change through a panel control (even back to the administrator's value), an imported value (even one equal to the default) and a reorder of the quality categories (all ten orders) are saved as the user's own. Only **Follow server** in the series policy, **Follow server settings** in the Quality group, or an import or **Undo** of a null value makes a field inherit again.
+
+### Seerr filter profiles
+
+A user's saved Seerr filter profiles: named sets of the discovery Filters menu's filters, each user's own, kept in
+`discovery-filter-profiles.json` in the user's directory (`Helpers/DiscoveryFilterProfiles.cs`) and read-modify-written
+under the user's file lock. A profile's `filters` are the address form the discovery pages read and write
+(`js/jellyseerr/discovery/discovery-address.js`), for example `jeType=movies&jeScore=7..&jeKeywords=10468:bear,12554:dragon&jeAny=keywords`.
+The server checks their shape only: `name=value` pairs joined by `&`, each name once and one of `jeType`, `jeSort`,
+`jeReleased`, `jeScore`, `jeVotes`, `jeRuntime`, `jeRole`, `jeGenres`, `jeWithoutGenres`, `jeLanguage`, `jeWithoutLanguage`,
+`jeRating`, `jeServices`, `jeKeywords`, `jeWithout`, `jeAny`, `jeAll`, each value of plain address characters (`A-Z a-z 0-9 % . _ ~ : , / - ! * ' ( )`), at most
+4000 characters in all. The page reads each value as it reads its own address and leaves out anything not of its
+filter's shape, or not offered on that page.
+
+| Method | Path | Access | Request → response |
+|---|---|---|---|
+| GET | `user-settings/{userId}/discovery-filter-profiles` | Own/admin | No body → `{max:30, profiles:[{id, name, filters}]}`, oldest first. |
+| POST | `user-settings/{userId}/discovery-filter-profiles` | Own/admin | `{name, filters}` (16 KB limit) → `{profile}`. A profile of the same name (ignoring case) takes the new filters and keeps its id and place; otherwise it is added with a new id. `400 {error}`: `name` (empty, over 60 characters, or with control characters), `empty`, `filters`, or `full` with `max` (30 per user). |
+| DELETE | `user-settings/{userId}/discovery-filter-profiles/{profileId}` | Own/admin | No body → `{success:true}`; `404 {error:"missing"}` for an unknown id. |
 
 ### Media Tags import, export and presets
 
@@ -737,6 +759,8 @@ GET parental filtering can change lists or deny detail/subresource access. Reque
 
 Jellyfin parental policy applies server-side. Denied title/request access returns `403 {"error":true,"code":"parental_block","message":"This title is above your parental rating limit."}`.
 
+A title's rating is read the way Jellyfin's TMDB metadata fills an item's rating: the certification for the server's metadata country, else the US one, and for a series else the first one listed (the country's or US entry decides even when its rating is empty, which leaves the title unrated). It is scored in the server's country first, as Jellyfin scores the rating it stores, and compared with the user's limit as Jellyfin compares it: a lower score is allowed whatever its sub-score, a higher one is not, and the user's sub-score limit decides only at the limit's own score. A title with no rating follows the user's block-unrated setting.
+
 Filtered reads still awaiting rating verification can return `504` with `code:"parental_pending"` and `Retry-After: 2`; retry these instead of treating them as an empty successful page.
 
 GETs can return `499` on disconnect. Proxy POSTs continue independently of client disconnects.
@@ -805,7 +829,7 @@ All routes in this table require **Seerr-linked** access, except TV-by-studio's 
 | GET | `jellyseerr/sonarr/lookup/{tmdbId}` | Request/discovery permission → upstream Sonarr match candidates. |
 | GET | `jellyseerr/{type}/{serverId}` | Exact `type=sonarr` or `radarr` (`400` otherwise) → service profiles/folders/details. |
 | POST | `jellyseerr/request` | JSON request object → upstream request record. |
-| GET | `jellyseerr/request` | `take=500`, `skip=0`, `filter=all`, forwarded without JE clamping → upstream request page. |
+| GET | `jellyseerr/request` | `take=500`, `skip=0`, `filter=all`, forwarded without JE clamping (`filter` escaped as one value) → upstream request page. |
 | GET | `jellyseerr/quota` | Caller's quota; movie/TV sides can gain ISO `nextResetAt`. |
 | GET | `jellyseerr/movie/{tmdbId}` | Movie detail. Spoiler Guard shapes this and the other title responses for the caller; see [below](#spoiler-guard-on-title-responses). |
 | GET | `jellyseerr/tv/{tmdbId}` | TV detail. |
@@ -837,7 +861,7 @@ All routes in this table require **Seerr-linked** access, except TV-by-studio's 
 | GET | `jellyseerr/person/{personId}` | Positive person ID (`400` otherwise) → upstream person detail. |
 | GET | `jellyseerr/person/{personId}/combined_credits` | Positive person ID → upstream filmography. |
 | GET | `jellyseerr/collection/{collectionId}` | Upstream collection detail. |
-| GET | `jellyseerr/overrideRule` | Request/discovery permission → upstream override-rule list. |
+| GET | `jellyseerr/overrideRule` | Request/discovery permission → upstream override-rule list when the linked Seerr user is a Seerr admin; otherwise `[]` without calling Seerr, which lets only its admins read the rules and applies them itself when a request is created. |
 | POST | `jellyseerr/request/tv/{tmdbId}/seasons` | Positive TMDB route ID, request body → upstream request record. |
 | GET | `jellyseerr/watchlist` | `page=1`, minimum 1 → caller's upstream watchlist page; uncached. |
 | POST | `jellyseerr/watchlist` | `{tmdbId, mediaType}` with a positive `tmdbId` and `mediaType` of `movie` or `tv` (`400` otherwise, or when Seerr or **Requested media goes on the requester's watchlist** is off); only those two fields are forwarded, as the caller → upstream watchlist record (`409` when already on it). |
@@ -917,10 +941,10 @@ Use local GUID routes for Jellyfin metadata, the generic TMDB route for external
 
 | Method | Path | Access | Inputs → response |
 |---|---|---|---|
-| GET | `studio/{studioId}` | Authenticated | Jellyfin GUID → `{id,name,tmdbId,type}`. |
-| GET | `boxset/{boxsetId}` | Authenticated | Jellyfin BoxSet GUID → `{id,name,tmdbId,type}`. |
-| GET | `genre/{genreId}` | Authenticated | Jellyfin GUID → `{id,name,type}`. |
-| GET | `person/{personId}` | Authenticated | Jellyfin GUID, optional query `itemId` GUID → person info. |
+| GET | `studio/{studioId}` | Authenticated | Jellyfin GUID → `{id,name,tmdbId,type}`. A studio is answered to any caller; another item only when the caller can see it, else `404`. |
+| GET | `boxset/{boxsetId}` | Authenticated | Jellyfin BoxSet GUID → `{id,name,tmdbId,type}`; `404` for a box set the caller cannot see. |
+| GET | `genre/{genreId}` | Authenticated | Jellyfin GUID → `{id,name,type}`. A genre is answered to any caller; another item only when the caller can see it, else `404`. |
+| GET | `person/{personId}` | Authenticated | Jellyfin GUID, optional query `itemId` GUID → person info. A person is answered to any caller; another item only when the caller can see it, else `404`. |
 | GET | `people/info` | Authenticated | Query `ids` (GUID list), optional `itemId` → `{"people":{"<personIdN>":<info>}}`. |
 | GET | `tmdb/search/person` | Seerr-linked | Required nonblank `query` → Seerr search response, page 1. |
 | GET | `tmdb/search/keyword` | Seerr-linked | Required nonblank `query` → Seerr keyword-search response. |
@@ -929,6 +953,7 @@ Use local GUID routes for Jellyfin metadata, the generic TMDB route for external
 | GET | `tmdb/validate` | Administrator | Supplied query `apiKey` → `{"ok":true}`. |
 | GET | `tmdb/{**apiPath}` | Authenticated | TMDB `/3/` resource path and query → upstream TMDB JSON/status. |
 | GET | `watch-providers` | Authenticated | Query `items`, optional `region` → regional flat-rate provider map. |
+| GET | `jellyseerr/streaming-region` | Authenticated | The caller's Seerr streaming region (own setting, else Seerr's global) → `{ region, source }` (US when Seerr has none set, as Seerr itself does). |
 | GET | `logo/{size}/{file}` | Anonymous | `size` `w45` or `w92`, `file` a logo file name the server has seen in a Logos lookup, spelled exactly as TMDB spells it (case-sensitive) → the image from the server's cache; `404` otherwise. |
 
 Local lookups return `404` if absent and `500` on lookup errors. Boxset checks type; single studio/genre/person actions do not explicitly enforce their named type. They are local metadata lookups, rather than Seerr proxies.
@@ -1155,9 +1180,24 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 | Method | Path | Access | Request → response |
 |---|---|---|---|
 | POST | `tag-cache/rebuild` | Administrator | No body → `{success:true,message:"Tag cache rebuild started in the background."}`. |
-| GET | `admin/leaving-soon` | Administrator | No body → the Leaving soon source state `{Configured, Maintainerr, Collections, CollectionsFound, Items, Dated, LastSuccess, LastAttempt, NextRefresh, LastError}` (times Unix ms or null; `LastError` a short reason such as `HTTP 500`, `timed out` or `not reachable`). Never the URL, key or collection names. |
+| GET | `admin/leaving-soon` | Administrator | No body → the Leaving soon source state `{Configured, Maintainerr, Provider, Actions, HomeRow, Collections, CollectionsFound, Items, Dated, LastSuccess, LastAttempt, NextRefresh, LastError}` (times Unix ms or null; `LastError` a short reason such as `HTTP 500`, `timed out` or `not reachable`; `Actions` whether the item-menu actions are on; `HomeRow` one of `off`, `unknown`, `registered`, `hss-missing`, `ft-missing`, `failed`). Never the URL, key or collection names. |
 | POST | `admin/leaving-soon/refresh` | Administrator | No body → reads the Leaving soon source now (Maintainerr and/or the leaving collections), publishes changed `Leaving` facts to the tag cache, then answers the state as above. |
-| POST | `admin/configuration` | Administrator | `{Changes:{Field:value}, Expected?:{Field:value}}` (PluginConfiguration field names, values as `GET /Plugins/{id}/Configuration` returns them) → `{values:{Field:stored}}`. Writes only these fields on top of the configuration the server holds now, through the normal configuration save and inside its critical section: a full configuration save that lands while the request waits is kept, never put back, and so is the server's own write of a field in place (maintenance toggle clear, translation refresh signal, analytics state), which takes the same lock. A field in `Expected` is the value read before editing it: when the server's value differs from it and from the new value, nothing is written and the answer is `409` `{conflicts:{Field:serverValue}}`. Only the Media Tags tab's own fields are accepted (those its section modules declare, `Helpers/MediaTagsPageFields.cs`); any other field, API keys included (except the Leaving soon Maintainerr key), is `400` naming it, and nothing is written. Each value is checked with the normalisers the server uses for that field (`TagLayoutRules`, `TagShapeRules`, `LanguageTagDisplay`, `TagLookValidation`, `RatingSourceSettings`, `TagStyleSet`, the anchor positions): an unknown, empty or blank layout, density, position, target, preset or source (none of the server's own values has an empty "inherit"), a number outside its range (day windows and cache lifetime 1–365, order 1–99, minimum score 0–10, caps 0–10), a text over its limit (1024 characters unless the field has its own), more than 500 server-wide item looks (`TagLookItemOverrides`, also refused when an entry would be dropped or merged) or a document the normaliser would drop is `400` `{error:"Invalid value for 'Field': reason."}`; accepted values are stored in their canonical spelling and returned. The entire body, including `Changes`, `Expected` and JSON escaping, is limited to 8 MiB: a larger one is refused while it is read, before anything is checked or written (Jellyfin's exception middleware answers `500` "Error processing request."). Used by the Media Tags admin tab and by the item editor's **For everyone** (`TagLookItemOverrides` only, using the per-entry mutation below). |
+| GET | `maintainerr/item/{itemId}` | Administrator | No body → `{ItemId, Marked, CollectionId, CollectionName, DeleteAt, Supported}` from the last read (no Maintainerr call): whether Maintainerr lists the item, in which of its collections (id and title, when the collections were read), its delete time (Unix ms or null) and whether the actions handle its kind (movies and series). `404` while Maintainerr is not the tool in use, its actions are off (`LeavingSoonMaintainerrActions` off or no Maintainerr URL) or the item is unknown. |
+| POST | `maintainerr/mark` | Administrator | `{itemId, mediaSourceId?}` → the state above after the change. Adds the item to the one active **manual** Maintainerr collection of its type on its library (`POST /api/collections/media/add`, `action 0`); two collections on one library are told apart by asking each one's Radarr/Sonarr server (as Maintainerr lists them, `GET /api/settings/radarr|sonarr`) whether it holds the item (`/api/v3/movie?tmdbId=`, `/api/v3/series?tvdbId=`, same address guard). Then the facts are read again and published, so badges and the home row follow at once. `400` `{error}` when no collection fits (the reason names Maintainerr's collections), the item is already marked or is not a movie or series; `502` `{error}` with Maintainerr's reason (or a short one: `not reachable`, `timed out`, `redirected (redirects are not followed)`) when the request failed. Never the address or key. |
+| POST | `maintainerr/unmark` | Administrator | `{itemId}` → the state after the change. Removes the item from the Maintainerr collection holding it (`action 1`), then reads again. `400` when it is not marked. |
+| POST | `maintainerr/postpone` | Administrator | `{itemId, days?}` → the state after the change. `days` 1-3650 moves the removal that much later (`POST /api/collections/media/postpone`); without `days` the timer restarts from today. Maintainerr only moves a removal later. `400` when the item is not marked or `days` is out of range. |
+| GET | `leaving-soon/items` | Signed-in user | Optional `limit` → a standard item list `{Items, TotalRecordCount}` of the movies and series that are leaving, soonest first, as the user may see them. For home screen plugins such as KefinTweaks. 404 when no removal tool has an address. |
+| GET | `leaving-soon/list` | Signed-in user | No body → `{provider, admin, canRequest, actions, items[], requests[], mine[], requestsUnavailable, requestsError, graceDays, source}`: what the removal tool that is on will remove (each item has `versionOnly: true` when only one version of a movie is scheduled and the others stay), soonest first (undated last), limited to the items the caller can open (their library included) and to 500. An item is `{id, name, detail, type, year, deleteAt, versionOnly, size}`; with Reclaimerr, `size` is what Reclaimerr says leaving frees (only that copy for one version), else the library's file sizes. `requests` is every pending Reclaimerr deletion request (administrators only), plus approved ones whose deletion failed, is blocked or is held back by playback; `mine` is the caller's own requests of any state (those whose Reclaimerr requester is linked to the caller's Jellyfin user), while **Let users request removals** is on. The request lists are read at most every 30 seconds, shared by all callers, and read again after a review or request from Jellyfin. Each request names the Jellyfin item and person by the ids Reclaimerr gives. `requestsUnavailable` is true when they could not be read (a slow Reclaimerr, or a token without the delete requests scope); `requestsError` (administrators only) is why, in Reclaimerr's words. `graceDays` (administrators) is the delay Reclaimerr gives an approval that names no day. `source` (administrators only) names the Reclaimerr the requests came from; a review sends it back. `404` while the Leaving Soon page is off or no removal tool is set up |
+| POST | `reclaimerr/requests/{requestId}/approve` | Administrator | `{note?, when?, date?, graceDays?, source?}` → `{id, approved: true}`. Approves a pending Reclaimerr deletion request through the token (`POST /api/v1/delete-requests/{id}/approve`); Reclaimerr records the token as the reviewer, so the note ends with "(Approved by NAME in Jellyfin)". `when` is `default` (Reclaimerr's grace period, none unless set; the same as omitting it), `now`, or `date` (deletes on `date`, an ISO 8601 moment in the future within 3650 days). With `default`, `graceDays` is the period the administrator was shown: Reclaimerr's current setting is read first and nothing is approved (`400`) when it differs or cannot be read. `source` is the list's `source`: `409` when the Reclaimerr address changed since. `404` without Reclaimerr, `400`/`502` with Reclaimerr's reason |
+| POST | `reclaimerr/requests/{requestId}/deny` | Administrator | `{note?, source?}` → `{id, approved: false}`. Denies it, otherwise as above |
+| POST | `reclaimerr/import-users` | Administrator | `{permissions?, pages?}` → `{created, alreadyLinked, needsReview, skipped}` (Jellyfin user names). Reclaimerr only: runs Reclaimerr's own import (`/api/v1/users/import-from-media-server`, the token's users scope) on the Reclaimerr media server whose users are this server's users, so every Jellyfin user without a Reclaimerr account gets one (User role, the permissions `request`, `auto_approve`, `manage_requests`, `manage_protection`, `manage_reclaim` and pages given, at least one page; `400` otherwise) linked to them. Users already linked are counted in `alreadyLinked`; users Reclaimerr matches to an existing account are left for an administrator to confirm in Reclaimerr (`needsReview`); the rest that were not imported are in `skipped` with Reclaimerr's reason. `400` when Reclaimerr is not on with a URL and token (the item-menu actions need not be on), or has no Jellyfin server with this server's users |
+| GET | `reclaimerr/user-audit` | Administrator | No body → `{version, requestsEnabled, issues[], users[]}`. Reclaimerr only, read-only. `issues` lists setup problems: each token scope the integration uses that the token lacks, with what goes without it (from `GET /api/v1`), and a trusted-proxy sign-in Reclaimerr refuses whoever is named (given once with Reclaimerr's reason and no user's name, then no other user is tried) or a Reclaimerr that stops answering (said once, then no other user is tried). A `401` that does not say whether the account or this server was refused, such as "Not authenticated", met before Reclaimerr has shown in that audit that it trusts this server (by signing an account in or turning one down by name), is settled by one more `GET /api/account/me`, at most once per audit, with a name no account can have (`jellyfin-enhanced-sign-in-check-not-an-account`, longer than Reclaimerr allows): Reclaimerr turns it down as a name only when it trusts this server, and then the refusal is that user's issue. Any other answer to it, a failure or no answer stops the check with one setup issue, which says everyone is refused only when both answers were Reclaimerr's own "Not authenticated". Once Reclaimerr has shown it trusts this server, such a `401` is that user's issue without the extra request. Each user is `{jellyfinUsername, jellyfinUserId, admin, linked, reclaimerrUsername, issues[], checked}`: no linked Reclaimerr account, several active ones, a disabled one, and, with **Let users request removals** on, a sign-in Reclaimerr refuses for that account alone (a `401` "Trusted proxy user is not configured" or "Trusted proxy supplied an invalid username", or any other `401` while Reclaimerr trusts this server; the other users are still checked), an answer that is another account or not an account, or a missing Request permission (all from `GET /api/account/me` sent as that account through the trusted-proxy sign-in, which writes nothing). Administrators mark rather than request, so nothing about them is an issue. `checked` is false for a user the sign-in check did not reach. `400` `{error}` while Reclaimerr is not on with a URL and token (the item-menu actions need not be on), `502` with Reclaimerr's reason when it could not be read |
+| GET | `reclaimerr/item/{itemId}` | Signed in | No body → `{ItemId, Marked, CollectionId, CollectionName, DeleteAt, Supported, provider, admin, canRequest}` from the last read (no Reclaimerr call). Administrators get every action; anyone else who can see the item learns only whether they may request a removal. `CollectionId` is positive for a cleanup candidate and negative for a scheduled deletion. `404` while Reclaimerr is not the tool in use or the caller may neither act nor request. |
+| POST | `reclaimerr/mark` | Administrator | `{itemId, date?, mediaSourceId?}` → the state above after the change. Schedules a manual deletion for `date` (ISO 8601, in the future and within 3650 days; 30 days ahead without it). A movie is scheduled by the version picked (else the item's own) when Reclaimerr holds it, matched by media source id or, when Reclaimerr's versions come from another main server, by file path; the whole movie only when Jellyfin and Reclaimerr each hold exactly one copy. A copy Reclaimerr does not hold, or several Reclaimerr titles with the item's TMDB id and none provably this item, schedules nothing and answers `400`. |
+| POST | `reclaimerr/unmark` | Administrator | `{itemId}` → the state after the change. Protects the item's cleanup candidate, or cancels its scheduled deletion. It cannot be undone by marking again. `400` when it is not marked. |
+| POST | `reclaimerr/postpone` | Administrator | `{itemId, days?, date?}` → the state after the change. `date` is an exact day; a cleanup candidate only moves later than its current deadline, a scheduled deletion either way. `days` 1-3650 moves it later by that much; with neither, a candidate's timer restarts. |
+| POST | `reclaimerr/request` | Signed-in user | `{itemId, reason?}` → the state. Files a Reclaimerr deletion request for an administrator to approve, as the caller's own Reclaimerr account (the active one linked to their Jellyfin user, read at that moment), through Reclaimerr's trusted-proxy sign-in: the token cannot file a request for someone else. `AlreadyRequested` (`mine` or `other`) when a request for the whole title is already waiting. `404` when requests are off; `400` for an item the caller cannot open or that is already marked, when the caller has no linked Reclaimerr account, when Reclaimerr refuses the sign-in (`401`) or the account lacks the Request permission (`403`); `502` with Reclaimerr's reason for any other failure. |
+| POST | `admin/configuration` | Administrator | `{Changes:{Field:value}, Expected?:{Field:value}}` (PluginConfiguration field names, values as `GET /Plugins/{id}/Configuration` returns them) → `{values:{Field:stored}}`. Writes only these fields on top of the configuration the server holds now, through the normal configuration save and inside its critical section: a full configuration save that lands while the request waits is kept, never put back, and so is the server's own write of a field in place (maintenance toggle clear, translation refresh signal, analytics state), which takes the same lock. A field in `Expected` is the value read before editing it: when the server's value differs from it and from the new value, nothing is written and the answer is `409` `{conflicts:{Field:serverValue}}`. Only the Media Tags tab's own fields are accepted (those its section modules declare, `Helpers/MediaTagsPageFields.cs`); any other field, API keys included, is `400` naming it, and nothing is written. Each value is checked with the normalisers the server uses for that field (`TagLayoutRules`, `TagShapeRules`, `LanguageTagDisplay`, `TagLookValidation`, `RatingSourceSettings`, `TagStyleSet`, the anchor positions): an unknown, empty or blank layout, density, position, target, preset or source (none of the server's own values has an empty "inherit"), a number outside its range (day windows and cache lifetime 1–365, order 1–99, minimum score 0–10, caps 0–10), a text over its limit (1024 characters unless the field has its own), more than 500 server-wide item looks (`TagLookItemOverrides`, also refused when an entry would be dropped or merged) or a document the normaliser would drop is `400` `{error:"Invalid value for 'Field': reason."}`; accepted values are stored in their canonical spelling and returned. The entire body, including `Changes`, `Expected` and JSON escaping, is limited to 8 MiB: a larger one is refused while it is read, before anything is checked or written (Jellyfin's exception middleware answers `500` "Error processing request."). Used by the Media Tags admin tab and by the item editor's **For everyone** (`TagLookItemOverrides` only, using the per-entry mutation below). |
 | GET | `tag-cache/summary` | Administrator | No body → `{enabled, entries, lastModified, rebuilding}`: whether the server tag cache is on, how many items it holds, its last change (Unix ms, `0` = never) and whether a full build is running or a manual one is queued. Counts are `0` while the cache is off. Used by the Media Tags admin tab's Overview. |
 | GET | `tag-cache/{userId}` | Own/admin | Optional `since` signed 64-bit cursor and, with it, `known` (the `filterRevision` of the caller's copy) → cache envelope below; ETag/`304`. |
 | POST | `tag-data/{userId}` | Own/admin | Raw nonempty string array, at most 200 IDs; optional `mediaSourceId`, optional `latestEpisode=true` → `{Items:[<item>],StripRevision}`. Named-source scores missing for a title are fetched from MDBList for at most two seconds before the response; the fetch then finishes in the background, and the response carries the scores cached by then. An item whose scores were still being fetched carries `RatingsPending: true` (omitted otherwise): treat its rating facts as provisional and ask again soon; the web client re-asks after a minute. `RatingsRefreshAt` (Unix ms, omitted when no named source is in use or the title has no TMDB id) is when the item's named-source scores stop being current: a minute ahead while they are due, the retry time after a failed lookup (last good scores are kept meanwhile), else seven days after a found answer or three after a confirmed miss. Keep the answer no longer than that. |
@@ -1179,7 +1219,7 @@ The admin import preview and configuration patch both allow 8 MiB including JSON
 
 The Tier 2 page allowlist also includes `TagScale`, `TagGap`, `TagEdgeSpacing`; `AwardsTagsEnabled`, `AwardsTagsPosition`, `AwardsTagsImdb`, `AwardsTagsCertifiedFresh`, `AwardsTagsOscar`, `AwardsTagsEmmy`, `AwardsTagsLetterboxd`, `AwardsTagsImdbList`, `AwardsTagsLetterboxdList`, `AwardsTagsRefreshHours`; `LogoTagsEnabled`, `LogoTagsPosition`, `LogoTagsMovieMode`, `LogoTagsSeriesMode`, `LogoTagsRegion`, `LogoTagsMaxLogos`; and `CustomTagsEnabled`, `CustomTagsPosition`, `CustomTagRules`. The list fields require a numeric id or owner/slug, cadence is 1–168 hours, logo maximum is 1–2, and an empty logo region follows the server. Custom documents must contain at most 20 complete distinct rules accepted by `CustomTagRuleSet` (valid match, bounded value and label, non-reserved label and known optional icon). Invalid patches are refused as a whole. `CustomTagRuleKey` and `CustomTagRuleSources` are never page fields and return 400. The legacy Tag Styles preset alias `custom` is accepted as `default`; blank presets are refused.
 
-The Tier 3 Leaving soon section adds `StatusTagsLeaving`, `StatusTagsDirectPlay`, `LeavingSoonMaintainerrUrl` (empty, or an `http(s)` address without credentials, query or fragment; 512 characters), `LeavingSoonMaintainerrApiKey` (printable ASCII without spaces; 256 characters), `LeavingSoonCollections` (at most 20 names of at most 200 characters, one per line or comma separated; 4096 characters) and `LeavingSoonRefreshHours` (1–168).
+The Tier 3 Leaving soon section adds `StatusTagsLeaving` and `StatusTagsDirectPlay`. The Maintainerr source belongs to the Services tab's form, not to this patch: `LeavingSoonMaintainerrUrl` (empty, or an `http(s)` address without credentials, query or fragment; 512 characters), `LeavingSoonMaintainerrApiKey` (printable ASCII without spaces; 256 characters), `LeavingSoonCollections` (at most 20 names of at most 200 characters, one per line or comma separated; 4096 characters), `LeavingSoonRefreshHours` (1–168), `LeavingSoonMaintainerrActions` and `LeavingSoonHomeRow` (switches, both on by default; each only acts with a Maintainerr URL) are saved with the configuration page (`LeavingSoonService.NormalizeSource` checks them on every full save: a value its contract refuses keeps the stored one and is logged by name), and this patch answers `400` naming any of them.
 
 
 ```bash
@@ -1454,8 +1494,8 @@ The injected web client uses these endpoints to load resources and its initial s
 | GET | `public-config` | Anonymous | Curated public configuration; anonymous Seerr URLs redacted. |
 | GET | `private-config` | Authenticated | Selected private configuration for admins; `{}` for other users. |
 | GET | `bootstrap` | Caller, parseable claim | Initial state described below, `no-store`. |
-| GET | `bundle.js` | Anonymous | Concatenated component JavaScript. |
-| GET | `bundle.js.map` | Anonymous | Component source map, JSON. |
+| GET | `bundle.js` | Anonymous | Concatenated component JavaScript. Optional `g=<group>,<group>` serves only those component groups; without `g`, every component module. |
+| GET | `bundle.js.map` | Anonymous | Component source map, JSON. Takes the same optional `g`. |
 | GET | `host-compat` | Administrator | Build/host diagnostic object. |
 | GET | `locales` | Authenticated | Sorted locale-code string array, excluding base `en`; one-day response-cache duration. |
 | GET | `locales/{lang}.json` | Anonymous | Embedded translation JSON; regional code falls back to base language. |
@@ -1480,11 +1520,12 @@ Use `bootstrap` to load your initial configuration, user documents, and availabl
 | `HasCustomTabs`, `HasPluginPages` | Whether a plugin with that exact name is loaded. |
 | `UserSettings` | `{Settings,Shortcuts,Bookmark,Elsewhere,HiddenContent}` typed documents. |
 | `ComponentScripts` | Ordered component-script path array, nullable on manifest failure. |
+| `ComponentGroups` | The `groups` array of `js/component-groups.json` (`{id,after,note,modules}` per group), null or absent when the file is missing or invalid; the client then loads every component module together. See [Component groups](project-structure.md#component-groups). |
 | `Prefetched` | `{SpoilerBlurSeries,SeerrUserStatus,SeerrStatus,ActiveStreamSessions,TagStripRevision}`; standalone response shapes or null. `TagStripRevision` is the `StripRevision` a `tag-data` answer would carry, null when the Spoiler Guard state cannot be read. |
 
 A missing/unparseable claim returns `403`; an empty but parseable GUID passes the initial check. There is no target-user parameter or account-existence check. Missing configuration returns `503`.
 
-Individual document loading failures can yield null rather than failing bootstrap. First settings/Hidden Content loads can seed saved defaults as on their standalone GETs.
+Individual document loading failures can yield null rather than failing bootstrap; Jellyfin's serializer omits null properties, so such a document is missing from `UserSettings`, and the client treats a missing Hidden Content or shortcuts document as not loaded. First settings/Hidden Content loads can seed saved defaults as on their standalone GETs.
 
 Prefetch values depend on feature/access/cache gates. Spoiler state is included only when enabled and readable without recovery; Seerr values are included only when existing caches avoid an upstream lookup; stream sessions require allowed access. Null means use the standalone endpoint when needed.
 
@@ -1502,8 +1543,8 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
 
     | Fields | JSON type |
     |---|---|
-    | `TmdbEnabled`, `EnableCustomSplashScreen`, `ElsewhereEnabled`, `ElsewhereSeasonProviders`, `AutoPauseEnabled`, `AutoResumeEnabled`, `AutoPipEnabled`, `AutoSkipIntro` | Boolean |
-    | `AutoSkipOutro`, `LongPress2xEnabled`, `RandomButtonEnabled`, `RandomIncludeMovies`, `RandomIncludeShows`, `RandomUnwatchedOnly`, `RandomScopeCurrentContainer`, `ShowWatchProgress` | Boolean |
+    | `TmdbEnabled`, `EnableCustomSplashScreen`, `ElsewhereEnabled`, `ElsewhereSeasonProviders`, `ElsewhereUseSeerrRegion`, `AutoPauseEnabled`, `AutoResumeEnabled`, `AutoPipEnabled`, `AutoSkipIntro` | Boolean |
+    | `AutoSkipOutro`, `LongPress2xEnabled`, `SubtitleSyncButtonEnabled`, `RandomButtonEnabled`, `RandomIncludeMovies`, `RandomIncludeShows`, `RandomUnwatchedOnly`, `RandomScopeCurrentContainer`, `ShowWatchProgress` | Boolean |
     | `ShowFileSizes`, `RemoveContinueWatchingEnabled`, `ShowAudioLanguages`, `ShowReviews`, `ShowUserReviews`, `ReviewsExpandedByDefault`, `HideReviewsFromHiddenUsers`, `HideReviewsFromDisabledUsers` | Boolean |
     | `ShowAwards`, `DoesTheDogDieEnabled`, `MdblistEnabled`, `MdblistRatingsEnabled`, `MdblistRatingsShowOnItemDetails`, `MdblistRatingsShowPercentSymbol`, `ShowReleaseDates`, `ShowUserRatingOnPosters`, `ShowUserRatingDash` | Boolean |
     | `PauseScreenEnabled`, `ShowPlaybackRatingBadge`, `NativePosterTagsEnabled`, `TagStyleWebActive`, `QualityTagsEnabled`, `ShowResolutionTag`, `ShowSourceTag`, `ShowEditionTag`, `ShowLowQualitySourceTag`, `ShowDynamicRangeTag` | Boolean |
@@ -1538,6 +1579,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `TagLookItemOverrides` | Nullable array of server-wide item looks `{ItemId,Layout,Density,ColourPreset,Slots,Shapes,Caps,TagScale,TagGap,EdgeSpacing,Scope,LockedAt}` (the `TagLayoutLocks` document with its item id), normalized, newest first, at most 500; only targets visible to the caller through Jellyfin library and parental access checks (including scoped series targets), `null` for anonymous callers or when none are visible. Public config and bootstrap are not cached across users |
     | `CalendarFirstDayOfWeek`, `CalendarTimeFormat`, `MaintenanceModeMessage`, `MaintenanceModeAction`, `MaintenanceModeAffectedUsers` | String |
     | `ClearLocalStorageTimestamp`, `ClearTranslationCacheTimestamp` | Integer |
+    | `ElsewhereCustomBrandingIconVersion` | String: last-write ticks and size of the uploaded Elsewhere icon, empty when none is uploaded; clients use it to choose and cache-bust `ElsewhereBrandingIcon` |
     | `Shortcuts` | Array of `{Name,Key,Label,Category}` |
     | `MaintenanceModeEndsAt` | Nullable ISO timestamp |
 
@@ -1554,6 +1596,8 @@ Use these rules when loading or retaining JE scripts, translations, fonts, and m
 | **Dev Mode** | `false` | `DevMode`; switches script/bundle delivery to `no-store`; bundles rebuild per request. |
 
 Production scripts, CSS, component bundles/maps, and fonts use one-year immutable caching. Use a version/build cache key in resource URLs when retaining them. Embedded missing resources return `404`; unavailable bundle instance `503`, bundle-build failure `500`.
+
+`bundle.js` and `bundle.js.map` take an optional `g` query, a comma-separated list of component group ids such as `g=core,tags`. The response holds those groups in the groups file's order, `core` first, whatever order the list uses. An empty list, an unknown or repeated id, or more than 64 ids returns `404`. Without `g`, both routes serve every component module, as they did before groups existed. The client adds `v=<cache key>` to each request; the server does not read it.
 
 Locale JSON tries the requested code, then a base-language fallback such as `de-DE` → `de`, then returns `404`.
 
@@ -1622,9 +1666,10 @@ These reads require authentication. Queue/history are administrator-visible with
 |---|---|---|
 | GET | `arr/queue` | No parameters → `{items,errors}`. |
 | GET | `arr/history` | `take=20` clamped `1..50`, `skip=0` minimum 0 → `{items,totalPages,visible}`. |
-| GET | `arr/requests` | `take=20` clamped `1..200`, `skip=0` minimum 0, optional `filter`, `userOnly=false` → `{requests,totalPages,totalResults,canApproveRequests}`. |
+| GET | `arr/requests` | `take=20` clamped `1..200`, `skip=0` minimum 0, optional `filter`, `userOnly=false` → `{requests,totalPages,totalResults,canApproveRequests}`. Each request row carries `canRemove`. |
 | POST | `arr/requests/{requestId}/approve` | Seerr request ID, no body → `{success:true}`. |
 | POST | `arr/requests/{requestId}/decline` | Seerr request ID, no body → `{success:true}`. |
+| DELETE | `arr/requests/{requestId}` | Seerr request ID, no body → `{success:true}`; also when the request is already gone. Requester or manager only (`403` otherwise). Deletes the request, not the media. |
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" "$JE_URL/arr/history?take=20&skip=0"
@@ -1789,6 +1834,7 @@ Track the plugin's supported usage counters or preview a report. See [community 
 | Method | Path | Access | Contract |
 |---|---|---|---|
 | POST | `usage/track` | Authenticated | `{"key":"seerr.request_submitted"}` → empty `200`. |
+| GET | `usage/fields` | Administrator | Array of setting names the usage report carries (the config page marks them with an icon). |
 | POST | `usage/preview` | Administrator | JSON object with optional booleans `shareFeatureFlags`, `shareUsageCounts`, `shareDataSizes` → preview. |
 
 ```bash
@@ -1828,7 +1874,7 @@ Read now-playing sessions or send an administrator message to sessions with usab
 | GET | `active-streams/sessions` | Administrator, or authenticated with viewer setting enabled | Bare now-playing session array. |
 | POST | `active-streams/broadcast` | Administrator | `{Header,Text,TimeoutMs}` → `{sent,skipped,errors}`. |
 | GET | `proxy/avatar` | Authenticated | Query `path` → cached raster image bytes. |
-| GET | `items/by-providers` | Authenticated | Query provider dictionary and optional `types` → one matching GUID. |
+| GET | `items/by-providers` | Authenticated | Query provider dictionary and optional `types` → one matching GUID the caller can see. |
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" "$JE_URL/active-streams/sessions"
@@ -1872,19 +1918,20 @@ curl -G -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
 
 Provider lookup accepts multiple dictionary entries such as `providers[Tmdb]`, `providers[Imdb]`. `types` is a comma-separated item-kind list parsed case-insensitively; invalid kinds are ignored. No IDs/match returns `400` with `No provider ids supplied or no items found`; success is a GUID value.
 
-Repository lookup is not filtered to caller library access and does not establish permission to view the returned item.
+For non-administrators the match is limited to items the caller can see (library access and parental rules, as Jellyfin's own item routes apply them): a title held only where the caller has no access returns the same `400` as one the server does not hold. Administrators get the first match in any library.
 
 ## Branding
 
 Upload, retrieve, and remove custom branding assets. No enable toggle is required for storage operations.
 
-Valid slots are `icon-transparent.png`, `banner-light.png`, `banner-dark.png`, `favicon.ico`, `apple-touch-icon.png`; names normalize to lowercase.
+Valid slots are `icon-transparent.png`, `banner-light.png`, `banner-dark.png`, `favicon.ico`, `apple-touch-icon.png`, `elsewhere-icon.png`; names normalize to lowercase. `elsewhere-icon.png` is the Elsewhere custom branding icon: it isn't swapped into a jellyfin-web asset, accepts only `image/png`, `image/jpeg`, `image/gif`, `image/webp` and `image/svg+xml` uploads whose bytes are a recognisable PNG, JPEG, GIF, WebP or UTF-8 SVG with `<svg` in the first 64 KB (anything else, including an empty file, returns `400`), and is served by its content rather than its name. Both `BrandingImage` and `ElsewhereBrandingIcon` send a sandboxing `Content-Security-Policy` and `nosniff` for it.
 
 | Method | Path | Access | Request → response |
 |---|---|---|---|
 | POST | `UploadBrandingImage` | Administrator | Multipart first file plus form `fileName` → success string `File uploaded successfully`. |
-| GET | `BrandingStatus` | Authenticated | Filename-to-existence boolean map for all five slots. |
-| GET | `BrandingImage` | Authenticated | Query `fileName` → stored bytes with extension-derived MIME. |
+| GET | `BrandingStatus` | Authenticated | Filename-to-existence boolean map for all six slots. |
+| GET | `BrandingImage` | Authenticated | Query `fileName` → stored bytes with extension-derived MIME (content-derived for `elsewhere-icon.png`). |
+| GET | `ElsewhereBrandingIcon` | Anonymous | Uploaded Elsewhere icon with content-derived MIME, `Cache-Control: public, max-age=86400`, and a sandboxing `Content-Security-Policy`; `404` when none is uploaded. Anonymous because viewers load it with a plain `<img>`; an optional `v` query only busts caches. |
 | POST | `DeleteBrandingImage` | Administrator | Form `fileName` → success string `File deleted successfully`. |
 
 ```bash
@@ -1978,7 +2025,7 @@ These are resource URLs, separate from Jellyfin web hash navigation or placement
 
 ## Full Endpoint Index
 
-The endpoint tables above enumerate all 202 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
+The endpoint tables above enumerate all 224 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
 
 For implementation details, [JellyfinEnhancedController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs) implements all indexed routes except `catchup/*`, which is in [CatchUpController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs). These upstream source links may advance beyond this versioned reference.
 
@@ -2019,7 +2066,7 @@ Quality settings add `ShowRuntimeTag`, `ShowAspectRatioTag`, `ShowFrameRateTag`,
 
 Movie entries optionally carry `Scenes: { PostCredits: boolean, MidCredits: boolean }`. `StatusTagsScenes` defaults false on both server and user settings. The server reads exact `aftercreditsstinger` / `duringcreditsstinger` keyword names from `movie/{id}/keywords` through `TmdbResponseCache`, with a UTC-day freshness floor. Cache builds/reconciliation and enabling the admin family warm snapshots and publish them through the existing tag-cache change path. Confirmed negative results last until the next UTC day; transient failures retain a previous snapshot and retry after an hour; a provider failure pauses the remaining pass for that hour. Card batch and native reads return the last confirmed facts or nothing, without keyword requests. Missing or stale facts gather for two seconds into one background queue; the worker paces lookups at four per second, observes the same daily TTL and provider failure pause, and stops its waits and remaining movie pass when the tag-cache service is disposed. Cancelling a reader never cancels shared TMDB transport. Completed refreshes publish the movie IDs whose Scenes facts changed and invalidate only those native on-demand snapshots (and any dependent seasons/episodes). Failed or unchanged refreshes preserve existing snapshots, including when the bulk cache is disabled; enabling/disabling Scenes and provider changes compare the projected facts too. Change detection uses the live bulk entries and bounded native memo snapshots as its baselines, without retaining a separate history of movie reads. Eviction, deletion and rebuild retire the corresponding baseline; an unknown/null fact is compared with newly confirmed facts, and in-flight native builds recheck Scenes before memo publication. No key or disabled server Status/Scenes means no enrichment. Existing Status priorities win before Scenes; when both keywords exist Post-credits wins.
 
-`LeavingSoonMaintainerrApiKey` is explicitly excluded from both user and administrator portable exports/imports, public/private configuration and runtime snapshots. The Status badges page shows the key in a plain text field like the TMDB key, and its patch response returns it and conflict-checks it like any other field; the administrator-only core Jellyfin plugin configuration API keeps its normal credential-editing contract. Source URLs, collection names and cadence are administrator settings; private collection provenance never reaches tag clients.
+`LeavingSoonMaintainerrApiKey` is explicitly excluded from both user and administrator portable exports/imports, public/private configuration and runtime snapshots. It is no field of the Media Tags page: the Services tab saves it. The administrator-only core Jellyfin plugin configuration API keeps its normal credential-editing contract. Source URLs, collection names and cadence are administrator settings; private collection provenance never reaches tag clients.
 
 Tag group cap normalization only clamps persisted values to 0–10, preserving valid values through saves and portable import/export. Effective presentation fixes Status and Age rating limits to one. Native resolution and web presentation also fix Logos to one when `LogoTagsMaxLogos` is one, including stored higher or unlimited caps and web look overrides. A two-logo policy keeps the configurable group cap.
 

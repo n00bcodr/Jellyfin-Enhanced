@@ -85,7 +85,7 @@ JEAdmin.define({
     const tog = (id, label, desc, extra) => Object.assign({ id, type: 'toggle', manual: true, label, desc }, extra);
     const sel = (id, label, options, desc, extra) => Object.assign({ id, type: 'select', manual: true, label, options, desc }, extra);
     const RS = [['tmdb', 'TMDB'], ['tomatoes', 'RT Critic'], ['popcorn', 'RT Audience'], ['imdb', 'IMDb'], ['trakt', 'Trakt'],
-        ['metacritic', 'Metascore'], ['metacriticuser', 'Metacritic User'], ['letterboxd', 'Letterboxd'], ['myanimelist', 'MAL'], ['anilist', 'AniList'], ['master', 'Master']];
+        ['metacritic', 'Metascore'], ['metacriticuser', 'Metacritic User'], ['letterboxd', 'Letterboxd'], ['myanimelist', 'MAL'], ['master', 'Master']];
     const RSN = [['', 'None']].concat(RS);
     const arrow = (d) => '<i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_' + d + 'ward</i>';
 
@@ -122,7 +122,7 @@ JEAdmin.define({
                 + '<dl class="je-media-tags-card-facts" id="jeMediaTagsCardFacts" aria-live="polite"></dl></div>'
                 + '<a class="jea-btn jea-btn-primary je-media-tags-open" href="#/configurationpage?name=Jellyfin%20Enhanced&amp;jeSection=media-tags"><i class="material-icons" aria-hidden="true">sell</i><span>Open Media Tags</span></a>'
                 + '<div class="je-media-tags-card-links">'
-                + [['layout', 'Layout defaults'], ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours'], ['badges', 'Status badges'], ['server', 'Tag cache &amp; native posters']]
+                + [['layout', 'Layout defaults'], ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours and text'], ['badges', 'Status badges'], ['server', 'Tag cache &amp; native posters']]
                     .map(([section, label]) => '<a class="je-media-tags-card-link" href="#/configurationpage?name=Jellyfin%20Enhanced&amp;jeSection=media-tags&amp;tab=' + section + '">' + label + '</a>').join('')
                 + '</div></div>' }]
         },
@@ -202,8 +202,12 @@ JEAdmin.define({
                     + '<div class="je-setting-description" data-desc-for="mdblistApiKey"><div class="fieldDescription">Your API key from <a class="sectionTitle" href="https://mdblist.com/preferences/#api" target="_blank">mdblist.com</a>.</div></div>' },
                 tog('mdblistRatingsShowOnItemDetails', 'Show Ratings Row on Item Details', 'Displays the MDBList ratings row on item-details pages.'),
                 tog('mdblistRatingsShowPercentSymbol', 'Show % Symbol', 'Appends "%" after each rating badge\'s number.'),
-                { type: 'custom', html: '<details id="mdblistSourcesAdminDetails" class="je-details-section"><summary>Configure ratings shown</summary><div class="je-details-body"><div class="fieldDescription je-field-desc-sm">Pick which ratings appear on the item-details row, and the order they\'re shown in. Use the '
-                    + arrow('up') + ' / ' + arrow('down') + ' buttons to reorder. All checked by default.</div><div id="mdblistRatingsSourcesAdmin"></div></div></details>' },
+                { type: 'group', title: 'Configure ratings shown', items: [
+                    { type: 'note', html: 'Pick which ratings appear on the item-details row, and the order they\'re shown in. Use the '
+                        + arrow('up') + ' / ' + arrow('down') + ' buttons to reorder. All checked by default.' },
+                    // Filled by renderMdblistSourcesAdmin in configPage.html (the Services tab copy gets its own list, kept in step there).
+                    { type: 'custom', html: '<div id="mdblistRatingsSourcesAdmin"></div>' }
+                ] },
                 { type: 'group', title: 'Fetch ratings (scheduled task)', items: [
                     tog('mdblistRatingsFetchEnabled', 'Fetch Ratings from MDBList', 'Enables the <strong>Fetch Ratings from MDBList</strong> scheduled task (Dashboard, Scheduled Tasks):' + UL(
                         'Looks up MDBList data for any movie/series whose cached ratings are missing or stale, and saves it. Doesn\'t touch Jellyfin\'s own rating fields',
@@ -241,9 +245,10 @@ JEAdmin.define({
                 + '<div class="je-api-row"><input id="TMDB_API_KEY" name="TMDB_API_KEY" type="text" autocomplete="off" class="je-api-input jea-input"/>'
                 + '<span id="tmdbStatusIndicator" class="material-icons"></span>'
                 + '<button type="button" class="testTmdbBtn jea-btn">Test</button></div></div>'
-                + '<div class="je-setting-description" data-desc-for="TMDB_API_KEY"><div class="fieldDescription">Your API key from The Movie DB (TMDB). <a class="sectionTitle" href="https://www.themoviedb.org/settings/api" target="_blank">How to?</a> Shared with Seerr Settings. Needed by Elsewhere, TMDB Reviews and Release Dates.</div></div>' },
+                + '<div class="je-setting-description" data-desc-for="TMDB_API_KEY"><div class="fieldDescription">Your API key from The Movie DB (TMDB). <a class="sectionTitle" href="https://www.themoviedb.org/settings/api" target="_blank">How to?</a> Shared with Seerr Settings. Needed by TMDB Reviews and Release Dates.</div></div>' },
             { id: 'DEFAULT_REGION', prop: 'DEFAULT_REGION', manual: true, type: 'select', options: [], label: 'Default Region',
-                           desc: 'The default region for streaming provider lookup and release dates. Empty defaults to US. <a class="sectionTitle" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/regions.txt" target="_blank">Full List</a>' }
+                           desc: 'The default region for streaming provider lookup and release dates. Empty defaults to US. <a class="sectionTitle" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/regions.txt" target="_blank">Full List</a>' },
+            { type: 'custom', html: '<div class="jea-note je-region-source-note" style="display:none;align-items:flex-start;gap:12px;"><i class="material-icons je-info-icon">info</i><span><strong>Seerr is enabled and no TMDB key is set:</strong> streaming providers come from Seerr. Per-season providers still need a TMDB key.</span></div>' }
         ]
     },
     'elsewhere': {
@@ -251,17 +256,33 @@ JEAdmin.define({
         items: [
             { id: 'elsewhereEnabled', prop: 'ElsewhereEnabled', type: 'toggle', main: true, label: 'Enable Elsewhere',
               desc: 'Adds an "Elsewhere" panel to item detail pages showing where the title is available on streaming services in the user\'s region (powered by TMDB watch-provider data).' },
+            { type: 'custom', html: '<div class="jea-note je-region-source-note" style="display:none;align-items:flex-start;gap:12px;"><i class="material-icons je-info-icon">info</i><span><strong>Seerr is enabled and no TMDB key is set:</strong> streaming providers come from Seerr. Per-season providers still need a TMDB key.</span></div>' },
             { id: 'DEFAULT_PROVIDERS', prop: 'DEFAULT_PROVIDERS', type: 'text', label: 'Default Providers', placeholder: 'e.g., Netflix,Hulu',
               desc: 'A list of default streaming providers to show. Leave blank to show all. <a class="sectionTitle" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt" target="_blank">Full List</a>' },
             { id: 'IGNORE_PROVIDERS', prop: 'IGNORE_PROVIDERS', type: 'text', label: 'Ignore Providers', placeholder: 'e.g., .*with Ads, Hulu',
               desc: 'A list of providers to ignore from the default region (supports regex). <a class="sectionTitle" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt" target="_blank">Full List</a>' },
+            { id: 'ElsewhereUseSeerrRegion', prop: 'ElsewhereUseSeerrRegion', type: 'toggle', default: false, label: 'Use each user\'s Seerr streaming region',
+              desc: 'Look up streaming providers in the Seerr "Streaming Region" of each user (their own Seerr setting, else Seerr\'s global one, else US as Seerr does) and ignore the Default Region and users\' own Elsewhere country for providers. Needs the Seerr integration. If Seerr gives no region, the Default Region is used.' },
             { id: 'ElsewhereSeasonProviders', prop: 'ElsewhereSeasonProviders', type: 'toggle', default: true, label: 'Per-season providers',
-              desc: 'On Series and Season pages, look up streaming providers per season from TMDB. A season is labelled only when seasons differ; seasons TMDB has no data for fall back to the series providers. Only applies when the series uses the default (aired) season order. Users can turn this off for themselves in the Elsewhere search settings.' },
+              desc: 'On Series and Season pages, look up streaming providers per season from TMDB. Requires a TMDB API key (not available when Elsewhere runs on Seerr data). A season is labelled only when seasons differ; seasons TMDB has no data for fall back to the series providers. Only applies when the series uses the default (aired) season order. Users can turn this off for themselves in the Elsewhere search settings.' },
             { type: 'group', title: 'Custom Branding', items: [
                 { id: 'ElsewhereCustomBrandingText', prop: 'ElsewhereCustomBrandingText', type: 'text', label: 'Custom Branding Message', placeholder: 'e.g., Only available on My Server',
                   desc: 'Custom message to display when content is not available on any streaming providers. Leave blank to disable custom branding.' },
-                { id: 'ElsewhereCustomBrandingImageUrl', prop: 'ElsewhereCustomBrandingImageUrl', type: 'text', label: 'Custom Branding Icon URL', placeholder: '/web/assets/img/icon.png',
-                  desc: 'Optional URL for an icon to display next to the custom message. Leave blank for no icon.' }
+                { id: 'ElsewhereCustomBrandingImageUrl', prop: 'ElsewhereCustomBrandingImageUrl', type: 'text', label: 'Custom Branding Icon URL', placeholder: 'e.g., https://example.com/logo.png',
+                  desc: 'Optional icon shown next to the custom message, at 24 × 24. Each viewer\'s browser loads it, so use a web address such as <code>https://example.com/logo.png</code> or a path Jellyfin serves such as <code>/web/favicons/touchicon.png</code>, not a file path on the server. Any image type browsers show works (PNG, SVG, WebP). To use an image from your computer, upload it below instead; an uploaded icon is used in place of this URL. Leave both blank for no icon.' },
+                { type: 'custom', html: '<div class="jea-note jea-note-warn" id="je-elsewhere-icon-warning" style="display:none;"></div>' },
+                { type: 'custom', html: '<div class="je-branding-grid"><div class="je-branding-card">'
+                    + '<label class="je-branding-label-bold">Upload Icon</label>'
+                    + '<label class="je-branding-label">Stored on the server and used instead of the URL above. Takes effect on the next page load.</label>'
+                    + '<div class="je-branding-size-hint">Shown at 24×24px &nbsp;·&nbsp; PNG, JPG, GIF, WebP or SVG</div>'
+                    + '<div class="je-branding-dropzone" id="elsewhereIconDropZone">'
+                    + '<input type="file" id="elsewhereIconInput" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" class="je-branding-file-input" />'
+                    + '<div id="elsewhereIconPlaceholder" class="je-branding-placeholder"><i class="material-icons je-branding-placeholder-icon">image</i></div>'
+                    + '<img id="elsewhereIconPreview" class="je-branding-preview" style="display:none;" />'
+                    + '<div id="elsewhereIconDimensions" class="je-branding-dimensions" style="display:none;"></div>'
+                    + '<div id="elsewhereIconStatus" class="je-branding-status"></div>'
+                    + '<button type="button" class="je-branding-delete" id="elsewhereIconDelete" style="display:none;"><i class="material-icons">delete</i></button>'
+                    + '</div></div></div>' }
             ] }
         ]
     },
@@ -362,6 +383,8 @@ JEAdmin.define({
         items: [
             { id: 'disableCustomSubtitleStyles', prop: 'DisableCustomSubtitleStyles', type: 'toggle', perUser: true, label: 'Disable Custom Subtitle Styles by default',
               desc: 'Globally disables Jellyfin\'s custom subtitle style overrides so the source subtitle styling is shown unmodified.' },
+            { id: 'subtitleSyncButtonEnabled', prop: 'SubtitleSyncButtonEnabled', type: 'toggle', perUser: true, label: 'Show Subtitle Sync Button in the Player',
+              desc: 'Adds a button next to Subtitles in the player that syncs the subtitles to the line you just heard, from a list of the subtitle lines with their times that can also be searched and jumped through. The Sync Subtitles shortcut (Shift+S) opens the list with or without the button.' },
             { type: 'group', title: 'Default appearance for new users', open: true, items: [
                 { id: 'DefaultSubtitleStyle', prop: 'DefaultSubtitleStyle', type: 'select', perUser: true, default: 0, label: 'Default Subtitle Style',
                   options: [['0', 'Clean White'], ['1', 'Classic Black Box'], ['2', 'Netflix Style'], ['3', 'Cinema Yellow'], ['4', 'Soft Gray'], ['5', 'High Contrast']],
@@ -604,6 +627,16 @@ JEAdmin.define({
                     'When enabled, regular users only see their own watched, favorited and reviewed entries. Administrators still see everyone.')
             ]
         },
+        'pages-leaving-soon': {
+            title: 'Leaving Soon', icon: 'auto_delete',
+            items: [
+                note('<strong>Leaving Soon</strong> lists everything the removal tool that is on (Maintainerr or Reclaimerr) will remove, with the days left, for every user: each one only sees items they can see. Administrators can keep an item or change its date from the page, and with Reclaimerr approve or deny removal requests; other users see their own requests. Set a removal tool up first (the Maintainerr and Reclaimerr cards in the *arr tab).'),
+                T('leavingSoonPageEnabled', 'LeavingSoonPageEnabled', 'Enable the Leaving Soon page', 'Turns the page on. It lists nothing until a removal tool is set up.', { main: true }),
+                placement({ p: 'leavingSoonPage', en: 'leavingSoonPageEnabled', name: 'Leaving Soon', ppLabel: 'Use Plugin Pages',
+                    ppIntro: `Adds a "Leaving Soon" link via ${ppLink}.`, ctLabel: 'Use Custom Tabs',
+                    noun: 'Leaving Soon page', hint: 'leavingSoonPage', cls: 'jellyfinenhanced leavingsoon', text: 'Leaving Soon' })
+            ]
+        },
         'pages-catchup': {
             title: 'Catch Up', icon: 'style',
             items: [
@@ -798,7 +831,7 @@ JEAdmin.define({
             { id: 'jellyseerrShowIssueIndicator', prop: 'JellyseerrShowIssueIndicator', type: 'toggle', label: 'Show open issue indicator',
               desc: 'When enabled, the report issue button turns orange and shows a count badge if the item has open issues in Seerr.' },
             { id: 'showElsewhereOnJellyseerr', prop: 'ShowElsewhereOnJellyseerr', type: 'toggle', label: 'Show Streaming Providers on Posters',
-              desc: 'Displays icons of available streaming services (from your default region) on Seerr Posters.<br/><br/><b>Requires TMDB API Key to be configured in Elsewhere Settings</b>' },
+              desc: 'Displays icons of available streaming services on Seerr Posters, for your Default Region, or each user\'s Seerr streaming region when "Use each user\'s Seerr streaming region" is on (Elsewhere settings).<br/><br/><b>Needs a TMDB API Key or the Seerr integration (Seerr supplies the data when there is no TMDB key)</b>' },
             { id: 'jellyseerrShowDetailPageLink', prop: 'JellyseerrShowDetailPageLink', type: 'toggle', default: true, label: 'Show Seerr link on item detail pages',
               desc: 'Adds a Seerr tag to the External Links row on movie/show detail pages (the same row TMDB/IMDb icons appear in, and *arr links when enabled; it shows there regardless of whether *arr links are configured). If "Open results in More Info modal" above is enabled, clicking it opens that modal (status, downloads, and who requested it); otherwise it links straight to the item on Seerr.' },
             { id: 'jellyseerrShowDetailPageLinkAsText', prop: 'JellyseerrShowDetailPageLinkAsText', type: 'toggle', label: 'Show as text instead of icon',
@@ -838,13 +871,13 @@ JEAdmin.define({
                 { id: 'jellyseerrFilterRuntime', prop: 'JellyseerrFilterRuntime', type: 'toggle', default: true, label: 'Runtime',
                   desc: 'A runtime range, in minutes.' },
                 { id: 'jellyseerrFilterGenres', prop: 'JellyseerrFilterGenres', type: 'toggle', default: true, label: 'Genres',
-                  desc: 'One or more genres.' },
+                  desc: 'Genres a title must have, and genres it must not have.' },
                 { id: 'jellyseerrFilterLanguage', prop: 'JellyseerrFilterLanguage', type: 'toggle', default: true, label: 'Original language',
-                  desc: 'One or more original languages.' },
+                  desc: 'Original languages a title must be in, and ones it must not be in.' },
                 { id: 'jellyseerrFilterContentRating', prop: 'JellyseerrFilterContentRating', type: 'toggle', default: true, label: 'Content rating',
-                  desc: 'The ratings used in your Default Region (Elsewhere & Reviews tab). US ratings where TMDB has none for it.' },
+                  desc: 'The ratings used in your Default Region (Elsewhere & Reviews tab), or each user\'s Seerr streaming region when "Use each user\'s Seerr streaming region" is on. US ratings where TMDB has none for it.' },
                 { id: 'jellyseerrFilterStreaming', prop: 'JellyseerrFilterStreaming', type: 'toggle', default: true, label: 'Streaming services',
-                  desc: 'The services available in your Default Region (Elsewhere & Reviews tab).' },
+                  desc: 'The services available in your Default Region (Elsewhere & Reviews tab), or each user\'s Seerr streaming region when "Use each user\'s Seerr streaming region" is on.' },
                 { id: 'jellyseerrFilterKeywords', prop: 'JellyseerrFilterKeywords', type: 'toggle', default: true, label: 'Keywords',
                   desc: 'Keywords a title must have, and keywords it must not have.' },
                 { id: 'jellyseerrFilterRole', prop: 'JellyseerrFilterRole', type: 'toggle', default: true, label: 'Role (actor pages)',
@@ -907,6 +940,16 @@ JEAdmin.define({
               desc: 'Wait this many seconds after the LAST item added before firing the scan. Default 60. Range 5 to 3600.' },
             { type: 'custom', html: '<div class="jea-actions"><button type="button" id="triggerSeerrScanNowBtn" class="jea-btn">Trigger scan now</button><span id="triggerSeerrScanNowStatus" class="material-icons" aria-hidden="true"></span></div>' +
               '<div class="je-setting-description" data-desc-for="triggerSeerrScanNowBtn"><div class="fieldDescription">Uses the Seerr URL and API key entered in the Connection Setup section above. If multiple URLs are configured, the first reachable one is used.</div></div>' }
+        ]
+    },
+
+    'seerr-auto-request-removal': {
+        title: 'Auto Request Removal', icon: 'playlist_remove',
+        items: [
+            { id: 'autoRequestRemovalEnabled', prop: 'AutoRequestRemovalEnabled', type: 'toggle', main: true, label: 'Remove Watched Requests',
+              desc: '<ul class="je-desc-list"><li>Delete a Seerr request once the user who made it has watched it. Only the request is deleted; the media stays available in Seerr and in the library</li><li><strong>Destructive:</strong> a deleted request cannot be restored, and its history is gone from Seerr. Use with caution</li><li><strong>Quotas:</strong> if request quotas are enabled in Seerr, removing a request gives that quota back to the user, because Seerr counts quota from the requests that still exist</li></ul>' },
+            { type: 'note', tone: 'warn', html: '<strong>Warning:</strong> this permanently deletes requests, and the same applies to the <strong>Remove request</strong> button on the Requests page. If you use Seerr request quotas, each removed request frees up quota again, so users can request more than the limit allows over time. Try it on a small setup first and keep a Seerr backup.' },
+            { type: 'note', html: 'Runs daily through the <strong>Remove watched requests from Seerr</strong> scheduled task (Dashboard &gt; Scheduled Tasks); a request is removed on the first run after its requester has watched it.<br/>Only the requester\'s own viewing counts. Movies count once any version is watched; series requests are removed once every episode of every requested season is watched and available.<br/>Pending, declined and failed requests are never removed.' }
         ]
     },
 
@@ -1067,7 +1110,7 @@ JEAdmin.define({
         items: [
             { id: 'arrTagsSyncEnabled', prop: 'ArrTagsSyncEnabled', type: 'toggle', main: true, label: 'Enable Tags Sync',
               desc: 'Fetches all tags from Radarr and Sonarr instances defined above and adds them as Jellyfin tags.<br/><strong>Note:</strong> Run the sync task from Dashboard &gt; Scheduled Tasks &gt; "Sync Tags from *arr to Jellyfin" and configure how often it should run.' },
-            { id: 'arrTagsPrefix', prop: 'ArrTagsPrefix', type: 'text', default: 'Requested by: ', label: 'Tag Prefix', placeholder: 'JE Arr Tag: ',
+            { id: 'arrTagsPrefix', prop: 'ArrTagsPrefix', type: 'text', default: 'JE Arr Tag: ', label: 'Tag Prefix', placeholder: 'JE Arr Tag: ',
               desc: 'Prefix to add before each tag (e.g., "JE Arr Tag: " will result in "JE Arr Tag: 1 - Jellyfish")' },
             { id: 'arrTagsClearOldTags', prop: 'ArrTagsClearOldTags', type: 'toggle', default: true, label: 'Clear old tags before sync',
               desc: 'When enabled, removes all existing tags starting with the prefix before adding new ones. This keeps tags in sync with your *arr applications.' },
@@ -1203,16 +1246,320 @@ JEAdmin.define({
 
 /* ===== Services: linked copies of cards that live in their feature tabs ===== */
 JEAdmin.define({
-    // Maintainerr's address and key are fields of the Media Tags tab (Status badges > Leaving soon); this card only explains and links.
-    'svc-maintainerr': {
+    // Maintainerr: the main form owns these fields (saved with the page's Save button). The card lives in the *arr tab, the
+    // Services tab shows a linked copy, and the Media Tags tab (Status badges > Leaving soon) shows the live status and links here.
+    'arr-maintainerr': {
         title: 'Maintainerr', iconImg: 'selfhst/svg/maintainerr.svg',
         items: [
-            { type: 'note', html: 'Maintainerr is only used to show <strong>how many days are left</strong> before an item leaves, on the <strong>Leaving soon</strong> media tag. Nothing else in Jellyfin Enhanced talks to it.' },
-            { type: 'custom', html: '<a class="jea-btn jea-btn-primary" style="text-decoration:none" href="#/configurationpage?name=Jellyfin%20Enhanced&amp;jeSection=media-tags&amp;tab=badges"><i class="material-icons" aria-hidden="true">new_releases</i><span>Set up Leaving soon</span></a>' }
+            { type: 'note', html: 'Maintainerr decides which items leave your library and when. Jellyfin Enhanced reads its collections for the <strong>Leaving soon</strong> tag and home row, and lets administrators <strong>mark, keep and postpone</strong> removals from an item\'s &#8942; menu. Set Maintainerr up first: the plugin never creates collections. It adds items to the <em>manual</em> collection you made for that library. The shared options are in the <strong>Leaving soon</strong> card.' },
+            { id: 'LeavingSoonMaintainerrEnabled', prop: 'LeavingSoonMaintainerrEnabled', type: 'toggle', default: true, label: 'Use Maintainerr',
+              desc: 'Only one of Maintainerr and Reclaimerr feeds <strong>Leaving soon</strong> and the item menu, so they never clash: turning one on turns the other off. The settings of the one that is off are kept.' },
+            { id: 'LeavingSoonMaintainerrUrl', prop: 'LeavingSoonMaintainerrUrl', type: 'text', label: 'Maintainerr URL', placeholder: 'http://maintainerr:6246', showIf: 'LeavingSoonMaintainerrEnabled',
+              desc: 'The address this server reaches Maintainerr at (<code>http://</code> or <code>https://</code>, no credentials or query). Redirects are not followed: use the final address. Empty turns the Maintainerr features off.' },
+            { id: 'LeavingSoonMaintainerrApiKey', prop: 'LeavingSoonMaintainerrApiKey', type: 'text', label: 'Maintainerr API key', showIf: 'LeavingSoonMaintainerrEnabled',
+              toConfig: (v) => String(v || '').trim(), fromConfig: (v) => v || '' }
         ]
     },
+    'arr-reclaimerr': {
+        title: 'Reclaimerr', iconImg: 'selfhst/svg/reclaimerr.svg',
+        items: [
+            { type: 'note', html: 'Reclaimerr decides which items leave your library, like Maintainerr. Needs <strong>Reclaimerr 0.6.15 or newer</strong> (development builds such as <code>0.6.15-dev.1</code> count). Jellyfin Enhanced reads what Reclaimerr will remove (cleanup candidates, scheduled deletions and approved requests waiting for their day) for the <strong>Leaving soon</strong> tag, page and home row. Administrators can <strong>mark, keep and postpone</strong> from an item\'s &#8942; menu and approve or deny removal requests on the Leaving soon page, and users can <strong>request a removal</strong>. The shared options are in the <strong>Leaving soon</strong> card.' },
+            { id: 'ReclaimerrEnabled', prop: 'ReclaimerrEnabled', type: 'toggle', default: false, label: 'Use Reclaimerr',
+              desc: 'Turning this on turns Maintainerr off (and the other way round). Its settings below are kept either way.' },
+            { id: 'ReclaimerrUrl', prop: 'ReclaimerrUrl', type: 'text', label: 'Reclaimerr URL', placeholder: 'http://reclaimerr:8000', showIf: 'ReclaimerrEnabled',
+              desc: 'Where this server reaches Reclaimerr: <code>http://</code> or <code>https://</code>, with no credentials, query or redirect.' },
+            { id: 'ReclaimerrApiKey', prop: 'ReclaimerrToken', type: 'text', label: 'Reclaimerr API token', showIf: 'ReclaimerrEnabled',
+              toConfig: (v) => String(v || '').trim(), fromConfig: (v) => v || '',
+              desc: 'Create it in Reclaimerr under <em>Settings &gt; Integrations</em> with manage access to <strong>candidates</strong>, <strong>scheduled deletions</strong>, <strong>delete requests</strong> and <strong>users</strong>, and read access to <strong>media</strong>.' },
+            { id: 'ReclaimerrUserRequests', prop: 'ReclaimerrUserRequests', type: 'toggle', default: false, label: 'Let users request removals', showIf: 'ReclaimerrEnabled',
+              desc: 'Adds <strong>Request removal</strong> to the &#8942; menu (needs <strong>Mark, keep and postpone from the item menu</strong> on), filed as the user\'s linked Reclaimerr account. In Reclaimerr, set <code>FORWARD_AUTH_ENABLED=true</code> and add this server\'s IP to <code>FORWARD_AUTH_TRUSTED_PROXIES</code>. Anything that reaches Reclaimerr from that IP can sign in as any Reclaimerr user, so use one only this server uses.' },
+            { id: 'ReclaimerrUserHeader', prop: 'ReclaimerrUserHeader', type: 'text', default: 'Remote-User', label: 'User header', showIf: 'ReclaimerrUserRequests',
+              toConfig: (v) => String(v || '').trim() || 'Remote-User',
+              desc: 'The header Reclaimerr reads the user from: its <code>FORWARD_AUTH_USER_HEADER</code> (default <code>Remote-User</code>).' },
+            { type: 'group', title: 'Import Jellyfin users into Reclaimerr', open: true, showIf: 'ReclaimerrEnabled', items: [
+                { type: 'note', html: 'Creates and links a Reclaimerr account for each Jellyfin user without one. Users Reclaimerr matches to an existing account are listed for you to confirm in Reclaimerr.' },
+                { type: 'custom', html: '<div class="inputContainer">'
+                    + '<div><strong>What the new accounts may do</strong></div>'
+                    + '<div id="reclaimerrNewPerms" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
+                    + [['request', 'Request removals'], ['auto_approve', 'Auto-approve'], ['manage_requests', 'Manage requests'], ['manage_protection', 'Manage protection'], ['manage_reclaim', 'Manage reclaim']].map(([v, l]) => '<label><input type="checkbox" id="reclaimerrNewPerm-' + v + '" value="' + v + '"> ' + l + '</label>').join('') + '</div>'
+                    + '<div><strong>Reclaimerr pages they can open</strong></div>'
+                    + '<div id="reclaimerrNewPages" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 16px;margin:8px 0 16px">'
+                    + ['requests', 'candidates', 'settings', 'dashboard', 'movies', 'series', 'protected', 'duplicates', 'calendar', 'storage', 'history'].map((v) => '<label><input type="checkbox" id="reclaimerrNewPage-' + v + '" value="' + v + '"> ' + v.charAt(0).toUpperCase() + v.slice(1) + '</label>').join('') + '</div>'
+                    + '<div class="jea-row"><button type="button" id="reclaimerrImportUsersBtn" class="jea-btn">Import Jellyfin users</button></div>'
+                    + '<div id="reclaimerrImportUsersLine" class="jea-hint"></div></div>',
+                  init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireImportUsers() }
+            ] },
+            { type: 'group', title: 'User audit', open: false, showIf: 'ReclaimerrEnabled', items: [
+                { type: 'note', html: 'Checks each Jellyfin user\'s linked Reclaimerr account and, with requests on, whether they can request removals. Administrators mark for removal with the API token instead of requesting, so they are not checked. Also lists token scopes that are missing. Save the Reclaimerr settings first.' },
+                { type: 'custom', html: '<div class="inputContainer"><div class="jea-row"><button type="button" id="reclaimerrAuditBtn" class="jea-btn">Run Audit</button></div>'
+                    + '<div id="reclaimerrAuditResult" style="display:none;margin-top:1em"></div></div>',
+                  init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireUserAudit() }
+            ] }
+        ]
+    },
+    // Shared by whichever removal tool is on: the live state, the item menu, the home row and the refresh interval.
+    'arr-leaving-soon': {
+        title: 'Leaving soon', icon: 'auto_delete',
+        items: [
+            { type: 'note', html: 'What the <strong>Leaving soon</strong> tag, the item menu and the home row use, whichever of Maintainerr and Reclaimerr is on. Turn one of them on in its card first.' },
+            { type: 'custom', html: '<div class="inputContainer jea-row"><div class="je-api-row"><span id="maintainerrStatusIndicator" class="material-icons" aria-hidden="true"></span>'
+                + '<button type="button" id="maintainerrRefreshBtn" class="jea-btn"><i class="material-icons" aria-hidden="true" style="font-size:1.1em;vertical-align:middle;margin-right:4px">refresh</i>Refresh now</button></div>'
+                + '<div id="maintainerrStatusLine" class="jea-hint">&nbsp;</div><div id="maintainerrRowLine" class="jea-hint"></div>'
+                + '<div class="jea-hint">Save first: Refresh uses the saved settings. Cards never ask the removal tool; the server reads it on the schedule below and keeps the answer in the tag cache.</div></div>',
+              init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wire() },
+            { id: 'LeavingSoonMaintainerrActions', prop: 'LeavingSoonMaintainerrActions', type: 'toggle', default: true, label: 'Mark, keep and postpone from the item menu',
+              desc: 'Administrators get <strong>Mark for removal</strong>, <strong>Keep</strong> and <strong>Postpone removal</strong> in a movie or series\' &#8942; menu (with Reclaimerr, each takes an exact day). Maintainerr: items are added to or removed from its existing manual collection for their library. Marking applies at once, with an Undo.' },
+            { id: 'LeavingSoonHomeRow', prop: 'LeavingSoonHomeRow', type: 'toggle', default: true, label: 'Leaving soon home row',
+              desc: 'A <strong>Leaving soon</strong> row on the <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-home-sections/" target="_blank" rel="noopener">Home Screen Sections</a> home page, soonest removal first. Needs the Home Screen Sections and File Transformation plugins. It is added enabled for everyone; users with their own section list can turn it on or off there.<br>Using <a class="sectionTitle" href="https://github.com/ranaldsgift/KefinTweaks" target="_blank" rel="noopener">KefinTweaks</a> instead? Its home sections can read the same list from <code>/JellyfinEnhanced/leaving-soon/items</code>, without Home Screen Sections. See the <a class="sectionTitle" href="https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/#leaving-soon" target="_blank" rel="noopener">documentation</a> for the steps.' },
+            { type: 'custom', html: '<div class="inputContainer jea-row"><button type="button" id="leavingSoonCopyKefinBtn" class="jea-btn"><i class="material-icons" aria-hidden="true" style="font-size:1.1em;vertical-align:middle;margin-right:4px">content_copy</i><span>Copy KefinTweaks section</span></button>'
+                + '<div class="jea-hint">Copies a Leaving soon section for KefinTweaks. In KefinTweaks, open Enhanced Home Screen, New Section, Advanced, Import and paste it.</div></div>',
+              init: () => {
+                  const btn = document.getElementById('leavingSoonCopyKefinBtn');
+                  if (!btn || btn.dataset.wired) return;
+                  btn.dataset.wired = '1';
+                  const section = JSON.stringify({
+                      id: 'leaving-soon', type: 'home', name: 'Leaving Soon', enabled: true, order: 72, cardFormat: 'Poster', userConfigurable: true,
+                      queries: [{ path: '/JellyfinEnhanced/leaving-soon/items', queryOptions: { Limit: 20 } }]
+                  }, null, 2);
+                  const label = btn.querySelector('span');
+                  const done = (ok) => { label.textContent = ok ? 'Copied' : 'Copy failed'; setTimeout(() => { label.textContent = 'Copy KefinTweaks section'; }, 2000); };
+                  btn.addEventListener('click', () => {
+                      const legacy = () => {
+                          const t = document.createElement('textarea');
+                          t.value = section; t.style.position = 'fixed'; t.style.opacity = '0';
+                          document.body.appendChild(t); t.select();
+                          let ok = false;
+                          try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+                          t.remove(); done(ok);
+                      };
+                      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(section).then(() => done(true), legacy);
+                      else legacy();
+                  });
+              } },
+            { id: 'LeavingSoonHideWatched', prop: 'LeavingSoonHideWatched', type: 'toggle', default: false, label: 'Hide watched titles in the home row',
+              desc: 'Leaves out of the <strong>Leaving soon</strong> row what the user has already watched (a series counts once every episode is watched). Use this instead of the Hide Watched checkbox in Home Screen Sections, which that plugin keeps disabled for sections added by other plugins.' },
+            { id: 'LeavingSoonRefreshHours', prop: 'LeavingSoonRefreshHours', type: 'number', min: 1, max: 168, default: 6, label: 'Refresh every (hours)',
+              desc: 'How often the server reads the removal tool again (1&ndash;168 hours). A failed request is retried sooner. Each mark, keep or postpone reads it again at once.' }
+        ]
+    },
+    'svc-maintainerr': { mirrorOf: 'arr-maintainerr' },
+    'svc-reclaimerr': { mirrorOf: 'arr-reclaimerr' },
+    'svc-leaving-soon': { mirrorOf: 'arr-leaving-soon' },
     'svc-tmdb': { mirrorOf: 'elsewhere-tmdb' },
     'svc-anilist': { mirrorOf: 'reviews-anilist' },
     'svc-mdblist': { mirrorOf: 'mdblist' },
     'svc-ddd': { mirrorOf: 'content-warnings' }
 });
+
+/* Maintainerr card: the live state of the Leaving soon source and its Home Screen Sections row (admin/leaving-soon), and Refresh now. */
+JEAdmin.maintainerr = (function () {
+    const ROW = {
+        registered: 'Home row: registered with Home Screen Sections.',
+        'hss-missing': 'Home row: Home Screen Sections is not installed, so there is no row.',
+        'ft-missing': 'Home row: registered, but File Transformation is not installed, so Home Screen Sections cannot draw it.',
+        failed: 'Home row: registration failed (see the plugin log).',
+        off: '',
+        unknown: 'Home row: waiting for Home Screen Sections to load.'
+    };
+    const when = (ms) => {
+        if (!Number.isFinite(ms)) return '\u2014';
+        try { return new Date(ms).toLocaleString(); } catch (e) { return new Date(ms).toISOString(); }
+    };
+    let busy = false;
+    let last = null;
+    const el = (id) => document.getElementById(id);
+    const url = (refresh) => ApiClient.getUrl('JellyfinEnhanced/admin/leaving-soon' + (refresh ? '/refresh' : ''));
+
+    function paint(s, failed) {
+        const state = el('maintainerrStatusLine');
+        const icon = el('maintainerrStatusIndicator');
+        const row = el('maintainerrRowLine');
+        const button = el('maintainerrRefreshBtn');
+        if (!state) return;
+        if (button) button.disabled = busy || !(s && s.Configured);
+        let text, kind;
+        if (failed || !s) { text = 'Status unavailable.'; kind = 'warn'; }
+        else if (!s.Configured) { text = 'No source set. Turn on Maintainerr or Reclaimerr, enter its address and save.'; kind = 'off'; }
+        else if (s.LastError) { text = 'Last read failed: ' + s.LastError + '.'; kind = 'error'; }
+        else if (s.LastSuccess) { kind = 'ok'; text = (s.Items || 0) + ' item(s) leaving (' + (s.Dated || 0) + ' with a date). Last read ' + when(s.LastSuccess) + ', next ' + when(s.NextRefresh) + '.'; }
+        else { text = 'Not read yet.'; kind = 'warn'; }
+        state.textContent = text;
+        if (icon) {
+            icon.textContent = kind === 'ok' ? 'check_circle' : kind === 'error' ? 'error' : kind === 'off' ? 'remove_circle_outline' : 'info';
+            icon.style.color = kind === 'ok' ? '#4caf50' : kind === 'error' ? '#f44336' : '';
+        }
+        if (row) row.textContent = s && s.Maintainerr && s.HomeRow ? (ROW[s.HomeRow] || '') : '';
+    }
+
+    async function load(refresh) {
+        if (busy || typeof ApiClient === 'undefined') return;
+        busy = true;
+        const pending = el('maintainerrStatusLine');
+        if (pending) pending.textContent = refresh ? 'Reading ' + (((el('ReclaimerrEnabled') || {}).checked || (last && last.Provider === 'reclaimerr')) ? 'Reclaimerr' : 'Maintainerr') + '\u2026' : 'Loading status\u2026';
+        if (el('maintainerrRefreshBtn')) el('maintainerrRefreshBtn').disabled = true;
+        let status = null, failed = false;
+        try {
+            status = await ApiClient.ajax({ type: refresh ? 'POST' : 'GET', url: url(refresh), dataType: 'json' });
+        } catch (e) { failed = true; }
+        busy = false;
+        last = failed ? { failed: true } : status;
+        paint(status, failed);
+        if (typeof api.onStatus === 'function') api.onStatus(last);
+    }
+
+    /** Import this server's users into Reclaimerr (its own import, through the token), with the ticked permissions and pages for new accounts. */
+    function wireImportUsers() {
+        const button = el('reclaimerrImportUsersBtn');
+        if (!button || button._wired) return;
+        button._wired = true;
+        // Set in script rather than markup so nothing else on the page can change the starting ticks. Each box has an id, so its copy
+        // in the Services tab is a mirrored field: ticks made there reach these boxes, which the import reads. Both start the same.
+        const start = { reclaimerrNewPerms: ['request'], reclaimerrNewPages: ['requests', 'candidates', 'settings'] };
+        for (const [id, on] of Object.entries(start)) for (const box of document.querySelectorAll('#' + id + ' input, #' + id + '--mirror input')) box.checked = on.includes(box.value);
+        const ticked = (id) => Array.from(document.querySelectorAll('#' + id + ' input:checked')).map((i) => i.value);
+        button.addEventListener('click', async () => {
+            const line = el('reclaimerrImportUsersLine');
+            const pages = ticked('reclaimerrNewPages');
+            if (!pages.length) { if (line) line.textContent = 'Pick at least one page.'; return; }
+            if (!window.confirm('Create and link a Reclaimerr account for every Jellyfin user who has none?')) return;
+            button.disabled = true;
+            if (line) line.textContent = 'Importing\u2026';
+            try {
+                const answer = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/import-users'), data: JSON.stringify({ permissions: ticked('reclaimerrNewPerms'), pages }), contentType: 'application/json', dataType: 'json' });
+                const parts = ['Created ' + (answer.created || []).length, 'already linked ' + (answer.alreadyLinked || 0)];
+                if ((answer.needsReview || []).length) parts.push('to confirm in Reclaimerr: ' + answer.needsReview.join(', '));
+                if ((answer.skipped || []).length) parts.push('not imported: ' + answer.skipped.join('; '));
+                if (line) line.textContent = parts.join(', ') + '.';
+            } catch (err) {
+                let reason = null;
+                try { reason = typeof err?.json === 'function' ? (await err.json())?.error : null; } catch (e) { /* no body */ }
+                if (line) line.textContent = 'Could not import the users: ' + (reason || err?.status || err?.message || 'request failed');
+            } finally { button.disabled = false; }
+        });
+    }
+
+    function wire() {
+        const button = el('maintainerrRefreshBtn');
+        if (!button || button._wired) return;
+        button._wired = true;
+        // Maintainerr and Reclaimerr are one choice: switching either on switches the other off.
+        document.addEventListener('change', (e) => {
+            const t = e.target;
+            if (!t || !t.checked || (t.id !== 'LeavingSoonMaintainerrEnabled' && t.id !== 'ReclaimerrEnabled')) return;
+            const other = el(t.id === 'ReclaimerrEnabled' ? 'LeavingSoonMaintainerrEnabled' : 'ReclaimerrEnabled');
+            if (other && other.checked) { other.checked = false; other.dispatchEvent(new Event('change', { bubbles: true })); }
+        });
+        button.addEventListener('click', () => load(true));
+        // The server's answer changes while the page is open (schedule, other admins): look again when the tab is opened.
+        document.addEventListener('click', (e) => {
+            const tab = e.target.closest && e.target.closest('.jellyfin-tab-button[data-tab="services"]');
+            if (tab) setTimeout(() => load(false), 0);
+        });
+        setTimeout(() => load(false), 0);
+    }
+    /**
+     * Reclaimerr user audit: the token's missing scopes and setup problems first, then a card for each user with issues (in the
+     * Seerr permission audit's style), users the sign-in check never reached (in grey: their link is fine, only their Request
+     * permission is unknown), the users with none folded away, and the administrators apart (in grey too: they are not checked,
+     * so they are not counted as OK). Built with textContent only: names and reasons come from Jellyfin and Reclaimerr. Drawn
+     * into the card and into its Services-tab copy alike: the copy only follows a plain-text box, and this one holds elements.
+     */
+    function wireUserAudit() {
+        const button = el('reclaimerrAuditBtn');
+        if (!button || button._wired) return;
+        button._wired = true;
+        const node = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+        const icon = (name) => { const i = node('i', 'material-icons', name); i.setAttribute('aria-hidden', 'true'); return i; };
+        const chip = (kind, iconName, text) => { const c = node('span', 'je-audit-chip je-audit-chip-' + kind); c.append(icon(iconName), document.createTextNode(text)); return c; };
+        const boxes = () => [el('reclaimerrAuditResult'), el('reclaimerrAuditResult--mirror')].filter(Boolean);
+        const label = (u) => u.jellyfinUsername + (u.reclaimerrUsername ? ' \u2192 ' + u.reclaimerrUsername : '');
+        const names = (title, list, kind) => {
+            const details = node('details', 'je-audit-ok-section');
+            details.append(node('summary', null, title));
+            const ul = node('ul', 'je-audit-ok-names' + (kind ? ' je-audit-' + kind + '-names' : ''));
+            for (const u of list) ul.append(node('li', null, label(u)));
+            details.append(ul);
+            return details;
+        };
+        function paint(out, data) {
+            const users = data.users || [];
+            const setup = data.issues || [];
+            const flagged = users.filter((u) => (u.issues || []).length > 0);
+            const unchecked = users.filter((u) => !(u.issues || []).length && u.checked === false);
+            const fine = users.filter((u) => !(u.issues || []).length && u.checked !== false);
+            // Administrators are not checked (they mark with the API token): neither a problem nor counted with the users who passed.
+            const admins = fine.filter((u) => u.admin);
+            const ok = fine.filter((u) => !u.admin);
+            const clean = !setup.length && !flagged.length && !unchecked.length;
+            const summary = node('div', 'je-audit-summary');
+            summary.append(node('div', 'je-audit-summary-title', clean
+                ? (admins.length && !ok.length ? 'Nothing to check: all ' + admins.length + ' user(s) are administrators.'
+                    : 'All ' + ok.length + ' user(s) are set up' + (admins.length ? '; ' + admins.length + ' administrator(s) not checked' : '') + '.')
+                    + (data.version ? ' Reclaimerr ' + data.version + '.' : '')
+                : 'Audit complete' + (data.version ? ' (Reclaimerr ' + data.version + ')' : '') + ', review the items below.'));
+            if (!clean) {
+                const chips = node('div', 'je-audit-summary-chips');
+                if (setup.length) chips.append(chip('warn', 'settings', setup.length + ' setup'));
+                if (flagged.length) chips.append(chip('warn', 'warning', flagged.length + ' with issues'));
+                if (unchecked.length) chips.append(chip('unlinked', 'help', unchecked.length + ' not checked'));
+                if (ok.length) chips.append(chip('ok', 'check_circle', ok.length + ' OK'));
+                if (admins.length) chips.append(chip('unlinked', 'admin_panel_settings', admins.length + ' administrator(s)'));
+                summary.append(chips);
+            }
+            out.append(summary);
+            const cards = node('div', 'je-audit-cards');
+            if (setup.length) {
+                const card = node('div', 'je-audit-card je-audit-card-warn');
+                const head = node('div', 'je-audit-card-header');
+                const who = node('span', 'je-audit-card-user'); who.append(icon('settings'), document.createTextNode('Setup'));
+                head.append(who);
+                const list = node('ul', 'je-audit-card-issues');
+                for (const issue of setup) list.append(node('li', null, issue));
+                card.append(head, list);
+                cards.append(card);
+            }
+            for (const u of flagged) {
+                const card = node('div', 'je-audit-card ' + (u.linked ? 'je-audit-card-warn' : 'je-audit-card-unlinked'));
+                const head = node('div', 'je-audit-card-header');
+                const who = node('span', 'je-audit-card-user');
+                who.append(icon(u.linked ? 'person' : 'person_off'), document.createTextNode(label(u)));
+                head.append(who, u.linked ? chip('warn', 'warning', 'Needs attention') : chip('unlinked', 'link_off', 'Not linked'));
+                const list = node('ul', 'je-audit-card-issues');
+                for (const issue of u.issues) list.append(node('li', null, issue));
+                card.append(head, list);
+                cards.append(card);
+            }
+            if (cards.childNodes.length) out.append(cards);
+            // Not reached by the sign-in check (see Setup): linked to one active account, but whether they may request is unknown.
+            if (unchecked.length) out.append(names('Show ' + unchecked.length + ' linked user(s) whose Request permission was not checked (see Setup)', unchecked, 'unchecked'));
+            if (ok.length && !clean) out.append(names('Show ' + ok.length + ' user(s) with no issues', ok));
+            if (admins.length && !clean) out.append(names('Show ' + admins.length + ' administrator(s), not checked: they mark with the API token', admins, 'unchecked'));
+        }
+        button.addEventListener('click', async () => {
+            if (!boxes().length) return;
+            button.disabled = true;
+            button.textContent = 'Running\u2026';
+            for (const out of boxes()) { out.style.display = 'none'; out.textContent = ''; }
+            let data = null, failure = null;
+            try {
+                data = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/reclaimerr/user-audit'), dataType: 'json' });
+            } catch (err) {
+                let reason = null;
+                try { reason = typeof err?.json === 'function' ? (await err.json())?.error : null; } catch (e) { /* no body */ }
+                failure = 'Audit failed: ' + (reason || err?.status || err?.message || 'request failed');
+            }
+            // The page was reopened while Reclaimerr was being asked: this answer belongs to the page that is gone, not to the new one's boxes.
+            if (!button.isConnected) return;
+            for (const out of boxes()) {
+                out.textContent = '';
+                if (data) paint(out, data); else out.append(node('div', 'je-audit-error', failure));
+                out.style.display = 'block';
+            }
+            button.disabled = false;
+            button.textContent = 'Run Audit';
+        });
+    }
+
+    const api = { wire, wireImportUsers, wireUserAudit, load, status: () => last, onStatus: null };
+    return api;
+})();

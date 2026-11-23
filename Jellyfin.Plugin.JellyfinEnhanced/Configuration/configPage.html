@@ -214,6 +214,7 @@
                     <div data-je-section="pages-recommendations"></div>
                     <div data-je-section="pages-activity"></div>
                     <div data-je-section="pages-catchup"></div>
+                    <div data-je-section="pages-leaving-soon"></div>
                 </div>
 
                 <div id="seerr" class="jellyfin-tab-content">
@@ -223,6 +224,7 @@
                     <div data-je-section="seerr-discovery"></div>
                     <div data-je-section="seerr-auto-season"></div>
                     <div data-je-section="seerr-auto-movie"></div>
+                    <div data-je-section="seerr-auto-request-removal"></div>
                     <div data-je-section="seerr-sync"></div>
                     <div data-je-section="seerr-watchlist"></div>
                     <div data-je-section="seerr-users"></div>
@@ -234,7 +236,7 @@
                     <div class="je-info-banner je-fieldset-wide je-tab-intro">
                         <i class="material-icons je-info-icon">download_for_offline</i>
                         <div>
-                            Connect Jellyfin Enhanced to your <strong>Sonarr</strong>, <strong>Radarr</strong>, <strong>Bazarr</strong>, and <strong>Shoko</strong> instances.<br/>Each service gets its own box below; add as many Sonarr/Radarr instances as you want (one per quality profile / library), plus a single Bazarr endpoint and a single Shoko endpoint. Each instance can be enabled, disabled, or removed independently.
+                            Connect Jellyfin Enhanced to your <strong>Sonarr</strong>, <strong>Radarr</strong>, <strong>Bazarr</strong>, <strong>Shoko</strong>, <strong>Maintainerr</strong> and <strong>Reclaimerr</strong> instances.<br/>Each service gets its own box below; add as many Sonarr/Radarr instances as you want (one per quality profile / library), plus a single Bazarr endpoint and a single Shoko endpoint. Maintainerr and Reclaimerr are alternatives: only one of them feeds Leaving soon at a time. Each instance can be enabled, disabled, or removed independently.
                         </div>
                     </div>
 
@@ -243,6 +245,9 @@
 
                     <div data-je-section="arr-bazarr"></div>
                     <div data-je-section="arr-shoko"></div>
+                    <div data-je-section="arr-maintainerr"></div>
+                    <div data-je-section="arr-reclaimerr"></div>
+                    <div data-je-section="arr-leaving-soon"></div>
                     <div data-je-section="arr-links"></div>
                     <div data-je-section="arr-tags"></div>
                 </div>
@@ -271,6 +276,8 @@
                     <div data-je-section="svc-mdblist"></div>
                     <div data-je-section="svc-ddd"></div>
                     <div data-je-section="svc-maintainerr"></div>
+                    <div data-je-section="svc-reclaimerr"></div>
+                    <div data-je-section="svc-leaving-soon"></div>
                 </div>
 
                 <div id="extras" class="jellyfin-tab-content">
@@ -351,6 +358,12 @@
             const Dashboard = JEAdmin.dashboardShim(window.Dashboard);
 
             JEAdmin.mount(document);
+            // Icon on every setting the usage report sends; the list is read from the server's own reporting code.
+            // One retry: right after a reload the first call can fail before the session is ready, which used to leave the page without icons.
+            const loadAnalytics = (retry) => ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/usage/fields'), dataType: 'json' })
+                .then((names) => JEAdmin.markAnalytics(names))
+                .catch(() => { if (retry) setTimeout(() => loadAnalytics(false), 2000); });
+            loadAnalytics(true);
 
             const page = document.querySelector('#JellyfinEnhancedPage');
             const form = document.querySelector('#JellyfinEnhancedForm');
@@ -522,6 +535,11 @@
             }
 
             function activateTab(tabId) {
+                // Media Tags keeps its own sections in `tab` (jeSection names the outer tab), so the two must not share the key.
+                // An address already naming Media Tags keeps its tab/group (they are read once the tab mounts).
+                var _jeAtMediaTags = new URLSearchParams((location.hash.split('?')[1] || '')).get('jeSection') === 'media-tags';
+                if (!(tabId === 'media-tags' && _jeAtMediaTags)) JEAdmin.setHash('tab', tabId === 'media-tags' ? null : tabId);
+                JEAdmin.setHash('jeSection', tabId === 'media-tags' ? tabId : null);
                 if (_jePrevTabId && _jePrevTabId !== tabId) {
                     _jeTabScroll[_jePrevTabId] = _jeGetScrollTop();
                 }
@@ -731,7 +749,7 @@
             /** The tab's sections (JE.adminTags.TABS): id and its name. */
             var JE_MT_SECTIONS = [
                 ['overview', 'Overview'], ['layout', 'Layout defaults'],
-                ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours'],
+                ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours and text'],
                 ['badges', 'Status badges'], ['server', 'Server']
             ];
             var _jeMtLoaded = null;
@@ -922,7 +940,7 @@
                 }
                 var tabId = id ? null : params.get('tab');
                 var tabBtn = tabId ? Array.from(page.querySelectorAll('.jellyfin-tab-button')).find(function (b) { return b.dataset.tab === tabId; }) : null;
-                if (tabBtn) { tabBtn.click(); return true; }
+                if (tabBtn) { tabBtn.click(); JEAdmin.openCard(params.get('card')); return true; }
                 return false;
             }
 
@@ -979,6 +997,7 @@
             // followed once: showing the page again keeps the tab the administrator moved to since.
             const JE_SECTION_LINKS = ['mdblistRatingsEnabled', 'TMDB_API_KEY'];
             const JE_MEDIA_TAGS_SECTIONS = { tagLayoutAdminDetails: ['layout'], tagScale: ['layout'], tagGap: ['layout'], tagEdgeSpacing: ['layout'], awardsTagsAdminDetails: ['groups', 'awards'], logoTagsAdminDetails: ['groups', 'logos'], customTagsAdminDetails: ['groups', 'custom'], statusTagsAdminDetails: ['badges'], tagStylesEnabled: ['colours'], tagCacheServerMode: ['server'], nativePosterTagsEnabled: ['server'] };
+            document.addEventListener('je-media-tags-section', function (e) { JEAdmin.setHash('tab', e.detail.section); });
             let _jeOpenedAddress = null;
             function jeOpenRequestedSection() {
                 let params;
@@ -1044,7 +1063,7 @@
             let searchDebounce;
             searchInput.addEventListener('input', () => {
                 clearTimeout(searchDebounce);
-                searchDebounce = setTimeout(() => performSearch(searchInput.value), 150);
+                searchDebounce = setTimeout(() => performSearch(searchInput.value), 300);
             });
 
             searchInput.addEventListener('keydown', (e) => {
@@ -1299,9 +1318,10 @@
                 // query down to 1 char), exit search mode and clear stale
                 // highlights, then surface a hint via the counter so the
                 // search UI doesn't look broken.
-                if (query.length < 2) {
+                // 2 characters ("re") match most of the page and highlight thousands of nodes, which is what froze typing; 3 is selective enough.
+                if (query.length < 3) {
                     if (isSearchMode) exitSearchMode();
-                    searchCount.textContent = 'Type 2+ characters to search';
+                    searchCount.textContent = 'Type 3+ characters to search';
                     searchCount.style.display = 'block';
                     searchClear.style.display = 'block';
                     return;
@@ -1503,6 +1523,7 @@
             { Name: "DecreaseSubtitleOffset", Key: "[", Label: "Decrease Subtitle Offset", Category: "Player" },
             { Name: "IncreaseSubtitleOffset", Key: "]", Label: "Increase Subtitle Offset", Category: "Player" },
             { Name: "JumpToLastPosition", Key: "Z", Label: "Jump to Last Position", Category: "Player" },
+            { Name: "SubtitleSync", Key: "Shift+S", Label: "Sync Subtitles", Category: "Player" },
             { Name: "JumpToPercentage", Key: "0-9", Label: "Jump to % of video", Category: "Player" }
         ];
 
@@ -1935,6 +1956,7 @@
             { masterKey: 'CalendarPageEnabled',   parentKey: 'CalendarUseCustomTabs',      autoKey: 'CalendarAutoCreateCustomTab',      ownedKey: 'CalendarCustomTabJeOwned',      title: 'Calendar',       html: '<div class="jellyfinenhanced calendar"></div>' },
             { masterKey: 'RecommendationsPageEnabled', parentKey: 'RecommendationsUseCustomTabs', autoKey: 'RecommendationsAutoCreateCustomTab', ownedKey: 'RecommendationsCustomTabJeOwned', title: 'Recommendations', html: '<div class="jellyfinenhanced recommendations"></div>' },
             { masterKey: 'ActivityFeedEnabled',   parentKey: 'ActivityFeedUseCustomTabs',   autoKey: 'ActivityFeedAutoCreateCustomTab',   ownedKey: 'ActivityFeedCustomTabJeOwned',  title: 'Activity',       html: '<div class="jellyfinenhanced activity"></div>' },
+            { masterKey: 'LeavingSoonPageEnabled', parentKey: 'LeavingSoonPageUseCustomTabs', autoKey: 'LeavingSoonPageAutoCreateCustomTab', ownedKey: 'LeavingSoonPageCustomTabJeOwned', title: 'Leaving Soon', html: '<div class="jellyfinenhanced leavingsoon"></div>' },
             { masterKey: 'CatchUpEnabled',      parentKey: 'CatchUpUseCustomTabs',        autoKey: 'CatchUpAutoCreateCustomTab',        ownedKey: 'CatchUpCustomTabJeOwned',       title: 'Catch Up',       html: '<div class="jellyfinenhanced catchup"></div>' }
         ];
 
@@ -2934,7 +2956,6 @@
             { key: 'letterboxd', label: 'Letterboxd', logo: 'letterboxd.png' },
             { key: 'rogerebert', label: 'Roger Ebert', logo: 'rogerebert.png' },
             { key: 'myanimelist', label: 'MAL', logo: 'myanimelist.png' },
-            { key: 'anilist', label: 'AniList', logo: 'anilist.png' },
             { key: 'master', label: 'Master', logo: 'master.png' },
         ];
 
@@ -2943,10 +2964,19 @@
         // checked, in MDBLIST_SOURCES' built-in order. Rebuilt fresh on every
         // load (unlike the quality-category rows, which reorder fixed static
         // HTML) since the row set itself doesn't otherwise exist in the DOM.
-        function renderMdblistSourcesAdmin(config) {
-            var container = document.getElementById('mdblistRatingsSourcesAdmin');
-            if (!container) return;
+        // The Services tab shows a linked copy of the MDBList card (see jeAdmin.js, mirrorOf). The
+        // admin script copies plain markup into a mirror but would drop the ticks and arrow
+        // handling of this list, so both lists are built here and kept in step (syncMdblistSources).
+        var MDBLIST_SOURCES_LIST_IDS = ['mdblistRatingsSourcesAdmin', 'mdblistRatingsSourcesAdmin--mirror'];
 
+        function renderMdblistSourcesAdmin(config) {
+            MDBLIST_SOURCES_LIST_IDS.forEach(function (id) {
+                var container = document.getElementById(id);
+                if (container) renderMdblistSourcesInto(container, config);
+            });
+        }
+
+        function renderMdblistSourcesInto(container, config) {
             var configured = (config.MdblistRatingsSources || '').split(',')
                 .map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
             var knownKeys = MDBLIST_SOURCES.map(function (s) { return s.key; });
@@ -3020,9 +3050,34 @@
         // Wire up/down arrow clicks for the MDBList sources list (delegated,
         // mirrors the quality-category handler above -- reuses the same
         // refreshQualityCatAdminArrows for the disabled-at-the-ends styling).
+        // Copies the order and ticks of one MDBList sources list onto the other (the card and its
+        // Services-tab copy), so an edit made in either one is what Save reads.
+        function syncMdblistSources(from) {
+            MDBLIST_SOURCES_LIST_IDS.forEach(function (id) {
+                var to = document.getElementById(id);
+                if (!to || to === from) return;
+                Array.from(from.querySelectorAll('.je-quality-cat-admin-row')).forEach(function (row) {
+                    var twin = to.querySelector('.je-quality-cat-admin-row[data-source-key="' + row.dataset.sourceKey + '"]');
+                    if (!twin) return;
+                    twin.querySelector('.je-mdblist-source-toggle').checked = row.querySelector('.je-mdblist-source-toggle').checked;
+                    to.appendChild(twin);
+                });
+                refreshQualityCatAdminArrows(to);
+            });
+        }
+
         (function () {
+            document.addEventListener('change', function (e) {
+                var cb = e.target;
+                if (!cb || !cb.classList || !cb.classList.contains('je-mdblist-source-toggle')) return;
+                var list = cb.closest('#mdblistRatingsSourcesAdmin, #mdblistRatingsSourcesAdmin--mirror');
+                if (list) syncMdblistSources(list);
+            });
             document.addEventListener('click', function (e) {
-                var btn = e.target.closest && e.target.closest('#mdblistRatingsSourcesAdmin .je-cat-up, #mdblistRatingsSourcesAdmin .je-cat-down');
+                var arrows = MDBLIST_SOURCES_LIST_IDS.map(function (id) {
+                    return '#' + id + ' .je-cat-up, #' + id + ' .je-cat-down';
+                }).join(', ');
+                var btn = e.target.closest && e.target.closest(arrows);
                 if (!btn || btn.disabled) return;
                 e.preventDefault();
                 var row = btn.closest('.je-quality-cat-admin-row');
@@ -3034,6 +3089,7 @@
                 if (!sibling || !sibling.classList.contains('je-quality-cat-admin-row')) return;
                 if (isUp) { parent.insertBefore(row, sibling); } else { parent.insertBefore(sibling, row); }
                 refreshQualityCatAdminArrows(parent);
+                syncMdblistSources(parent);
             });
         })();
 
@@ -3562,6 +3618,12 @@
                 var __cuAuto = document.querySelector('#catchUpAutoCreateCustomTab');
                 if (__cuAuto) __cuAuto.checked = config.CatchUpAutoCreateCustomTab === true;
                 document.querySelector('#activityFeedUseCustomTabs').checked = config.ActivityFeedUseCustomTabs === true;
+                document.querySelector('#leavingSoonPageEnabled').checked = config.LeavingSoonPageEnabled === true;
+                document.querySelector('#leavingSoonPageUseNativeTab').checked = config.LeavingSoonPageUseNativeTab === true;
+                document.querySelector('#leavingSoonPageUsePluginPages').checked = config.LeavingSoonPageUsePluginPages === true;
+                document.querySelector('#leavingSoonPageUseCustomTabs').checked = config.LeavingSoonPageUseCustomTabs === true;
+                var __lsAuto = document.querySelector('#leavingSoonPageAutoCreateCustomTab');
+                if (__lsAuto) __lsAuto.checked = config.LeavingSoonPageAutoCreateCustomTab === true;
                 var __aAuto = document.querySelector('#activityFeedAutoCreateCustomTab');
                 if (__aAuto) __aAuto.checked = config.ActivityFeedAutoCreateCustomTab === true;
 
@@ -3863,6 +3925,12 @@
             var __cuAutoSave = document.querySelector('#catchUpAutoCreateCustomTab');
             config.CatchUpAutoCreateCustomTab = !!(__cuAutoSave && __cuAutoSave.checked);
             config.ActivityFeedUseCustomTabs = document.querySelector('#activityFeedUseCustomTabs').checked;
+            config.LeavingSoonPageEnabled = document.querySelector('#leavingSoonPageEnabled').checked;
+            config.LeavingSoonPageUseNativeTab = document.querySelector('#leavingSoonPageUseNativeTab').checked;
+            config.LeavingSoonPageUsePluginPages = document.querySelector('#leavingSoonPageUsePluginPages').checked;
+            config.LeavingSoonPageUseCustomTabs = document.querySelector('#leavingSoonPageUseCustomTabs').checked;
+            var __lsAutoSave = document.querySelector('#leavingSoonPageAutoCreateCustomTab');
+            config.LeavingSoonPageAutoCreateCustomTab = !!(__lsAutoSave && __lsAutoSave.checked);
             var __aAutoSave = document.querySelector('#activityFeedAutoCreateCustomTab');
             config.ActivityFeedAutoCreateCustomTab = !!(__aAutoSave && __aAutoSave.checked);
 
@@ -4376,11 +4444,12 @@
                 { inputId: 'faviconInput', dropZoneId: 'faviconDropZone', statusId: 'faviconStatus', fileName: 'favicon.ico', previewId: 'faviconPreview', placeholderId: 'faviconPlaceholder', deleteId: 'faviconDelete', dimensionsId: 'faviconDimensions' },
                 { inputId: 'bannerLightInput', dropZoneId: 'bannerLightDropZone', statusId: 'bannerLightStatus', fileName: 'banner-light.png', previewId: 'bannerLightPreview', placeholderId: 'bannerLightPlaceholder', deleteId: 'bannerLightDelete', dimensionsId: 'bannerLightDimensions' },
                 { inputId: 'bannerDarkInput', dropZoneId: 'bannerDarkDropZone', statusId: 'bannerDarkStatus', fileName: 'banner-dark.png', previewId: 'bannerDarkPreview', placeholderId: 'bannerDarkPlaceholder', deleteId: 'bannerDarkDelete', dimensionsId: 'bannerDarkDimensions' },
-                { inputId: 'touchiconInput', dropZoneId: 'touchiconDropZone', statusId: 'touchiconStatus', fileName: 'apple-touch-icon.png', previewId: 'touchiconPreview', placeholderId: 'touchiconPlaceholder', deleteId: 'touchiconDelete', dimensionsId: 'touchiconDimensions' }
+                { inputId: 'touchiconInput', dropZoneId: 'touchiconDropZone', statusId: 'touchiconStatus', fileName: 'apple-touch-icon.png', previewId: 'touchiconPreview', placeholderId: 'touchiconPlaceholder', deleteId: 'touchiconDelete', dimensionsId: 'touchiconDimensions' },
+                { inputId: 'elsewhereIconInput', dropZoneId: 'elsewhereIconDropZone', statusId: 'elsewhereIconStatus', fileName: 'elsewhere-icon.png', previewId: 'elsewhereIconPreview', placeholderId: 'elsewhereIconPlaceholder', deleteId: 'elsewhereIconDelete', dimensionsId: 'elsewhereIconDimensions' }
             ];
 
             // Which slots have a custom image, in one request, so we don't probe
-            // all five individually (and 404 on every empty one).
+            // all six individually (and 404 on every empty one).
             let brandingStatus = null;
             try {
                 const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
@@ -4441,6 +4510,7 @@
 
                 // Known-empty slots skip the network probe entirely.
                 if (brandingStatus && brandingStatus[config.fileName] === false) {
+                    setElsewhereIconUploaded(config, false);
                     const previewImg = document.getElementById(config.previewId);
                     const placeholder = document.getElementById(config.placeholderId);
                     if (previewImg) previewImg.style.display = 'none';
@@ -4452,6 +4522,24 @@
             });
         }
 
+        /**
+         * The message from a failed branding request: ASP.NET sends BadRequest(string)
+         * as a JSON string, so unwrap it rather than showing quotes and \u escapes.
+         * @param {Response} response - The failed fetch response.
+         * @returns {Promise<string>} The plain message, or '' when there is none.
+         */
+        async function brandingErrorText(response) {
+            const text = await response.text();
+            try {
+                const parsed = JSON.parse(text);
+                return typeof parsed === 'string' ? parsed : text;
+            } catch (e) {
+                return text;
+            }
+        }
+
+        // No template literals here: the dashboard treats ${...} in this page as
+        // translation keys, so they render as their source text.
         async function uploadBrandingImage(file, config, statusDiv) {
             // Validate that it's an image file
             if (!file.type || !file.type.startsWith('image/')) {
@@ -4460,9 +4548,21 @@
                 return;
             }
 
+            // A slot that lists exact types in its input's accept attribute (the
+            // Elsewhere icon) only takes those; dropped files bypass the picker filter.
+            const slotInput = document.getElementById(config.inputId);
+            const accepted = slotInput && slotInput.accept && slotInput.accept !== 'image/*'
+                ? slotInput.accept.split(',').map(t => t.trim().toLowerCase())
+                : null;
+            if (accepted && accepted.indexOf(file.type.toLowerCase()) === -1) {
+                statusDiv.textContent = '✗ Use a PNG, JPG, GIF, WebP or SVG image';
+                statusDiv.style.color = '#ff6b6b';
+                return;
+            }
+
             const maxFileSize = 10 * 1024 * 1024; // 10MB
             if (file.size > maxFileSize) {
-                statusDiv.textContent = `✗ File too large (max ${maxFileSize / (1024 * 1024)}MB)`;
+                statusDiv.textContent = '✗ File too large (max ' + (maxFileSize / (1024 * 1024)) + 'MB)';
                 statusDiv.style.color = '#ff6b6b';
                 return;
             }
@@ -4483,7 +4583,7 @@
                     const img = new Image();
                     img.onload = function() {
                         if (dimensionsDiv) {
-                            dimensionsDiv.textContent = `${img.width} × ${img.height}px`;
+                            dimensionsDiv.textContent = img.width + ' × ' + img.height + 'px';
                             dimensionsDiv.style.display = 'block';
                         }
                         URL.revokeObjectURL(objectUrl);
@@ -4519,14 +4619,17 @@
                     await refreshBrandingPreview(config);
                     setTimeout(() => { statusDiv.textContent = ''; }, 3000);
                 } else {
-                    const error = await response.text();
-                    statusDiv.textContent = `✗ ${error || 'Upload failed'}`;
+                    const error = await brandingErrorText(response);
+                    statusDiv.textContent = '✗ ' + (error || 'Upload failed');
                     statusDiv.style.color = '#ff6b6b';
+                    // Show what is actually stored, not the rejected file.
+                    await refreshBrandingPreview(config);
                 }
             } catch (error) {
                 console.error('Upload exception:', error);
-                statusDiv.textContent = `✗ ${error.message || 'Upload error'}`;
+                statusDiv.textContent = '✗ ' + (error.message || 'Upload error');
                 statusDiv.style.color = '#ff6b6b';
+                await refreshBrandingPreview(config);
             }
         }
 
@@ -4550,6 +4653,8 @@
                     if (placeholder) placeholder.style.display = 'block';
                     if (deleteButton) deleteButton.style.display = 'none';
                     if (dimensionsDiv) dimensionsDiv.style.display = 'none';
+                    // Only a 404 means "nothing stored"; other errors are unknown.
+                    if (response.status === 404 || elsewhereIconUploaded === null) setElsewhereIconUploaded(config, false);
                     return;
                 }
 
@@ -4559,6 +4664,7 @@
                 previewImg.style.display = 'block';
                 if (placeholder) placeholder.style.display = 'none';
                 if (deleteButton) deleteButton.style.display = 'inline-block';
+                setElsewhereIconUploaded(config, true);
 
                 // Show dimensions for existing images
                 if (dimensionsDiv) {
@@ -4572,6 +4678,8 @@
                 if (placeholder) placeholder.style.display = 'block';
                 if (deleteButton) deleteButton.style.display = 'none';
                 if (dimensionsDiv) dimensionsDiv.style.display = 'none';
+                // Unknown, but don't leave the URL check waiting forever.
+                if (elsewhereIconUploaded === null) setElsewhereIconUploaded(config, false);
             }
         }
 
@@ -4603,12 +4711,12 @@
                     await refreshBrandingPreview(config);
                     setTimeout(() => { statusDiv.textContent = ''; }, 2000);
                 } else {
-                    const error = await response.text();
-                    statusDiv.textContent = `✗ ${error || 'Delete failed'}`;
+                    const error = await brandingErrorText(response);
+                    statusDiv.textContent = '✗ ' + (error || 'Delete failed');
                     statusDiv.style.color = '#ff6b6b';
                 }
             } catch (err) {
-                statusDiv.textContent = `✗ ${err.message || 'Delete error'}`;
+                statusDiv.textContent = '✗ ' + (err.message || 'Delete error');
                 statusDiv.style.color = '#ff6b6b';
             }
         }
@@ -4838,6 +4946,15 @@
                 || document.querySelector('#jellyseerr_TMDB_API_KEY').value.trim().length > 0;
         }
 
+        /**
+         * Elsewhere and the poster provider icons can use either a TMDB key or
+         * the Seerr integration (Seerr exposes the same watch-provider data).
+         * @returns {boolean} True if a TMDB key or a fully configured Seerr exists
+         */
+        function hasTmdbOrSeerr() {
+            return hasTmdbKey() || hasJellyseerrConfigured();
+        }
+
         function isMetadataIconsEnabled() {
             var el = document.getElementById('metadataIconsEnabled');
             return !!(el && el.checked);
@@ -4922,10 +5039,12 @@
         ];
 
         var INDIVIDUAL_DEPS = [
-            { id: 'elsewhereEnabled',         checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'elsewhereEnabled',         checkFn: hasTmdbOrSeerr, hint: 'Add a TMDB API Key or enable Seerr to use', icon: 'key' },
+            { id: 'ElsewhereUseSeerrRegion',  checkFn: hasJellyseerrConfigured, hint: 'Enable Seerr to use', icon: 'link' },
+            { id: 'ElsewhereSeasonProviders', checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'showReviews',              checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'showReleaseDate',          checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
-            { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbOrSeerr, hint: 'Add a TMDB API Key or enable Seerr to use', icon: 'key' },
             { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'autoSkipIntro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
             { id: 'autoSkipOutro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
@@ -4935,6 +5054,7 @@
             { id: 'calendarUsePluginPages',        checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'recommendationsUsePluginPages', checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'activityFeedUsePluginPages',    checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'leavingSoonPageUsePluginPages',    checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'catchUpUsePluginPages',           checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'bookmarksUseCustomTabs',        checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'hiddenContentUseCustomTabs',    checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
@@ -4942,6 +5062,7 @@
             { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'recommendationsUseCustomTabs',  checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'activityFeedUseCustomTabs',     checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
+            { id: 'leavingSoonPageUseCustomTabs',     checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'catchUpUseCustomTabs',          checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'showLetterboxdLinkAsText', checkFn: function() { return !isMetadataIconsEnabled(); }, hint: 'Forced to icon mode while Metadata Icons (Druidblack) is enabled', icon: 'block' },
             { id: 'showArrLinksAsText',       checkFn: function() { return !isMetadataIconsEnabled(); }, hint: 'Forced to icon mode while Metadata Icons (Druidblack) is enabled', icon: 'block' }
@@ -4956,6 +5077,7 @@
             { customId: 'calendarUseCustomTabs',        nativeId: 'calendarUseNativeTab',        bannerId: 'je-v12-hint-calendar' },
             { customId: 'recommendationsUseCustomTabs', nativeId: 'recommendationsUseNativeTab', bannerId: 'je-v12-hint-recommendations' },
             { customId: 'activityFeedUseCustomTabs',    nativeId: 'activityFeedUseNativeTab',     bannerId: 'je-v12-hint-activityFeed' },
+            { customId: 'leavingSoonPageUseCustomTabs',  nativeId: 'leavingSoonPageUseNativeTab',  bannerId: 'je-v12-hint-leavingSoonPage' },
             { customId: 'catchUpUseCustomTabs',         nativeId: 'catchUpUseNativeTab',         bannerId: 'je-v12-hint-catchUp' }
         ];
 
@@ -4982,6 +5104,96 @@
             var banner = document.getElementById('je-search-exclude-library-warning');
             if (!checkbox || !banner) return;
             banner.style.display = checkbox.checked ? '' : 'none';
+        }
+
+        var elsewhereIconCheckSeq = 0;
+        var elsewhereIconCheckTimer = null;
+        var elsewhereIconLastChecked = null;
+        // null until the branding status is known, so the first check can't flash a
+        // warning for a URL an uploaded icon already replaces.
+        var elsewhereIconUploaded = null;
+
+        /**
+         * Records whether an Elsewhere icon is uploaded (the URL setting is then unused)
+         * and re-checks the URL warning when that changes.
+         * @param {Object} config - The branding upload slot config.
+         * @param {boolean} uploaded - Whether the slot now holds an image.
+         */
+        function setElsewhereIconUploaded(config, uploaded) {
+            if (!config || config.fileName !== 'elsewhere-icon.png' || elsewhereIconUploaded === uploaded) return;
+            elsewhereIconUploaded = uploaded;
+            elsewhereIconLastChecked = null;
+            scheduleElsewhereIconWarning();
+        }
+
+        /**
+         * Test-loads the Elsewhere Custom Branding Icon URL in the admin's browser
+         * (the same way viewers' browsers load it) and shows a warning under the
+         * field when it can't be loaded, e.g. because a server file path was entered.
+         */
+        function updateElsewhereIconWarning() {
+            var input = document.getElementById('ElsewhereCustomBrandingImageUrl');
+            var banner = document.getElementById('je-elsewhere-icon-warning');
+            if (!input || !banner) return;
+            var url = (input.value || '').trim();
+            if (elsewhereIconUploaded === null) return;
+            // An uploaded icon replaces the URL, and with Elsewhere off or no message
+            // the icon isn't shown, so none of those cases needs a warning.
+            var enabledBox = document.getElementById('elsewhereEnabled');
+            var messageInput = document.getElementById('ElsewhereCustomBrandingText');
+            var noMessage = messageInput && !(messageInput.value || '').trim();
+            var key = (elsewhereIconUploaded || (enabledBox && !enabledBox.checked) || noMessage) ? '' : url;
+            // Unrelated dependency updates call this too; don't re-fetch or flicker.
+            if (key === elsewhereIconLastChecked) return;
+            elsewhereIconLastChecked = key;
+            var seq = ++elsewhereIconCheckSeq;
+            if (!key) {
+                banner.style.display = 'none';
+                banner.textContent = '';
+                return;
+            }
+            var looksLikeFilePath = /^(file:|[a-z]:[\\/]|\\\\)/i.test(url)
+                || /^\/(config|data|mnt|media|usr|home|srv|opt|var|volume\d*|share)\//i.test(url);
+            var img = new Image();
+            img.onload = function() {
+                if (seq !== elsewhereIconCheckSeq) return;
+                banner.style.display = 'none';
+            };
+            img.onerror = function() {
+                if (seq !== elsewhereIconCheckSeq) return;
+                var strong = document.createElement('strong');
+                strong.textContent = 'This icon can\'t be loaded. ';
+                banner.textContent = '';
+                banner.appendChild(strong);
+                banner.appendChild(document.createTextNode(
+                    (looksLikeFilePath ? 'It looks like a file path on the server. ' : '')
+                    + 'Viewers\' browsers load the icon over the web, so it has to be an address a browser can open, such as https://example.com/logo.png, or a path Jellyfin serves, such as /web/favicons/touchicon.png. Files elsewhere on the server can\'t be used; upload the image below instead.'));
+                banner.style.display = '';
+            };
+            img.src = resolveElsewhereIconUrl(url);
+        }
+
+        /**
+         * Resolves root-relative paths to Jellyfin's own routes (/web/…,
+         * /JellyfinEnhanced/…) through ApiClient so they work under a base path,
+         * exactly as the client does. Keep in step with resolveBrandingIconUrl in
+         * js/elsewhere/elsewhere.js.
+         * @param {string} url - The trimmed Custom Branding Icon URL.
+         * @returns {string} The URL a viewer's browser would load.
+         */
+        function resolveElsewhereIconUrl(url) {
+            if (/^\/(web|JellyfinEnhanced)\//i.test(url) && window.ApiClient && typeof ApiClient.getUrl === 'function') {
+                try { return ApiClient.getUrl(url); } catch (e) { return url; }
+            }
+            return url;
+        }
+
+        /**
+         * Debounced wrapper so typing in the icon URL field doesn't fire a request per key.
+         */
+        function scheduleElsewhereIconWarning() {
+            clearTimeout(elsewhereIconCheckTimer);
+            elsewhereIconCheckTimer = setTimeout(updateElsewhereIconWarning, 400);
         }
 
         /**
@@ -5140,7 +5352,7 @@
         }
 
         var PARENT_DEPS = [
-            { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews'] },
+            { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereUseSeerrRegion', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews'] },
             { parent: 'doesTheDogDieEnabled', label: 'Show Content Warnings', children: ['doesTheDogDieApiKey'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistCommunityRatingSource', 'mdblistCommunityRatingFallbackSource', 'mdblistCriticRatingSource', 'mdblistCriticRatingFallbackSource', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', anyOf: ['showReviews', 'showUserReviews', 'showAnilistReviews'], label: 'Show TMDB Reviews" / "Enable User Written Reviews" / "Show AniList Reviews', children: ['reviewsExpandedByDefault'] },
@@ -5165,6 +5377,7 @@
             { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseNativeTab', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
             { parent: 'recommendationsPageEnabled', label: 'Enable Recommendations Page', children: ['recommendationsUseNativeTab', 'recommendationsUsePluginPages', 'recommendationsUseCustomTabs', 'recommendationsAutoCreateCustomTab'] },
             { parent: 'activityFeedEnabled', label: 'Enable Activity Feed', children: ['activityFeedShowWatched', 'activityFeedShowFavorited', 'activityFeedShowReviewed', 'activityFeedOwnOnlyForNonAdmins', 'activityFeedShowActiveStreams', 'activityFeedUseNativeTab', 'activityFeedUsePluginPages', 'activityFeedUseCustomTabs', 'activityFeedAutoCreateCustomTab'] },
+            { parent: 'leavingSoonPageEnabled', label: 'Enable the Leaving Soon page', children: ['leavingSoonPageUseNativeTab', 'leavingSoonPageUsePluginPages', 'leavingSoonPageUseCustomTabs', 'leavingSoonPageAutoCreateCustomTab'] },
             { parent: 'catchUpEnabled', label: 'Enable Catch Up', children: ['catchUpLogEnabled', 'catchUpUseNativeTab', 'catchUpUsePluginPages', 'catchUpUseCustomTabs', 'catchUpAutoCreateCustomTab'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
@@ -5499,7 +5712,7 @@
                 var group = at.tab === 'groups' && at.group ? at.group : null;
                 var key = at.tab + ':' + (group || '');
                 if (!entries[key]) {
-                    var tabName = ({overview:'Overview',layout:'Layout defaults',groups:'Groups',rules:'Rules',colours:'Colours',badges:'Status badges',server:'Server'})[at.tab] || jeHumanizeSettingId(at.tab);
+                    var tabName = ({overview:'Overview',layout:'Layout defaults',groups:'Groups',rules:'Rules',colours:'Colours and text',badges:'Status badges',server:'Server'})[at.tab] || jeHumanizeSettingId(at.tab);
                     entries[key] = {
                         tab: 'media-tags',
                         tabLabel: 'Media Tags',
@@ -5979,6 +6192,7 @@
             feat('Custom Pause Screen', bool('pauseScreenEnabled'), 'playback', 'Enabled');
             feat('Age Rating on Playback Start', bool('showPlaybackRatingBadge'), 'playback', 'Enabled');
             feat('Long press for 2x speed', bool('longPress2xEnabled'), 'playback', 'Enabled (touch devices)');
+            feat('Subtitle sync button', bool('subtitleSyncButtonEnabled'), 'playback', 'Enabled');
             var autoSkip = bool('autoSkipIntro') || bool('autoSkipOutro');
             var autoSkipWarn = autoSkip && hasIntroSkipper !== true;
             feat('Auto-skip Intro/Outro', autoSkip, 'playback',
@@ -6018,9 +6232,9 @@
             feat('Custom splash / branding', splashOn, 'extras', 'Enabled', false);
 
             // Extras
-            var elsewhereWarn = bool('elsewhereEnabled') && !val('TMDB_API_KEY');
+            var elsewhereWarn = bool('elsewhereEnabled') && !val('TMDB_API_KEY') && !hasJellyseerrConfigured();
             feat('Elsewhere (streaming providers)', bool('elsewhereEnabled'), 'elsewhere',
-                elsewhereWarn ? 'Enabled but TMDB API key is missing' : 'Enabled',
+                elsewhereWarn ? 'Enabled but neither a TMDB API key nor Seerr is configured' : 'Enabled',
                 elsewhereWarn);
 
             // Seerr
@@ -6199,7 +6413,7 @@
 
         // A page can use the native Home tab or Custom Tabs, never both: the two
         // would register competing tabs for the same page.
-        var TAB_EXCLUSIVE_PAIRS = ['bookmarks', 'hiddenContent', 'downloads', 'calendar', 'recommendations', 'activityFeed', 'catchUp'].map(function(p) {
+        var TAB_EXCLUSIVE_PAIRS = ['bookmarks', 'hiddenContent', 'downloads', 'calendar', 'recommendations', 'activityFeed', 'catchUp', 'leavingSoonPage'].map(function(p) {
             return { native: p + 'UseNativeTab', custom: p + 'UseCustomTabs' };
         });
 
@@ -6223,6 +6437,15 @@
         });
 
         /**
+         * Shows the info note under Default Region when Seerr is enabled and no
+         * TMDB key is set (providers then follow each user's Seerr streaming region).
+         */
+        function updateRegionSourceNote() {
+            var seerrMode = !hasTmdbKey() && hasJellyseerrConfigured();
+            document.querySelectorAll('.je-region-source-note').forEach(function(el) { el.style.display = seerrMode ? 'flex' : 'none'; });
+        }
+
+        /**
          * Orchestrator: evaluates all section, individual, and parent dependency rules.
          * Each step is isolated so a throw in the status dashboard (which reads a lot
          * of field values) can't cascade and break dependency updates.
@@ -6233,7 +6456,9 @@
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
             CUSTOM_TABS_V12_HINTS.forEach(updateCustomTabsV12Hint);
             updateSearchExcludeLibraryWarning();
+            scheduleElsewhereIconWarning();
             PARENT_DEPS.forEach(updateParentDep);
+            updateRegionSourceNote();
             updateClearTagCachesQuickBtnVisibility();
             // `updateStatusDashboard` and the legacy `renderChecklist` both
             // now delegate to `renderServiceStatusDashboard`. Calling both
@@ -6315,6 +6540,8 @@
          *
          * Each card is a <button> that jumps to the relevant settings tab.
          */
+        // Maintainerr's card on the dashboard follows the server's last read of it (the Maintainerr card loads it).
+        if (window.JEAdmin && JEAdmin.maintainerr) JEAdmin.maintainerr.onStatus = function () { try { renderServiceStatusDashboard(); } catch (e) { /* dashboard not mounted */ } };
         // Remaining request budget per service, read from the server (MDBList account status, DoesTheDogDie rate-limit headers).
         var _jeUsage = {};
         var _jeUsageAt = {};
@@ -6461,6 +6688,37 @@
                     detail: (shokoUrl && shokoApiKey) ? 'URL and API key configured' : (!shokoUrl ? 'URL missing' : 'API key missing')
                 });
             }
+
+            // Maintainerr: always listed. With an address, the server's last read of it (admin/leaving-soon) is the state.
+            // The card follows the removal tool that is on (Reclaimerr or Maintainerr); neither on is "not set up".
+            var reclaimerrOn = !!(document.querySelector('#ReclaimerrEnabled') || {}).checked;
+            var maintainerrOn = !reclaimerrOn && !!(document.querySelector('#LeavingSoonMaintainerrEnabled') || {}).checked;
+            var maintainerrUrl = reclaimerrOn ? readFieldValue('#ReclaimerrUrl') : (maintainerrOn ? readFieldValue('#LeavingSoonMaintainerrUrl') : '');
+            var maintainerrCard = { id: 'maintainerr', name: reclaimerrOn ? 'Reclaimerr' : 'Maintainerr', tab: 'arr', icon: 'auto_delete', scrollTo: reclaimerrOn ? '#ReclaimerrUrl' : '#LeavingSoonMaintainerrUrl' };
+            if (!maintainerrUrl) {
+                maintainerrCard.state = 'off';
+                maintainerrCard.detail = 'Not set up';
+            } else {
+                var ms = window.JEAdmin && JEAdmin.maintainerr ? JEAdmin.maintainerr.status() : null;
+                if (!ms) {
+                    maintainerrCard.state = 'pending';
+                    maintainerrCard.detail = 'Checking...';
+                    if (window.JEAdmin && JEAdmin.maintainerr) JEAdmin.maintainerr.load(false);
+                } else if (ms.failed || !ms.Maintainerr) {
+                    maintainerrCard.state = 'warn';
+                    maintainerrCard.detail = ms.failed ? 'Status unavailable' : 'Address not saved yet';
+                } else if (ms.LastError) {
+                    maintainerrCard.state = 'error';
+                    maintainerrCard.detail = 'Last read failed: ' + ms.LastError;
+                } else if (ms.LastSuccess) {
+                    maintainerrCard.state = 'ok';
+                    maintainerrCard.detail = (ms.Items || 0) + ' item(s) leaving';
+                } else {
+                    maintainerrCard.state = 'pending';
+                    maintainerrCard.detail = 'Configured, not yet read';
+                }
+            }
+            pushCard(maintainerrCard);
 
             // MDBList and DoesTheDogDie: always listed, with the remaining request budget once it has been read.
             [
@@ -6629,6 +6887,10 @@
         });
         var searchExcludeLibraryCheckbox = document.getElementById('jellyseerrSearchExcludeLibraryItems');
         if (searchExcludeLibraryCheckbox) searchExcludeLibraryCheckbox.addEventListener('change', updateSearchExcludeLibraryWarning);
+        var elsewhereIconInput = document.getElementById('ElsewhereCustomBrandingImageUrl');
+        if (elsewhereIconInput) elsewhereIconInput.addEventListener('input', scheduleElsewhereIconWarning);
+        var elsewhereMessageInput = document.getElementById('ElsewhereCustomBrandingText');
+        if (elsewhereMessageInput) elsewhereMessageInput.addEventListener('input', scheduleElsewhereIconWarning);
 
         var originalTestTmdb = testTmdbConnection;
         testTmdbConnection = async function(event) {

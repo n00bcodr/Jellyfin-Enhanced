@@ -21,6 +21,9 @@ for (const edge of ['tight', 'flush']) for (const [scale, gap, size, spacing] of
     for (const f of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/qualitytags.js']) await page.addScriptTag({ path: path.join(root, f) });
     const rows = await page.evaluate(async () => {
       const JE = JellyfinEnhanced, L = JE.core.tagLayout;
+      // The layout rules' own arithmetic, to a twentieth of a pixel. (In Chromium the whole-pixel pass then moves a
+      // group container by up to half a pixel onto the pixel it is painted from: tag-whole-pixels.spec.cjs.)
+      L.wholePixels = false;
       JE.initializeQualityTags(); JE.tagPipeline.quality.injectCss();
       const host = document.querySelector('.je-tag-host');
       JE.tagPipeline.quality.renderFromServerCache(host, { Type: 'Movie', StreamData: { Streams: [{ Type: 'Video', Codec: 'hevc', Height: 2160 }], Sources: [], ItemName: 'Movie' } }, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
@@ -33,7 +36,8 @@ for (const edge of ['tight', 'flush']) for (const [scale, gap, size, spacing] of
         const el = host.querySelector(`[data-je-slot="${slot}"]`), chip = el.querySelector('.quality-overlay-label');
         const c = chip.getBoundingClientRect(), h = host.getBoundingClientRect(), st = getComputedStyle(el);
         rows.push({ slot, left: c.left - h.left, right: h.right - c.right, top: c.top - h.top, bottom: h.bottom - c.bottom,
-          gap: parseFloat(st.gap), font: parseFloat(getComputedStyle(chip).fontSize), inset: parseFloat(st.left),
+          // The stacking gap: the slot's own, or, for a bottom stack of a card resting in flow, its children's top margin.
+          gap: parseFloat(st.rowGap) || parseFloat(getComputedStyle(el.firstElementChild).marginTop), font: parseFloat(getComputedStyle(chip).fontSize), inset: parseFloat(st.left),
           progressBottom: parseFloat(el.style.getPropertyValue('--je-anchor-bottom')), clipped: getComputedStyle(host).overflow, radius: getComputedStyle(host).borderRadius });
       }
       return rows;

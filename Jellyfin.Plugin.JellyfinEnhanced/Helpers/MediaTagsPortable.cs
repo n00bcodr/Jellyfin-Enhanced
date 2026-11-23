@@ -109,13 +109,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// <summary>
         /// Every credential field of <see cref="PluginConfiguration"/>, spelled as declared: API keys, the custom
         /// rule key, the analytics secret and the Sonarr/Radarr instance lists (each instance carries its API key).
-        /// An import naming any credential (the page-owned Maintainerr key included) reports it as a secret and never reads it.
+        /// An import naming any credential (the Maintainerr key included) reports it as a secret and never reads it.
         /// </summary>
         public static readonly IReadOnlySet<string> Secrets = new HashSet<string>(StringComparer.Ordinal)
         {
             "TMDB_API_KEY", "MdblistApiKey", "DoesTheDogDieApiKey", "ReviewTranslationApiKey", "JellyseerrApiKey",
             "ShokoApiKey", "SonarrApiKey", "RadarrApiKey", "SonarrInstances", "RadarrInstances", "CustomTagRuleKey",
-            "AnalyticsInstallSecret", "LeavingSoonMaintainerrApiKey",
+            "AnalyticsInstallSecret", "LeavingSoonMaintainerrApiKey", "ReclaimerrToken",
         };
 
         private static readonly Regex PresetIdRegex = new Regex("^[a-z0-9][a-z0-9-]{0,39}$", RegexOptions.Compiled);

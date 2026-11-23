@@ -12,7 +12,8 @@
 // there holds a title.
 //
 // Shapes (as the rewrite typed them):
-// - scope: 'feed' (a list page's section, filtered by Seerr) or 'person' (a person's titles, filtered here).
+// - scope: 'feed' (a list page's section, filtered by Seerr), 'person' (a person's titles, filtered here) or
+//   'loaded' (titles of a feed that takes no filters, such as Trending, filtered here by what each title says of itself).
 // - Picked: { id, name }: one thing picked from a list: what it is to Seerr (see each list below), and its name for the eye.
 // - Range: [from, to]: what was typed as the lower and the upper bound; '' for none.
 // - FilterSelection: { role?, year?, score?, votes?, runtime?, genres?, language?, rating?, services?, keywords?, without? }
@@ -23,30 +24,45 @@
 //   - rating: Picked[]: a content rating's id is `<movie|tv>:<country>:<rating>`.
 //   - services: Picked[]: a service's id is TMDB's provider id.
 //   - keywords, without: Picked[]: a keyword's id is TMDB's keyword id.
+//   - withoutGenres, withoutLanguage: Picked[]: genres and original languages a title must not have (ids as genres' and
+//     languages'). Seerr can only leave out keywords: these are checked here, by what each title says of itself.
+//   - match: { genres?, keywords?, services? }: 'all' or 'any', for the lists where a title can have several of
+//     what is ticked; a list not in it keeps its default (genres and keywords all, services any).
 (function(JE) {
     'use strict';
 
-    const FEED_FILTERS = ['year', 'score', 'votes', 'runtime', 'genres', 'language', 'rating', 'services', 'keywords', 'without'];
+    const FEED_FILTERS = ['year', 'score', 'votes', 'runtime', 'genres', 'withoutGenres', 'language', 'withoutLanguage', 'rating', 'services', 'keywords', 'without'];
     /** A person's credits carry no runtime, rating, services or keywords: those are not offered there. */
-    const PERSON_FILTERS = ['role', 'year', 'score', 'votes', 'genres', 'language'];
-    /** The admin's switch for each filter (the two keyword filters share one). */
+    const PERSON_FILTERS = ['role', 'year', 'score', 'votes', 'genres', 'withoutGenres', 'language', 'withoutLanguage'];
+    /** What a loaded title says of itself, and so can be checked here (keepByFilters). */
+    const LOADED_FILTERS = ['year', 'score', 'votes', 'genres', 'withoutGenres', 'language', 'withoutLanguage'];
+    /** The admin's switch for each filter (a list and its Without share one). */
     const FILTER_SWITCHES = Object.freeze({
         role: 'JellyseerrFilterRole', year: 'JellyseerrFilterYear', score: 'JellyseerrFilterScore', votes: 'JellyseerrFilterVotes',
         runtime: 'JellyseerrFilterRuntime', genres: 'JellyseerrFilterGenres', language: 'JellyseerrFilterLanguage',
         rating: 'JellyseerrFilterContentRating', services: 'JellyseerrFilterStreaming', keywords: 'JellyseerrFilterKeywords',
-        without: 'JellyseerrFilterKeywords'
+        without: 'JellyseerrFilterKeywords', withoutGenres: 'JellyseerrFilterGenres', withoutLanguage: 'JellyseerrFilterLanguage'
     });
     const RANGE_IDS = ['year', 'score', 'votes', 'runtime'];
-    const LIST_IDS = ['role', 'genres', 'language', 'rating', 'services', 'keywords', 'without'];
+    /**
+     * The lists where a title can have several of what is ticked, so the viewer chooses whether it needs all of
+     * them or any, and how each is asked of Seerr when nothing is chosen (as these filters always asked).
+     */
+    const MATCH_DEFAULTS = Object.freeze({ genres: 'all', keywords: 'all', services: 'any' });
+    /** A genre's page's own genre, and a tag's page's own keyword, in a feed's route. */
+    const GENRE_ROUTE = /\/genre\/(\d+)(?:$|[/?])/;
+    const KEYWORD_ROUTE = /\/keyword\/\d+(?:$|[/?])/;
+    const LIST_IDS = ['role', 'genres', 'withoutGenres', 'language', 'withoutLanguage', 'rating', 'services', 'keywords', 'without'];
 
     /**
      * The filters a section of this scope offers, in the order they are shown, less the ones the admin turned off.
-     * @param {'feed'|'person'} scope - A list page's section, or a person's titles
+     * @param {'feed'|'person'|'loaded'} scope - A list page's section, a person's titles, or titles already loaded
      * @param {object|null|undefined} config - The plugin's public config (a missing switch means on)
      * @returns {string[]} The filter ids offered
      */
     function offeredFilters(scope, config) {
-        return (scope === 'person' ? PERSON_FILTERS : FEED_FILTERS).filter(id => config?.[FILTER_SWITCHES[id]] !== false);
+        const ids = scope === 'person' ? PERSON_FILTERS : scope === 'loaded' ? LOADED_FILTERS : FEED_FILTERS;
+        return ids.filter(id => config?.[FILTER_SWITCHES[id]] !== false);
     }
 
     /**
@@ -65,6 +81,84 @@
         const chosen = selection || {};
         return RANGE_IDS.map(id => chosen[id]).filter(isRangeSet).length
             + LIST_IDS.map(id => chosen[id]).filter(list => !!list && list.length > 0).length;
+    }
+
+    /**
+     * Whether a list is matched by all of what is ticked or any of it.
+     * @param {object} selection - The FilterSelection
+     * @param {'genres'|'keywords'|'services'} id - The list
+     * @returns {'all'|'any'}
+     */
+    function matchOf(selection, id) {
+        const chosen = selection?.match?.[id];
+        return chosen === 'all' || chosen === 'any' ? chosen : MATCH_DEFAULTS[id];
+    }
+
+    /**
+     * A feed's request where its route already names a list (a genre's page, a tag's), and what is kept of its titles
+     * here. The route's own genre is always asked for. The other genres ticked are added to it as all of them (Seerr
+     * joins the route's genre and that list with a comma); matched by any, they are kept here instead, by the genres
+     * each title has, since TMDB can't say "this genre and any of those" in one request. A tag's own keyword can only be
+     * added to as all of them: a title does not say its keywords.
+     * @param {string} path - The feed's path (before its query)
+     * @param {'movie'|'tv'} kind - The feed's kind
+     * @param {object} selection - The FilterSelection
+     * @param {string} query - What the filters add (`&name=value` pairs, as feedFilterQuery gives them)
+     * @returns {{query: string, keep: ((item: object) => boolean)|null}} The query to ask, and what to keep of the answer
+     */
+    function routeFeed(path, kind, selection, query) {
+        let asked = query;
+        let keep = null;
+        const ownGenre = GENRE_ROUTE.exec(path)?.[1];
+        if (ownGenre && matchOf(selection, 'genres') === 'any') {
+            const ticked = (selection?.genres ?? []).map(genre => genreIdFor(genre, kind)).filter(id => id !== ownGenre);
+            const others = ticked.filter(id => id !== '');
+            if (ticked.length > 0) {
+                asked = asked.replace(/&genre=[^&]*/, '');
+                // Ticked, but none of this kind's genres: nothing of this kind is in any of them (see feedFilterQuery).
+                if (others.length === 0) asked += `&${kind === 'tv' ? 'firstAirDate' : 'primaryReleaseDate'}Lte=1800-01-01`;
+                else keep = item => Array.isArray(item?.genreIds) && item.genreIds.some(id => others.includes(String(id)));
+            }
+        }
+        if (KEYWORD_ROUTE.test(path)) asked = asked.replace(/(&keywords=)([^&]*)/, (_, name, value) => name + value.replace(/%7C/gi, '%2C'));
+        // What a title must not be is kept here, on every feed (Seerr can only leave out keywords).
+        const allowed = notExcluded(selection, kind);
+        if (allowed) {
+            const kept = keep;
+            keep = kept ? item => kept(item) && allowed(item) : allowed;
+        }
+        return { query: asked, keep };
+    }
+
+    /**
+     * What a title must not be, checked by what it says of itself: in none of the genres under Without genres, and
+     * originally in none of the languages under Without language. Null when neither is set.
+     * @param {object} selection - The FilterSelection
+     * @param {'movie'|'tv'} [kind] - The feed's kind (none: each title's own)
+     * @returns {((item: object) => boolean)|null}
+     */
+    function notExcluded(selection, kind) {
+        const genres = selection?.withoutGenres ?? [];
+        const languages = new Set((selection?.withoutLanguage ?? []).map(language => language.id));
+        if (genres.length === 0 && languages.size === 0) return null;
+        return item => {
+            const own = Array.isArray(item?.genreIds) ? item.genreIds.map(String) : [];
+            const itemKind = kind ?? (item?.mediaType === 'tv' ? 'tv' : 'movie');
+            if (genres.some(genre => { const id = genreIdFor(genre, itemKind); return id !== '' && own.includes(id); })) return false;
+            return !(languages.size > 0 && typeof item?.originalLanguage === 'string' && languages.has(item.originalLanguage));
+        };
+    }
+
+    /**
+     * Whether every filter set can be checked on loaded titles (keepByFilters): none of runtime, rating,
+     * services, keywords or role is set.
+     * @param {object} selection - The section's FilterSelection
+     * @returns {boolean}
+     */
+    function checkableOnLoaded(selection) {
+        const chosen = selection || {};
+        return !isRangeSet(chosen.runtime)
+            && [chosen.role, chosen.rating, chosen.services, chosen.keywords, chosen.without].every(list => !list || list.length === 0);
     }
 
     /**
@@ -150,10 +244,12 @@
         const chosen = selection || {};
         const pairs = [];
         const date = kind === 'tv' ? 'firstAirDate' : 'primaryReleaseDate';
-        const genres = (chosen.genres ?? []).map(genre => genreIdFor(genre, kind));
-        // A genre TMDB does not have for this kind: nothing of this kind is in it. Seerr has no way to
-        // say "nothing", so the feed is asked for a time nothing was released in.
-        if (genres.includes('')) return `&${date}Lte=1800-01-01`;
+        const anyGenre = matchOf(chosen, 'genres') === 'any';
+        const allGenres = (chosen.genres ?? []).map(genre => genreIdFor(genre, kind));
+        // A genre TMDB does not have for this kind: nothing of this kind is in all of them (Seerr has no way to
+        // say "nothing", so the feed is asked for a time nothing was released in), and it adds nothing to "any of them".
+        const genres = anyGenre ? allGenres.filter(Boolean) : allGenres;
+        if (genres.includes('') || (anyGenre && allGenres.length > 0 && genres.length === 0)) return `&${date}Lte=1800-01-01`;
         const from = chosen.year ? dayOf(chosen.year[0], false) : null;
         const to = chosen.year ? dayOf(chosen.year[1], true) : null;
         if (from) pairs.push([`${date}Gte`, from]);
@@ -165,7 +261,9 @@
             if (low !== null) pairs.push([`${RANGE_PARAMS[id]}Gte`, String(low)]);
             if (high !== null) pairs.push([`${RANGE_PARAMS[id]}Lte`, String(high)]);
         }
-        if (genres.length > 0) pairs.push(['genre', genres.join(',')]);
+        // Seerr takes "all of" as a comma and "any of" as a bar.
+        const join = id => matchOf(chosen, id) === 'any' ? '|' : ',';
+        if (genres.length > 0) pairs.push(['genre', genres.join(join('genres'))]);
         if (chosen.language?.length) pairs.push(['language', chosen.language.map(language => language.id).join('|')]);
         const ratings = (chosen.rating ?? []).map(rating => rating.id.split(':')).filter(parts => parts[0] === kind && parts.length === 3);
         // Ratings are ticked, but none of this kind's: nothing of this kind is wanted (see the genres above).
@@ -173,15 +271,16 @@
         if (ratings.length > 0) {
             pairs.push(['certification', ratings.map(parts => parts[2]).join('|')], ['certificationCountry', ratings[0]?.[1] ?? 'US']);
         }
-        if (chosen.services?.length) pairs.push(['watchProviders', chosen.services.map(service => service.id).join('|')], ['watchRegion', region]);
-        if (chosen.keywords?.length) pairs.push(['keywords', chosen.keywords.map(keyword => keyword.id).join(',')]);
+        if (chosen.services?.length) pairs.push(['watchProviders', chosen.services.map(service => service.id).join(join('services'))], ['watchRegion', region]);
+        if (chosen.keywords?.length) pairs.push(['keywords', chosen.keywords.map(keyword => keyword.id).join(join('keywords'))]);
         if (chosen.without?.length) pairs.push(['excludeKeywords', chosen.without.map(keyword => keyword.id).join(',')]);
         return pairs.map(([name, value]) => `&${name}=${encodeURIComponent(value)}`).join('');
     }
 
     /**
      * A person's titles a selection keeps. A title with no date is outside every period, one with no
-     * score or votes is under every minimum, and one must be in every genre chosen.
+     * score or votes is under every minimum, and one must be in every genre chosen (any of them, where
+     * the genres are matched by any).
      * @param {object[]} results - Seerr results (a person's titles, with `jeCredit`)
      * @param {object} selection - The section's FilterSelection
      * @returns {object[]} The titles kept
@@ -196,7 +295,9 @@
             return [id, range ? numberOf(id, range[0]) : null, range ? numberOf(id, range[1]) : null];
         });
         const languages = new Set((chosen.language ?? []).map(language => language.id));
+        const allowed = notExcluded(chosen);
         return results.filter(item => {
+            if (allowed && !allowed(item)) return false;
             // Any of the roles ticked: a part played, or a job in one of the departments.
             if (chosen.role?.length && !chosen.role.some(role => role.id === 'cast'
                 ? item.jeCredit?.acted === true : item.jeCredit?.departments?.includes(role.id) === true)) return false;
@@ -212,7 +313,8 @@
             if (chosen.genres?.length) {
                 const own = Array.isArray(item.genreIds) ? item.genreIds.map(String) : [];
                 const kind = item.mediaType === 'tv' ? 'tv' : 'movie';
-                if (!chosen.genres.every(genre => own.includes(genreIdFor(genre, kind)) && genreIdFor(genre, kind) !== '')) return false;
+                const has = genre => own.includes(genreIdFor(genre, kind)) && genreIdFor(genre, kind) !== '';
+                if (!(matchOf(chosen, 'genres') === 'any' ? chosen.genres.some(has) : chosen.genres.every(has))) return false;
             }
             return languages.size === 0 || (typeof item.originalLanguage === 'string' && languages.has(item.originalLanguage));
         });
@@ -393,6 +495,10 @@
         FILTER_SWITCHES,
         offeredFilters,
         activeFilterCount,
+        checkableOnLoaded,
+        MATCH_DEFAULTS,
+        matchOf,
+        routeFeed,
         dayOf,
         numberOf,
         isBound,

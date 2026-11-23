@@ -62,6 +62,16 @@
     const isPU = (f) => f.perUser === true || (f.perUser !== false && perUserProps.has(propOf(f)));
     const BADGE = '<i class="material-icons jea-badge" aria-label="Per-user setting" title="Each user has a personal copy. Existing users keep theirs until you overwrite it.">group</i>';
 
+    const ANALYTICS_BADGE = '<a class="material-icons jea-badge jea-analytics" href="#/configurationpage?name=Jellyfin%20Enhanced&tab=admin&card=usage-statistics" aria-label="Shared in Analytics if opted in" title="Shared in Analytics if opted in">insights</a>';
+    const slugOf = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    function setHash(key, val) {
+        const [path, q = ''] = location.hash.split('?');
+        if (!path.includes('configurationpage')) return;
+        const p = new URLSearchParams(q);
+        if (val) p.set(key, val); else p.delete(key);
+        history.replaceState(null, '', path + '?' + p.toString().replace(/\+/g, '%20'));
+    }
+
     // A long description reads as a wall of text, so each sentence gets its own line (unless the author already structured it).
     function breakLines(html) {
         if (!html || html.length < 140 || /<(br|ul|li|p)\b/i.test(html)) return html;
@@ -144,13 +154,14 @@
         document.querySelectorAll('[data-jea-showif]').forEach((w) => {
             const el = document.getElementById(w.dataset.jeaShowif);
             const on = !el ? true : (w.dataset.jeaEquals !== undefined ? el.value === w.dataset.jeaEquals : (el.type === 'checkbox' ? el.checked : !!el.value));
-            w.classList.toggle('jea-dep-hidden', !on);
+            w.classList.toggle('jea-dep-hidden', !on || !!(el && el.closest('.jea-dep-hidden')));
         });
         all().forEach((f) => {
             if (!f.showIf) return;
             const cond = typeof f.showIf === 'string' ? { id: f.showIf } : f.showIf;
             const el = document.getElementById(cond.id);
-            const on = !el ? true : (cond.equals !== undefined ? el.value === String(cond.equals) : (el.type === 'checkbox' ? el.checked : !!el.value));
+            // A controller that is itself hidden counts as off, so a field depending on it hides with it.
+            const on = !el ? true : (cond.equals !== undefined ? el.value === String(cond.equals) : (el.type === 'checkbox' ? el.checked : !!el.value)) && !el.closest('.jea-dep-hidden');
             const ctl = document.getElementById(f.id);
             const row = ctl && ctl.closest('.jea-row');
             if (row) row.classList.toggle('jea-dep-hidden', !on);
@@ -217,11 +228,34 @@
         syncMirrors();
     }
 
+    // The list is remembered and re-applied on every refresh, so a card rendered or filled after the list arrived still gets its icon.
+    let analyticsProps = null;
+    function applyAnalytics() {
+        if (!analyticsProps) return;
+        all().filter((f) => f.id && analyticsProps.has(propOf(f))).forEach((f) => {
+            const el = document.getElementById(f.id);
+            const lbl = el && (el.closest('label') || document.querySelector(`label[for="${f.id}"]`));
+            if (lbl && !lbl.querySelector('.jea-analytics')) lbl.insertAdjacentHTML('beforeend', ANALYTICS_BADGE);
+        });
+    }
+
+    // Hide sidebar links whose card group is hidden (main toggle off or a showIf condition false). Search mode shows everything, so leave them.
+    function syncTree() {
+        document.querySelectorAll('.jea-nav-sub').forEach((a) => {
+            const g = a._group;
+            if (!g) return;
+            const hidden = !!g.closest('.jea-dep-hidden') || !!(g.closest('.jea-off') && g.closest('.jea-sub'));
+            a.hidden = hidden;
+        });
+    }
+
     function refresh() {
         syncMirrors();
         syncCollapse();
         syncPos();
         syncShowIf();
+        syncTree();
+        applyAnalytics();
         Object.values(sections).forEach((s) => {
             const fields = fieldsOf(s);
             const first = fields[0] && document.getElementById(fields[0].id);
@@ -352,6 +386,7 @@
         const bt = document.querySelector('.jellyfin-tab-button[data-tab="' + tab.id + '"]');
         if (bt && bt.nextElementSibling) bt.nextElementSibling.querySelectorAll('.jea-nav-leaf.on').forEach((l) => l.classList.remove('on'));
         tab.classList.remove('jea-focused');
+        setHash('card', null);
         tab.querySelectorAll(':scope > fieldset.jea-focus').forEach((f) => f.classList.remove('jea-focus'));
     }
 
@@ -389,7 +424,7 @@
                 a.className = 'jea-nav-leaf';
                 a.textContent = sectionTitle(fs);
                 a._card = fs;
-                a.addEventListener('click', (e) => { e.preventDefault(); open(() => { focusCard(tab, fs); mark(a); }); });
+                a.addEventListener('click', (e) => { e.preventDefault(); open(() => { focusCard(tab, fs); mark(a); setHash('card', slugOf(a.textContent)); }); });
                 tree.appendChild(a);
                 const groups = topGroups(fs);
                 if (groups.length >= 2) {
@@ -400,6 +435,7 @@
                         sa.href = '#';
                         sa.className = 'jea-nav-leaf jea-nav-sub';
                         sa.textContent = (g.querySelector(':scope > summary') || { textContent: '' }).textContent.trim();
+                        sa._group = g;
                         sa.addEventListener('click', (e) => { e.preventDefault(); open(() => { focusCard(tab, fs, g); mark(a, sa); }); });
                         sub.appendChild(sa);
                     });
@@ -604,6 +640,17 @@
         },
         // Call after the overwrite succeeds so the banners clear.
         markApplied() { all().forEach((f) => { base[f.id] = read(f); }); refresh(); },
-        setPerUser(list) { list.forEach((p) => perUserProps.add(p)); }
+        setPerUser(list) { list.forEach((p) => perUserProps.add(p)); },
+        // Address bar keeps the open tab and card (#/configurationpage?name=...&tab=seerr&card=requests) so a reload or shared link returns there.
+        setHash,
+        openCard(slug) {
+            const leaf = slug && [...document.querySelectorAll('.jea-nav-leaf:not(.jea-nav-sub)')].find((l) => slugOf(l.textContent) === slug);
+            if (leaf) leaf.click();
+        },
+        // Adds an insights icon to every field whose property the analytics report sends (list comes from the server, so nothing is defined by hand).
+        markAnalytics(props) {
+            if (props) analyticsProps = new Set(props);
+            applyAnalytics();
+        }
     };
 })();

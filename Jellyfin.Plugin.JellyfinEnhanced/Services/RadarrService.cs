@@ -47,7 +47,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _logger = logger;
         }
 
-        public async Task<Dictionary<int, List<string>>> GetMovieTagsByTmdbId(string radarrUrl, string apiKey, CancellationToken ct = default)
+        /// <summary>Reads every movie tag from one Radarr instance.</summary>
+        /// <returns>
+        /// The tag labels by provider id, or null when Radarr could not be read (URL refused, error status,
+        /// network error, timeout or a body that is not the expected list), so callers can tell "no tags" from "unknown".
+        /// </returns>
+        public async Task<Dictionary<int, List<string>>?> GetMovieTagsByTmdbId(string radarrUrl, string apiKey, CancellationToken ct = default)
         {
             var result = new Dictionary<int, List<string>>();
 
@@ -56,7 +61,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!Jellyfin.Plugin.JellyfinEnhanced.Helpers.ArrUrlGuard.IsAllowedUrl(radarrUrl))
             {
                 _logger.Error($"Refusing to fetch Radarr tags — URL rejected by SSRF guard: {radarrUrl}");
-                return result;
+                return null;
             }
 
             try
@@ -72,11 +77,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (!tagsResponse.IsSuccessStatusCode)
                 {
                     _logger.Error($"Failed to fetch Radarr tags. Status: {tagsResponse.StatusCode}");
-                    return result;
+                    return null;
                 }
 
                 var tagsContent = await tagsResponse.Content.ReadAsStringAsync(ct);
-                var tags = JsonSerializer.Deserialize<List<RadarrTag>>(tagsContent) ?? new List<RadarrTag>();
+                var tags = JsonSerializer.Deserialize<List<RadarrTag>>(tagsContent) ?? throw new JsonException("Radarr answered null for its tag list");
                 var tagDictionary = tags.ToDictionary(t => t.Id, t => t.Label);
 
                 _logger.Info($"Found {tags.Count} tags in Radarr");
@@ -89,11 +94,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (!moviesResponse.IsSuccessStatusCode)
                 {
                     _logger.Error($"Failed to fetch Radarr movies. Status: {moviesResponse.StatusCode}");
-                    return result;
+                    return null;
                 }
 
                 var moviesContent = await moviesResponse.Content.ReadAsStringAsync(ct);
-                var movies = JsonSerializer.Deserialize<List<RadarrMovie>>(moviesContent) ?? new List<RadarrMovie>();
+                var movies = JsonSerializer.Deserialize<List<RadarrMovie>>(moviesContent) ?? throw new JsonException("Radarr answered null for its movies list");
 
                 _logger.Info($"Found {movies.Count} movies in Radarr");
 
@@ -119,6 +124,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 _logger.Info($"Mapped tags for {result.Count} movies");
+                return result;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -143,7 +149,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Error($"Unexpected error fetching Radarr tags: {ex.Message}");
             }
 
-            return result;
+            return null;
         }
     }
 }

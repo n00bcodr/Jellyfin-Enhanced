@@ -69,10 +69,10 @@
          * 24 characters, repeated match/name pairs dropped (the first wins).
          * @returns {Array<{Match: string, Value: string, Label: string, Icon: string|null}>}
          */
-        function collectRules() {
+        function collectRules(list) {
             var seen = {};
             var out = [];
-            rows.forEach(function (r) {
+            (list || rows).forEach(function (r) {
                 var value = clean(r.value);
                 var label = clean(r.label).slice(0, MAX_LABEL).replace(/ $/, '');
                 var key = r.match + ':' + value.toLowerCase();
@@ -245,8 +245,8 @@
         }
 
         /** Load the stored rules into the table. */
-        function load(config) {
-            rows = (Array.isArray(config.CustomTagRules) ? config.CustomTagRules : []).slice(0, MAX_RULES).map(function (r) {
+        function parse(config) {
+            return (Array.isArray(config.CustomTagRules) ? config.CustomTagRules : []).slice(0, MAX_RULES).map(function (r) {
                 var match = String(pick(r, 'match') || '').toLowerCase();
                 return {
                     match: match === 'collection' ? 'collection' : 'tag',
@@ -255,6 +255,15 @@
                     icon: ICONS.indexOf(String(pick(r, 'icon') || '')) >= 0 ? String(pick(r, 'icon')) : null
                 };
             });
+        }
+
+        /** Whether the stored rules are what the table already holds (incomplete rows excluded). */
+        function matches(config) {
+            return JSON.stringify(collectRules(parse(config))) === JSON.stringify(collectRules());
+        }
+
+        function load(config) {
+            rows = parse(config);
             render();
             if (typeof onLabels === 'function') onLabels();
         }
@@ -276,6 +285,7 @@
 
         return {
             load: load,
+            matches: matches,
             collect: collect,
             labels: labels,
             snapshot: function () { return JSON.stringify(collectRules()); },

@@ -126,7 +126,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             if (!IsImageAction(context)) return next();
             if (!context.ActionArguments.TryGetValue("imageType", out var imageType)
-                || !string.Equals(imageType?.ToString(), "Primary", StringComparison.OrdinalIgnoreCase))
+                || !(string.Equals(imageType?.ToString(), "Primary", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(imageType?.ToString(), "Thumb", StringComparison.OrdinalIgnoreCase)))
             {
                 return next();
             }

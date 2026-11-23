@@ -1,5 +1,6 @@
 // /js/jellyseerr/item-details.js
-// Adds Similar and Recommended sections to item details pages using Jellyseerr API.
+// Adds Similar and Recommended sections to item details pages using Jellyseerr API
+// (Movie and Series pages; Season and Episode pages show their series' rows).
 // Also adds a "Request More" button next to the Seasons section heading on
 // Series detail pages when the show has unrequested seasons in Seerr.
 (function(JE) {
@@ -51,12 +52,38 @@
     const leftMarkers = new WeakSet();
 
     /**
+     * The series a Season or Episode belongs to, loaded as the current user,
+     * or null when it has no series id or the user cannot load it. Seerr
+     * knows TV media only by the series' TMDB ID; a Season or Episode carries
+     * its own TMDB season/episode ID (see getTmdbSourceItem in issue-reporter.js).
+     * @param {object} item - The Season or Episode
+     * @param {string} userId - The current user
+     * @returns {Promise<object|null>}
+     */
+    async function getParentSeries(item, userId) {
+        // An Episode's ParentId is its season, so only a Season may fall back to it
+        const seriesId = item.SeriesId || (item.Type === 'Season' ? item.ParentId : null);
+        if (!seriesId) return null;
+        try {
+            const series = JE.helpers?.getItemCached
+                ? await JE.helpers.getItemCached(seriesId, { userId })
+                : await ApiClient.getItem(userId, seriesId);
+            return series?.Type === 'Series' ? series : null;
+        } catch (error) {
+            console.debug(`${logPrefix} Could not load series ${seriesId} for ${item.Name}:`, error);
+            return null;
+        }
+    }
+
+    /**
      * Gets the TMDB ID from a Jellyfin item
      * @param {string} itemId - Jellyfin item ID
      * @param {AbortSignal} [signal] - Optional abort signal
+     * @param {{viaSeries?: boolean}} [options] - viaSeries: a Season or
+     *   Episode resolves to its series (for the Similar and Recommended rows)
      * @returns {Promise<{tmdbId: number|null, type: string|null}>}
      */
-    async function getTmdbIdFromItem(itemId, signal) {
+    async function getTmdbIdFromItem(itemId, signal, { viaSeries = false } = {}) {
         try {
             // Check for abort before making request
             if (signal?.aborted) {
@@ -78,16 +105,25 @@
                 return { tmdbId: null, type: null };
             }
 
+            let source = item;
+            if (viaSeries && (item.Type === 'Season' || item.Type === 'Episode')) {
+                source = await getParentSeries(item, userId);
+                if (signal?.aborted) {
+                    throw new DOMException('Aborted', 'AbortError');
+                }
+                if (!source) return { tmdbId: null, type: null };
+            }
+
             // Check if item is Movie or Series
-            const itemType = item.Type;
+            const itemType = source.Type;
             if (itemType !== 'Movie' && itemType !== 'Series') {
                 return { tmdbId: null, type: null };
             }
 
             // Get TMDB ID from provider IDs
-            const tmdbId = item.ProviderIds?.Tmdb;
+            const tmdbId = source.ProviderIds?.Tmdb;
             if (!tmdbId) {
-                console.warn(`${logPrefix} No TMDB ID found for item:`, item.Name);
+                console.warn(`${logPrefix} No TMDB ID found for item:`, source.Name);
                 return { tmdbId: null, type: null };
             }
 
@@ -930,8 +966,8 @@
                 return;
             }
 
-            // Get TMDB ID and type
-            const { tmdbId, type } = await getTmdbIdFromItem(itemId, signal);
+            // Get TMDB ID and type; a Season or Episode shows its series' rows
+            const { tmdbId, type } = await getTmdbIdFromItem(itemId, signal, { viaSeries: true });
             if (signal.aborted) return;
 
             if (!tmdbId || !type) {

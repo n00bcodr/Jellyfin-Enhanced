@@ -90,7 +90,7 @@ public class ApiMediaTagsPageTests
         var path = Path.Combine(f.Core.ConfigRoot, "config-schema-snapshot.json");
         var ids = JsonConvert.DeserializeObject<ConfigSchemaSnapshot>(File.ReadAllText(path))!.SettingIds;
         // Moved off configPage.html, declared by the page's section modules under their old ids.
-        foreach (var id in new[] { "qualityTagsEnabled", "showResolutionTag", "tagLayout", "statusTagsJustAddedDays", "tagStylesEnabled", "tagCacheServerMode", "nativePosterTagsWebClientNames", "tagLookRulesJson", "tagScale", "tagGap", "tagEdgeSpacing", "awardsTagsEnabled", "awardsTagsImdbList", "awardsTagsRefreshHours", "logoTagsMovieMode", "logoTagsSeriesMode", "logoTagsRegion", "logoTagsMaxLogos", "customTagRules", "statusTagsLeaving", "statusTagsDirectPlay", "leavingSoonMaintainerrUrl", "leavingSoonMaintainerrApiKey", "leavingSoonCollections", "leavingSoonRefreshHours" })
+        foreach (var id in new[] { "qualityTagsEnabled", "showResolutionTag", "tagLayout", "statusTagsJustAddedDays", "tagStylesEnabled", "tagCacheServerMode", "nativePosterTagsWebClientNames", "tagLookRulesJson", "tagScale", "tagGap", "tagEdgeSpacing", "awardsTagsEnabled", "awardsTagsImdbList", "awardsTagsRefreshHours", "logoTagsMovieMode", "logoTagsSeriesMode", "logoTagsRegion", "logoTagsMaxLogos", "customTagRules", "statusTagsLeaving", "statusTagsDirectPlay", "leavingSoonCollections" })
         {
             Assert.Contains(id, ids);
         }
@@ -116,20 +116,52 @@ public class ApiMediaTagsPageTests
     };
 
     [Fact]
-    public void MaintainerrKeyIsShownAndConflictCheckedLikeTheTmdbKey()
+    public void TheMaintainerrSourceBelongsToTheServicesFormNotTheMediaTagsPatch()
     {
         using var f = new ApiPluginFixture();
         var (controller, _) = PatchController(f);
         f.Plugin.Configuration.LeavingSoonMaintainerrApiKey = "old-key";
-        var result = Assert.IsType<OkObjectResult>(controller.PatchConfiguration(Patch(
-            new { LeavingSoonMaintainerrApiKey = "new-key" }, new { LeavingSoonMaintainerrApiKey = "old-key" })));
-        Assert.Equal("new-key", f.Plugin.Configuration.LeavingSoonMaintainerrApiKey);
-        Assert.Equal("{\"values\":{\"LeavingSoonMaintainerrApiKey\":\"new-key\"}}", StjSerializer.Serialize(result.Value));
-        // Another administrator changed it meanwhile: a stale save conflicts and leaves the stored key alone.
-        Assert.IsType<ConflictObjectResult>(controller.PatchConfiguration(Patch(
-            new { LeavingSoonMaintainerrApiKey = "next-key", TagGap = "roomy" },
-            new { LeavingSoonMaintainerrApiKey = "old-key", TagGap = "tight" })));
-        Assert.Equal("new-key", f.Plugin.Configuration.LeavingSoonMaintainerrApiKey);
+        f.Plugin.Configuration.LeavingSoonMaintainerrUrl = "http://maintainerr:6246";
+        // Every Leaving soon source field is refused by this page's patch (the Services tab saves them), whole request included.
+        foreach (var field in new[] { "LeavingSoonMaintainerrApiKey", "LeavingSoonMaintainerrUrl", "LeavingSoonRefreshHours", "LeavingSoonMaintainerrActions", "LeavingSoonHomeRow" })
+        {
+            var refused = Assert.IsType<BadRequestObjectResult>(controller.PatchConfiguration(Patch(new Dictionary<string, object> { [field] = field.EndsWith("Hours") ? 12 : field.EndsWith("Actions") || field.EndsWith("Row") ? false : "x", ["TagGap"] = "roomy" })));
+            Assert.Contains(field, StjSerializer.Serialize(refused.Value));
+        }
+
+        Assert.Equal("old-key", f.Plugin.Configuration.LeavingSoonMaintainerrApiKey);
+        Assert.Equal("default", f.Plugin.Configuration.TagGap);
+    }
+
+    [Fact]
+    public void AFullSaveStoresTheLeavingSoonSourceTrimmedAndKeepsTheStoredValueWhenOneIsRefused()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.LeavingSoonMaintainerrUrl = "http://maintainerr:6246";
+        f.Plugin.Configuration.LeavingSoonMaintainerrApiKey = "old-key";
+        f.Plugin.Configuration.LeavingSoonCollections = "Old";
+
+        var good = new PluginConfiguration { LeavingSoonMaintainerrUrl = " https://m.example/maintainerr ", LeavingSoonMaintainerrApiKey = " new-key ", LeavingSoonCollections = " Leaving Soon\nGone Soon ", LeavingSoonRefreshHours = 500 };
+        Assert.Empty(LeavingSoonService.NormalizeSource(good, f.Plugin.Configuration));
+        Assert.Equal("https://m.example/maintainerr", good.LeavingSoonMaintainerrUrl);
+        Assert.Equal("new-key", good.LeavingSoonMaintainerrApiKey);
+        Assert.Equal("Leaving Soon\nGone Soon", good.LeavingSoonCollections);
+        Assert.Equal(168, good.LeavingSoonRefreshHours);
+
+        var bad = new PluginConfiguration { LeavingSoonMaintainerrUrl = "ftp://x", LeavingSoonMaintainerrApiKey = "has space", LeavingSoonCollections = string.Join("\n", Enumerable.Range(0, 21).Select(i => "C" + i)), LeavingSoonRefreshHours = 0 };
+        var problems = LeavingSoonService.NormalizeSource(bad, f.Plugin.Configuration);
+        Assert.Equal(3, problems.Count);
+        Assert.DoesNotContain(problems, p => p.Contains("has space") || p.Contains("old-key"));
+        Assert.Equal("http://maintainerr:6246", bad.LeavingSoonMaintainerrUrl);
+        Assert.Equal("old-key", bad.LeavingSoonMaintainerrApiKey);
+        Assert.Equal("Old", bad.LeavingSoonCollections);
+        Assert.Equal(1, bad.LeavingSoonRefreshHours);
+
+        // Cleared fields stay cleared (that is how an administrator turns the source off), and a first save has nothing to keep.
+        var cleared = new PluginConfiguration { LeavingSoonMaintainerrUrl = "", LeavingSoonMaintainerrApiKey = "", LeavingSoonCollections = "" };
+        Assert.Empty(LeavingSoonService.NormalizeSource(cleared, f.Plugin.Configuration));
+        Assert.Equal(string.Empty, cleared.LeavingSoonMaintainerrUrl);
+        Assert.Equal(string.Empty, LeavingSoonService.NormalizeSource(new PluginConfiguration { LeavingSoonMaintainerrUrl = "nonsense" }, null).Count == 1 ? "" : "x");
     }
 
     [Fact]

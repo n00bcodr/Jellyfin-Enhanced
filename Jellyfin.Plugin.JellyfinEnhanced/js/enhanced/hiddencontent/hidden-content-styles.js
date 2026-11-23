@@ -21,6 +21,9 @@
         if (!JE.helpers?.addCSS) return;
         JE.helpers.addCSS('je-hidden-content', `
             .je-hidden { display: none !important; }
+            /* A row whose every card is hidden would otherwise leave its heading behind (#1096). Without :has() (Chrome
+               before 105, Firefox before 121) the browser drops this rule alone and the heading stays, as before. */
+            .verticalSection:has(.card.je-hidden):not(:has(.card:not(.je-hidden))) { display: none !important; }
             .je-hide-btn {
                 --je-danger-rgb: 220, 50, 50;
                 position: absolute;
