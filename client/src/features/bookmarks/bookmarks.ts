@@ -4,6 +4,7 @@ import { createLifetime } from './lifetime';
 import { createBookmarkState } from './state';
 import type { IdentifiedBookmark } from './types';
 import { osdKey, playerDurationSeconds, playerPositionSeconds, playerVideo, seekPlayer } from './player-surface';
+import { createCustomElement } from '../shared/dom';
 const { ctx, host, getApi } = bookmarksHost();
 // /js/enhanced/bookmarks/bookmarks.js
 // Enhanced bookmarks system with multi-bookmark support, TMDB/TVDB tracking, and visual markers
@@ -695,10 +696,9 @@ function install(JE: BookmarkHost) {
     const nativeSettingsButton = controlsContainer.querySelector<HTMLButtonElement>('.btnVideoOsdSettings');
     if (!nativeSettingsButton) return;
 
-    const bookmarkBtn = document.createElement('button');
+    const bookmarkBtn = createCustomElement('button', 'paper-icon-button-light');
     bookmarkBtn.id = 'jeBookmarkBtn';
-    bookmarkBtn.setAttribute('is', 'paper-icon-button-light');
-    bookmarkBtn.className = 'autoSize paper-icon-button-light';
+    bookmarkBtn.classList.add('autoSize', 'paper-icon-button-light');
     bookmarkBtn.title = JE.t('shortcut_BookmarkCurrentTime');
     bookmarkBtn.innerHTML = '<span class="largePaperIconButton material-icons" aria-hidden="true">bookmark_add</span>';
 

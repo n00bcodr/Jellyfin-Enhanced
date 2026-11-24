@@ -48,6 +48,14 @@
   var shared = /* @__PURE__ */ sharedModule("features/calendar/host");
   var export0 = /* @__PURE__ */ sharedExport(shared, "calendarHost");
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/calendar/calendar-page-init.ts
   (function() {
     "use strict";
@@ -242,8 +250,7 @@
       }
       const jellyfinEnhancedSection = document.querySelector(".jellyfinEnhancedSection");
       if (jellyfinEnhancedSection) {
-        const navItem = document.createElement("a");
-        navItem.setAttribute("is", "emby-linkbutton");
+        const navItem = createCustomElement("a", "emby-linkbutton");
         navItem.className = "navMenuOption lnkMediaFolder emby-button je-nav-calendar-item";
         navItem.href = "#";
         navItem.innerHTML = `

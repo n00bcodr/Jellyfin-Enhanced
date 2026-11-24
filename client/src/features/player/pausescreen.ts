@@ -1,3 +1,4 @@
+import { isTvBackKey } from '../../core/ui/tv-back';
 import { continuesPlayback, OWN_KEYS_DIALOG, renderPauseProgress, storedCredentials } from './pause-view';
 import { createPlayerLifetime } from './lifetime';
 import { pauseStyles } from './pause-styles';
@@ -233,7 +234,7 @@ JE.initializePauseScreen = function() {
             this.overlayContent.focus();
             return true;
           }
-          if (e.key === 'Escape' || e.key === 'BrowserBack' || e.keyCode === 10009 || e.keyCode === 461) {
+          if (isTvBackKey(e)) {
             swallow();
             this.hideOverlay(true);
             return true;

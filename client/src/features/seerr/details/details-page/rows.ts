@@ -1,6 +1,7 @@
 import { SEERR_LOG, seerrDetailsContext, taskScheduler, translator, type SeerrDetailsBridge } from '../../host-details';
 import { filled, record, str } from '../domain/json';
 import { detailsHref } from '../domain/links';
+import { createCustomElement } from '../../../shared/dom';
 
 const logPrefix = `${SEERR_LOG} Seerr Item Details:`;
 
@@ -153,8 +154,7 @@ export function createDetailRows(JE: SeerrDetailsBridge, processedItems: Set<str
         titleElement.textContent = title || 'Recommended';
         section.appendChild(titleElement);
 
-        const scroller = document.createElement('div');
-        scroller.setAttribute('is', 'emby-scroller');
+        const scroller = createCustomElement('div', 'emby-scroller');
         scroller.className = 'padded-top-focusscale padded-bottom-focusscale no-padding emby-scroller';
         scroller.dataset.horizontal = 'true';
         scroller.dataset.centerfocus = 'card';
@@ -166,8 +166,7 @@ export function createDetailRows(JE: SeerrDetailsBridge, processedItems: Set<str
         scroller.style.overscrollBehaviorY = 'auto';
         scroller.style.setProperty('-webkit-overflow-scrolling', 'touch');
 
-        const itemsContainer = document.createElement('div');
-        itemsContainer.setAttribute('is', 'emby-itemscontainer');
+        const itemsContainer = createCustomElement('div', 'emby-itemscontainer');
         itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider animatedScrollX';
         itemsContainer.style.whiteSpace = 'nowrap';
 

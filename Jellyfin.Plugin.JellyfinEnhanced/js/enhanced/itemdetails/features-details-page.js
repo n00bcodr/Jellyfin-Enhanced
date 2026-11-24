@@ -31,6 +31,14 @@
   var export13 = /* @__PURE__ */ sharedExport(shared3, "decodeDetailsItem");
   var export52 = /* @__PURE__ */ sharedExport(shared3, "field");
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/details-providers/details-page.ts
   var JE = export1("Details page features");
   var ctx = export5(JE);
@@ -72,8 +80,7 @@
     }
     if (!buttonContainer) return;
     const buttonLease = export12(JE.session, itemId, visiblePage);
-    const button = document.createElement("button");
-    button.setAttribute("is", "emby-button");
+    const button = createCustomElement("button", "emby-button");
     button.className = "button-flat detailButton emby-button je-detail-hide-btn";
     button.type = "button";
     const hideLabel = label("hidden_content_hide_button", "Hide");

@@ -129,7 +129,10 @@ export interface BodySubscription { unsubscribe(): void }
 export interface ObserverFacade { disconnect(): void }
 
 export interface CoreFacade {
-    ui?: { isTvLayout?(): boolean; injectCss?(id: string, css: string): unknown };
+    ui?: {
+        isTvLayout?(): boolean; injectCss?(id: string, css: string): unknown;
+        swallowTvBack?(): void; rememberFocus?(fallback?: (opener: Element) => Element | null | undefined): () => void;
+    };
     api?: {
         plugin(path: string, options: { skipRetry: boolean; signal?: AbortSignal }): Promise<unknown>;
         fetch(url: string, options: { skipRetry: boolean; signal?: AbortSignal }): Promise<unknown>;

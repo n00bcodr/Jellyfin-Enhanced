@@ -65,6 +65,14 @@
   var shared3 = /* @__PURE__ */ sharedModule("features/seerr/core/ui/icon-markup");
   var export02 = /* @__PURE__ */ sharedExport(shared3, "ICONS");
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/seerr/core/ui/results.ts
   var PRIMARY_CARD_TYPES = ["movie", "series"];
   var isTmdbId = (value) => /^\d+$/.test(value);
@@ -217,13 +225,11 @@
         document2.head.appendChild(style);
       }
       section.appendChild(title);
-      const scroller = document2.createElement("div");
-      scroller.setAttribute("is", "emby-scroller");
+      const scroller = createCustomElement("div", "emby-scroller");
       scroller.className = "padded-top-focusscale padded-bottom-focusscale emby-scroller";
       scroller.dataset.horizontal = "true";
       scroller.dataset.centerfocus = "card";
-      const items = document2.createElement("div");
-      items.setAttribute("is", "emby-itemscontainer");
+      const items = createCustomElement("div", "emby-itemscontainer");
       items.className = "focuscontainer-x itemsContainer scrollSlider";
       if (document2.querySelector(".alphaPicker-tv") !== null) items.classList.add("itemsContainer-tv", "animatedScrollX");
       for (const item of results) {

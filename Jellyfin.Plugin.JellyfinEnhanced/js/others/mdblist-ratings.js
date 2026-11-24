@@ -34,6 +34,14 @@
     }
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/details-providers/links.ts
   function safeHref(url) {
     return safeExternalUrl(url, window.location.href);
@@ -41,13 +49,12 @@
   function externalLink(helpers, url, options = {}) {
     const shared4 = helpers?.createExternalLink;
     if (shared4) return shared4(url, options);
-    const anchor = document.createElement("a");
-    anchor.setAttribute("is", "emby-linkbutton");
+    const anchor = createCustomElement("a", "emby-linkbutton");
     anchor.href = safeHref(url);
     anchor.target = "_blank";
     anchor.rel = "noopener noreferrer";
     if (options.title) anchor.title = options.title;
-    if (options.className) anchor.className = options.className;
+    if (options.className) anchor.className = [anchor.className, options.className].filter(Boolean).join(" ");
     if (options.text) anchor.textContent = options.text;
     if (options.resetStyle) anchor.style.cssText = "padding:0;background:none;border-radius:0;min-width:0;";
     if (typeof options.setup === "function") options.setup(anchor);

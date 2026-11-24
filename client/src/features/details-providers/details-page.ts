@@ -7,6 +7,7 @@ import type { DetailsFeatures, DetailsPageBridge, HiddenContentFacade, HiddenIte
 import { detailsLease, hashItemId, lookupDetailsItem, lookupItem, visibleDetailPage } from './page';
 import { decodeDetailsItem, field } from './wire';
 import type { DetailsItem } from './wire';
+import { createCustomElement } from '../shared/dom';
 
 const JE = bridge<DetailsPageBridge>('Details page features');
 const ctx = detailsContext(JE);
@@ -64,8 +65,7 @@ function addHideContentButton(hidden: HiddenContentFacade, itemId: string, visib
     if (!buttonContainer) return;
 
     const buttonLease = detailsLease(JE.session, itemId, visiblePage);
-    const button = document.createElement('button');
-    button.setAttribute('is', 'emby-button');
+    const button = createCustomElement('button', 'emby-button');
     button.className = 'button-flat detailButton emby-button je-detail-hide-btn';
     button.type = 'button';
 

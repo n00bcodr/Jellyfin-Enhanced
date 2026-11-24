@@ -2,6 +2,8 @@ import { bridge, moreInfoRegistry, SEERR_LOG, sibling, type MediaType, type Moda
 import { detailOf, isRecord, type JsonRecord } from '../domain/json';
 import { ownMediaInfo, parseMediaType, replaceDetails, tmdbIdOf } from '../domain/media';
 import { createModalScope, isLive } from './scope';
+import { focusFirstAction } from './focus';
+import { isTvBackKey } from '../../../../core/ui/tv-back';
 
 const JE = bridge();
 const internal = moreInfoRegistry(JE);
@@ -21,6 +23,8 @@ let popPending = false;
 // Marks the history entry the modal pushed, so a dialog on top popping back to it is told apart from leaving it.
 const HISTORY_KEY = 'jeMoreInfo';
 let historyToken = '';
+// Gives focus back to what opened the modal (TV layout).
+let restoreFocus: (() => void) | null = null;
 
 const dialogOpen = (): boolean => document.body.classList.contains(DIALOG_OPEN_CLASS);
 /** The key of an event; a TV shell can send one that is not a KeyboardEvent. */
@@ -29,6 +33,8 @@ const keyOf = (event: Event): unknown => ('key' in event ? event.key : undefined
 /** Open the modal for a title. Each open supersedes the last; a stale answer is dropped. */
 async function open(tmdbId: TmdbId, rawType: string): Promise<void> {
     const generation = ++openGeneration;
+    // Opening another title while the modal is open keeps the original opener.
+    if (!state.currentModal || state.currentModal._isClosing) restoreFocus = JE.core?.ui?.rememberFocus?.() ?? null;
     const mediaType = parseMediaType(rawType);
     if (!mediaType) {
         console.warn(`${logPrefix} Unknown media type ${rawType} for TMDB ID ${tmdbId}`);
@@ -183,8 +189,12 @@ function showModal(data: JsonRecord, mediaType: MediaType): MoreInfoModalElement
     }
 
     listen(scope, 'keydown', event => {
-        // A dialog on top owns Escape, and pops its own history entry.
-        if (keyOf(event) === 'Escape' && !dialogOpen()) dismissModal();
+        // Back (Escape or a TV remote's) closes the modal; a dialog on top owns it, and pops its own history entry.
+        if (!isTvBackKey(event) || dialogOpen()) return;
+        // Default-prevented, so Jellyfin skips it (on Home it would offer to exit the app).
+        event.preventDefault();
+        JE.core?.ui?.swallowTvBack?.();
+        dismissModal();
     });
     // Capture phase, so Jellyfin's focus manager never sees the D-pad while the modal
     // is open; otherwise focus walks out to the page behind it.
@@ -202,9 +212,7 @@ function showModal(data: JsonRecord, mediaType: MediaType): MoreInfoModalElement
     }, 10);
     if (JE.core?.ui?.isTvLayout?.()) {
         setTimeout(() => {
-            if (!isLive(state, modal)) return;
-            const first = modal.querySelector<HTMLElement>('.je-more-info-actions button:not([disabled])') ?? modal.querySelector<HTMLElement>('.modal-close');
-            first?.focus();
+            if (isLive(state, modal)) focusFirstAction(modal);
         }, 60);
     }
     return modal;
@@ -213,7 +221,7 @@ function showModal(data: JsonRecord, mediaType: MediaType): MoreInfoModalElement
 /** Close from a user action. Going through history consumes the entry open pushed. */
 function dismissModal(): void {
     if (!historyEntryActive) {
-        close();
+        close(true);
         return;
     }
     if (popPending) return;
@@ -279,15 +287,18 @@ function closeCurrentModal(): void {
     }, EXIT_MS);
 }
 
-function close(): void {
+/** @param restore - false for closes the user did not ask for (navigation, an account change): focus stays put. */
+function close(restore: boolean): void {
     openGeneration++;
     historyEntryActive = false;
     popPending = false;
     closeCurrentModal();
+    if (restore) restoreFocus?.();
+    restoreFocus = null;
 }
 
 moreInfoModal.open = open;
-moreInfoModal.close = close;
+moreInfoModal.close = () => close(true);
 
 window.addEventListener('popstate', event => {
     if (!historyEntryActive) return;
@@ -296,15 +307,15 @@ window.addEventListener('popstate', event => {
     // A closed dialog's own history.back() lands on this modal's entry: stay open.
     const landed: unknown = event.state;
     if (isRecord(landed) && landed[HISTORY_KEY] === historyToken) return;
-    close();
+    close(true);
 });
 
 // Request permissions and details belong to the active account: invalidate pending
 // opens as soon as the identity changes, before any navigation arrives.
-JE.session?.onUserChange?.('jellyseerr-more-info', close);
+JE.session?.onUserChange?.('jellyseerr-more-info', () => close(false));
 
 // Close on page navigation.
-document.addEventListener('viewshow', close);
+document.addEventListener('viewshow', () => close(false));
 
 // Exposed for the Series page "Request More" button, so the check lives in one place.
 if (internal.checkForUnrequestedSeasons) moreInfoModal.checkForUnrequestedSeasons = internal.checkForUnrequestedSeasons;

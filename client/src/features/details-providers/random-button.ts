@@ -13,6 +13,7 @@ import { hashItemId, lookupDetailsItem, sessionLease } from './page';
 import { decodeItems, errorMessage } from './wire';
 import type { DetailsItem } from './wire';
 import { DICE_FACES, candidatesPath, detailsRoute, filterUnwatched, isContainer, randomDiceFace } from './random-domain';
+import { createCustomElement } from '../shared/dom';
 
 const JE = bridge<RandomBridge>('Random button');
 const random = () => Math.random();
@@ -124,10 +125,9 @@ JE.addRandomButton = () => {
     const buttonContainer = document.createElement('div');
     buttonContainer.id = 'randomItemButtonContainer';
 
-    const randomButton = document.createElement('button');
+    const randomButton = createCustomElement('button', 'paper-icon-button-light');
     randomButton.id = 'randomItemButton';
-    randomButton.setAttribute('is', 'paper-icon-button-light');
-    randomButton.className = 'headerButton headerButtonRight paper-icon-button-light';
+    randomButton.classList.add('headerButton', 'headerButtonRight', 'paper-icon-button-light');
     randomButton.title = JE.t('random_button_tooltip');
     const headerLabel = JE.t('header_random_item');
     randomButton.dataset.headerLabel = headerLabel === 'header_random_item' ? 'Random item' : headerLabel;

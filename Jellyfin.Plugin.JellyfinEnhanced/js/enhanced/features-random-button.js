@@ -356,6 +356,14 @@
     return `/details?id=${itemId}${serverId2 ? `&serverId=${serverId2}` : ""}`;
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/details-providers/random-button.ts
   var JE = bridge("Random button");
   var random = () => Math.random();
@@ -442,10 +450,9 @@
     if (!headerRight || document.getElementById("randomItemButton")) return;
     const buttonContainer = document.createElement("div");
     buttonContainer.id = "randomItemButtonContainer";
-    const randomButton = document.createElement("button");
+    const randomButton = createCustomElement("button", "paper-icon-button-light");
     randomButton.id = "randomItemButton";
-    randomButton.setAttribute("is", "paper-icon-button-light");
-    randomButton.className = "headerButton headerButtonRight paper-icon-button-light";
+    randomButton.classList.add("headerButton", "headerButtonRight", "paper-icon-button-light");
     randomButton.title = JE.t("random_button_tooltip");
     const headerLabel = JE.t("header_random_item");
     randomButton.dataset.headerLabel = headerLabel === "header_random_item" ? "Random item" : headerLabel;

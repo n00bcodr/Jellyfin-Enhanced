@@ -1,5 +1,6 @@
 import { own } from './ownership';
 import { spoilerHost } from './host';
+import { createCustomElement } from '../shared/dom';
 const { JE, internal, ctx } = spoilerHost();
 const owner = own(JE, 'detail-button', true);
     const logPrefix = '🪼 Jellyfin Enhanced [SpoilerGuard]:';
@@ -125,8 +126,7 @@ const owner = own(JE, 'detail-button', true);
         const state = enabled ? 'on' : 'off';
         let button = visiblePage.querySelector<HTMLButtonElement>('.je-spoiler-blur-btn');
         if (!button) {
-            button = document.createElement('button');
-            button.setAttribute('is', 'emby-button');
+            button = createCustomElement('button', 'emby-button');
             button.className = 'button-flat detailButton emby-button je-spoiler-blur-btn';
             button.type = 'button';
             placeButton(button, container);

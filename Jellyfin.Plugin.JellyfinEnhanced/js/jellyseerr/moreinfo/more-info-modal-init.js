@@ -103,6 +103,18 @@
     return modal !== null && state2.currentModal === modal && modal._isClosing !== true;
   }
 
+  // client/src/features/seerr/details/moreinfo/focus.ts
+  function focusFirstAction(modal) {
+    (modal.querySelector(".je-more-info-actions button:not([disabled])") ?? modal.querySelector(".modal-close"))?.focus();
+  }
+
+  // client/src/core/ui/tv-back.ts
+  function isTvBackKey(event) {
+    const key = "key" in event ? event.key : void 0;
+    const code = "keyCode" in event ? event.keyCode : void 0;
+    return key === "Escape" || key === "BrowserBack" || key === "GoBack" || code === 10009 || code === 461;
+  }
+
   // client/src/features/seerr/details/moreinfo/init-entry.ts
   var JE = bridge();
   var internal = moreInfoRegistry(JE);
@@ -118,10 +130,12 @@
   var popPending = false;
   var HISTORY_KEY = "jeMoreInfo";
   var historyToken = "";
+  var restoreFocus = null;
   var dialogOpen = () => document.body.classList.contains(DIALOG_OPEN_CLASS);
   var keyOf = (event) => "key" in event ? event.key : void 0;
   async function open(tmdbId, rawType) {
     const generation = ++openGeneration;
+    if (!state.currentModal || state.currentModal._isClosing) restoreFocus = JE.core?.ui?.rememberFocus?.() ?? null;
     const mediaType = parseMediaType(rawType);
     if (!mediaType) {
       console.warn(`${logPrefix} Unknown media type ${rawType} for TMDB ID ${tmdbId}`);
@@ -255,7 +269,10 @@
       historyEntryActive = true;
     }
     listen(scope, "keydown", (event) => {
-      if (keyOf(event) === "Escape" && !dialogOpen()) dismissModal();
+      if (!isTvBackKey(event) || dialogOpen()) return;
+      event.preventDefault();
+      JE.core?.ui?.swallowTvBack?.();
+      dismissModal();
     });
     listen(scope, "keydown", (event) => trapDirectionalFocus(event, modal), true);
     sibling(internal, "renderActions")(data, mediaType, modal);
@@ -269,16 +286,14 @@
     }, 10);
     if (JE.core?.ui?.isTvLayout?.()) {
       setTimeout(() => {
-        if (!isLive(state, modal)) return;
-        const first = modal.querySelector(".je-more-info-actions button:not([disabled])") ?? modal.querySelector(".modal-close");
-        first?.focus();
+        if (isLive(state, modal)) focusFirstAction(modal);
       }, 60);
     }
     return modal;
   }
   function dismissModal() {
     if (!historyEntryActive) {
-      close();
+      close(true);
       return;
     }
     if (popPending) return;
@@ -334,23 +349,25 @@
       document.dispatchEvent(new CustomEvent("jellyseerr-more-info-closed"));
     }, EXIT_MS);
   }
-  function close() {
+  function close(restore) {
     openGeneration++;
     historyEntryActive = false;
     popPending = false;
     closeCurrentModal();
+    if (restore) restoreFocus?.();
+    restoreFocus = null;
   }
   moreInfoModal.open = open;
-  moreInfoModal.close = close;
+  moreInfoModal.close = () => close(true);
   window.addEventListener("popstate", (event) => {
     if (!historyEntryActive) return;
     if (dialogOpen()) return;
     const landed = event.state;
     if (isRecord(landed) && landed[HISTORY_KEY] === historyToken) return;
-    close();
+    close(true);
   });
-  JE.session?.onUserChange?.("jellyseerr-more-info", close);
-  document.addEventListener("viewshow", close);
+  JE.session?.onUserChange?.("jellyseerr-more-info", () => close(false));
+  document.addEventListener("viewshow", () => close(false));
   if (internal.checkForUnrequestedSeasons) moreInfoModal.checkForUnrequestedSeasons = internal.checkForUnrequestedSeasons;
 })();
 })();

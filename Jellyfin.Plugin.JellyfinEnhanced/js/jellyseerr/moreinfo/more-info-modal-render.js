@@ -115,6 +115,9 @@
     const value = str(path);
     return value ? `https://image.tmdb.org/t/p/${size}${urlSafePath(value)}` : "";
   }
+  function externalLinkAttrs(href, escapeHtml2, tvLayout) {
+    return tvLayout ? 'href="#"' : `href="${escapeHtml2(href)}" target="_blank" rel="noopener noreferrer"`;
+  }
 
   // client/src/features/seerr/details/domain/media.ts
   function titleOf(details, mediaType) {
@@ -309,7 +312,7 @@
     const thumbnail = youtube && key ? `https://img.youtube.com/vi/${encodeURIComponent(key)}/mqdefault.jpg` : "";
     const icon = youtube ? `<img src="${escapeHtml(JE.cdn?.selfhst("png/youtube.png"))}" alt="YouTube" class="trailer-youtube-icon" />` : "";
     return `
-                        <a is="emby-linkbutton" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${name}" class="trailer-item">
+                        <a is="emby-linkbutton" ${externalLinkAttrs(href, escapeHtml, JE.core?.ui?.isTvLayout?.() === true)} title="${name}" class="trailer-item">
                             <div class="trailer-thumbnail">
                                 ${thumbnail ? `<img src="${escapeHtml(thumbnail)}" alt="${name}" />` : ""}
                                 <div class="je-modal-play-button">

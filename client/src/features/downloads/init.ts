@@ -1,6 +1,7 @@
 import type { Dependencies } from "./types";
 
 import { runtime } from './runtime';
+import { createCustomElement } from '../shared/dom';
 export function install(deps: Dependencies) {
   const {JE, P, host, ctx, getApi} = deps;
   const life = runtime(deps);
@@ -233,8 +234,7 @@ export function install(deps: Dependencies) {
     const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
 
     if (jellyfinEnhancedSection) {
-      const navItem = document.createElement("a");
-      navItem.setAttribute('is', 'emby-linkbutton');
+      const navItem = createCustomElement('a', 'emby-linkbutton');
       navItem.className =
         "navMenuOption lnkMediaFolder emby-button je-nav-downloads-item";
       navItem.href = "#";

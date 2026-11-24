@@ -65,6 +65,8 @@ export interface SeerrCoreApi {
 }
 export interface SeerrCoreUi {
     isTvLayout?(): boolean;
+    swallowTvBack?(): void;
+    rememberFocus?(fallback?: (opener: Element) => Element | null | undefined): () => void;
     addTouchTapListener?(element: HTMLElement, onTap: (event: TouchEvent) => void): unknown;
     addDelegatedTouchTapListener?(root: HTMLElement, resolve: (target: Element) => HTMLElement | null,
         onTap: (event: TouchEvent, element: HTMLElement) => void): unknown;

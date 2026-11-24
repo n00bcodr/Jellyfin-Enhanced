@@ -209,6 +209,11 @@
     }, scope: null, modal: null };
   }
 
+  // client/src/features/seerr/details/moreinfo/focus.ts
+  function focusFirstAction(modal) {
+    (modal.querySelector(".je-more-info-actions button:not([disabled])") ?? modal.querySelector(".modal-close"))?.focus();
+  }
+
   // client/src/features/seerr/details/moreinfo/actions-entry.ts
   var JE = bridge();
   var internal = moreInfoRegistry(JE);
@@ -489,6 +494,12 @@
   }
   function renderActions(rawDetails, mediaType, modal = state.currentModal) {
     if (!isLive(state, modal) || !modal || !isRecord(rawDetails)) return;
+    const active = document.activeElement;
+    const ours = active === document.body || modal.contains(active);
+    drawActions(rawDetails, mediaType, modal);
+    if (ours && JE.core?.ui?.isTvLayout?.() && !modal.contains(document.activeElement)) focusFirstAction(modal);
+  }
+  function drawActions(rawDetails, mediaType, modal) {
     const mountOf = (name) => modal.querySelector(`[data-mount="${name}"]`);
     const actions = mountOf("je-actions");
     const chips = mountOf("je-status-chip");

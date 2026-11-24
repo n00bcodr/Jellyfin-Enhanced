@@ -1,7 +1,7 @@
 import { bridge, escaper, moreInfoRegistry, seerrDetailsContext, sibling, translator, type MediaType, type TmdbId } from '../../host-details';
 import { longDate } from '../domain/dates';
 import { filled, idText, isRecord, record, records, str, type JsonRecord } from '../domain/json';
-import { safeHttpUrl, tmdbImage } from '../domain/links';
+import { externalLinkAttrs, safeHttpUrl, tmdbImage } from '../domain/links';
 import { crewSummary, headerYear, runtimeText, streamingProviders, titleOf } from '../domain/media';
 
 const JE = bridge();
@@ -174,7 +174,7 @@ function buildTrailerCard(trailer: JsonRecord, href: string): string {
     const thumbnail = youtube && key ? `https://img.youtube.com/vi/${encodeURIComponent(key)}/mqdefault.jpg` : '';
     const icon = youtube ? `<img src="${escapeHtml(JE.cdn?.selfhst('png/youtube.png'))}" alt="YouTube" class="trailer-youtube-icon" />` : '';
     return `
-                        <a is="emby-linkbutton" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${name}" class="trailer-item">
+                        <a is="emby-linkbutton" ${externalLinkAttrs(href, escapeHtml, JE.core?.ui?.isTvLayout?.() === true)} title="${name}" class="trailer-item">
                             <div class="trailer-thumbnail">
                                 ${thumbnail ? `<img src="${escapeHtml(thumbnail)}" alt="${name}" />` : ''}
                                 <div class="je-modal-play-button">

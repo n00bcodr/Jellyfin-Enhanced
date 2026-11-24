@@ -1,6 +1,13 @@
 (() => {
 "use strict";
 (() => {
+  // client/src/core/ui/tv-back.ts
+  function isTvBackKey(event) {
+    const key = "key" in event ? event.key : void 0;
+    const code = "keyCode" in event ? event.keyCode : void 0;
+    return key === "Escape" || key === "BrowserBack" || key === "GoBack" || code === 10009 || code === 461;
+  }
+
   // client/src/host/context.ts
   function sharedModule(id) {
     const namespace = window.JellyfinEnhanced?.core?.sharedModules?.[id];
@@ -255,11 +262,16 @@
               z-index: 2;
               transition: background 0.2s;
             }
-            #pause-screen-close-btn:hover,
-            #pause-screen-close-btn:focus-visible {
+            #pause-screen-close-btn:hover {
               background: rgba(0,0,0,0.8);
             }
             #pause-screen-close-btn:focus-visible {
+              background: rgba(0,0,0,0.8);
+              outline: 2px solid #fff;
+              outline-offset: 2px;
+            }
+            .layout-tv #pause-screen-close-btn:focus {
+              background: rgba(0,0,0,0.8);
               outline: 2px solid #fff;
               outline-offset: 2px;
             }
@@ -542,7 +554,7 @@
           this.overlayContent.focus();
           return true;
         }
-        if (e.key === "Escape" || e.key === "BrowserBack" || e.keyCode === 10009 || e.keyCode === 461) {
+        if (isTvBackKey(e)) {
           swallow();
           this.hideOverlay(true);
           return true;

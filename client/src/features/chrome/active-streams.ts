@@ -1,5 +1,6 @@
 import { captureIdentity, isSameIdentity, type BodyMutationCallback, type ChromeLifecycle, type ChromeSession, type IdentityClient, type IdentitySnapshot, type Unsubscribe } from './host';
 import { ACTIVE_STREAMS_CSS } from './active-streams-styles';
+import { createCustomElement } from '../shared/dom';
 
 /** Live Active Streams counter and sessions panel in the Jellyfin header (and the player OSD bar). */
 export interface ActiveStreamsBridge {
@@ -595,10 +596,10 @@ export function createActiveStreams(JE: ActiveStreamsBridge, readClient: () => A
         }
         // The shared tray may have just restored this button after a remount.
         if (document.getElementById('je-active-streams')) return;
-        const btn = el('button', 'headerButton headerButtonRight paper-icon-button-light');
+        const btn = createCustomElement('button', 'paper-icon-button-light');
+        btn.classList.add('headerButton', 'headerButtonRight', 'paper-icon-button-light');
         btn.id = 'je-active-streams';
         btn.type = 'button';
-        btn.setAttribute('is', 'paper-icon-button-light');
         btn.title = 'No active streams';
         btn.dataset.headerLabel = JE.t?.('activity_section_active_streams') ?? '';
         const icon = el('i', 'material-icons je-as-icon', 'play_circle');

@@ -37,6 +37,14 @@
     return `${base}/${mediaType}/${tmdbId}`;
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/seerr/details/seerr-detail-link-entry.ts
   var JE = bridge();
   var t = translator(JE);
@@ -70,8 +78,7 @@
   function createSeerrLink(tmdbId, mediaType, iconUrl) {
     const useMoreInfoModal = !!JE.pluginConfig?.JellyseerrUseMoreInfoModal || !!JE.core?.ui?.isTvLayout?.();
     const base = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl?.() ?? "";
-    const button = document.createElement("a");
-    button.setAttribute("is", "emby-linkbutton");
+    const button = createCustomElement("a", "emby-linkbutton");
     button.className = "button-link emby-button seerr-link";
     if (JE.pluginConfig?.JellyseerrShowDetailPageLinkAsText) {
       button.textContent = "Seerr";

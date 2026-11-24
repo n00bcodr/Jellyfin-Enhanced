@@ -1,6 +1,7 @@
 import { bookmarksHost, type BookmarkHost } from './host';
 import { createLifetime } from './lifetime';
 import type { Library } from './types';
+import { createCustomElement } from '../shared/dom';
 const { ctx, host, getApi } = bookmarksHost();
 /**
  * Bookmarks Library View — standalone page + sidebar navigation.
@@ -271,8 +272,7 @@ function install(JE: BookmarkHost) {
 
     const jellyfinEnhancedSection = document.querySelector<HTMLElement>('.jellyfinEnhancedSection');
     if (jellyfinEnhancedSection) {
-      const navItem = document.createElement('a');
-      navItem.setAttribute('is', 'emby-linkbutton');
+      const navItem = createCustomElement('a', 'emby-linkbutton');
       navItem.className = 'navMenuOption lnkMediaFolder emby-button je-nav-bookmarks-item';
       navItem.href = '#';
 

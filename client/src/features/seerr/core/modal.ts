@@ -3,11 +3,11 @@ import type { ModalInstance, ModalOptions, SeerrModalFacade } from './contract';
 import { decodeAdvancedData, isRecord, isSafeTmdbImagePath } from './decode';
 import type { RootFolder } from './types';
 import { escapeWith, firstInstall } from './runtime';
+import { isTvBackKey } from '../../../core/ui/tv-back';
 
 const LOG = '🪼 Jellyfin Enhanced: Jellyseerr Modal:';
 const FOCUSABLE_TRAP = 'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const FOCUSABLE_FIRST = 'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex="0"]';
-const TV_BACK_KEYS = ['Escape', 'BrowserBack', 'GoBack'];
 
 export function formatBytes(bytes: number): string {
     if (!bytes || bytes <= 0) return '0 Bytes';
@@ -60,9 +60,10 @@ export function installModal(host: SeerrCoreHost): void {
             owner = null;
         };
         function onPickerKey(event: KeyboardEvent): void {
-            if (!TV_BACK_KEYS.includes(event.key) && event.keyCode !== 10009 && event.keyCode !== 461) return;
+            if (!isTvBackKey(event)) return;
             event.preventDefault();
             event.stopImmediatePropagation();
+            JE.core?.ui?.swallowTvBack?.();
             closePicker();
         }
         const openPicker = (select: HTMLSelectElement) => {
@@ -110,7 +111,8 @@ export function installModal(host: SeerrCoreHost): void {
     function create(options: ModalOptions): ModalInstance {
         const { title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText } = options;
         const modalElement = document.createElement('div');
-        modalElement.className = 'jellyseerr-season-modal';
+        // focuscontainer: Jellyfin's remote navigation stays inside it.
+        modalElement.className = 'jellyseerr-season-modal focuscontainer';
         modalElement.setAttribute('role', 'dialog');
         modalElement.setAttribute('aria-modal', 'true');
         modalElement.setAttribute('tabindex', '-1');
@@ -157,9 +159,11 @@ export function installModal(host: SeerrCoreHost): void {
 
         const handleKeydown = (event: KeyboardEvent) => {
             if (!ownsHistory()) return;
-            if (event.key === 'Escape') {
+            // Escape or a TV remote's Back; default-prevented so Jellyfin skips it.
+            if (isTvBackKey(event)) {
                 event.preventDefault();
                 event.stopPropagation();
+                JE.core?.ui?.swallowTvBack?.();
                 close();
                 return;
             }
@@ -182,6 +186,7 @@ export function installModal(host: SeerrCoreHost): void {
 
         let isClosing = false;
         let shown = false;
+        let restoreFocus: (() => void) | null = null;
         const token = String(Date.now()) + ':' + String(++nextModal);
         let openedUrl = '';
         const ownsHistory = () => shown && historyToken() === token && window.location.href === openedUrl;
@@ -199,6 +204,7 @@ export function installModal(host: SeerrCoreHost): void {
             if (!document.querySelector('.jellyseerr-season-modal:not([aria-hidden="true"])')) {
                 document.body.classList.remove('jellyseerr-modal-is-open');
             }
+            restoreFocus?.();
             window.setTimeout(() => modalElement.remove(), 300);
             // onClose can synchronously navigate or show a replacement modal.
             // Decide only after those callbacks, against the current owned entry.
@@ -218,6 +224,9 @@ export function installModal(host: SeerrCoreHost): void {
             if (shown || isClosing) return;
             shown = true;
             openedUrl = window.location.href;
+            // A Request button disabled by its successful request: its card's poster, or More Info's Close.
+            restoreFocus = JE.core?.ui?.rememberFocus?.(opener => opener.closest('.jellyseerr-card')?.querySelector('.jellyseerr-poster-image')
+                ?? opener.closest('.je-more-info-modal')?.querySelector('.modal-close')) ?? null;
             // A dialog still in its exit animation goes now, so this one owns its ids and labels.
             for (const closing of Array.from(document.querySelectorAll('.jellyseerr-season-modal[aria-hidden="true"]'))) closing.remove();
             document.body.appendChild(modalElement);

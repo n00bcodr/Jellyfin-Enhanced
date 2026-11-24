@@ -178,6 +178,12 @@
     const escapeHtml = escapeWith(JE);
     const icons = () => internals.icons ?? export03;
     const requestHandlers = /* @__PURE__ */ new WeakMap();
+    function disableKeepingFocus(button) {
+      if (document2.activeElement === button && JE.core?.ui?.isTvLayout?.()) {
+        button.closest(".jellyseerr-card")?.querySelector(".jellyseerr-poster-image")?.focus();
+      }
+      button.disabled = true;
+    }
     function configureRequestButton(button, value, isJellyseerrActive, jellyseerrUserFound) {
       const previous = requestHandlers.get(button);
       if (previous) {
@@ -334,7 +340,7 @@
           return;
         }
         const origin = captureOrigin(host);
-        target.disabled = true;
+        disableKeepingFocus(target);
         target.innerHTML = `<span>${JE.t("jellyseerr_btn_requesting")}</span><span class="jellyseerr-button-spinner"></span>`;
         const live = () => requestHandlers.get(target) === handler;
         try {

@@ -89,6 +89,14 @@
     return `#!/details?id=${encodeURIComponent(itemId)}`;
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/seerr/details/details-page/rows.ts
   var logPrefix = `${SEERR_LOG} Seerr Item Details:`;
   var PENDING_ROWS_CLASS = "je-seerr-rows-pending";
@@ -183,8 +191,7 @@
       titleElement.className = "sectionTitle sectionTitle-cards focuscontainer-x padded-right";
       titleElement.textContent = title || "Recommended";
       section.appendChild(titleElement);
-      const scroller = document.createElement("div");
-      scroller.setAttribute("is", "emby-scroller");
+      const scroller = createCustomElement("div", "emby-scroller");
       scroller.className = "padded-top-focusscale padded-bottom-focusscale no-padding emby-scroller";
       scroller.dataset.horizontal = "true";
       scroller.dataset.centerfocus = "card";
@@ -194,8 +201,7 @@
       scroller.style.overscrollBehaviorX = "contain";
       scroller.style.overscrollBehaviorY = "auto";
       scroller.style.setProperty("-webkit-overflow-scrolling", "touch");
-      const itemsContainer = document.createElement("div");
-      itemsContainer.setAttribute("is", "emby-itemscontainer");
+      const itemsContainer = createCustomElement("div", "emby-itemscontainer");
       itemsContainer.className = "focuscontainer-x itemsContainer scrollSlider animatedScrollX";
       itemsContainer.style.whiteSpace = "nowrap";
       scroller.appendChild(itemsContainer);

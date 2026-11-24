@@ -843,6 +843,14 @@
     return { formatOffset, buildOverlay, setStatus, refreshMeta, applyFilter, renderLines, moveFocus };
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/player/subtitle-sync/dialog.ts
   var BUTTON_ID = "je-subtitle-sync-btn";
   var STYLE_ID = "je-subtitle-sync-style";
@@ -1257,11 +1265,10 @@
       existing?.remove();
       injectStyles();
       const label = tr("subtitle_sync_button", "Sync subtitles");
-      const button = document.createElement("button");
+      const button = createCustomElement("button", "paper-icon-button-light");
       button.id = BUTTON_ID;
       button.type = "button";
-      button.setAttribute("is", "paper-icon-button-light");
-      button.className = "autoSize paper-icon-button-light";
+      button.classList.add("autoSize", "paper-icon-button-light");
       button.title = label;
       button.setAttribute("aria-label", label);
       button.innerHTML = '<span class="xlargePaperIconButton je-msym-rounded" aria-hidden="true">subtitles_gear</span>';

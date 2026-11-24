@@ -75,6 +75,14 @@
   // client/src/features/chrome/active-streams-styles.ts
   var ACTIVE_STREAMS_CSS = active_streams_default;
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/chrome/active-streams.ts
   var LOG = "🪼 Jellyfin Enhanced:";
   var PREFETCHED_SESSIONS_MAX_AGE_MS = 5e3;
@@ -610,10 +618,10 @@
         return;
       }
       if (document.getElementById("je-active-streams")) return;
-      const btn = el("button", "headerButton headerButtonRight paper-icon-button-light");
+      const btn = createCustomElement("button", "paper-icon-button-light");
+      btn.classList.add("headerButton", "headerButtonRight", "paper-icon-button-light");
       btn.id = "je-active-streams";
       btn.type = "button";
-      btn.setAttribute("is", "paper-icon-button-light");
       btn.title = "No active streams";
       btn.dataset.headerLabel = JE2.t?.("activity_section_active_streams") ?? "";
       const icon = el("i", "material-icons je-as-icon", "play_circle");

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { createHarness, deferred, jsonResponse, plain } from '../helpers/harness.mjs';
 
 function setup(t, options = {}) {
@@ -125,4 +125,41 @@ test('glyph text and external URLs cannot introduce executable DOM while SVG mar
  element.innerHTML=h.JE.icon('play');assert.ok(element.querySelector('svg polygon'));
  for(const url of ['javascript:alert(1)','java\nscript:alert(1)','data:text/html,<script>alert(1)</script>']) assert.equal(h.JE.helpers.createExternalLink(url).getAttribute('href'),'#');
  const link=h.JE.helpers.createExternalLink('https://example.com/path',{text:'<b>Title</b>'});assert.equal(link.querySelector('b'),null);assert.equal(link.getAttribute('is'),'emby-linkbutton');assert.equal(link.rel,'noopener noreferrer');
+});
+
+/**
+ * An engine with native v0 custom elements (Chromium before 80, older Tizen and webOS TVs): only an element created
+ * with its type, document.createElement(tag, type), is upgraded, and the upgrade adds its classes at creation; an
+ * `is` set afterwards is ignored.
+ */
+function nativeV0(h) {
+ const create = h.document.createElement.bind(h.document);
+ h.document.createElement = (tag, type) => {
+  const element = create(tag);
+  if (typeof type === 'string') { element.setAttribute('is', type); element.classList.add('emby-button', 'show-focus'); }
+  return element;
+ };
+}
+test('external links are created with their type, so a v0 engine upgrades them, and keep the caller\'s classes', t => {
+ const h = setup(t); nativeV0(h); core(h); h.loadShared('helpers');
+ const link = h.JE.helpers.createExternalLink('https://example.com/path', { className: 'button-link arr-link' });
+ assert.equal(link.getAttribute('is'), 'emby-linkbutton');
+ assert.deepEqual([...link.classList].sort(), ['arr-link', 'button-link', 'emby-button', 'show-focus']);
+});
+test('where nothing handles the type, external links still carry is="emby-linkbutton"', t => {
+ const h = setup(t); core(h); h.loadShared('helpers');
+ const link = h.JE.helpers.createExternalLink('https://example.com/path', { className: 'button-link' });
+ assert.equal(link.getAttribute('is'), 'emby-linkbutton');
+ assert.equal(link.className, 'button-link');
+});
+test('no client source sets is after creating an element (v0 engines never upgrade it)', () => {
+ const root = new URL('../../../client/src/', import.meta.url);
+ const offenders = [];
+ const walk = dir => { for (const entry of readdirSync(dir, { withFileTypes: true })) {
+  const path = new URL(entry.name + (entry.isDirectory() ? '/' : ''), dir);
+  if (entry.isDirectory()) walk(path);
+  else if (entry.name.endsWith('.ts') && !path.pathname.endsWith('/features/shared/dom.ts') && /setAttribute\(\s*['"]is['"]/.test(readFileSync(path, 'utf8'))) offenders.push(path.pathname.split('/client/src/')[1]);
+ } };
+ walk(root);
+ assert.deepEqual(offenders, [], 'create these with createCustomElement(tag, type) from features/shared/dom.ts');
 });

@@ -799,7 +799,7 @@ export function createMediaLanguage(host: LanguageHost) {
     function displayName(code: string) {
         if (parseLanguageTag(code)?.base === 'zxx')
             return host.translate('audio_language_no_dialogue');
-        return new Intl.DisplayNames(['en'], { type: 'language' }).of(code);
+        return typeof Intl.DisplayNames === 'function' ? new Intl.DisplayNames(['en'], { type: 'language' }).of(code) : code.toUpperCase();
     }
     let priorityChoicesCache: PriorityChoice[] | null = null;
     function priorityChoices() {
@@ -868,7 +868,7 @@ export function createMediaLanguage(host: LanguageHost) {
             // A malformed tag (PT_BR) has no name; the caller keeps its own English name.
             try {
                 name = parseLanguageTag(code)?.base === 'zxx' ? host.translate('audio_language_no_dialogue')
-                    : new Intl.DisplayNames([locale, 'en'], { type: 'language' }).of(code) || '';
+                    : typeof Intl.DisplayNames === 'function' ? new Intl.DisplayNames([locale, 'en'], { type: 'language' }).of(code) || '' : '';
             }
             catch {
                 name = '';

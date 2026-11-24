@@ -70,6 +70,14 @@
     return value;
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element2 = create.call(document, tag, is);
+    if (element2.getAttribute("is") !== is) element2.setAttribute("is", is);
+    return element2;
+  }
+
   // client/src/features/seerr/recommendations/recommendations-render.ts
   var GENRE_COLORS = /* @__PURE__ */ new Map([
     ["Action", "#b91c1ccc"],
@@ -191,12 +199,13 @@
   }
   function createRowShell() {
     const section = element("div", "verticalSection emby-scroller-container je-recommendations-section");
-    const scroller = element("div", "padded-top-focusscale padded-bottom-focusscale emby-scroller");
-    scroller.setAttribute("is", "emby-scroller");
+    const scroller = createCustomElement("div", "emby-scroller");
+    scroller.className = "padded-top-focusscale padded-bottom-focusscale emby-scroller";
     scroller.dataset.horizontal = "true";
     scroller.dataset.centerfocus = "card";
-    const items = element("div", "focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right", scroller);
-    items.setAttribute("is", "emby-itemscontainer");
+    const items = createCustomElement("div", "emby-itemscontainer");
+    items.className = "focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right";
+    scroller.appendChild(items);
     return {
       section,
       scroller,
@@ -251,8 +260,9 @@
     function createMediaRow(title, results, viewAllKey, owner) {
       const shell = createRowShell();
       if (viewAllKey) {
-        const link = element("a", "more button-flat button-flat-mini sectionTitleTextButton emby-button je-pad-left je-pad-right", shell.section);
-        link.setAttribute("is", "emby-linkbutton");
+        const link = createCustomElement("a", "emby-linkbutton");
+        link.className = "more button-flat button-flat-mini sectionTitleTextButton emby-button je-pad-left je-pad-right";
+        shell.section.appendChild(link);
         link.href = "#";
         element("h2", "sectionTitle sectionTitle-cards", link).textContent = title;
         const chevron = element("span", "material-icons chevron_right", link);

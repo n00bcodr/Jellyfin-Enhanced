@@ -1,5 +1,6 @@
 import type { UiHost } from '../../host/ui-host';
 import { createTapTracker } from './tap-tracker';
+import { isTvBackKey } from './tv-back';
 
 /** Browser primitives are injected; scroll and gesture ownership stays in this instance. */
 export function createUi(host: UiHost) {
@@ -216,6 +217,44 @@ export function createUi(host: UiHost) {
         return document.documentElement.classList.contains('layout-tv');
     }
 
+    let swallowBackUntil = 0;
+
+    /**
+     * Call after Back closes a JE window. On the TV layout, Back presses in the next 500 ms, and a held
+     * key's repeats, are then swallowed, so they close neither the next level nor, on Home, the app.
+     */
+    function swallowTvBack() {
+        if (isTvLayout()) swallowBackUntil = host.monotonicNow() + 500;
+    }
+
+    /**
+     * Call when a window opens. The returned function, called on close, gives focus back to the opener on
+     * the TV layout, so the remote keeps its place.
+     * @param [fallback] - Where focus goes instead when the opener was disabled meanwhile.
+     */
+    function rememberFocus(fallback?: (opener: Element) => Element | null | undefined): () => void {
+        const opener = document.activeElement;
+        return () => {
+            if (!isTvLayout() || !opener || opener === document.body) return;
+            const disabled = 'disabled' in opener && opener.disabled === true;
+            const target = disabled ? fallback?.(opener) : opener;
+            if (target instanceof HTMLElement) target.focus();
+        };
+    }
+
+    // Capture on window: runs before JE's own key handlers and Jellyfin's window listener, which skips
+    // default-prevented events. One per page, like this ui instance (core/ui/entry.ts).
+    host.onKeydownCapture(event => {
+        if (!swallowBackUntil || !isTvBackKey(event)) return;
+        if (!event.repeat && host.monotonicNow() > swallowBackUntil) {
+            swallowBackUntil = 0;
+            return;
+        }
+        if (event.repeat) swallowTvBack();
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    });
+
     function ensureSkeletonCss() {
         if (document.getElementById('je-skeleton-css')) return;
         injectCss('je-skeleton-css', `
@@ -282,7 +321,7 @@ export function createUi(host: UiHost) {
     }
 
     return { escapeHtml, toast, injectCss, removeCss, createSkeletonRows, skeletonGridHtml,
-        addTouchTapListener, addDelegatedTouchTapListener, isTvLayout };
+        addTouchTapListener, addDelegatedTouchTapListener, isTvLayout, isTvBackKey, swallowTvBack, rememberFocus };
 }
 export type Ui = ReturnType<typeof createUi>;
 

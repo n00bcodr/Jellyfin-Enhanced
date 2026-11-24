@@ -1,6 +1,7 @@
 import { apiClient, bridge, identityLease, SEERR_LOG, translator, type MediaType, type ObserverFacade } from '../host-details';
 import { record } from './domain/json';
 import { seerrPage } from './domain/links';
+import { createCustomElement } from '../../shared/dom';
 
 const JE = bridge();
 const t = translator(JE);
@@ -40,8 +41,7 @@ function tmdbIdFromLinks(context: Element): string | null {
 function createSeerrLink(tmdbId: string, mediaType: MediaType, iconUrl: string): HTMLAnchorElement | null {
     const useMoreInfoModal = !!JE.pluginConfig?.JellyseerrUseMoreInfoModal || !!JE.core?.ui?.isTvLayout?.();
     const base = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl?.() ?? '';
-    const button = document.createElement('a');
-    button.setAttribute('is', 'emby-linkbutton');
+    const button = createCustomElement('a', 'emby-linkbutton');
     button.className = 'button-link emby-button seerr-link';
     if (JE.pluginConfig?.JellyseerrShowDetailPageLinkAsText) {
         button.textContent = 'Seerr';

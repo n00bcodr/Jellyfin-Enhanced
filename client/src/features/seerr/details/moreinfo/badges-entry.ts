@@ -1,6 +1,6 @@
 import { bridge, escaper, moreInfoRegistry, translator, type MediaType, type TmdbId } from '../../host-details';
 import { filled, num, record, str, type JsonRecord } from '../domain/json';
-import { detailsHref, safeHttpUrl, seerrPage } from '../domain/links';
+import { detailsHref, externalLinkAttrs, safeHttpUrl, seerrPage } from '../domain/links';
 import { downloadPercent, uniqueDownloads } from '../domain/media';
 import { FRESH_SVG, IMDB_BADGE_SVG, IMDB_FACT_SVG, JELLYFIN_4K_SVG, JELLYFIN_SVG, LETTERBOXD_SVG, POPCORN_FULL_SVG, POPCORN_SPILLED_SVG, ROTTEN_SVG, RT_SVG, SEERR_SVG, SIMKL_SVG, TMDB_FACT_SVG, tmdbSvg, TRAKT_SVG, TVDB_SVG } from './badge-icons';
 
@@ -8,10 +8,11 @@ const JE = bridge();
 const internal = moreInfoRegistry(JE);
 const escapeHtml = escaper(JE);
 const t = translator(JE);
+const isTv = (): boolean => JE.core?.ui?.isTvLayout?.() === true;
 
 function badge(href: string, title: string, iconClass: string, icon: string, valueClass: string, value: string): string {
     return `
-                <a is="emby-linkbutton" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" class="je-more-info-rating-badge-item" title="${escapeHtml(title)}">
+                <a is="emby-linkbutton" ${externalLinkAttrs(href, escapeHtml, isTv())} class="je-more-info-rating-badge-item" title="${escapeHtml(title)}">
                     <span class="je-more-info-rating-icon ${iconClass}">${icon}</span>
                     <span class="${valueClass}">${escapeHtml(value)}</span>
                 </a>
@@ -96,7 +97,7 @@ function buildMediaFacts(rawDetails: unknown, mediaType: MediaType, tmdbId: Tmdb
         <div class="je-more-info-media-facts" aria-label="External links">
             <div class="je-more-info-media-facts-row">
                 ${shown.map(link => `
-                    <a is="emby-linkbutton" class="${link.className}" href="${escapeHtml(link.href)}" ${link.internal ? '' : 'target="_blank" rel="noopener noreferrer"'} title="${escapeHtml(link.title)}">
+                    <a is="emby-linkbutton" class="${link.className}" ${link.internal ? `href="${escapeHtml(link.href)}"` : externalLinkAttrs(link.href, escapeHtml, isTv())} title="${escapeHtml(link.title)}">
                         ${link.svg}
                     </a>
                 `).join('')}

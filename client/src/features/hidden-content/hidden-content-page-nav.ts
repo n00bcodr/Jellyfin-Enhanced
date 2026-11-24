@@ -3,6 +3,7 @@ import { lease } from './host';
 import { record, decodeLibraryItem, decodeSeerrItem, decodeSeerrSearch, type HiddenItem, type ListedItem } from './model';
 import type { PageState, Group, SearchResult, PageSurface } from './page-model';
 import { host, registry, type HiddenHost } from './host';
+import { createCustomElement } from '../shared/dom';
 /**
  * @file Hidden Content Page — standalone page container, show/hide,
  * navigation interception, sidebar nav item, and custom-tab rendering.
@@ -304,8 +305,7 @@ import { host, registry, type HiddenHost } from './host';
     const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
 
     if (jellyfinEnhancedSection) {
-      const navItem = document.createElement("a");
-      navItem.setAttribute('is', 'emby-linkbutton');
+      const navItem = createCustomElement('a', 'emby-linkbutton');
       navItem.className =
         "navMenuOption lnkMediaFolder emby-button je-nav-hidden-content-item";
       navItem.href = "#";

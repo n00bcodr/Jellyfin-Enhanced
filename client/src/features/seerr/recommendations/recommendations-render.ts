@@ -6,6 +6,7 @@ import { isAbortError } from '../discovery/domain';
 import type { FeedKind, GenreSliderEntry, ProfilesHost, SeerrResult } from '../discovery/types';
 import { FILTER_MODULE, LOG_PREFIX, PAGE_ID, part, recommendationsHost } from './stage';
 import type { CatalogEntry, RecommendationsStage, RenderOwner, RowResult } from './types';
+import { createCustomElement } from '../../shared/dom';
 
 // Tile colour by genre name, shared across movie/TV since names overlap.
 const GENRE_COLORS: ReadonlyMap<string, string> = new Map([
@@ -121,12 +122,13 @@ interface RowShell { section: HTMLElement; scroller: HTMLElement; items: HTMLEle
 /** The horizontal row layout of the Seerr search-results row, with its scroller still to fill. */
 function createRowShell(): RowShell {
     const section = element('div', 'verticalSection emby-scroller-container je-recommendations-section');
-    const scroller = element('div', 'padded-top-focusscale padded-bottom-focusscale emby-scroller');
-    scroller.setAttribute('is', 'emby-scroller');
+    const scroller = createCustomElement('div', 'emby-scroller');
+    scroller.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
     scroller.dataset.horizontal = 'true';
     scroller.dataset.centerfocus = 'card';
-    const items = element('div', 'focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right', scroller);
-    items.setAttribute('is', 'emby-itemscontainer');
+    const items = createCustomElement('div', 'emby-itemscontainer');
+    items.className = 'focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right';
+    scroller.appendChild(items);
     return {
         section, scroller, items,
         finish(owner) {
@@ -188,8 +190,9 @@ function createRows(JE: SeerrDiscoveryHost, P: RecommendationsStage) {
         if (viewAllKey) {
             // href is intentionally "#", not a real path: emby-linkbutton navigates on its href
             // regardless of preventDefault, and a real path 404s against jellyfin-web's router.
-            const link = element('a', 'more button-flat button-flat-mini sectionTitleTextButton emby-button je-pad-left je-pad-right', shell.section);
-            link.setAttribute('is', 'emby-linkbutton');
+            const link = createCustomElement('a', 'emby-linkbutton');
+            link.className = 'more button-flat button-flat-mini sectionTitleTextButton emby-button je-pad-left je-pad-right';
+            shell.section.appendChild(link);
             link.href = '#';
             element('h2', 'sectionTitle sectionTitle-cards', link).textContent = title;
             const chevron = element('span', 'material-icons chevron_right', link);

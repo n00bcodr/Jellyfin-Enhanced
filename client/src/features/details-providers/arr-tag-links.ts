@@ -4,6 +4,7 @@ import type { ArrTagLinksBridge } from './host';
 import { hashItemId, lookupDetailsItem, sessionLease, visibleDetailPage } from './page';
 import { navigateRoute, tagListRoute } from './links';
 import { relevantArrTags, slugifyTagName } from './arr-domain';
+import { createCustomElement } from '../shared/dom';
 
 const JE = bridge<ArrTagLinksBridge>('Arr tag links');
 
@@ -67,8 +68,7 @@ JE.initializeArrTagLinksScript = async function initializeArrTagLinksScript() {
                 const tagName = tag.slice(tagPrefix.length).trim();
                 const slug = slugifyTagName(tagName);
                 const route = tagListRoute(tag, server);
-                const link = document.createElement('a');
-                link.setAttribute('is', 'emby-linkbutton');
+                const link = createCustomElement('a', 'emby-linkbutton');
                 link.className = 'button-link emby-button arr-tag-link';
                 link.href = `#!/${route}`;
                 link.title = `View all items with tag: ${tag}`;

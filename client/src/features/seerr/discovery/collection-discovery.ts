@@ -5,6 +5,7 @@ import { decodeCollection, decodeNamedInfo, isUserActive, positiveInt } from './
 import { isItemType, managedFetch, tolerant } from './lookups';
 import { createSay } from './say';
 import type { NamedTmdbInfo, OneShotContext } from './types';
+import { createCustomElement } from '../../shared/dom';
 
 const logPrefix = '🪼 Jellyfin Enhanced: Collection Discovery:';
 const SECTION_CLASS = 'jellyseerr-collection-discovery-section';
@@ -27,8 +28,7 @@ function createSectionContainer(JE: SeerrDiscoveryHost, title: string, goTo: str
     section.className = `verticalSection ${SECTION_CLASS} jellyseerr-discovery-section detailVerticalSection`;
     section.setAttribute('data-jellyseerr-collection-discovery', 'true');
     section.appendChild(header);
-    const itemsContainer = document.createElement('div');
-    itemsContainer.setAttribute('is', 'emby-itemscontainer');
+    const itemsContainer = createCustomElement('div', 'emby-itemscontainer');
     itemsContainer.className = 'itemsContainer vertical-wrap';
     section.appendChild(itemsContainer);
     return section;

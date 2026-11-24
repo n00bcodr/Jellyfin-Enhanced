@@ -1,6 +1,7 @@
 import { safeExternalUrl } from '../shared/url-domain';
 import { dashboard } from './host';
 import type { ExternalLinkFactory, ExternalLinkOptions } from './host';
+import { createCustomElement } from '../shared/dom';
 
 /** Only navigable schemes reach an href built from configuration or upstream data. */
 export function safeHref(url: string): string {
@@ -15,13 +16,12 @@ export function safeHref(url: string): string {
 export function externalLink(helpers: { createExternalLink?: ExternalLinkFactory } | undefined, url: string, options: ExternalLinkOptions = {}): HTMLAnchorElement {
     const shared = helpers?.createExternalLink;
     if (shared) return shared(url, options);
-    const anchor = document.createElement('a');
-    anchor.setAttribute('is', 'emby-linkbutton');
+    const anchor = createCustomElement('a', 'emby-linkbutton');
     anchor.href = safeHref(url);
     anchor.target = '_blank';
     anchor.rel = 'noopener noreferrer';
     if (options.title) anchor.title = options.title;
-    if (options.className) anchor.className = options.className;
+    if (options.className) anchor.className = [anchor.className, options.className].filter(Boolean).join(' ');
     if (options.text) anchor.textContent = options.text;
     if (options.resetStyle) anchor.style.cssText = 'padding:0;background:none;border-radius:0;min-width:0;';
     if (typeof options.setup === 'function') options.setup(anchor);

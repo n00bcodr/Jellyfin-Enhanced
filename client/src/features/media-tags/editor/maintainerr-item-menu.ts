@@ -1,6 +1,7 @@
 import { apiClient, mediaTagsContext, type TagRuntimeBridge } from '../host';
 import { isRecord, text } from '../pipeline/dto';
 import CSS from './maintainerr-item-menu.css';
+import { createCustomElement } from '../../shared/dom';
 
 // Removal actions in Jellyfin's item menu (the ⋮ action sheet of the detail
 // page and of cards), for whichever removal tool is on (Maintainerr or
@@ -186,8 +187,7 @@ export function createMaintainerrMenu(JE: TagRuntimeBridge): MaintainerrMenuPart
         const shared = featureCtx.peer('homeRemoval')?.buildNativeActionSheetItem;
         if (typeof shared === 'function') return shared(scroller, { dataId, icon, text: label });
         const ref = scroller.querySelector('.actionSheetMenuItem');
-        const button = document.createElement('button');
-        button.setAttribute('is', 'emby-button');
+        const button = createCustomElement('button', 'emby-button');
         button.type = 'button';
         button.className = (ref?.getAttribute('class') || 'listItem listItem-button actionSheetMenuItem').replace(/\bselected\b/g, '').replace(/\s+/g, ' ').trim();
         button.dataset.id = dataId;

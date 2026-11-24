@@ -46,6 +46,14 @@
     };
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/shared/helpers.ts
   function createHelpers(JE2, api) {
     let muiHeaderButtonCSSInjected = false;
@@ -444,13 +452,12 @@
       JE2.core.ui.injectCss(id, css);
     }
     function createExternalLink(url, options = {}) {
-      const a = document.createElement("a");
-      a.setAttribute("is", "emby-linkbutton");
+      const a = createCustomElement("a", "emby-linkbutton");
       a.href = safeExternalUrl(url, window.location.href);
       a.target = "_blank";
       a.rel = "noopener noreferrer";
       if (options.title) a.title = options.title;
-      if (options.className) a.className = options.className;
+      if (options.className) a.className = [a.className, options.className].filter(Boolean).join(" ");
       if (options.text) a.textContent = options.text;
       if (options.resetStyle) {
         a.style.cssText = "padding:0;background:none;border-radius:0;min-width:0;";

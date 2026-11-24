@@ -4,6 +4,7 @@
 import { filterOf, type SeerrDiscoveryHost } from '../host-discovery';
 import { createSay } from './say';
 import type { FilterChange, SectionPage, SortChange } from './types';
+import { createCustomElement } from '../../shared/dom';
 
 /** How long a list section is put back after the list page drops it while it settles. */
 const KEEP_ATTACHED_MS = 6000;
@@ -30,8 +31,7 @@ export function createSectionChassis(JE: SeerrDiscoveryHost, { key, page, person
         section.className = `verticalSection jellyseerr-${key}-discovery-section jellyseerr-discovery-section${page === 'list' ? '' : ' detailVerticalSection'}`;
         section.setAttribute(`data-jellyseerr-${key}-discovery`, 'true');
         section.appendChild(header);
-        const itemsContainer = document.createElement('div');
-        itemsContainer.setAttribute('is', 'emby-itemscontainer');
+        const itemsContainer = createCustomElement('div', 'emby-itemscontainer');
         itemsContainer.className = 'itemsContainer vertical-wrap';
         section.appendChild(itemsContainer);
         return section;

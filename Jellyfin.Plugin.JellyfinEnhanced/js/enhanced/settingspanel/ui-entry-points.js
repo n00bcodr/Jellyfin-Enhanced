@@ -8,6 +8,14 @@
     return host.JellyfinEnhanced;
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/settings-panel/ui-entry-points.ts
   var openPanel = (JE) => {
     void JE.showEnhancedPanel?.();
@@ -30,8 +38,7 @@
           }
         }
         if (!jellyfinEnhancedSection.querySelector("#jellyfinEnhancedSettingsLink")) {
-          const jellyfinEnhancedLink = document.createElement("a");
-          jellyfinEnhancedLink.setAttribute("is", "emby-linkbutton");
+          const jellyfinEnhancedLink = createCustomElement("a", "emby-linkbutton");
           jellyfinEnhancedLink.className = "lnkMediaFolder navMenuOption emby-button";
           jellyfinEnhancedLink.href = "#";
           jellyfinEnhancedLink.id = "jellyfinEnhancedSettingsLink";
@@ -67,10 +74,9 @@
       if (!controlsContainer) return;
       const nativeSettingsButton = controlsContainer.querySelector(".btnVideoOsdSettings");
       if (!nativeSettingsButton) return;
-      const enhancedSettingsBtn = document.createElement("button");
+      const enhancedSettingsBtn = createCustomElement("button", "paper-icon-button-light");
       enhancedSettingsBtn.id = "enhancedSettingsBtn";
-      enhancedSettingsBtn.setAttribute("is", "paper-icon-button-light");
-      enhancedSettingsBtn.className = "autoSize paper-icon-button-light";
+      enhancedSettingsBtn.classList.add("autoSize", "paper-icon-button-light");
       enhancedSettingsBtn.title = "Jellyfin Enhanced";
       enhancedSettingsBtn.innerHTML = '<span class="largePaperIconButton material-icons" aria-hidden="true">tune</span>';
       enhancedSettingsBtn.onclick = (e) => {
@@ -118,9 +124,8 @@
         const menuContainer = document.querySelector("#myPreferencesMenuPage:not(.hide) .verticalSection");
         if (!menuContainer) return false;
         if (document.querySelector("#jellyfinEnhancedUserPrefsLink")) return true;
-        const enhancedLink = document.createElement("a");
+        const enhancedLink = createCustomElement("a", "emby-linkbutton");
         enhancedLink.id = "jellyfinEnhancedUserPrefsLink";
-        enhancedLink.setAttribute("is", "emby-linkbutton");
         enhancedLink.setAttribute("data-ripple", "false");
         enhancedLink.href = "#";
         enhancedLink.className = "listItem-border emby-button";

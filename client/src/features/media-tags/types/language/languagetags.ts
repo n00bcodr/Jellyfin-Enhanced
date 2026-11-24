@@ -39,7 +39,8 @@ export function createLanguageTags(JE: TagRuntimeBridge) {
     const flagClass = 'language-flag';
     // Series/Season flag for a language that only some episodes carry (#557).
     const partialFlagClass = 'language-flag-partial';
-    const langDisplayNames = new Intl.DisplayNames(['en'], { type: 'language' });
+    // Intl.DisplayNames is Chrome 81+ (older Tizen/webOS TVs); without it a flag is named by its code.
+    const langDisplayNames = typeof Intl.DisplayNames === 'function' ? new Intl.DisplayNames(['en'], { type: 'language' }) : null;
     /** language code → display name; an Intl lookup per flag per card adds up */
     const displayNameByCode: Map<string, string> = new Map();
 
@@ -51,7 +52,7 @@ export function createLanguageTags(JE: TagRuntimeBridge) {
         let name = displayNameByCode.get(code);
         if (name === undefined) {
             try {
-                name = langDisplayNames.of(code) || code.toUpperCase();
+                name = langDisplayNames?.of(code) || code.toUpperCase();
             } catch (e) {
                 name = code.toUpperCase();
             }

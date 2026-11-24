@@ -144,3 +144,34 @@ test('header actions: the More dialog opens from the launcher, forwards to origi
   assert.equal(launcher.getAttribute('aria-expanded'), 'false');
   assert.equal(h.JE.headerActions.getTray(), null);
 });
+
+// Engines before Chrome 88 (older Tizen and webOS TVs) throw a SyntaxError for :is() in querySelector.
+test('native tabs: the borrowed backdrop is found without an :is() selector', async t => {
+  const items = userId => Promise.resolve({ Items: [{ Id: `${userId}-movie`, BackdropImageTags: ['tag'] }] });
+  const h = tabs(t, { hash: '#/home?tab=2&jeTab=requests', items });
+  for (const proto of [h.window.Document.prototype, h.window.Element.prototype]) {
+    const native = proto.querySelector;
+    proto.querySelector = function (selector) {
+      if (String(selector).includes(':is(')) throw new h.window.DOMException(`'${selector}' is not a valid selector.`, 'SyntaxError');
+      return native.call(this, selector);
+    };
+  }
+  h.JE.nativeTabs.register('requests', 'Requests', panel => { panel.innerHTML = '<div class="jellyfinenhanced"></div>'; });
+  await until(() => (h.document.querySelector('.je-backdrop')?.style.backgroundImage || '').includes('user-a-movie'), 'the borrowed backdrop');
+});
+
+// Engines with native v0 custom elements (Chromium before 80) upgrade only an element created with its type, and the
+// upgrade adds its classes then; an `is` set afterwards is ignored, which left JE's tab without emby-button and show-focus.
+test('native tabs: the Home tab button is created with its type and keeps the classes its upgrade adds', async t => {
+  const h = tabs(t);
+  const create = h.document.createElement.bind(h.document);
+  h.document.createElement = (tag, type) => {
+    const element = create(tag);
+    if (typeof type === 'string') { element.setAttribute('is', type); element.classList.add('emby-button', 'show-focus'); }
+    return element;
+  };
+  h.JE.nativeTabs.register('requests', 'Requests', () => {});
+  await until(() => h.button('requests'), 'the tab button');
+  assert.equal(h.button('requests').getAttribute('is'), 'emby-button');
+  assert.deepEqual([...h.button('requests').classList].sort(), ['emby-button', 'emby-tab-button', 'show-focus']);
+});

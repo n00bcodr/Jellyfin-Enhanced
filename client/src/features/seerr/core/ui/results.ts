@@ -5,6 +5,7 @@ import { analyzeSeasonStatuses } from '../display';
 import type { SeerrMediaItem } from '../types';
 import { LOG_UI, firstInstall, groupInternals } from '../runtime';
 import { ICONS } from './icon-markup';
+import { createCustomElement } from '../../../shared/dom';
 
 const PRIMARY_CARD_TYPES = ['movie', 'series'];
 const isTmdbId = (value: string): boolean => /^\d+$/.test(value);
@@ -160,13 +161,11 @@ export function installResults(host: SeerrCoreHost): void {
             document.head.appendChild(style);
         }
         section.appendChild(title);
-        const scroller = document.createElement('div');
-        scroller.setAttribute('is', 'emby-scroller');
+        const scroller = createCustomElement('div', 'emby-scroller');
         scroller.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
         scroller.dataset.horizontal = 'true';
         scroller.dataset.centerfocus = 'card';
-        const items = document.createElement('div');
-        items.setAttribute('is', 'emby-itemscontainer');
+        const items = createCustomElement('div', 'emby-itemscontainer');
         items.className = 'focuscontainer-x itemsContainer scrollSlider';
         if (document.querySelector('.alphaPicker-tv') !== null) items.classList.add('itemsContainer-tv', 'animatedScrollX');
         for (const item of results) {

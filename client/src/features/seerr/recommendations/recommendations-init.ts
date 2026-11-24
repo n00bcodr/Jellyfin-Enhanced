@@ -3,6 +3,7 @@
 import { translate } from '../host-discovery';
 import { isRecord } from '../discovery/domain';
 import { CATEGORY_PAGE_ID, LOG_PREFIX, PAGE_ID, part, PLUGIN_PAGE_LINK, recommendationsHost } from './stage';
+import { createCustomElement } from '../../shared/dom';
 
 (function () {
     'use strict';
@@ -54,8 +55,7 @@ import { CATEGORY_PAGE_ID, LOG_PREFIX, PAGE_ID, part, PLUGIN_PAGE_LINK, recommen
             console.log(`${LOG_PREFIX} jellyfinEnhancedSection not found, will wait for it`);
             return;
         }
-        const navItem = document.createElement('a');
-        navItem.setAttribute('is', 'emby-linkbutton');
+        const navItem = createCustomElement('a', 'emby-linkbutton');
         navItem.className = 'navMenuOption lnkMediaFolder emby-button je-nav-recommendations-item';
         navItem.href = '#';
         const icon = document.createElement('span');

@@ -25,6 +25,7 @@ import syncCss from './subtitle-sync.css';
 import { createTrackLookup, TIMEOUTS, trackLabel, type TrackAnswer } from './track';
 import { createView, OVERLAY_ID, part, searchInput, type DialogState } from './view';
 import { clientRendersSubtitles, createSubtitleWatch, cueSample, linesStillShown, rendererKey, rendererOf, sameRenderer, syncSupport, videoSrc } from './watch';
+import { createCustomElement } from '../../shared/dom';
 
 const BUTTON_ID = 'je-subtitle-sync-btn';
 const STYLE_ID = 'je-subtitle-sync-style';
@@ -533,11 +534,10 @@ export function installSubtitleSync({ JE, ApiClient, ctx }: SubtitleSyncHost): v
         existing?.remove();
         injectStyles();
         const label = tr('subtitle_sync_button', 'Sync subtitles');
-        const button = document.createElement('button');
+        const button = createCustomElement('button', 'paper-icon-button-light');
         button.id = BUTTON_ID;
         button.type = 'button';
-        button.setAttribute('is', 'paper-icon-button-light');
-        button.className = 'autoSize paper-icon-button-light';
+        button.classList.add('autoSize', 'paper-icon-button-light');
         button.title = label;
         button.setAttribute('aria-label', label);
         button.innerHTML = '<span class="xlargePaperIconButton je-msym-rounded" aria-hidden="true">subtitles_gear</span>';

@@ -76,6 +76,9 @@
       return null;
     }
   }
+  function externalLinkAttrs(href, escapeHtml2, tvLayout) {
+    return tvLayout ? 'href="#"' : `href="${escapeHtml2(href)}" target="_blank" rel="noopener noreferrer"`;
+  }
   function detailsHref(itemId) {
     return `#!/details?id=${encodeURIComponent(itemId)}`;
   }
@@ -123,9 +126,10 @@
   var internal = moreInfoRegistry(JE);
   var escapeHtml = escaper(JE);
   var t = translator(JE);
+  var isTv = () => JE.core?.ui?.isTvLayout?.() === true;
   function badge(href, title, iconClass, icon, valueClass, value) {
     return `
-                <a is="emby-linkbutton" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" class="je-more-info-rating-badge-item" title="${escapeHtml(title)}">
+                <a is="emby-linkbutton" ${externalLinkAttrs(href, escapeHtml, isTv())} class="je-more-info-rating-badge-item" title="${escapeHtml(title)}">
                     <span class="je-more-info-rating-icon ${iconClass}">${icon}</span>
                     <span class="${valueClass}">${escapeHtml(value)}</span>
                 </a>
@@ -196,7 +200,7 @@
         <div class="je-more-info-media-facts" aria-label="External links">
             <div class="je-more-info-media-facts-row">
                 ${shown.map((link) => `
-                    <a is="emby-linkbutton" class="${link.className}" href="${escapeHtml(link.href)}" ${link.internal ? "" : 'target="_blank" rel="noopener noreferrer"'} title="${escapeHtml(link.title)}">
+                    <a is="emby-linkbutton" class="${link.className}" ${link.internal ? `href="${escapeHtml(link.href)}"` : externalLinkAttrs(link.href, escapeHtml, isTv())} title="${escapeHtml(link.title)}">
                         ${link.svg}
                     </a>
                 `).join("")}

@@ -24,6 +24,14 @@
   var export10 = /* @__PURE__ */ sharedExport(shared2, "sessionLease");
   var export11 = /* @__PURE__ */ sharedExport(shared2, "visibleDetailPage");
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/details-providers/links.ts
   function tagListRoute(tag, serverId) {
     return `list.html?type=tag&tag=${encodeURIComponent(tag)}&serverId=${serverId}`;
@@ -105,8 +113,7 @@
           const tagName = tag.slice(tagPrefix.length).trim();
           const slug = slugifyTagName(tagName);
           const route = tagListRoute(tag, server);
-          const link = document.createElement("a");
-          link.setAttribute("is", "emby-linkbutton");
+          const link = createCustomElement("a", "emby-linkbutton");
           link.className = "button-link emby-button arr-tag-link";
           link.href = `#!/${route}`;
           link.title = `View all items with tag: ${tag}`;

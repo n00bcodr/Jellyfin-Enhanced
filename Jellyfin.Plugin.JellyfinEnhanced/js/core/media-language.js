@@ -1151,7 +1151,7 @@
     function displayName(code) {
       if (parseLanguageTag(code)?.base === "zxx")
         return host.translate("audio_language_no_dialogue");
-      return new Intl.DisplayNames(["en"], { type: "language" }).of(code);
+      return typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames(["en"], { type: "language" }).of(code) : code.toUpperCase();
     }
     let priorityChoicesCache = null;
     function priorityChoices() {
@@ -1211,7 +1211,7 @@
       let name = localNames.get(key);
       if (name === void 0) {
         try {
-          name = parseLanguageTag(code)?.base === "zxx" ? host.translate("audio_language_no_dialogue") : new Intl.DisplayNames([locale, "en"], { type: "language" }).of(code) || "";
+          name = parseLanguageTag(code)?.base === "zxx" ? host.translate("audio_language_no_dialogue") : typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames([locale, "en"], { type: "language" }).of(code) || "" : "";
         } catch {
           name = "";
         }

@@ -1,4 +1,5 @@
 import type { BodyMutationCallback, ChromeSession } from './host';
+import { createCustomElement } from '../shared/dom';
 
 /**
  * Keeps Random handy and collapses the remaining JE actions into a More menu
@@ -114,6 +115,7 @@ const CSS = `
                 .je-launcher-action.emby-button:hover { background: rgba(128,128,128,.25); }
                 .je-launcher-action:disabled { opacity: .45; cursor: default; }
                 .je-launcher-panel button:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+                .layout-tv .je-launcher-panel button:focus { outline: 2px solid currentColor; outline-offset: -2px; }
                 .je-launcher-action[hidden], .je-launcher-pager[hidden] { display: none !important; }
                 .je-launcher-icon { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; flex-shrink: 0; }
                 .je-launcher-icon .material-icons, .je-launcher-icon svg { font-size: 24px; width: 24px; height: 24px; }
@@ -291,11 +293,10 @@ export function createHeaderActions(JE: HeaderActionsBridge) {
     }
 
     function createLauncher(currentTray: HTMLElement): Launcher {
-        const launcher = document.createElement('button');
+        const launcher = createCustomElement('button', 'paper-icon-button-light');
         launcher.type = 'button';
         launcher.id = 'je-header-launcher';
-        launcher.className = 'headerButton headerButtonRight paper-icon-button-light je-header-launcher';
-        launcher.setAttribute('is', 'paper-icon-button-light');
+        launcher.classList.add('headerButton', 'headerButtonRight', 'paper-icon-button-light', 'je-header-launcher');
         launcher.setAttribute('aria-haspopup', 'dialog');
         launcher.setAttribute('aria-controls', 'je-header-launcher-panel');
         launcher.setAttribute('aria-expanded', 'false');

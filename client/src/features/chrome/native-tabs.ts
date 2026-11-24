@@ -1,4 +1,5 @@
 import { captureIdentity, isSameIdentity, type ChromeSession, type IdentityClient, type IdentitySnapshot } from './host';
+import { createCustomElement } from '../shared/dom';
 
 /**
  * Shared registry for self-contained tabs on the Home page's native tab strip.
@@ -50,7 +51,6 @@ interface TabsElement extends HTMLElement {
 }
 interface AppliedDeepLink { hash: string; root: HTMLElement; panel: HTMLElement; tabs: TabsElement; btn: Element | null }
 interface NativeWindow extends Window {
-    CustomElements?: { upgradeSubtree?(element: Element): void };
     /** Injected by the Jellyfin Android app only: its Back button calls goBack(). */
     NavigationHelper?: { goBack?: AppBack };
     Emby?: { Page?: { canGoBack?(): boolean } };
@@ -310,18 +310,16 @@ export function createNativeTabs(JE: NativeTabsBridge, readClient: () => NativeT
             const index = nextIndex++;
             if (entry.index !== index) relabel(entry, index);
             if (!document.getElementById(OWN_ID_PREFIX + 'btn-' + entry.id)) {
-                const btn = document.createElement('button');
+                const btn = createCustomElement('button', 'emby-button');
                 btn.type = 'button';
-                btn.setAttribute('is', 'emby-button');
                 btn.id = OWN_ID_PREFIX + 'btn-' + entry.id;
-                btn.className = 'emby-tab-button';
+                btn.classList.add('emby-tab-button');
                 btn.setAttribute('data-index', String(entry.index));
                 const label = document.createElement('div');
                 label.className = 'emby-button-foreground';
                 label.textContent = entry.title;
                 btn.appendChild(label);
                 slider.appendChild(btn);
-                host.CustomElements?.upgradeSubtree?.(slider);
                 addedTabButton = true;
                 console.log(`${LOG} added tab button "${entry.title}" at data-index=${entry.index}`);
             }
@@ -402,11 +400,10 @@ export function createNativeTabs(JE: NativeTabsBridge, readClient: () => NativeT
         if (document.getElementById(linkId)) return;
         const group = getOrCreateGroup(headerRight);
         const separator = document.getElementById('je-native-tabs-separator');
-        const link = document.createElement('button');
+        const link = createCustomElement('button', 'paper-icon-button-light');
         link.id = linkId;
         link.type = 'button';
-        link.setAttribute('is', 'paper-icon-button-light');
-        link.className = 'headerButton headerButtonRight paper-icon-button-light';
+        link.classList.add('headerButton', 'headerButtonRight', 'paper-icon-button-light');
         link.title = entry.title;
         const icon = document.createElement('i');
         icon.className = 'material-icons';
@@ -545,7 +542,7 @@ export function createNativeTabs(JE: NativeTabsBridge, readClient: () => NativeT
         const holder = document.querySelector('.backdropContainer');
         if (!bg || !holder) return;
         syncScope();
-        const onOurPage = !!document.querySelector('#indexPage .tabContent.is-active :is(.jellyfinenhanced, .sections.bookmarks)');
+        const onOurPage = !!document.querySelector('#indexPage .tabContent.is-active .jellyfinenhanced, #indexPage .tabContent.is-active .sections.bookmarks');
         if (!onOurPage || !isHomeHash(hash())) { removeBorrowedBackdrop(); return; }
         // Jellyfin clears the backdrop on every tab change, so withBackdrop says whether it shows.
         if (!watchedBackgrounds.has(bg)) {

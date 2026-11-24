@@ -22,6 +22,14 @@
   var export4 = /* @__PURE__ */ sharedExport(shared2, "isRecord");
   var export13 = /* @__PURE__ */ sharedExport(shared2, "text");
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/media-tags/editor/tag-item-menu.ts
   function createItemMenu(JE, alsoCapture) {
     const DATA_ID = "je-media-tags";
@@ -72,8 +80,7 @@
       const shared3 = featureCtx.peer("homeRemoval")?.buildNativeActionSheetItem;
       if (typeof shared3 === "function") return shared3(scroller, { dataId: DATA_ID, icon: "local_offer", text: JE.t("common_media_tags") });
       const ref = scroller.querySelector(".actionSheetMenuItem");
-      const button = document.createElement("button");
-      button.setAttribute("is", "emby-button");
+      const button = createCustomElement("button", "emby-button");
       button.type = "button";
       button.className = (ref?.getAttribute("class") || "listItem listItem-button actionSheetMenuItem").replace(/\bselected\b/g, "").replace(/\s+/g, " ").trim();
       button.dataset.id = DATA_ID;
@@ -254,8 +261,7 @@
       const shared3 = featureCtx.peer("homeRemoval")?.buildNativeActionSheetItem;
       if (typeof shared3 === "function") return shared3(scroller, { dataId, icon, text: label });
       const ref = scroller.querySelector(".actionSheetMenuItem");
-      const button = document.createElement("button");
-      button.setAttribute("is", "emby-button");
+      const button = createCustomElement("button", "emby-button");
       button.type = "button";
       button.className = (ref?.getAttribute("class") || "listItem listItem-button actionSheetMenuItem").replace(/\bselected\b/g, "").replace(/\s+/g, " ").trim();
       button.dataset.id = dataId;

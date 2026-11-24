@@ -97,3 +97,21 @@ export function isDisabled(node: Element | null | undefined): boolean {
 export function focusElement(node: Element | null | undefined, options?: FocusOptions): void {
     if (node instanceof HTMLElement || node instanceof SVGElement) node.focus(options);
 }
+
+/** document.createElement's v0 form (a type-extension string), which TypeScript's DOM types do not declare. */
+type CreateWithTypeExtension = (this: Document, tagName: string, typeExtension: string) => Element;
+
+/**
+ * A jellyfin-web element of custom type `is` (emby-button, emby-linkbutton, emby-scroller, emby-itemscontainer,
+ * emby-select, paper-icon-button-light), created in the v0 form jellyfin-web itself uses (libraryMenu.js), so that
+ * webcomponents.js upgrades it at creation: engines with native v0 custom elements (Chromium before 80, older Tizen
+ * and webOS TVs) never upgrade an `is` set afterwards. The upgrade can add classes (emby-button, show-focus), so add
+ * classes with classList rather than assigning className where those must stay. Where nothing handles the type (a
+ * page without webcomponents.js), the `is` attribute is set as before.
+ */
+export function createCustomElement<K extends keyof HTMLElementTagNameMap>(tag: K, is: string): HTMLElementTagNameMap[K] {
+    const create = document.createElement as unknown as CreateWithTypeExtension;
+    const element = create.call(document, tag, is) as HTMLElementTagNameMap[K];
+    if (element.getAttribute('is') !== is) element.setAttribute('is', is);
+    return element;
+}

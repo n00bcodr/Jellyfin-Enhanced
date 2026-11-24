@@ -19,6 +19,14 @@
   var shared2 = /* @__PURE__ */ sharedModule("features/downloads/runtime");
   var export02 = /* @__PURE__ */ sharedExport(shared2, "runtime");
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/downloads/init.ts
   function install(deps) {
     const { JE, P, host, ctx, getApi } = deps;
@@ -172,8 +180,7 @@
       }
       const jellyfinEnhancedSection = document.querySelector(".jellyfinEnhancedSection");
       if (jellyfinEnhancedSection) {
-        const navItem = document.createElement("a");
-        navItem.setAttribute("is", "emby-linkbutton");
+        const navItem = createCustomElement("a", "emby-linkbutton");
         navItem.className = "navMenuOption lnkMediaFolder emby-button je-nav-downloads-item";
         navItem.href = "#";
         const labelRequests = JE.t && JE.t("requests_requests") || "Requests";

@@ -69,6 +69,14 @@
     return owner.client === current.client && owner.credentialsCurrent() && current.credentialsCurrent() && owner.userId === current.userId && owner.serverId === current.serverId && owner.epoch === current.epoch;
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/chrome/native-tabs.ts
   var OWN_ID_PREFIX = "je-native-tab-";
   var RESERVED_ID_PREFIX = "je-native-tab-reserved-";
@@ -294,18 +302,16 @@
         const index = nextIndex++;
         if (entry.index !== index) relabel(entry, index);
         if (!document.getElementById(OWN_ID_PREFIX + "btn-" + entry.id)) {
-          const btn = document.createElement("button");
+          const btn = createCustomElement("button", "emby-button");
           btn.type = "button";
-          btn.setAttribute("is", "emby-button");
           btn.id = OWN_ID_PREFIX + "btn-" + entry.id;
-          btn.className = "emby-tab-button";
+          btn.classList.add("emby-tab-button");
           btn.setAttribute("data-index", String(entry.index));
           const label = document.createElement("div");
           label.className = "emby-button-foreground";
           label.textContent = entry.title;
           btn.appendChild(label);
           slider.appendChild(btn);
-          host.CustomElements?.upgradeSubtree?.(slider);
           addedTabButton = true;
           console.log(`${LOG} added tab button "${entry.title}" at data-index=${entry.index}`);
         }
@@ -377,11 +383,10 @@
       if (document.getElementById(linkId)) return;
       const group = getOrCreateGroup(headerRight);
       const separator = document.getElementById("je-native-tabs-separator");
-      const link = document.createElement("button");
+      const link = createCustomElement("button", "paper-icon-button-light");
       link.id = linkId;
       link.type = "button";
-      link.setAttribute("is", "paper-icon-button-light");
-      link.className = "headerButton headerButtonRight paper-icon-button-light";
+      link.classList.add("headerButton", "headerButtonRight", "paper-icon-button-light");
       link.title = entry.title;
       const icon = document.createElement("i");
       icon.className = "material-icons";
@@ -489,7 +494,7 @@
       const holder = document.querySelector(".backdropContainer");
       if (!bg || !holder) return;
       syncScope();
-      const onOurPage = !!document.querySelector("#indexPage .tabContent.is-active :is(.jellyfinenhanced, .sections.bookmarks)");
+      const onOurPage = !!document.querySelector("#indexPage .tabContent.is-active .jellyfinenhanced, #indexPage .tabContent.is-active .sections.bookmarks");
       if (!onOurPage || !isHomeHash(hash())) {
         removeBorrowedBackdrop();
         return;

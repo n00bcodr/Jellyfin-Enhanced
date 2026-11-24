@@ -54,8 +54,56 @@ test('Back closes only the list and not the dialog', t => {
   assert.equal(popped, 0);
 });
 
+test("a TV remote's Back closes the dialog and its held repeats stay with it", t => {
+  const { h, created, key } = setup(t, true);
+  let popped = 0;
+  h.window.history.back = () => popped++;
+  created.show();
+  assert.equal(key({ key: 'Unidentified', keyCode: 10009 }).defaultPrevented, true);
+  assert.equal(popped, 1);
+  assert.equal(key({ key: 'Unidentified', keyCode: 10009, repeat: true }).defaultPrevented, true);
+  assert.equal(popped, 1);
+  // The rewrite's dialog closes on the first Back itself (upstream's waits for popstate and pops again here):
+  // once the 500 ms are over, Back is no longer swallowed and reaches Jellyfin.
+  const now = h.window.performance.now();
+  h.window.performance.now = () => now + 1000;
+  assert.equal(key({ key: 'Unidentified', keyCode: 10009 }).defaultPrevented, false);
+  assert.equal(popped, 1);
+});
+
 test('selects are left to the browser outside the TV layout', t => {
   const { created, select, key } = setup(t, false);
   assert.equal(key({ key: 'Enter' }, select).defaultPrevented, false);
   assert.equal(created.modalElement.querySelector('.jellyseerr-tv-picker'), null);
+});
+
+test('remote navigation stays inside the dialog', t => {
+  const { created } = setup(t, true);
+  assert.ok(created.modalElement.classList.contains('focuscontainer'));
+});
+
+test('closing gives focus back to what opened the dialog', t => {
+  const { h, created } = setup(t, true);
+  const opener = h.document.createElement('button');
+  h.document.body.appendChild(opener);
+  opener.focus();
+  created.show();
+  created.modalElement.querySelector('button').focus();
+  created.close();
+  assert.equal(h.document.activeElement, opener);
+});
+
+test('a Request button disabled by its successful request hands focus to its card poster', t => {
+  const { h, created } = setup(t, true);
+  const card = h.document.createElement('div');
+  card.className = 'jellyseerr-card';
+  card.innerHTML = '<div class="jellyseerr-poster-image" tabindex="0"></div><button class="jellyseerr-request-button"></button>';
+  h.document.body.appendChild(card);
+  const opener = card.querySelector('button');
+  opener.focus();
+  created.show();
+  created.modalElement.querySelector('button').focus();
+  opener.disabled = true;
+  created.close();
+  assert.equal(h.document.activeElement, card.querySelector('.jellyseerr-poster-image'));
 });

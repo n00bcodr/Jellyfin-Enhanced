@@ -3,6 +3,7 @@ import { idText, isRecord, num, record, type JsonRecord } from '../domain/json';
 import { anyTitle, mediaState, ownMediaInfo, requesters, tmdbIdOf, type MediaState } from '../domain/media';
 import { attachFourKPopup, silent, splitButton } from './four-k-popup';
 import { createModalScope, detachedContext, isLive } from './scope';
+import { focusFirstAction } from './focus';
 
 const JE = bridge();
 const internal = moreInfoRegistry(JE);
@@ -308,9 +309,20 @@ function renderTvActions(details: JsonRecord, media: MediaState, mount: HTMLElem
     });
 }
 
-/** Draws a modal's status chips, downloads and actions from its own title's data. */
+/**
+ * Draws a modal's status chips, downloads and actions from its own title's data. On the TV layout, focus lost
+ * with a redrawn button moves to the first action (or Close): older TV engines drop focus to <body> as soon as
+ * the pressed Request button is disabled, before this redraw.
+ */
 function renderActions(rawDetails: unknown, mediaType: MediaType, modal: MoreInfoModalElement | null = state.currentModal): void {
     if (!isLive(state, modal) || !modal || !isRecord(rawDetails)) return;
+    const active = document.activeElement;
+    const ours = active === document.body || modal.contains(active);
+    drawActions(rawDetails, mediaType, modal);
+    if (ours && JE.core?.ui?.isTvLayout?.() && !modal.contains(document.activeElement)) focusFirstAction(modal);
+}
+
+function drawActions(rawDetails: JsonRecord, mediaType: MediaType, modal: MoreInfoModalElement): void {
     const mountOf = (name: string) => modal.querySelector<HTMLElement>(`[data-mount="${name}"]`);
     const actions = mountOf('je-actions');
     const chips = mountOf('je-status-chip');

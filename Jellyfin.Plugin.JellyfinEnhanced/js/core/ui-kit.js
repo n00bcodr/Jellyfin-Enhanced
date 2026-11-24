@@ -49,6 +49,13 @@
     };
   }
 
+  // client/src/core/ui/tv-back.ts
+  function isTvBackKey(event) {
+    const key = "key" in event ? event.key : void 0;
+    const code = "keyCode" in event ? event.keyCode : void 0;
+    return key === "Escape" || key === "BrowserBack" || key === "GoBack" || code === 10009 || code === 461;
+  }
+
   // client/src/core/ui/runtime.ts
   function createUi(host) {
     const document2 = host.document;
@@ -193,6 +200,29 @@
     function isTvLayout() {
       return document2.documentElement.classList.contains("layout-tv");
     }
+    let swallowBackUntil = 0;
+    function swallowTvBack() {
+      if (isTvLayout()) swallowBackUntil = host.monotonicNow() + 500;
+    }
+    function rememberFocus(fallback) {
+      const opener = document2.activeElement;
+      return () => {
+        if (!isTvLayout() || !opener || opener === document2.body) return;
+        const disabled = "disabled" in opener && opener.disabled === true;
+        const target = disabled ? fallback?.(opener) : opener;
+        if (target instanceof HTMLElement) target.focus();
+      };
+    }
+    host.onKeydownCapture((event) => {
+      if (!swallowBackUntil || !isTvBackKey(event)) return;
+      if (!event.repeat && host.monotonicNow() > swallowBackUntil) {
+        swallowBackUntil = 0;
+        return;
+      }
+      if (event.repeat) swallowTvBack();
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    });
     function ensureSkeletonCss() {
       if (document2.getElementById("je-skeleton-css")) return;
       injectCss("je-skeleton-css", `
@@ -242,7 +272,10 @@
       skeletonGridHtml,
       addTouchTapListener,
       addDelegatedTouchTapListener,
-      isTvLayout
+      isTvLayout,
+      isTvBackKey,
+      swallowTvBack,
+      rememberFocus
     };
   }
 
@@ -288,7 +321,12 @@
     return {
       document,
       now: () => Date.now(),
+      monotonicNow: () => window.performance.now(),
       setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+      onKeydownCapture: (listener) => {
+        window.addEventListener("keydown", listener, true);
+        return () => window.removeEventListener("keydown", listener, true);
+      },
       toastDuration: () => bridge2.CONFIG?.TOAST_DURATION,
       themeVariables: () => bridge2.themer?.getThemeVariables() ?? {},
       contains: (parent, child) => parent instanceof Node && child instanceof Node && parent.contains(child),

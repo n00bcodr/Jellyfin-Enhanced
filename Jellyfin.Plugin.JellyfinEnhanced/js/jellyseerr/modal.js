@@ -65,11 +65,17 @@
     };
   }
 
+  // client/src/core/ui/tv-back.ts
+  function isTvBackKey(event) {
+    const key = "key" in event ? event.key : void 0;
+    const code = "keyCode" in event ? event.keyCode : void 0;
+    return key === "Escape" || key === "BrowserBack" || key === "GoBack" || code === 10009 || code === 461;
+  }
+
   // client/src/features/seerr/core/modal.ts
   var LOG = "🪼 Jellyfin Enhanced: Jellyseerr Modal:";
   var FOCUSABLE_TRAP = 'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
   var FOCUSABLE_FIRST = 'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex="0"]';
-  var TV_BACK_KEYS = ["Escape", "BrowserBack", "GoBack"];
   function formatBytes(bytes) {
     if (!bytes || bytes <= 0) return "0 Bytes";
     const k = 1024;
@@ -110,9 +116,10 @@
         owner = null;
       };
       function onPickerKey(event) {
-        if (!TV_BACK_KEYS.includes(event.key) && event.keyCode !== 10009 && event.keyCode !== 461) return;
+        if (!isTvBackKey(event)) return;
         event.preventDefault();
         event.stopImmediatePropagation();
+        JE.core?.ui?.swallowTvBack?.();
         closePicker();
       }
       const openPicker = (select) => {
@@ -159,7 +166,7 @@
     function create(options) {
       const { title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText } = options;
       const modalElement = document2.createElement("div");
-      modalElement.className = "jellyseerr-season-modal";
+      modalElement.className = "jellyseerr-season-modal focuscontainer";
       modalElement.setAttribute("role", "dialog");
       modalElement.setAttribute("aria-modal", "true");
       modalElement.setAttribute("tabindex", "-1");
@@ -202,9 +209,10 @@
       modalElement.appendChild(contentEl);
       const handleKeydown = (event) => {
         if (!ownsHistory()) return;
-        if (event.key === "Escape") {
+        if (isTvBackKey(event)) {
           event.preventDefault();
           event.stopPropagation();
+          JE.core?.ui?.swallowTvBack?.();
           close();
           return;
         }
@@ -227,6 +235,7 @@
       };
       let isClosing = false;
       let shown = false;
+      let restoreFocus = null;
       const token = String(Date.now()) + ":" + String(++nextModal);
       let openedUrl = "";
       const ownsHistory = () => shown && historyToken() === token && window2.location.href === openedUrl;
@@ -248,6 +257,7 @@
         if (!document2.querySelector('.jellyseerr-season-modal:not([aria-hidden="true"])')) {
           document2.body.classList.remove("jellyseerr-modal-is-open");
         }
+        restoreFocus?.();
         window2.setTimeout(() => modalElement.remove(), 300);
         if (restoreHistory && shown) {
           if (ownsHistory()) window2.history.back();
@@ -263,6 +273,7 @@
         if (shown || isClosing) return;
         shown = true;
         openedUrl = window2.location.href;
+        restoreFocus = JE.core?.ui?.rememberFocus?.((opener) => opener.closest(".jellyseerr-card")?.querySelector(".jellyseerr-poster-image") ?? opener.closest(".je-more-info-modal")?.querySelector(".modal-close")) ?? null;
         for (const closing of Array.from(document2.querySelectorAll('.jellyseerr-season-modal[aria-hidden="true"]'))) closing.remove();
         document2.body.appendChild(modalElement);
         document2.body.classList.add("jellyseerr-modal-is-open");

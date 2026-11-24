@@ -6,9 +6,11 @@ import { MEDIA, effectiveMediaStatus } from '../status';
 import type { SeerrMediaItem } from '../types';
 import { LOG_UI, bindViewOrigin, isViewCurrent, escapeWith, firstInstall, groupInternals } from '../runtime';
 import { ICONS } from './icon-markup';
+import { isTvBackKey } from '../../../../core/ui/tv-back';
 
 interface BatchContext {
     seerrBase: string;
+    tvLayout: boolean;
     useMoreInfoModal: boolean;
     moreInfoLoaded: boolean;
     availablePostersLinkToJellyfin: boolean;
@@ -37,6 +39,8 @@ interface CardState {
     cardScalable: HTMLElement;
     imageContainer: HTMLElement;
     overview: HTMLElement | null;
+    /** The open overview was opened by OK on the poster, not by a pointer: Back closes it (TV layout). */
+    overviewByKey: boolean;
     button: HTMLButtonElement | null;
     outsideClick: ((event: MouseEvent) => void) | null;
     /** performance.now() of the tap that navigated to Jellyfin; 0 once its click is seen. */
@@ -285,10 +289,12 @@ export function installCards(host: SeerrCoreHost): void {
         const mediaBadgeKeys: Readonly<Record<string, string>> = { movie: 'jellyseerr_card_badge_movie', tv: 'jellyseerr_card_badge_series', collection: 'jellyseerr_card_badge_collection' };
         const mediaBadgeLabels = new Map<string, string>();
         let viewLabel: string | null = null;
+        const tvLayout = isTvLayout();
         const ctx: BatchContext = {
             seerrBase: JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '',
+            tvLayout,
             // A TV app has no new window to open Seerr in, so it always uses the modal.
-            useMoreInfoModal: !!config?.JellyseerrUseMoreInfoModal || isTvLayout(),
+            useMoreInfoModal: !!config?.JellyseerrUseMoreInfoModal || tvLayout,
             moreInfoLoaded: !!JE.jellyseerrMoreInfo,
             availablePostersLinkToJellyfin: !!config?.JellyseerrAvailablePosterLinksToJellyfin,
             // TMDB, or Seerr's own watch-provider data when there is no TMDB key.
@@ -333,7 +339,7 @@ export function installCards(host: SeerrCoreHost): void {
     function cardInputsKey(items: readonly unknown[]): string {
         const ctx = getBatchContext();
         return JSON.stringify([
-            ctx.seerrBase, ctx.useMoreInfoModal, ctx.moreInfoLoaded, ctx.availablePostersLinkToJellyfin,
+            ctx.seerrBase, ctx.tvLayout, ctx.useMoreInfoModal, ctx.moreInfoLoaded, ctx.availablePostersLinkToJellyfin,
             ctx.showProviderIcons, ctx.posterNotFoundUrl, ctx.seerrIconUrl,
             ctx.showHideButtons, ctx.hiddenLabel, ctx.unhideLabel, ctx.hideLabel, ctx.viewOnJellyseerrLabel(),
             ctx.mediaBadgeLabel('movie'), ctx.mediaBadgeLabel('tv'), ctx.mediaBadgeLabel('collection'),
@@ -402,6 +408,9 @@ export function installCards(host: SeerrCoreHost): void {
         const titleText = titleLink.firstElementChild;
         if (titleText) titleText.textContent = title;
         titleLink.addEventListener('click', onTitleLinkCaptureClick, true);
+        // TV: the poster, whose OK then does what the title does, is the card's one remote stop
+        // (jellyfin-web's focus manager skips tabindex -1).
+        if (ctx.tvLayout && ctx.moreInfoLoaded) titleLink.tabIndex = -1;
         // Rating first, so the year keeps its index.
         const ratingElement = part(meta, 2);
         if (rating) { const value = ratingElement.lastElementChild; if (value) value.textContent = rating; }
@@ -427,7 +436,7 @@ export function installCards(host: SeerrCoreHost): void {
             posterOpensModal: useMoreInfoModal && ctx.moreInfoLoaded,
             // Without the modal, an item outside the library links its overview text to Seerr.
             navigatesExternally: !useMoreInfoModal && !jellyfinMediaId && !!jellyseerrUrl && item.mediaType !== 'collection',
-            cardScalable, imageContainer, overview: null, button: null, outsideClick: null, tapNavigatedAt: 0
+            cardScalable, imageContainer, overview: null, overviewByKey: false, button: null, outsideClick: null, tapNavigatedAt: 0
         });
         return card;
     }
@@ -458,6 +467,7 @@ export function installCards(host: SeerrCoreHost): void {
                     <button type="button" class="jellyseerr-request-button" data-tmdb-id="${item.id}" data-media-type="${escapeHtml(item.mediaType)}"></button>
                 `;
         state.overview = overview;
+        state.overviewByKey = false;
         state.cardScalable.appendChild(overview);
         const button = overview.querySelector('.jellyseerr-request-button');
         state.button = button instanceof HTMLButtonElement ? button : null;
@@ -596,8 +606,18 @@ export function installCards(host: SeerrCoreHost): void {
         if (inCard(card, target, '.jellyseerr-overview')) { onOverviewClick(event, state); return; }
         if (inCard(card, target, '.jellyseerr-poster-image') === state.imageContainer) onPosterClick(event, card, state);
     }
-    /** Enter / Space on a focused poster toggles the overview (or goes to Jellyfin). */
+    /** Enter / Space on a focused poster toggles the overview, or goes to Jellyfin; on TV with More Info it opens the title. */
     function onCardKeydown(container: HTMLElement, event: KeyboardEvent): void {
+        if (isTvBackKey(event) && isTvLayout()) {
+            // Back in a card whose overview OK opened closes it, instead of leaving the page.
+            const hit = cardEventTarget(container, event);
+            if (!hit?.state.overview || !hit.state.overviewByKey) return;
+            event.preventDefault();
+            JE.core?.ui?.swallowTvBack?.();
+            removeOverview(hit.state);
+            hit.state.imageContainer.focus();
+            return;
+        }
         if (event.key !== 'Enter' && event.key !== ' ') return;
         const hit = cardEventTarget(container, event);
         if (!hit || inCard(hit.card, hit.target, '.jellyseerr-poster-image') !== hit.state.imageContainer) return;
@@ -605,9 +625,16 @@ export function installCards(host: SeerrCoreHost): void {
         event.preventDefault();
         if (state.linksAvailableToJellyfin) {
             goToJellyfinItem(state);
+        } else if (state.ctx.tvLayout && state.posterOpensModal) {
+            // TV: OK does what the title (no longer a remote stop) does; requesting stays inside More Info.
+            const item = state.item;
+            if (state.jellyfinHref) goToJellyfinItem(state);
+            else if (item.mediaType === 'collection') void ui.showCollectionRequestModal?.(item.id, item.name || item.title || '', item);
+            else openMoreInfo(item.id, item.mediaType);
         } else if (!state.overview) {
             const overview = createOverview(state);
-            if (isTvLayout()) overview.querySelector<HTMLElement>('.jellyseerr-request-button')?.focus();
+            state.overviewByKey = true;
+            if (state.ctx.tvLayout) overview.querySelector<HTMLElement>('.jellyseerr-request-button')?.focus();
         } else {
             removeOverview(state);
         }

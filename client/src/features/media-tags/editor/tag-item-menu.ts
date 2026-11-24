@@ -1,5 +1,6 @@
 import { apiClient, mediaTagsContext, type TagRuntimeBridge } from '../host';
 import { isRecord, text, type JsonRecord } from '../pipeline/dto';
+import { createCustomElement } from '../../shared/dom';
 
 /** The item whose menu is about to open, captured from the press that opens it. */
 interface MenuContext {
@@ -108,8 +109,7 @@ export function createItemMenu(JE: TagRuntimeBridge, alsoCapture?: (e: Event) =>
         const shared = featureCtx.peer('homeRemoval')?.buildNativeActionSheetItem;
         if (typeof shared === 'function') return shared(scroller, { dataId: DATA_ID, icon: 'local_offer', text: JE.t('common_media_tags') });
         const ref = scroller.querySelector('.actionSheetMenuItem');
-        const button = document.createElement('button');
-        button.setAttribute('is', 'emby-button');
+        const button = createCustomElement('button', 'emby-button');
         button.type = 'button';
         button.className = (ref?.getAttribute('class') || 'listItem listItem-button actionSheetMenuItem').replace(/\bselected\b/g, '').replace(/\s+/g, ' ').trim();
         button.dataset.id = DATA_ID;

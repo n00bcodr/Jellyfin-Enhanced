@@ -120,6 +120,13 @@
   var shared4 = /* @__PURE__ */ sharedModule("features/seerr/core/ui/icon-markup");
   var export02 = /* @__PURE__ */ sharedExport(shared4, "ICONS");
 
+  // client/src/core/ui/tv-back.ts
+  function isTvBackKey(event) {
+    const key = "key" in event ? event.key : void 0;
+    const code = "keyCode" in event ? event.keyCode : void 0;
+    return key === "Escape" || key === "BrowserBack" || key === "GoBack" || code === 10009 || code === 461;
+  }
+
   // client/src/features/seerr/core/ui/cards.ts
   var linkableBase = (base) => /^https?:\/\//i.test(base) || base.startsWith("/") ? base : "";
   function part(parent, index) {
@@ -328,10 +335,12 @@
       const mediaBadgeKeys = { movie: "jellyseerr_card_badge_movie", tv: "jellyseerr_card_badge_series", collection: "jellyseerr_card_badge_collection" };
       const mediaBadgeLabels = /* @__PURE__ */ new Map();
       let viewLabel = null;
+      const tvLayout = isTvLayout();
       const ctx = {
         seerrBase: JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || "",
+        tvLayout,
         // A TV app has no new window to open Seerr in, so it always uses the modal.
-        useMoreInfoModal: !!config?.JellyseerrUseMoreInfoModal || isTvLayout(),
+        useMoreInfoModal: !!config?.JellyseerrUseMoreInfoModal || tvLayout,
         moreInfoLoaded: !!JE.jellyseerrMoreInfo,
         availablePostersLinkToJellyfin: !!config?.JellyseerrAvailablePosterLinksToJellyfin,
         // TMDB, or Seerr's own watch-provider data when there is no TMDB key.
@@ -389,6 +398,7 @@
       const ctx = getBatchContext();
       return JSON.stringify([
         ctx.seerrBase,
+        ctx.tvLayout,
         ctx.useMoreInfoModal,
         ctx.moreInfoLoaded,
         ctx.availablePostersLinkToJellyfin,
@@ -460,6 +470,7 @@
       const titleText = titleLink.firstElementChild;
       if (titleText) titleText.textContent = title;
       titleLink.addEventListener("click", onTitleLinkCaptureClick, true);
+      if (ctx.tvLayout && ctx.moreInfoLoaded) titleLink.tabIndex = -1;
       const ratingElement = part(meta, 2);
       if (rating) {
         const value2 = ratingElement.lastElementChild;
@@ -495,6 +506,7 @@
         cardScalable,
         imageContainer,
         overview: null,
+        overviewByKey: false,
         button: null,
         outsideClick: null,
         tapNavigatedAt: 0
@@ -527,6 +539,7 @@
                     <button type="button" class="jellyseerr-request-button" data-tmdb-id="${item.id}" data-media-type="${escapeHtml(item.mediaType)}"></button>
                 `;
       state.overview = overview;
+      state.overviewByKey = false;
       state.cardScalable.appendChild(overview);
       const button = overview.querySelector(".jellyseerr-request-button");
       state.button = button instanceof HTMLButtonElement ? button : null;
@@ -665,6 +678,15 @@
       if (inCard(card, target, ".jellyseerr-poster-image") === state.imageContainer) onPosterClick(event, card, state);
     }
     function onCardKeydown(container, event) {
+      if (isTvBackKey(event) && isTvLayout()) {
+        const hit2 = cardEventTarget(container, event);
+        if (!hit2?.state.overview || !hit2.state.overviewByKey) return;
+        event.preventDefault();
+        JE.core?.ui?.swallowTvBack?.();
+        removeOverview(hit2.state);
+        hit2.state.imageContainer.focus();
+        return;
+      }
       if (event.key !== "Enter" && event.key !== " ") return;
       const hit = cardEventTarget(container, event);
       if (!hit || inCard(hit.card, hit.target, ".jellyseerr-poster-image") !== hit.state.imageContainer) return;
@@ -672,9 +694,15 @@
       event.preventDefault();
       if (state.linksAvailableToJellyfin) {
         goToJellyfinItem(state);
+      } else if (state.ctx.tvLayout && state.posterOpensModal) {
+        const item = state.item;
+        if (state.jellyfinHref) goToJellyfinItem(state);
+        else if (item.mediaType === "collection") void ui.showCollectionRequestModal?.(item.id, item.name || item.title || "", item);
+        else openMoreInfo(item.id, item.mediaType);
       } else if (!state.overview) {
         const overview = createOverview(state);
-        if (isTvLayout()) overview.querySelector(".jellyseerr-request-button")?.focus();
+        state.overviewByKey = true;
+        if (state.ctx.tvLayout) overview.querySelector(".jellyseerr-request-button")?.focus();
       } else {
         removeOverview(state);
       }

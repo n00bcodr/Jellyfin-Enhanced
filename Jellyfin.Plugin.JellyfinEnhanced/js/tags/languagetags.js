@@ -32,13 +32,13 @@
     const containerClass = "language-overlay-container";
     const flagClass = "language-flag";
     const partialFlagClass = "language-flag-partial";
-    const langDisplayNames = new Intl.DisplayNames(["en"], { type: "language" });
+    const langDisplayNames = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames(["en"], { type: "language" }) : null;
     const displayNameByCode = /* @__PURE__ */ new Map();
     function displayName(code) {
       let name = displayNameByCode.get(code);
       if (name === void 0) {
         try {
-          name = langDisplayNames.of(code) || code.toUpperCase();
+          name = langDisplayNames?.of(code) || code.toUpperCase();
         } catch (e) {
           name = code.toUpperCase();
         }

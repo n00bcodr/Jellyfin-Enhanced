@@ -15,6 +15,7 @@
 // clearPlaceholders, PLACEHOLDER_CARDS, buildMessageRow, buildRetrySection }.
 import type { SeerrDiscoveryHost } from '../host-discovery';
 import type { DiscoverySectionFacade, MessageRowOptions, SectionPage } from './types';
+import { createCustomElement } from '../../shared/dom';
 
 /** How many cards hold a section's place while its first page loads (about a row and a half on a desktop). */
 export const PLACEHOLDER_CARDS = 10;
@@ -33,8 +34,7 @@ function buildSection({ key, page, header }: { readonly key: string; readonly pa
     if (page === 'detail') section.classList.add('detailVerticalSection');
     section.setAttribute(`data-jellyseerr-${key}-discovery`, 'true');
     section.appendChild(header);
-    const itemsContainer = document.createElement('div');
-    itemsContainer.setAttribute('is', 'emby-itemscontainer');
+    const itemsContainer = createCustomElement('div', 'emby-itemscontainer');
     itemsContainer.className = 'itemsContainer vertical-wrap';
     section.appendChild(itemsContainer);
     return section;

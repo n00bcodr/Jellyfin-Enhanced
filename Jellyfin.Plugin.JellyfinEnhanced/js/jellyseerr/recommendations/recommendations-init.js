@@ -54,6 +54,14 @@
     return value;
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/seerr/recommendations/recommendations-init.ts
   (function() {
     "use strict";
@@ -98,8 +106,7 @@
         console.log(`${LOG_PREFIX} jellyfinEnhancedSection not found, will wait for it`);
         return;
       }
-      const navItem = document.createElement("a");
-      navItem.setAttribute("is", "emby-linkbutton");
+      const navItem = createCustomElement("a", "emby-linkbutton");
       navItem.className = "navMenuOption lnkMediaFolder emby-button je-nav-recommendations-item";
       navItem.href = "#";
       const icon = document.createElement("span");

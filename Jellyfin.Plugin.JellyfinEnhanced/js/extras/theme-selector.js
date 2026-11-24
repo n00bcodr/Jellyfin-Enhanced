@@ -23,6 +23,14 @@
     return host.JellyfinEnhanced;
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/chrome/theme-selector.ts
   var THEMES = Object.freeze({
     "Default": "",
@@ -255,9 +263,8 @@ ${rest}`;
       return false;
     }
     function createSelect(userId, container) {
-      const select = document.createElement("select");
-      select.setAttribute("is", "emby-select");
-      select.className = "emby-select-withcolor emby-select";
+      const select = createCustomElement("select", "emby-select");
+      select.classList.add("emby-select-withcolor", "emby-select");
       select.id = "theme-selector-select";
       select.setAttribute("aria-label", "Select theme");
       select.removeAttribute("label");
@@ -290,8 +297,7 @@ ${rest}`;
       return select;
     }
     function createRandomButton(userId, container) {
-      const button = document.createElement("button");
-      button.setAttribute("is", "emby-button");
+      const button = createCustomElement("button", "emby-button");
       button.className = "emby-button";
       button.id = "random-theme-button";
       button.setAttribute("aria-label", "Toggle random daily theme");

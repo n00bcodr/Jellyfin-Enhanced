@@ -4,6 +4,7 @@
  * Strict TypeScript replacement of the module split from ui.js (same markup, ids and behaviour).
  */
 import { panelHost, type PanelBridge } from './host';
+import { createCustomElement } from '../shared/dom';
 
 /** Opens the panel through the facade at click time (the panel module loads later). */
 const openPanel = (JE: Pick<PanelBridge, 'showEnhancedPanel'>): void => { void JE.showEnhancedPanel?.(); };
@@ -47,8 +48,7 @@ export function installUiEntryPoints(JE: Pick<PanelBridge, 'helpers' | 'core' | 
             }
 
             if (!jellyfinEnhancedSection.querySelector('#jellyfinEnhancedSettingsLink')) {
-                const jellyfinEnhancedLink = document.createElement('a');
-                jellyfinEnhancedLink.setAttribute('is', 'emby-linkbutton');
+                const jellyfinEnhancedLink = createCustomElement('a', 'emby-linkbutton');
                 jellyfinEnhancedLink.className = 'lnkMediaFolder navMenuOption emby-button';
                 jellyfinEnhancedLink.href = '#';
                 jellyfinEnhancedLink.id = 'jellyfinEnhancedSettingsLink';
@@ -101,10 +101,9 @@ export function installUiEntryPoints(JE: Pick<PanelBridge, 'helpers' | 'core' | 
         const nativeSettingsButton = controlsContainer.querySelector('.btnVideoOsdSettings');
         if (!nativeSettingsButton) return;
 
-        const enhancedSettingsBtn = document.createElement('button');
+        const enhancedSettingsBtn = createCustomElement('button', 'paper-icon-button-light');
         enhancedSettingsBtn.id = 'enhancedSettingsBtn';
-        enhancedSettingsBtn.setAttribute('is', 'paper-icon-button-light');
-        enhancedSettingsBtn.className = 'autoSize paper-icon-button-light';
+        enhancedSettingsBtn.classList.add('autoSize', 'paper-icon-button-light');
         enhancedSettingsBtn.title = 'Jellyfin Enhanced';
         enhancedSettingsBtn.innerHTML = '<span class="largePaperIconButton material-icons" aria-hidden="true">tune</span>';
 
@@ -177,9 +176,8 @@ export function installUiEntryPoints(JE: Pick<PanelBridge, 'helpers' | 'core' | 
             if (document.querySelector('#jellyfinEnhancedUserPrefsLink')) return true;
 
             // Create the link element matching Jellyfin's structure
-            const enhancedLink = document.createElement('a');
+            const enhancedLink = createCustomElement('a', 'emby-linkbutton');
             enhancedLink.id = 'jellyfinEnhancedUserPrefsLink';
-            enhancedLink.setAttribute('is', 'emby-linkbutton');
             enhancedLink.setAttribute('data-ripple', 'false');
             enhancedLink.href = '#';
             enhancedLink.className = 'listItem-border emby-button';

@@ -24,6 +24,14 @@ export function installButtons(host: SeerrCoreHost): void {
     // so one click cannot submit twice or with stale media, and a late answer is ignored.
     const requestHandlers = new WeakMap<HTMLButtonElement, (event: MouseEvent) => Promise<void>>();
 
+    /** TV: older engines drop focus to <body> when the focused button is disabled; keep it on the card's poster. */
+    function disableKeepingFocus(button: HTMLButtonElement): void {
+        if (document.activeElement === button && JE.core?.ui?.isTvLayout?.()) {
+            button.closest('.jellyseerr-card')?.querySelector<HTMLElement>('.jellyseerr-poster-image')?.focus();
+        }
+        button.disabled = true;
+    }
+
     function configureRequestButton(button: HTMLButtonElement, value: unknown, isJellyseerrActive: boolean, jellyseerrUserFound: boolean): void {
         const previous = requestHandlers.get(button);
         if (previous) {
@@ -176,7 +184,7 @@ export function installButtons(host: SeerrCoreHost): void {
                 return;
             }
             const origin = captureOrigin(host);
-            target.disabled = true;
+            disableKeepingFocus(target);
             target.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
             const live = () => requestHandlers.get(target) === handler;
             try {

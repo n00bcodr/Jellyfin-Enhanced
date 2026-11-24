@@ -176,6 +176,14 @@
     };
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/seerr/discovery/section-chassis.ts
   var KEEP_ATTACHED_MS = 6e3;
   function createSectionChassis(JE, { key, page, personScope }) {
@@ -196,8 +204,7 @@
       section.className = `verticalSection jellyseerr-${key}-discovery-section jellyseerr-discovery-section${page === "list" ? "" : " detailVerticalSection"}`;
       section.setAttribute(`data-jellyseerr-${key}-discovery`, "true");
       section.appendChild(header);
-      const itemsContainer = document.createElement("div");
-      itemsContainer.setAttribute("is", "emby-itemscontainer");
+      const itemsContainer = createCustomElement("div", "emby-itemscontainer");
       itemsContainer.className = "itemsContainer vertical-wrap";
       section.appendChild(itemsContainer);
       return section;

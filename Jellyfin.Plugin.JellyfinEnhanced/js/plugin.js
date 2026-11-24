@@ -1,6 +1,21 @@
 (() => {
 "use strict";
 (() => {
+  // client/src/bootstrap/loader/polyfills.ts
+  function installReplaceChildren() {
+    for (const proto of [Element.prototype, Document.prototype, DocumentFragment.prototype]) {
+      if (typeof proto.replaceChildren === "function") continue;
+      Object.defineProperty(proto, "replaceChildren", {
+        configurable: true,
+        writable: true,
+        value(...nodes) {
+          while (this.lastChild) this.removeChild(this.lastChild);
+          this.append(...nodes);
+        }
+      });
+    }
+  }
+
   // client/src/host/bootstrap-pages-host.ts
   var loaderWindow = () => window;
   function installNamespace(namespace) {
@@ -1674,6 +1689,7 @@
   }
 
   // client/src/bootstrap/loader/entry.ts
+  installReplaceChildren();
   var dependencies = createBootDependencies(createNamespace());
   registerWholePixelProperties();
   loadSplashScreenEarly(dependencies.JE);

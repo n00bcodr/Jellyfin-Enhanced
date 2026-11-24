@@ -1,4 +1,5 @@
 import type { ChromeSession, Unsubscribe, BodyMutationCallback } from './host';
+import { createCustomElement } from '../shared/dom';
 
 /** Jellyfish colour variants served by the plugin CDN route (jellyfish/colors/<file>). */
 export const THEMES: Readonly<Record<string, string>> = Object.freeze({
@@ -249,9 +250,8 @@ export function createThemeSelector(JE: ThemeSelectorBridge, readClient: () => T
     }
 
     function createSelect(userId: string, container: Element): HTMLSelectElement {
-        const select = document.createElement('select');
-        select.setAttribute('is', 'emby-select');
-        select.className = 'emby-select-withcolor emby-select';
+        const select = createCustomElement('select', 'emby-select');
+        select.classList.add('emby-select-withcolor', 'emby-select');
         select.id = 'theme-selector-select';
         select.setAttribute('aria-label', 'Select theme');
         select.removeAttribute('label');
@@ -285,8 +285,7 @@ export function createThemeSelector(JE: ThemeSelectorBridge, readClient: () => T
     }
 
     function createRandomButton(userId: string, container: Element): HTMLButtonElement {
-        const button = document.createElement('button');
-        button.setAttribute('is', 'emby-button');
+        const button = createCustomElement('button', 'emby-button');
         button.className = 'emby-button';
         button.id = 'random-theme-button';
         button.setAttribute('aria-label', 'Toggle random daily theme');

@@ -375,3 +375,23 @@ test('feature initializers run in order and only when enabled', async t => {
         'ColoredRatings', 'ThemeSelector', 'ActivityIcons', 'PluginIcons', 'activeStreams', 'DownloadsPage', 'CalendarPage', 'HiddenContentPage']);
     assert.deepEqual(await run(t, false), ['themer', 'PluginRevisions', 'EnhancedScript', 'PauseScreen', 'Bookmarks', 'tagPipeline', 'OsdRating']);
 });
+
+// replaceChildren() is Chrome 86+; older Tizen and webOS TVs lack it, and jellyfin-web's core-js adds no DOM methods.
+test('plugin.js gives engines without replaceChildren one before any module loads, and keeps a native one', t => {
+  const h = createHarness({ html: '<script plugin="Jellyfin Enhanced" version="1.0.0-test"></script>', apiClient: { getCurrentUserId: () => null, ajax: async () => ({}) } });
+  t.after(() => h.close());
+  const { Element, Document, DocumentFragment } = h.window;
+  const native = Document.prototype.replaceChildren;
+  delete Element.prototype.replaceChildren;
+  delete DocumentFragment.prototype.replaceChildren;
+  h.load('plugin.js');
+  const box = h.document.createElement('div');
+  box.innerHTML = '<i></i><b></b>';
+  box.replaceChildren('text', h.document.createElement('span'));
+  assert.equal(box.innerHTML, 'text<span></span>');
+  const fragment = h.document.createDocumentFragment();
+  fragment.append('x');
+  fragment.replaceChildren();
+  assert.equal(fragment.childNodes.length, 0);
+  assert.equal(Document.prototype.replaceChildren, native);
+});

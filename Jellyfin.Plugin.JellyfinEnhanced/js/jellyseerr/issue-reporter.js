@@ -252,6 +252,14 @@
                     }
                 `;
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/seerr/details/issues/issue-reporter-entry.ts
   var JE = bridge();
   var logPrefix = `${SEERR_LOG} Issue Reporter:`;
@@ -565,8 +573,7 @@
       console.warn(`${logPrefix} Container not found for report button`);
       return null;
     }
-    const button = document.createElement("button");
-    button.setAttribute("is", "emby-button");
+    const button = createCustomElement("button", "emby-button");
     button.className = "button-flat detailButton emby-button jellyseerr-report-issue-icon";
     button.type = "button";
     const title = t("jellyseerr_report_issue_button");
@@ -583,8 +590,7 @@
   function createUnavailableButton(container, _itemName, _mediaType, reason = "unavailable") {
     if (!container) return null;
     const known = UNAVAILABLE_REASONS[reason];
-    const button = document.createElement("button");
-    button.setAttribute("is", "emby-button");
+    const button = createCustomElement("button", "emby-button");
     button.className = "button-flat detailButton emby-button jellyseerr-report-unavailable-icon";
     button.type = "button";
     button.setAttribute("aria-label", known?.aria ?? t("jellyseerr_report_unavailable_button"));

@@ -3716,6 +3716,189 @@
         "4ead3e5ecab3808a193f54e8dcb61c9af6951aa4"
       ],
       "notes": "Applied as is (git apply --3way, clean): the same five action pins in the ten workflows upstream changed: step-security/harden-runner 2.23.0 (aebdcf61), actions/create-github-app-token 3.4.0 (f418cff3), actions/dependency-review-action 5.0.1 (bbc44d14), ossf/scorecard-action 2.6.0 (23f22cd4) and trufflesecurity/trufflehog 3.100.0 (d232362a). The two workflows only the rewrite has, rewrite-validation.yml and validate-manifest.yml, use none of these actions, so nothing else changes; git grep finds none of the old pins left."
+    },
+    {
+      "sha": "f83971e368f1c4bd38463fe223db86360e1ebd17",
+      "date": "2026-11-24T08:03:07Z",
+      "subject": "fix(seerr): TV remote navigation in More Info, the request window and the header (#1023)",
+      "class": "fix",
+      "features": [
+        "platform",
+        "player",
+        "seerr",
+        "settings-panel"
+      ],
+      "issues": [
+        "#1003",
+        "#1023"
+      ],
+      "release": null,
+      "size": {
+        "files": 14,
+        "insertions": 248,
+        "deletions": 28
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/ui-kit.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/pausescreen.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/ui-styles.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/modal.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/moreinfo/more-info-modal-actions.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/moreinfo/more-info-modal-badges.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/moreinfo/more-info-modal-init.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/moreinfo/more-info-modal-render.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-buttons.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-cards.js",
+        "tests/frontend/features/features-seerr-spoiler-guard.test.mjs",
+        "tests/frontend/pages/pages-moreinfo.test.mjs",
+        "tests/frontend/requests/request-modal-tv.test.mjs",
+        "tests/frontend/requests/seerr-card-tv.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "c92cabccb11f5f877232e457c74458ddd65d4841"
+      ],
+      "notes": "Re-implemented. core/ui (client/src/core/ui/runtime.ts, built into core/ui-kit.js) gains upstream's isTvBackKey, swallowTvBack and rememberFocus on JE.core.ui, with the same 500 ms swallow of Back presses and held repeats; its window keydown listener (capture) is added through the UI host (host/ui-host.ts onKeydownCapture, which returns its remover) and reads performance.now() through it. The key test itself is a pure function in core/ui/tv-back.ts that the pause screen, the request window, More Info and the Seerr cards import, so a Back press is recognised even where JE.core.ui is stubbed; it reads key and keyCode defensively, since a TV shell can send a key event that is not a KeyboardEvent (More Info already read keys that way). Pause screen: isTvBackKey, so GoBack now closes it too, as upstream. Settings-panel ui-styles: upstream's TV header rule, verbatim. Request window (seerr/core/modal.ts): the focuscontainer class; Back (any isTvBackKey key) closes it, default-prevented, then swallowTvBack, and the in-dialog select list does the same; it remembers its opener on show (fallback: the card's poster or More Info's Close for a Request button disabled meanwhile) and gives focus back on every close. The one behavioural difference: the rewrite's dialog closes on Back itself and pops its history entry only while it still owns it, where upstream's calls history.back() and closes on popstate. More Info (details/moreinfo/init-entry.ts): Back closes it unless a dialog is stacked above, default-prevented, then swallowTvBack; the opener is remembered on open (not when one title replaces another) and focus returns to it on the closes a user asks for (X, backdrop, Back, history), not on navigation (viewshow) or an account change. focusFirstAction moved to moreinfo/focus.ts and is shared with renderActions (actions-entry.ts), which on the TV layout moves focus lost with a redrawn button to the first action, or Close. External links (rating badges, the facts row, trailers) render inert on the TV layout through externalLinkAttrs in details/domain/links.ts; links into Jellyfin are unchanged. Seerr cards (core/ui/cards.ts): Back closes an overview that OK opened and returns focus to the poster; a pointer-opened overview leaves Back alone. The card remembers how its overview opened in its CardState (overviewByKey) instead of upstream's data-by-key attribute, so the overview's markup is unchanged. A direct request from the overview moves focus to the poster before disabling Request (core/ui/buttons.ts, the one movie request handler that covers both of upstream's sites). Upstream's tests are added to the same test files (the More Info link test in tests/frontend/features/spoiler-guard/), with two differences: the request window's held-Back test ends by checking that a Back press after the 500 ms is no longer swallowed and pops nothing more (the dialog is already closed; upstream's still waits for popstate and pops again); and the TV link test counts 5 external links, not 6, because upstream also draws a Rotten Tomatoes fact with an empty href when the title has no Rotten Tomatoes page, which the rewrite does not draw. The leak guard required the window listener to be removable; it is installed once per page with the UI kit. Lab parity (je12 browse --profile tv, p113-tv-remote.mjs): on upstream's build at 235dc152 and on this branch alike, the header tab strip is 559px wide in a 1920px viewport (1056px before the port), More Info's external links have no target and href=\"#\", a remote Back closes More Info and the request window (default-prevented, a second Back at once swallowed, the address unchanged) and focus returns to the random button that opened them; before the port both stayed open. Upstream counts 6 inert links where the rewrite has 5 (the Rotten Tomatoes fact, above).",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p113-116.live.txt (pair tv-remote), p113-tv-remote.mjs, p113-tv-remote.rewrite-base.txt, p113-116.tests.txt, p113-116.smoke.txt"
+    },
+    {
+      "sha": "b0cabd9f7a6b42ca9f83abe6cdd79ad182df40d6",
+      "date": "2026-11-24T08:03:37Z",
+      "subject": "fix(compat): CSS and API fallbacks for older TV engines (#1024)",
+      "class": "fix",
+      "features": [
+        "chrome",
+        "media-tags",
+        "platform",
+        "player",
+        "seerr"
+      ],
+      "issues": [
+        "#1004",
+        "#1024"
+      ],
+      "release": null,
+      "size": {
+        "files": 9,
+        "insertions": 36,
+        "deletions": 8
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/header-actions.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/native-tabs.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/pausescreen.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/moreinfo/more-info-modal-styles.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-styles.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/languagetags.js",
+        "tests/frontend/features/features-language-display.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "df0c5f32cdcd3cf2da487fc8cdee277bd58206d4"
+      ],
+      "notes": "Re-implemented, each of the five parts at the place that builds upstream's file. replaceChildren: the same polyfill (Element, Document and DocumentFragment, only where the method is missing) in client/src/bootstrap/loader/polyfills.ts, called first in plugin.js's entry, before the namespace and every module; a new test in tests/frontend/bootstrap/bootstrap-loader-rewrite.test.mjs removes the method, loads plugin.js and checks it works and that a native one is kept. Intl.DisplayNames: feature-detected (typeof === 'function') at the same three sites, media-language.ts's displayName and local-name lookup and languagetags.ts's module-level formatter, with upstream's fallbacks (the upper-case code, or no local name); upstream's test is added to tests/frontend/features/media-tags/features-language-display.test.mjs. The tag-hidden editor and the Seerr discovery filters already construct Intl.DisplayNames inside try/catch and are unchanged. Native tabs: the Home backdrop target spelled out without :is() (chrome/native-tabs.ts); a new test in tests/frontend/chrome/chrome-header.test.mjs gives the page a querySelector that rejects :is() as engines before Chrome 88 do, and the borrowed backdrop still appears. CSS, verbatim: the launcher's .layout-tv :focus rule (chrome/header-actions.ts), the pause screen's close button split from its grouped :hover rule with a .layout-tv :focus twin (player/pause-screen.css), the season, collection and TVDB-match rows' .layout-tv :focus rules (seerr/core/ui/season-modal.css) and the More Info backdrop's plain 360px height before its clamp() (seerr/details/moreinfo/more-info.css). The lab's Chromium supports :focus-visible and clamp(), so these rules change nothing there; they are checked in the built styles. Other :is() selectors passed to querySelector remain in the rewrite (downloads, the tag layout, the tag preview), as upstream keeps its own in tag-layout.js: filed as a found bug. Nothing of it shows on the lab's Chromium, which has replaceChildren, Intl.DisplayNames, :is(), :focus-visible and clamp(): the lab shows the native replaceChildren kept on Element, Document and DocumentFragment and 42 language chips on Home (p114-native-apis.after.txt), and the smoke against the main line passes with nothing changed. The proof is the three tests.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p113-116.tests.txt, p114-native-apis.after.txt, p113-116.smoke.txt"
+    },
+    {
+      "sha": "00ec8b46b47f6e7eeff0ed0baff0047c6d4a66a1",
+      "date": "2026-11-24T08:04:39Z",
+      "subject": "fix(compat): create custom elements with their is type for older TV engines (#1025)",
+      "class": "fix",
+      "features": [
+        "bookmarks",
+        "calendar",
+        "chrome",
+        "details-providers",
+        "downloads",
+        "hidden-content",
+        "media-tags",
+        "player",
+        "seerr",
+        "settings-panel",
+        "shared",
+        "spoiler-guard"
+      ],
+      "issues": [
+        "#1004",
+        "#1025"
+      ],
+      "release": null,
+      "size": {
+        "files": 32,
+        "insertions": 62,
+        "deletions": 110
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/arr-links.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/arr-tag-links.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/calendar/calendar-page-init.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-init.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/elsewhere.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/bookmarks/bookmarks-library-page.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/bookmarks/bookmarks.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/features-random-button.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/header-actions.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/helpers.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/native-tabs.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/hiddencontent/hidden-content-page-nav.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/homeremoval/features-remove-multiselect.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/itemdetails/features-details-page.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/subtitle-sync.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-entry-points.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/spoilerguard/detail-button.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/extras/active-streams.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/extras/theme-selector.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/collection-discovery.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-base.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/discovery/discovery-section.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/issue-reporter.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/item-details.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/seerr-detail-link.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/recommendations/recommendations-init.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/recommendations/recommendations-render.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-results.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/others/letterboxd-links.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/others/mdblist-ratings.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/maintainerr-item-menu.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-item-menu.js"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "f86dbe541e3dd2ab601a94907c25bdbadfbef13f"
+      ],
+      "notes": "Re-implemented through one typed helper, createCustomElement(tag, type) in client/src/features/shared/dom.ts. It calls document.createElement(tag, type), the v0 form jellyfin-web uses (TypeScript's DOM types declare only the options form, so the call goes through one cast), and sets the is attribute itself where nothing handled the type (a page without webcomponents.js, the test DOM), so the markup there is as before. Every one of the 40 places in client/src that created an element and set is afterwards now uses it: the same places as upstream's 32 files, where the Elsewhere, Letterboxd and MDBList links go through the shared createExternalLink and details-providers/links.ts's fallback, both changed. Class handling follows upstream place by place: classList.add instead of assigning className for the header and player buttons (the launcher, random item, active streams, the native tabs' header link, bookmark, subtitle sync, the settings button), the Home tab button and the theme selector's select; the shared external link and its fallback join the caller's classes to the ones the upgrade added (upstream appends with +=); the other places keep assigning className, as upstream does, since their classes name emby-button themselves. Native tabs drop the upgradeSubtree call and its type. The recommendations rows create their scroller, items container and heading link with their types; a row is still built detached and filled before it is inserted, as it already was here. Upstream has no tests for this; new ones emulate an engine with native v0 custom elements (createElement upgrades only an element given its type, and adds its classes then) for the shared external link and the Home tab button, a test that without a type handler external links still carry is=\"emby-linkbutton\", and a source check that no client file sets is after creating an element (the helper's fallback aside). Lab parity (p115-custom-elements.mjs, desktop and TV layout): every element JE makes with an is attribute on Home and a movie's details page reads the same (tag, is, classes) on upstream's build at 235dc152, on this branch and on the main line before the port: on a modern engine webcomponents.js upgrades both forms, so the port changes nothing there. Engines with native v0 custom elements are not in the lab; the tests emulate one.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p113-116.live.txt (pairs custom-elements and custom-elements-tv), p115-custom-elements.mjs, p115-custom-elements.rewrite-base.txt, p115-custom-elements-tv.rewrite-base.txt, p113-116.tests.txt"
+    },
+    {
+      "sha": "235dc1528576548e52888341aa9fe8ca99e9a5ec",
+      "date": "2026-11-24T08:15:00Z",
+      "subject": "fix(seerr): one remote stop per card, and OK opens the title on TV (#1103)",
+      "class": "fix",
+      "features": [
+        "seerr"
+      ],
+      "issues": [
+        "#1102",
+        "#1103"
+      ],
+      "release": null,
+      "size": {
+        "files": 2,
+        "insertions": 31,
+        "deletions": 9
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-cards.js",
+        "tests/frontend/requests/seerr-card-tv.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "73e76050196345a5f6074d60db07f91151a43087"
+      ],
+      "notes": "Re-implemented in client/src/features/seerr/core/ui/cards.ts as upstream: the batch context gains tvLayout (read once per batch, and part of the key that decides whether built cards can be reused); on the TV layout with the More Info module loaded the title link gets tabIndex -1, so each card is one remote stop; and OK on a poster whose click opens the modal now does what the title does: the Jellyfin item for a title in the library, the collection's request window, or More Info. Without More Info, OK still opens the overview and focuses Request, and Back closes it (the previous port). The rewrite's own differences stay: the collection window and More Info are opened through its optional facades (showCollectionRequestModal, openMoreInfo), as its title-link handler does. Upstream's test change applied as is (git apply, clean): the two Back tests now run without More Info, and a new test checks that OK opens More Info for the poster's title and that the title link is out of the remote's path. Lab parity (je12 browse --profile tv, p113-tv-remote.mjs, Seerr search \"Mock\"): on upstream's build and on this branch the title link has tabindex -1, OK on the poster opens More Info (no overview), and Back closes it with focus back on the poster and the address unchanged; on the main line before the ports OK opened the overview and Back left the page.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p113-116.live.txt (pair tv-remote, the search-page card), p113-tv-remote.mjs, p113-tv-remote.rewrite-base.txt, p113-116.tests.txt"
     }
   ]
 }

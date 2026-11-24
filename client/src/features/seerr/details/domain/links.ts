@@ -27,6 +27,15 @@ export function isPosterPath(value: unknown): value is string {
     return typeof value === 'string' && /^\/[a-zA-Z0-9._-]+\.[a-zA-Z]+$/.test(value);
 }
 
+/**
+ * The attributes of a link out of the app: a new window, or on the TV layout an inert `href="#"` with no target,
+ * which Jellyfin's link button ignores. A TV app has only the one window, so the site would replace Jellyfin and
+ * Back could not return.
+ */
+export function externalLinkAttrs(href: string, escapeHtml: (value: string) => string, tvLayout: boolean): string {
+    return tvLayout ? 'href="#"' : `href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer"`;
+}
+
 /** The hash route of a Jellyfin item; relative to the page, so it keeps any server base path. */
 export function detailsHref(itemId: string): string {
     return `#!/details?id=${encodeURIComponent(itemId)}`;

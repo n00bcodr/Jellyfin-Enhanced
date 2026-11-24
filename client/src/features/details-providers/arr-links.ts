@@ -8,6 +8,7 @@ import {
     parseUrlMappings, radarrDropdownItems, singleRadarrLink, singleSonarrLink, sonarrDropdownItems
 } from './arr-domain';
 import type { ArrInstance, ArrStatus, DropdownItem, InstanceError, RadarrMatch, SonarrMatch } from './arr-domain';
+import { createCustomElement } from '../shared/dom';
 
 const JE = bridge<ArrLinksBridge>('Arr links');
 const logPrefix = '🪼 Jellyfin Enhanced: Arr Links:';
@@ -204,8 +205,7 @@ JE.initializeArrLinksScript = async function initializeArrLinksScript() {
             wrapper.style.setProperty('--arr-menu-hover', 'rgba(255,255,255,0.1)');
             wrapper.style.setProperty('--arr-menu-muted', 'rgba(255,255,255,0.55)');
 
-            const toggle = document.createElement('a');
-            toggle.setAttribute('is', 'emby-linkbutton');
+            const toggle = createCustomElement('a', 'emby-linkbutton');
             toggle.className = 'button-link emby-button arr-link';
             toggle.href = '#';
             toggle.title = `${label} (${items.length} instances)`;

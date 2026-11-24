@@ -1,5 +1,6 @@
 import { invalidate, lifetime, own, disposeCalendar } from './lifetime';
 import { calendarHost } from './host';
+import { createCustomElement } from '../shared/dom';
 // /js/arr/calendar/calendar-page-init.js
 // Calendar Page — initialization, navigation interception, page show/hide
 // and the public JE.calendarPage surface (split from calendar-page.js).
@@ -279,8 +280,7 @@ import { calendarHost } from './host';
     const jellyfinEnhancedSection = document.querySelector<HTMLElement>('.jellyfinEnhancedSection');
 
     if (jellyfinEnhancedSection) {
-      const navItem = document.createElement("a");
-      navItem.setAttribute('is', 'emby-linkbutton');
+      const navItem = createCustomElement('a', 'emby-linkbutton');
       navItem.className =
         "navMenuOption lnkMediaFolder emby-button je-nav-calendar-item";
       navItem.href = "#";

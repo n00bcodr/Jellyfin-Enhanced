@@ -2,6 +2,7 @@ import { safeExternalUrl } from './url-domain';
 import { decodeItem } from './item-domain';
 import type { HelpersBridge, SharedCore, SharedClient } from './host';
 import { createLegacyHeaderCheck } from './header-lookup';
+import { createCustomElement } from './dom';
 export function createHelpers(JE: HelpersBridge, api: () => SharedClient) {
 
 
@@ -652,15 +653,14 @@ export function createHelpers(JE: HelpersBridge, api: () => SharedClient) {
      * @returns {HTMLAnchorElement}
      */
     function createExternalLink(url: string, options: {text?: string; title?: string; className?: string; resetStyle?: boolean; setup?: (el: HTMLAnchorElement) => void} = {}) {
-        const a = document.createElement('a');
-        // This attribute is what tells Jellyfin's native app shell to open the URL
+        // is="emby-linkbutton" is what tells Jellyfin's native app shell to open the URL
         // in the system browser instead of the in-app WebView.
-        a.setAttribute('is', 'emby-linkbutton');
+        const a = createCustomElement('a', 'emby-linkbutton');
         a.href = safeExternalUrl(url, window.location.href);
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
         if (options.title)     a.title = options.title;
-        if (options.className) a.className = options.className;
+        if (options.className) a.className = [a.className, options.className].filter(Boolean).join(' ');
         if (options.text)      a.textContent = options.text;
         if (options.resetStyle) {
             // Strip the default emby-button chrome (padding, background, border-radius)

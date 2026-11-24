@@ -19,6 +19,14 @@
   var shared2 = /* @__PURE__ */ sharedModule("features/spoiler-guard/host");
   var export02 = /* @__PURE__ */ sharedExport(shared2, "spoilerHost");
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/spoiler-guard/detail-button.ts
   var { JE, internal, ctx } = export02();
   var owner = export0(JE, "detail-button", true);
@@ -130,8 +138,7 @@
     const state = enabled ? "on" : "off";
     let button = visiblePage.querySelector(".je-spoiler-blur-btn");
     if (!button) {
-      button = document.createElement("button");
-      button.setAttribute("is", "emby-button");
+      button = createCustomElement("button", "emby-button");
       button.className = "button-flat detailButton emby-button je-spoiler-blur-btn";
       button.type = "button";
       placeButton(button, container);

@@ -900,6 +900,14 @@
     return osdItem === null ? null : `${window.location.href}|${osdItem}`;
   }
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/bookmarks/bookmarks.ts
   var { ctx, host, getApi } = bookmarksHost();
   function install(JE) {
@@ -1508,10 +1516,9 @@
       if (!controlsContainer) return;
       const nativeSettingsButton = controlsContainer.querySelector(".btnVideoOsdSettings");
       if (!nativeSettingsButton) return;
-      const bookmarkBtn = document.createElement("button");
+      const bookmarkBtn = createCustomElement("button", "paper-icon-button-light");
       bookmarkBtn.id = "jeBookmarkBtn";
-      bookmarkBtn.setAttribute("is", "paper-icon-button-light");
-      bookmarkBtn.className = "autoSize paper-icon-button-light";
+      bookmarkBtn.classList.add("autoSize", "paper-icon-button-light");
       bookmarkBtn.title = JE.t("shortcut_BookmarkCurrentTime");
       bookmarkBtn.innerHTML = '<span class="largePaperIconButton material-icons" aria-hidden="true">bookmark_add</span>';
       bookmarkBtn.onclick = (e) => {

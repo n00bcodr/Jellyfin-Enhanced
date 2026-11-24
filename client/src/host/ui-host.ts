@@ -12,7 +12,11 @@ export interface UiBridge {
 export interface UiHost {
     document: Document;
     now(): number;
+    /** performance.now(): unaffected by clock changes. */
+    monotonicNow(): number;
     setTimeout(callback: () => void, delay: number): number;
+    /** A keydown listener on window in the capture phase; the returned function removes it. */
+    onKeydownCapture(listener: (event: KeyboardEvent) => void): () => void;
     toastDuration(): number | undefined;
     themeVariables(): ThemeVariables;
     contains(parent: EventTarget | null, child: EventTarget): boolean;
@@ -29,7 +33,12 @@ export function browserUiHost(bridge: UiBridge): UiHost {
     return {
         document,
         now: () => Date.now(),
+        monotonicNow: () => window.performance.now(),
         setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+        onKeydownCapture: listener => {
+            window.addEventListener('keydown', listener, true);
+            return () => window.removeEventListener('keydown', listener, true);
+        },
         toastDuration: () => bridge.CONFIG?.TOAST_DURATION,
         themeVariables: () => bridge.themer?.getThemeVariables() ?? {},
         contains: (parent, child) => parent instanceof Node && child instanceof Node && parent.contains(child),

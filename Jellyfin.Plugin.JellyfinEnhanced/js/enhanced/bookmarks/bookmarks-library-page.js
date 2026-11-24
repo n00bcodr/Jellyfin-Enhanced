@@ -19,6 +19,14 @@
   var shared2 = /* @__PURE__ */ sharedModule("features/bookmarks/lifetime");
   var export0 = /* @__PURE__ */ sharedExport(shared2, "createLifetime");
 
+  // client/src/features/shared/dom.ts
+  function createCustomElement(tag, is) {
+    const create = document.createElement;
+    const element = create.call(document, tag, is);
+    if (element.getAttribute("is") !== is) element.setAttribute("is", is);
+    return element;
+  }
+
   // client/src/features/bookmarks/library-page.ts
   var { ctx, host, getApi } = export1();
   function install(JE) {
@@ -205,8 +213,7 @@
       if (document.querySelector(".je-nav-bookmarks-item")) return;
       const jellyfinEnhancedSection = document.querySelector(".jellyfinEnhancedSection");
       if (jellyfinEnhancedSection) {
-        const navItem = document.createElement("a");
-        navItem.setAttribute("is", "emby-linkbutton");
+        const navItem = createCustomElement("a", "emby-linkbutton");
         navItem.className = "navMenuOption lnkMediaFolder emby-button je-nav-bookmarks-item";
         navItem.href = "#";
         const iconSpan = document.createElement("span");
