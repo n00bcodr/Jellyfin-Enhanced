@@ -268,8 +268,7 @@
     const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
 
     if (jellyfinEnhancedSection) {
-      const navItem = document.createElement("a");
-      navItem.setAttribute('is', 'emby-linkbutton');
+      const navItem = document.createElement("a", "emby-linkbutton");
       navItem.className =
         "navMenuOption lnkMediaFolder emby-button je-nav-calendar-item";
       navItem.href = "#";

@@ -1181,11 +1181,10 @@
         // The shared tray may have just restored this button after a remount.
         if (document.getElementById('je-active-streams')) return;
 
-        const btn = document.createElement('button');
+        const btn = document.createElement('button', 'paper-icon-button-light');
         btn.id = 'je-active-streams';
         btn.type = 'button';
-        btn.setAttribute('is', 'paper-icon-button-light');
-        btn.className = 'headerButton headerButtonRight paper-icon-button-light';
+        btn.classList.add('headerButton', 'headerButtonRight', 'paper-icon-button-light');
         btn.title = 'No active streams';
         btn.dataset.headerLabel = JE.t('activity_section_active_streams');
 

@@ -267,7 +267,7 @@
      */
     function displayName(code) {
         if (parseLanguageTag(code)?.base === 'zxx') return JE.t('audio_language_no_dialogue');
-        return new Intl.DisplayNames(['en'], { type: 'language' }).of(code);
+        return Intl.DisplayNames ? new Intl.DisplayNames(['en'], { type: 'language' }).of(code) : code.toUpperCase();
     }
 
     /**
@@ -1005,7 +1005,7 @@
             // A malformed tag (PT_BR) has no name; the caller keeps its own English name.
             try {
                 name = parseLanguageTag(code)?.base === 'zxx' ? JE.t('audio_language_no_dialogue')
-                    : new Intl.DisplayNames([locale, 'en'], { type: 'language' }).of(code) || '';
+                    : Intl.DisplayNames ? new Intl.DisplayNames([locale, 'en'], { type: 'language' }).of(code) || '' : '';
             } catch {
                 name = '';
             }

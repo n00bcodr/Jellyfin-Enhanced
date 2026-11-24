@@ -148,8 +148,7 @@
         const shared = JE.internals?.features?.buildNativeActionSheetItem;
         if (typeof shared === 'function') return shared(scroller, { dataId, icon, text });
         const ref = scroller.querySelector('.actionSheetMenuItem');
-        const button = document.createElement('button');
-        button.setAttribute('is', 'emby-button');
+        const button = document.createElement('button', 'emby-button');
         button.type = 'button';
         button.className = (ref?.getAttribute('class') || 'listItem listItem-button actionSheetMenuItem').replace(/\bselected\b/g, '').replace(/\s+/g, ' ').trim();
         button.dataset.id = dataId;

@@ -302,11 +302,16 @@
               z-index: 2;
               transition: background 0.2s;
             }
-            #pause-screen-close-btn:hover,
-            #pause-screen-close-btn:focus-visible {
+            #pause-screen-close-btn:hover {
               background: rgba(0,0,0,0.8);
             }
             #pause-screen-close-btn:focus-visible {
+              background: rgba(0,0,0,0.8);
+              outline: 2px solid #fff;
+              outline-offset: 2px;
+            }
+            .layout-tv #pause-screen-close-btn:focus {
+              background: rgba(0,0,0,0.8);
               outline: 2px solid #fff;
               outline-offset: 2px;
             }
@@ -514,7 +519,7 @@
             this.overlayContent.focus();
             return true;
           }
-          if (e.key === 'Escape' || e.key === 'BrowserBack' || e.keyCode === 10009 || e.keyCode === 461) {
+          if (JE.core.ui.isTvBackKey(e)) {
             swallow();
             this.hideOverlay(true);
             return true;

@@ -1290,7 +1290,7 @@ JEAdmin.define({
                   init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireImportUsers() }
             ] },
             { type: 'group', title: 'User audit', open: false, showIf: 'ReclaimerrEnabled', items: [
-                { type: 'note', html: 'Checks each Jellyfin user\'s linked Reclaimerr account and, with requests on, whether they can request removals. Also lists token scopes that are missing. Save the Reclaimerr settings first.' },
+                { type: 'note', html: 'Checks each Jellyfin user\'s linked Reclaimerr account and, with requests on, whether they can request removals. Administrators mark for removal with the API token instead of requesting, so they are not checked. Also lists token scopes that are missing. Save the Reclaimerr settings first.' },
                 { type: 'custom', html: '<div class="inputContainer"><div class="jea-row"><button type="button" id="reclaimerrAuditBtn" class="jea-btn">Run Audit</button></div>'
                     + '<div id="reclaimerrAuditResult" style="display:none;margin-top:1em"></div></div>',
                   init: () => JEAdmin.maintainerr && JEAdmin.maintainerr.wireUserAudit() }
@@ -1459,9 +1459,10 @@ JEAdmin.maintainerr = (function () {
     }
     /**
      * Reclaimerr user audit: the token's missing scopes and setup problems first, then a card for each user with issues (in the
-     * Seerr permission audit's style), users the sign-in check never reached, and the users with none folded away. Built with
-     * textContent only: names and reasons come from Jellyfin and Reclaimerr. Drawn into the card and into its Services-tab copy
-     * alike: the copy only follows a plain-text box, and this one holds elements.
+     * Seerr permission audit's style), users the sign-in check never reached (in grey: their link is fine, only their Request
+     * permission is unknown), the users with none folded away, and the administrators apart (in grey too: they are not checked,
+     * so they are not counted as OK). Built with textContent only: names and reasons come from Jellyfin and Reclaimerr. Drawn
+     * into the card and into its Services-tab copy alike: the copy only follows a plain-text box, and this one holds elements.
      */
     function wireUserAudit() {
         const button = el('reclaimerrAuditBtn');
@@ -1472,10 +1473,10 @@ JEAdmin.maintainerr = (function () {
         const chip = (kind, iconName, text) => { const c = node('span', 'je-audit-chip je-audit-chip-' + kind); c.append(icon(iconName), document.createTextNode(text)); return c; };
         const boxes = () => [el('reclaimerrAuditResult'), el('reclaimerrAuditResult--mirror')].filter(Boolean);
         const label = (u) => u.jellyfinUsername + (u.reclaimerrUsername ? ' \u2192 ' + u.reclaimerrUsername : '');
-        const names = (title, list) => {
+        const names = (title, list, kind) => {
             const details = node('details', 'je-audit-ok-section');
             details.append(node('summary', null, title));
-            const ul = node('ul', 'je-audit-ok-names');
+            const ul = node('ul', 'je-audit-ok-names' + (kind ? ' je-audit-' + kind + '-names' : ''));
             for (const u of list) ul.append(node('li', null, label(u)));
             details.append(ul);
             return details;
@@ -1485,11 +1486,16 @@ JEAdmin.maintainerr = (function () {
             const setup = data.issues || [];
             const flagged = users.filter((u) => (u.issues || []).length > 0);
             const unchecked = users.filter((u) => !(u.issues || []).length && u.checked === false);
-            const ok = users.filter((u) => !(u.issues || []).length && u.checked !== false);
+            const fine = users.filter((u) => !(u.issues || []).length && u.checked !== false);
+            // Administrators are not checked (they mark with the API token): neither a problem nor counted with the users who passed.
+            const admins = fine.filter((u) => u.admin);
+            const ok = fine.filter((u) => !u.admin);
             const clean = !setup.length && !flagged.length && !unchecked.length;
             const summary = node('div', 'je-audit-summary');
             summary.append(node('div', 'je-audit-summary-title', clean
-                ? 'All ' + ok.length + ' user(s) are set up.' + (data.version ? ' Reclaimerr ' + data.version + '.' : '')
+                ? (admins.length && !ok.length ? 'Nothing to check: all ' + admins.length + ' user(s) are administrators.'
+                    : 'All ' + ok.length + ' user(s) are set up' + (admins.length ? '; ' + admins.length + ' administrator(s) not checked' : '') + '.')
+                    + (data.version ? ' Reclaimerr ' + data.version + '.' : '')
                 : 'Audit complete' + (data.version ? ' (Reclaimerr ' + data.version + ')' : '') + ', review the items below.'));
             if (!clean) {
                 const chips = node('div', 'je-audit-summary-chips');
@@ -1497,6 +1503,7 @@ JEAdmin.maintainerr = (function () {
                 if (flagged.length) chips.append(chip('warn', 'warning', flagged.length + ' with issues'));
                 if (unchecked.length) chips.append(chip('unlinked', 'help', unchecked.length + ' not checked'));
                 if (ok.length) chips.append(chip('ok', 'check_circle', ok.length + ' OK'));
+                if (admins.length) chips.append(chip('unlinked', 'admin_panel_settings', admins.length + ' administrator(s)'));
                 summary.append(chips);
             }
             out.append(summary);
@@ -1523,9 +1530,10 @@ JEAdmin.maintainerr = (function () {
                 cards.append(card);
             }
             if (cards.childNodes.length) out.append(cards);
-            // Not reached by the sign-in check (see Setup): neither a problem nor known to be fine.
-            if (unchecked.length) out.append(names('Show ' + unchecked.length + ' user(s) not checked (see Setup)', unchecked));
+            // Not reached by the sign-in check (see Setup): linked to one active account, but whether they may request is unknown.
+            if (unchecked.length) out.append(names('Show ' + unchecked.length + ' linked user(s) whose Request permission was not checked (see Setup)', unchecked, 'unchecked'));
             if (ok.length && !clean) out.append(names('Show ' + ok.length + ' user(s) with no issues', ok));
+            if (admins.length && !clean) out.append(names('Show ' + admins.length + ' administrator(s), not checked: they mark with the API token', admins, 'unchecked'));
         }
         button.addEventListener('click', async () => {
             if (!boxes().length) return;
@@ -1540,6 +1548,8 @@ JEAdmin.maintainerr = (function () {
                 try { reason = typeof err?.json === 'function' ? (await err.json())?.error : null; } catch (e) { /* no body */ }
                 failure = 'Audit failed: ' + (reason || err?.status || err?.message || 'request failed');
             }
+            // The page was reopened while Reclaimerr was being asked: this answer belongs to the page that is gone, not to the new one's boxes.
+            if (!button.isConnected) return;
             for (const out of boxes()) {
                 out.textContent = '';
                 if (data) paint(out, data); else out.append(node('div', 'je-audit-error', failure));

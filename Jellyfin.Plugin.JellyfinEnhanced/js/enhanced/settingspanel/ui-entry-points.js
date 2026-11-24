@@ -43,8 +43,7 @@
             }
 
             if (!jellyfinEnhancedSection.querySelector('#jellyfinEnhancedSettingsLink')) {
-                const jellyfinEnhancedLink = document.createElement('a');
-                jellyfinEnhancedLink.setAttribute('is', 'emby-linkbutton');
+                const jellyfinEnhancedLink = document.createElement('a', 'emby-linkbutton');
                 jellyfinEnhancedLink.className = 'lnkMediaFolder navMenuOption emby-button';
                 jellyfinEnhancedLink.href = '#';
                 jellyfinEnhancedLink.id = 'jellyfinEnhancedSettingsLink';
@@ -97,10 +96,9 @@
         const nativeSettingsButton = controlsContainer.querySelector('.btnVideoOsdSettings');
         if (!nativeSettingsButton) return;
 
-        const enhancedSettingsBtn = document.createElement('button');
+        const enhancedSettingsBtn = document.createElement('button', 'paper-icon-button-light');
         enhancedSettingsBtn.id = 'enhancedSettingsBtn';
-        enhancedSettingsBtn.setAttribute('is', 'paper-icon-button-light');
-        enhancedSettingsBtn.className = 'autoSize paper-icon-button-light';
+        enhancedSettingsBtn.classList.add('autoSize', 'paper-icon-button-light');
         enhancedSettingsBtn.title = 'Jellyfin Enhanced';
         enhancedSettingsBtn.innerHTML = '<span class="largePaperIconButton material-icons" aria-hidden="true">tune</span>';
 
@@ -169,9 +167,8 @@
             if (document.querySelector('#jellyfinEnhancedUserPrefsLink')) return true;
 
             // Create the link element matching Jellyfin's structure
-            const enhancedLink = document.createElement('a');
+            const enhancedLink = document.createElement('a', 'emby-linkbutton');
             enhancedLink.id = 'jellyfinEnhancedUserPrefsLink';
-            enhancedLink.setAttribute('is', 'emby-linkbutton');
             enhancedLink.setAttribute('data-ripple', 'false');
             enhancedLink.href = '#';
             enhancedLink.className = 'listItem-border emby-button';

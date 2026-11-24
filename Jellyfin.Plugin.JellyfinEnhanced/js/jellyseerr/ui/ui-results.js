@@ -404,14 +404,12 @@
     }
         section.appendChild(title);
 
-        const scrollerContainer = document.createElement('div');
-        scrollerContainer.setAttribute('is', 'emby-scroller');
+        const scrollerContainer = document.createElement('div', 'emby-scroller');
         scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
         scrollerContainer.dataset.horizontal = "true";
         scrollerContainer.dataset.centerfocus = "card";
 
-        const itemsContainer = document.createElement('div');
-        itemsContainer.setAttribute('is', 'emby-itemscontainer');
+        const itemsContainer = document.createElement('div', 'emby-itemscontainer');
         itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
 
         const isTvMode = document.querySelector('.alphaPicker-tv') !== null;

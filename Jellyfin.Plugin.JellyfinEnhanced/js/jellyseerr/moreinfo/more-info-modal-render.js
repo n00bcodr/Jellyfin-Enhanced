@@ -359,7 +359,7 @@ function buildTrailersSection(data) {
                     const youtubeIcon = trailer.site === 'YouTube' ? `<img src="${JE.cdn.selfhst('png/youtube.png')}" alt="YouTube" class="trailer-youtube-icon" />` : '';
 
                     return `
-                        <a is="emby-linkbutton" href="${escapeHtml(trailer.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(trailer.name)}" class="trailer-item">
+                        <a is="emby-linkbutton" ${internal.externalLinkAttrs(trailer.url)} title="${escapeHtml(trailer.name)}" class="trailer-item">
                             <div class="trailer-thumbnail">
                                 ${thumbnailUrl ? `<img src="${thumbnailUrl}" alt="${escapeHtml(trailer.name)}" />` : ''}
                                 <div class="je-modal-play-button">

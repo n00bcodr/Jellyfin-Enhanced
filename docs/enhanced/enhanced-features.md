@@ -87,7 +87,7 @@ Keep titles you do not want to see out of your browsing lists, or clear individu
 
 ### Hidden Content System
 
-Hide titles from the browsing lists whose filters you enable. Your hidden list follows your account across devices.
+Hide titles from the browsing lists whose filters you enable. A row whose titles are all hidden is hidden too, heading included. Your hidden list follows your account across devices.
 
 !!! note "Hiding does not restrict access"
 

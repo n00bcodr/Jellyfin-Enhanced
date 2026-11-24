@@ -21,6 +21,8 @@
             #randomItemButton .je-dice-face svg { display: block; }
             button#randomItemButton:not(.loading):hover .je-dice-spin { animation: dice 1.5s; }
             button#randomItemButton.loading .je-dice-spin { animation: dice 0.6s linear infinite; }
+            /* From 100em the TV layout centres the tab strip as a 55%-wide box over the random button; shrink it to its tabs. */
+            @media all and (min-width: 100em) { html.layout-tv .headerTabs.sectionTabs { width: auto; max-width: 55%; } }
             .layout-desktop #enhancedSettingsBtn { display: none !important; }
             /* Remove menu items render like native action-sheet items; only dim them while the removal is in flight. */
             .actionSheetMenuItem[data-id="remove-continue-watching"]:disabled,
