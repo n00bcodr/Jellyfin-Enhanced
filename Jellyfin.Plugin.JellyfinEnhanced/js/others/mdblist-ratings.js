@@ -180,6 +180,8 @@
                 });
 
             const showPercent = !!JE.pluginConfig?.MdblistRatingsShowPercentSymbol;
+            // "10" / "5" rescale MDBList's 0-100 Score; anything else keeps 0-100.
+            const scaleMax = { '10': 10, '5': 5 }[JE.pluginConfig?.MdblistRatingsScale] || 100;
 
             rows.forEach(r => {
                 // r.Score is MDBList's own 0-100 figure, present only when that
@@ -203,9 +205,9 @@
                 // Only round a true 0-100 Score (already whole numbers, so this
                 // is a no-op). A raw fallback Value keeps its precision, e.g.
                 // rogerebert's 3.5 stays 3.5, not 4.
-                const scoreText = hasNormalizedScore
-                    ? Math.round(score) + (showPercent ? '%' : '')
-                    : String(score);
+                const scoreText = !hasNormalizedScore ? String(score)
+                    : scaleMax === 100 ? Math.round(score) + (showPercent ? '%' : '')
+                    : (score * scaleMax / 100).toFixed(1);
                 const badgeHtml = `${iconHtml}<span>${scoreText}</span>`;
 
                 // is="emby-linkbutton" (via createExternalLink) tells the native

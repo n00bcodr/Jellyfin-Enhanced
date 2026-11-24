@@ -4092,6 +4092,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.MdblistRatingsShowOnItemDetails,
                 config.MdblistRatingsSources,
                 config.MdblistRatingsShowPercentSymbol,
+                config.MdblistRatingsScale,
                 config.ShowReleaseDates,
                 config.ShowUserRatingOnPosters,
                 config.ShowUserRatingDash,

@@ -3468,6 +3468,7 @@
                 document.querySelector('#mdblistCriticRatingFallbackSource').value = config.MdblistCriticRatingFallbackSource || '';
                 if (typeof renderMdblistSourcesAdmin === 'function') renderMdblistSourcesAdmin(config);
                 document.querySelector('#mdblistRatingsShowPercentSymbol').checked = !!config.MdblistRatingsShowPercentSymbol;
+                document.querySelector('#mdblistRatingsScale').value = ['10', '5'].includes(config.MdblistRatingsScale) ? config.MdblistRatingsScale : '100';
                 if (config.MdblistApiKey && typeof checkMdblistStatus === 'function') checkMdblistStatus();
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
                 document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
@@ -3817,6 +3818,7 @@
             config.MdblistCriticRatingFallbackSource = document.querySelector('#mdblistCriticRatingFallbackSource').value;
             config.MdblistRatingsSources = (typeof computeMdblistRatingsSources === 'function') ? computeMdblistRatingsSources() : '';
             config.MdblistRatingsShowPercentSymbol = document.querySelector('#mdblistRatingsShowPercentSymbol').checked;
+            config.MdblistRatingsScale = document.querySelector('#mdblistRatingsScale').value;
             // validate scheme on save. Lines that don't parse as
             // http(s) are dropped with a warning so we never persist garbage
             // like "seerr.local" (no scheme) — which downstream string-concats
@@ -5354,7 +5356,7 @@
         var PARENT_DEPS = [
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereUseSeerrRegion', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews'] },
             { parent: 'doesTheDogDieEnabled', label: 'Show Content Warnings', children: ['doesTheDogDieApiKey'] },
-            { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistCommunityRatingSource', 'mdblistCommunityRatingFallbackSource', 'mdblistCriticRatingSource', 'mdblistCriticRatingFallbackSource', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
+            { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistCommunityRatingSource', 'mdblistCommunityRatingFallbackSource', 'mdblistCriticRatingSource', 'mdblistCriticRatingFallbackSource', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol', 'mdblistRatingsScale'] },
             { parent: 'showReviews', anyOf: ['showReviews', 'showUserReviews', 'showAnilistReviews'], label: 'Show TMDB Reviews" / "Enable User Written Reviews" / "Show AniList Reviews', children: ['reviewsExpandedByDefault'] },
             { parent: 'reviewTranslationEnabled', label: 'Enable Review Translation', children: ['reviewTranslationUrl', 'reviewTranslationApiKey'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },

@@ -708,6 +708,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string MdblistRatingsSources { get; set; } = string.Empty;
         /// <summary>Appends "%" after each rating badge's number on the item-details row.</summary>
         public bool MdblistRatingsShowPercentSymbol { get; set; }
+        /// <summary>Scale of the numbers on the item-details ratings row: "100" (MDBList's own score, default), "10" or "5". Unknown values read as "100".</summary>
+        public string MdblistRatingsScale { get; set; } = "100";
         public bool ShowReleaseDates { get; set; }
         public bool ShowUserRatingOnPosters { get; set; } = false;
         /// <summary>
