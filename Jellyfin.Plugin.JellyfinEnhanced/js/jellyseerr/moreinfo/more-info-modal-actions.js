@@ -334,7 +334,22 @@ function renderRequestedBy(mount, mediaInfo) {
     JE.helpers?.hydrateAvatarImages?.(mount);
 }
 
+/**
+ * Draws the actions; on the TV layout, focus lost with a redrawn button moves to
+ * the first action (or Close). Older TV engines drop focus to <body> as soon as
+ * the pressed Request button is disabled, before this redraw.
+ */
 function renderActions(data, mediaType) {
+    const modal = state.currentModal;
+    const active = document.activeElement;
+    const ours = !!modal && (active === document.body || modal.contains(active));
+    drawActions(data, mediaType);
+    if (ours && JE.core?.ui?.isTvLayout?.() && !modal.contains(document.activeElement)) {
+        internal.focusFirstAction?.(modal);
+    }
+}
+
+function drawActions(data, mediaType) {
     if (!state.currentModal) return;
 
     const actionMount = state.currentModal.querySelector('[data-mount="je-actions"]');
