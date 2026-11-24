@@ -649,3 +649,16 @@ test('Top Rated keeps a protected title where its hidden score puts it', async t
   controller.cleanup();
 });
 
+test('on the TV layout More Info renders its external links inert', t => {
+  const { load, document, render } = moreInfo(t);
+  load('core/ui-kit.js');
+  const movie = () => ({ ...fullMovie(), ratings: { imdb: { criticsScore: 8.7, url: 'https://imdb.test' } }, mediaInfo: { status: 5, jellyfinMediaId: 'jf1' } });
+  assert.ok(render(movie()).querySelector('a[target="_blank"][href="https://youtube.test/abc"]'));
+  document.documentElement.classList.add('layout-tv');
+  const modal = render(movie());
+  assert.equal(modal.querySelector('a[target]'), null);
+  const external = [...modal.querySelectorAll('.je-more-info-rating-badge-item, .trailer-item, .je-more-info-fact:not(.jellyfin)')];
+  assert.equal(external.length, 6);
+  assert.ok(external.every(a => a.getAttribute('href') === '#'));
+  assert.equal(modal.querySelector('.je-more-info-fact.jellyfin').getAttribute('href'), '#!/details?id=jf1');
+});
