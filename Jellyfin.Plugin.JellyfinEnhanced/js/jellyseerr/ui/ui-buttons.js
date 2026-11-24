@@ -15,6 +15,14 @@
     const icons = internal.icons; // requires ui-icons.js to be loaded first
     const requestHandlers = new WeakMap();
 
+    // TV: older engines drop focus to <body> when the focused button is disabled; keep it on the card's poster.
+    function disableKeepingFocus(button) {
+        if (document.activeElement === button && JE.core.ui.isTvLayout()) {
+            button.closest('.jellyseerr-card')?.querySelector('.jellyseerr-poster-image')?.focus();
+        }
+        button.disabled = true;
+    }
+
     /**
      * Configures the request button based on item status and type.
      * @param {HTMLElement} button - Button element to configure.
@@ -218,7 +226,7 @@
                     if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                         ui.showMovieRequestModal(item.id, item.title || item.name, item, false);
                     } else {
-                        mainButton.disabled = true;
+                        disableKeepingFocus(mainButton);
                         mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                         try {
                             await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
@@ -290,7 +298,7 @@
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                     ui.showMovieRequestModal(item.id, item.title || item.name, item, false);
                 } else {
-                    button.disabled = true;
+                    disableKeepingFocus(button);
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
                         await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
