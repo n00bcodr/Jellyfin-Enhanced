@@ -50,8 +50,7 @@
             const base = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '';
             const jellyseerrUrl = base ? `${base}/${mediaType}/${tmdbId}` : null;
 
-            const button = document.createElement('a');
-            button.setAttribute('is', 'emby-linkbutton');
+            const button = document.createElement('a', 'emby-linkbutton');
             button.className = 'button-link emby-button seerr-link';
 
             if (JE.pluginConfig.JellyseerrShowDetailPageLinkAsText) {

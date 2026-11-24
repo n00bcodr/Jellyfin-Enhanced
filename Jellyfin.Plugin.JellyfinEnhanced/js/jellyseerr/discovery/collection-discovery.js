@@ -119,8 +119,7 @@
         section.className = 'verticalSection jellyseerr-collection-discovery-section jellyseerr-discovery-section detailVerticalSection';
         section.setAttribute('data-jellyseerr-collection-discovery', 'true');
         section.appendChild(header);
-        const itemsContainer = document.createElement('div');
-        itemsContainer.setAttribute('is', 'emby-itemscontainer');
+        const itemsContainer = document.createElement('div', 'emby-itemscontainer');
         itemsContainer.className = 'itemsContainer vertical-wrap';
         section.appendChild(itemsContainer);
         return section;

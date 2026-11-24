@@ -119,8 +119,7 @@
                     const tagName = tag.slice(tagPrefix.length).trim();
                     const slug = slugifyTagName(tagName);
 
-                    const link = document.createElement('a');
-                    link.setAttribute('is', 'emby-linkbutton');
+                    const link = document.createElement('a', 'emby-linkbutton');
                     link.className = 'button-link emby-button arr-tag-link';
                     link.href = `#!/list.html?type=tag&tag=${encodeURIComponent(tag)}&serverId=${serverId}`;
                     link.title = `View all items with tag: ${tag}`;

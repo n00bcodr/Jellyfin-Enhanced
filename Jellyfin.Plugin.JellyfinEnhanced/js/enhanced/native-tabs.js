@@ -315,11 +315,10 @@
             if (entry.index !== index) relabel(entry, index);
 
             if (!document.getElementById(OWN_ID_PREFIX + 'btn-' + entry.id)) {
-                var btn = document.createElement('button');
+                var btn = document.createElement('button', 'emby-button');
                 btn.type = 'button';
-                btn.setAttribute('is', 'emby-button');
                 btn.id = OWN_ID_PREFIX + 'btn-' + entry.id;
-                btn.className = 'emby-tab-button';
+                btn.classList.add('emby-tab-button');
                 btn.setAttribute('data-index', String(entry.index));
 
                 var label = document.createElement('div');
@@ -328,7 +327,6 @@
                 btn.appendChild(label);
 
                 slider.appendChild(btn);
-                window.CustomElements?.upgradeSubtree?.(slider);
                 addedTabButton = true;
                 console.log('🪼 Jellyfin Enhanced: [native-tabs] added tab button "' + entry.title + '" at data-index=' + entry.index);
             }
@@ -450,11 +448,10 @@
         var group = getOrCreateGroup(headerRight);
         var separator = document.getElementById('je-native-tabs-separator');
 
-        var link = document.createElement('button');
+        var link = document.createElement('button', 'paper-icon-button-light');
         link.id = linkId;
         link.type = 'button';
-        link.setAttribute('is', 'paper-icon-button-light');
-        link.className = 'headerButton headerButtonRight paper-icon-button-light';
+        link.classList.add('headerButton', 'headerButtonRight', 'paper-icon-button-light');
         link.title = entry.title;
         link.innerHTML = '<i class="material-icons">' + (entry.icon || 'tab') + '</i>';
         link.addEventListener('click', function () {

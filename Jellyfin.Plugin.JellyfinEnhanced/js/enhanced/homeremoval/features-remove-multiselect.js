@@ -95,13 +95,11 @@
 
             const buttons = document.createElement('div');
             buttons.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;';
-            const cancel = document.createElement('button');
-            cancel.setAttribute('is', 'emby-button');
+            const cancel = document.createElement('button', 'emby-button');
             cancel.type = 'button';
             cancel.textContent = JE.t('remove_confirm_cancel');
             cancel.style.cssText = 'background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);color:#fff;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;';
-            const ok = document.createElement('button');
-            ok.setAttribute('is', 'emby-button');
+            const ok = document.createElement('button', 'emby-button');
             ok.type = 'button';
             ok.textContent = JE.t('remove_button_text');
             ok.style.cssText = 'background:rgba(220,50,50,0.65);border:1px solid rgba(220,50,50,0.7);color:#fff;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;';
