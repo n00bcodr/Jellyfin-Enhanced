@@ -79,3 +79,29 @@ test('remote navigation stays inside the dialog', t => {
   const { created } = setup(t, true);
   assert.ok(created.modalElement.classList.contains('focuscontainer'));
 });
+
+test('closing gives focus back to what opened the dialog', t => {
+  const { h, created } = setup(t, true);
+  const opener = h.document.createElement('button');
+  h.document.body.appendChild(opener);
+  opener.focus();
+  created.show();
+  created.modalElement.querySelector('button').focus();
+  created.close();
+  assert.equal(h.document.activeElement, opener);
+});
+
+test('a Request button disabled by its successful request hands focus to its card poster', t => {
+  const { h, created } = setup(t, true);
+  const card = h.document.createElement('div');
+  card.className = 'jellyseerr-card';
+  card.innerHTML = '<div class="jellyseerr-poster-image" tabindex="0"></div><button class="jellyseerr-request-button"></button>';
+  h.document.body.appendChild(card);
+  const opener = card.querySelector('button');
+  opener.focus();
+  created.show();
+  created.modalElement.querySelector('button').focus();
+  opener.disabled = true;
+  created.close();
+  assert.equal(h.document.activeElement, card.querySelector('.jellyseerr-poster-image'));
+});

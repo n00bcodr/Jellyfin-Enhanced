@@ -155,7 +155,12 @@
 
         if (JE.core.ui.isTvLayout()) enableTvSelectPicker(modalElement, bodyEl);
 
+        let restoreFocus = null;
+
         const show = () => {
+            // A Request button disabled by its successful request: its card's poster, or More Info's Close.
+            restoreFocus = JE.core.ui.rememberFocus(opener => opener.closest('.jellyseerr-card')?.querySelector('.jellyseerr-poster-image')
+                || opener.closest('.je-more-info-modal')?.querySelector('.modal-close'));
             document.body.appendChild(modalElement);
             document.body.classList.add('jellyseerr-modal-is-open');
             // Add a state to history to handle back button for closing
@@ -192,6 +197,7 @@
             document.removeEventListener('keydown', handleKeydown);
             modalElement.classList.remove('show');
             document.body.classList.remove('jellyseerr-modal-is-open');
+            restoreFocus?.();
             setTimeout(() => {
                 if (document.body.contains(modalElement)) {
                     document.body.removeChild(modalElement);

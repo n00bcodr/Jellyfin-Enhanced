@@ -84,3 +84,14 @@ test('more-info same-ID replacement rejects stale refresh by modal identity',asy
   assert.deepEqual(h.actions,[1,1]);
 });
 test('more-info closes on a TV remote Back, keeps it from Jellyfin, and leaves it to a stacked dialog',async t=>{const h=setup(t);h.load('core/ui-kit.js');await h.P.open(1,'movie');let back=0;h.window.history.back=()=>back++;const press=()=>{const e=new h.window.KeyboardEvent('keydown',{bubbles:true,cancelable:true,keyCode:10009});h.document.body.dispatchEvent(e);return e;};h.document.body.classList.add('jellyseerr-modal-is-open');assert.equal(press().defaultPrevented,false);assert.equal(back,0);h.document.body.classList.remove('jellyseerr-modal-is-open');assert.equal(press().defaultPrevented,true);assert.equal(back,1);});
+function withTvFocus(h){h.document.documentElement.classList.add('layout-tv');h.load('core/ui-kit.js');}
+test('more-info on TV gives focus back to the title it was opened from',async t=>{
+  const h=setup(t);withTvFocus(h);const opener=h.document.createElement('a');opener.href='#';h.document.body.appendChild(opener);opener.focus();
+  await h.P.open(1,'movie');h.state.currentModal.querySelector('.modal-close').focus();
+  h.P.close();assert.equal(h.document.activeElement,opener);
+});
+test('more-info closed by navigation does not pull focus back to its opener',async t=>{
+  const h=setup(t);withTvFocus(h);const opener=h.document.createElement('a');opener.href='#';h.document.body.appendChild(opener);opener.focus();
+  await h.P.open(1,'movie');const inside=h.state.currentModal.querySelector('.modal-close');inside.focus();
+  h.document.dispatchEvent(new h.window.Event('viewshow'));assert.equal(h.document.activeElement,inside);
+});

@@ -8,7 +8,7 @@
 //
 // Public surface: JE.core.ui { escapeHtml, toast, injectCss, removeCss,
 // addTouchTapListener, addDelegatedTouchTapListener, isTvLayout, isTvBackKey,
-// swallowTvBack }.
+// swallowTvBack, rememberFocus }.
 // Aliases kept: JE.escapeHtml, JE.toast, JE.helpers.addCSS/removeCSS/escHtml.
 (function(JE) {
     'use strict';
@@ -329,6 +329,20 @@
         if (isTvLayout()) swallowBackUntil = performance.now() + 500;
     }
 
+    /**
+     * Call when a window opens. The returned function, called on close, gives
+     * focus back to the opener on the TV layout, so the remote keeps its place.
+     * @param {(opener: HTMLElement) => HTMLElement|null} [fallback] - Used when the opener is disabled meanwhile.
+     * @returns {() => void}
+     */
+    function rememberFocus(fallback) {
+        const opener = document.activeElement;
+        return () => {
+            if (!isTvLayout() || !opener) return;
+            (opener.disabled ? fallback?.(opener) : opener)?.focus();
+        };
+    }
+
     // Capture on window: runs before JE's own key handlers and Jellyfin's
     // window listener, which skips default-prevented events.
     window.addEventListener('keydown', (e) => {
@@ -418,7 +432,8 @@
         addDelegatedTouchTapListener,
         isTvLayout,
         isTvBackKey,
-        swallowTvBack
+        swallowTvBack,
+        rememberFocus
     };
 
     // Frozen-contract aliases: these are the canonical implementations now.

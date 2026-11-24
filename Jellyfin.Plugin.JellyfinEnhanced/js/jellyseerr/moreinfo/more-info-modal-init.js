@@ -16,6 +16,7 @@
     // page behind it, so an open modal owns one history entry that Back pops.
     let historyEntryActive = false;
     let popPending = false;
+    let restoreFocus = null;
     const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
@@ -25,6 +26,8 @@
  */
 moreInfoModal.open = async function(tmdbId, mediaType) {
     const generation = ++openGeneration;
+    // Opening another title while the modal is open keeps the original opener.
+    if (!state.currentModal || state.currentModal._isClosing) restoreFocus = JE.core?.ui?.rememberFocus?.();
     try {
         // Fetch details first so the modal can open immediately
         const data = await internal.fetchMediaDetails(tmdbId, mediaType);
@@ -235,11 +238,14 @@ function showModal(data, mediaType) {
     if (JE.core?.ui?.isTvLayout?.()) {
         setTimeout(() => {
             if (state.currentModal !== modal || modal._isClosing) return;
-            const first = modal.querySelector('.je-more-info-actions button:not([disabled])')
-                || modal.querySelector('.modal-close');
-            first?.focus();
+            focusFirstAction(modal);
         }, 60);
     }
+}
+
+/** Focuses the modal's first enabled action, else Close. */
+function focusFirstAction(modal) {
+    (modal.querySelector('.je-more-info-actions button:not([disabled])') || modal.querySelector('.modal-close'))?.focus();
 }
 
 /**
@@ -326,12 +332,17 @@ function closeCurrentModal() {
     }
 }
 
-    moreInfoModal.close = function() {
+    // restore: false for closes the user didn't ask for (navigation, account change).
+    function closeModal(restore) {
         openGeneration++;
         historyEntryActive = false;
         popPending = false;
         closeCurrentModal();
-    };
+        if (restore) restoreFocus?.();
+        restoreFocus = null;
+    }
+
+    moreInfoModal.close = () => closeModal(true);
 
     window.addEventListener('popstate', function() {
         if (!historyEntryActive) return;
@@ -342,16 +353,17 @@ function closeCurrentModal() {
 
     // Request permissions and details belong to the active account. Invalidate
     // pending opens immediately on identity changes, before navigation arrives.
-    JE.session?.onUserChange('jellyseerr-more-info', () => moreInfoModal.close());
+    JE.session?.onUserChange('jellyseerr-more-info', () => closeModal(false));
 
     // Close modal on page navigation
     document.addEventListener('viewshow', function() {
-        moreInfoModal.close();
+        closeModal(false);
     });
 
     // Expose helpers used by other modules (e.g., item-details.js for the
     // Series page "Request More" button) so the unrequested-seasons check
     // logic does not need to be duplicated.
     moreInfoModal.checkForUnrequestedSeasons = internal.checkForUnrequestedSeasons;
+    internal.focusFirstAction = focusFirstAction;
 
 })(window.JellyfinEnhanced);
