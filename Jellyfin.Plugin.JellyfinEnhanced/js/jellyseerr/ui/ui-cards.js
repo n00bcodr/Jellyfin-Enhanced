@@ -949,6 +949,16 @@
      * @param {KeyboardEvent} e
      */
     function onCardKeydown(container, e) {
+        if (JE.core.ui.isTvBackKey(e) && JE.core.ui.isTvLayout()) {
+            // Back in a card whose overview OK opened closes it, instead of leaving the page.
+            const hit = cardEventTarget(container, e);
+            if (!hit?.state.overview?.dataset.byKey) return;
+            e.preventDefault();
+            JE.core.ui.swallowTvBack();
+            removeOverview(hit.state);
+            hit.state.imageContainer.focus();
+            return;
+        }
         if (e.key !== 'Enter' && e.key !== ' ') return;
         const hit = cardEventTarget(container, e);
         if (!hit || inCard(hit.card, hit.target, '.jellyseerr-poster-image') !== hit.state.imageContainer) return;
@@ -958,6 +968,7 @@
             goToJellyfinItem(state);
         } else if (!state.overview) {
             createOverview(state);
+            state.overview.dataset.byKey = '1';
             if (JE.core.ui.isTvLayout()) state.overview?.querySelector('.jellyseerr-request-button')?.focus();
         } else {
             removeOverview(state);

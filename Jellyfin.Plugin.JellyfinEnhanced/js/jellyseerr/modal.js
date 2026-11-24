@@ -49,7 +49,8 @@
      */
     modal.create = function({ title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText }) {
         const modalElement = document.createElement('div');
-        modalElement.className = 'jellyseerr-season-modal';
+        // focuscontainer: Jellyfin's remote navigation stays inside it.
+        modalElement.className = 'jellyseerr-season-modal focuscontainer';
         modalElement.setAttribute('role', 'dialog');
         modalElement.setAttribute('aria-modal', 'true');
         modalElement.setAttribute('tabindex', '-1');
@@ -115,10 +116,11 @@
 
         // Handle keyboard navigation
         const handleKeydown = (e) => {
-            // Close on Escape
-            if (e.key === 'Escape') {
+            // Close on Back (Escape or a TV remote's Back)
+            if (JE.core.ui.isTvBackKey(e)) {
                 e.preventDefault();
                 e.stopPropagation();
+                JE.core.ui.swallowTvBack();
                 history.back();
                 return;
             }
@@ -153,7 +155,12 @@
 
         if (JE.core.ui.isTvLayout()) enableTvSelectPicker(modalElement, bodyEl);
 
+        let restoreFocus = null;
+
         const show = () => {
+            // A Request button disabled by its successful request: its card's poster, or More Info's Close.
+            restoreFocus = JE.core.ui.rememberFocus(opener => opener.closest('.jellyseerr-card')?.querySelector('.jellyseerr-poster-image')
+                || opener.closest('.je-more-info-modal')?.querySelector('.modal-close'));
             document.body.appendChild(modalElement);
             document.body.classList.add('jellyseerr-modal-is-open');
             // Add a state to history to handle back button for closing
@@ -190,6 +197,7 @@
             document.removeEventListener('keydown', handleKeydown);
             modalElement.classList.remove('show');
             document.body.classList.remove('jellyseerr-modal-is-open');
+            restoreFocus?.();
             setTimeout(() => {
                 if (document.body.contains(modalElement)) {
                     document.body.removeChild(modalElement);
@@ -207,8 +215,6 @@
 
         return { modalElement, show, close };
     };
-
-    const TV_BACK_KEYS = ['Escape', 'BrowserBack', 'GoBack'];
 
     /**
      * Jellyfin's own select list on a TV closes through history.back(), which
@@ -231,9 +237,10 @@
         };
 
         const onPickerKey = (e) => {
-            if (!TV_BACK_KEYS.includes(e.key) && e.keyCode !== 10009 && e.keyCode !== 461) return;
+            if (!JE.core.ui.isTvBackKey(e)) return;
             e.preventDefault();
             e.stopImmediatePropagation();
+            JE.core.ui.swallowTvBack();
             closePicker();
         };
 

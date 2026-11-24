@@ -7,7 +7,8 @@
 // (shared by the Seerr results row, cards and request buttons).
 //
 // Public surface: JE.core.ui { escapeHtml, toast, injectCss, removeCss,
-// addTouchTapListener, addDelegatedTouchTapListener, isTvLayout }.
+// addTouchTapListener, addDelegatedTouchTapListener, isTvLayout, isTvBackKey,
+// swallowTvBack, rememberFocus }.
 // Aliases kept: JE.escapeHtml, JE.toast, JE.helpers.addCSS/removeCSS/escHtml.
 (function(JE) {
     'use strict';
@@ -306,6 +307,55 @@
         return document.documentElement.classList.contains('layout-tv');
     }
 
+    /**
+     * Whether a keydown is Back: Escape, a browser Back key, or the Back
+     * button of a Samsung (10009) or LG (461) remote.
+     * @param {KeyboardEvent} e
+     * @returns {boolean}
+     */
+    function isTvBackKey(e) {
+        return e.key === 'Escape' || e.key === 'BrowserBack' || e.key === 'GoBack'
+            || e.keyCode === 10009 || e.keyCode === 461;
+    }
+
+    let swallowBackUntil = 0;
+
+    /**
+     * Call after Back closes a JE window. On the TV layout, Back presses in
+     * the next 500 ms, and a held key's repeats, are then swallowed, so they
+     * don't close the next level or, on Home, exit the app.
+     */
+    function swallowTvBack() {
+        if (isTvLayout()) swallowBackUntil = performance.now() + 500;
+    }
+
+    /**
+     * Call when a window opens. The returned function, called on close, gives
+     * focus back to the opener on the TV layout, so the remote keeps its place.
+     * @param {(opener: HTMLElement) => HTMLElement|null} [fallback] - Used when the opener is disabled meanwhile.
+     * @returns {() => void}
+     */
+    function rememberFocus(fallback) {
+        const opener = document.activeElement;
+        return () => {
+            if (!isTvLayout() || !opener) return;
+            (opener.disabled ? fallback?.(opener) : opener)?.focus();
+        };
+    }
+
+    // Capture on window: runs before JE's own key handlers and Jellyfin's
+    // window listener, which skips default-prevented events.
+    window.addEventListener('keydown', (e) => {
+        if (!swallowBackUntil || !isTvBackKey(e)) return;
+        if (!e.repeat && performance.now() > swallowBackUntil) {
+            swallowBackUntil = 0;
+            return;
+        }
+        if (e.repeat) swallowTvBack();
+        e.preventDefault();
+        e.stopImmediatePropagation();
+    }, true);
+
     function ensureSkeletonCss() {
         if (document.getElementById('je-skeleton-css')) return;
         injectCss('je-skeleton-css', `
@@ -380,7 +430,10 @@
         skeletonGridHtml,
         addTouchTapListener,
         addDelegatedTouchTapListener,
-        isTvLayout
+        isTvLayout,
+        isTvBackKey,
+        swallowTvBack,
+        rememberFocus
     };
 
     // Frozen-contract aliases: these are the canonical implementations now.
