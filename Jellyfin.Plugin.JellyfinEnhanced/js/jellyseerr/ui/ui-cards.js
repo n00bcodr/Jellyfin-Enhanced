@@ -418,11 +418,13 @@
         const mediaBadgeKeys = { movie: 'jellyseerr_card_badge_movie', tv: 'jellyseerr_card_badge_series', collection: 'jellyseerr_card_badge_collection' };
         const mediaBadgeLabels = {};
         let viewOnJellyseerrLabel = null;
+        const tvLayout = JE.core.ui.isTvLayout();
         const ctx = {
             // Resolve Seerr URL based on mappings or fallback to base URL
             seerrBase: JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '',
+            tvLayout,
             // A TV app has no new window to open Seerr in, so it always uses the modal.
-            useMoreInfoModal: !!(config && config.JellyseerrUseMoreInfoModal) || JE.core.ui.isTvLayout(),
+            useMoreInfoModal: !!(config && config.JellyseerrUseMoreInfoModal) || tvLayout,
             moreInfoLoaded: !!JE.jellyseerrMoreInfo,
             // Admin opt-in: an available item's poster goes straight to Jellyfin.
             availablePostersLinkToJellyfin: !!(config && config.JellyseerrAvailablePosterLinksToJellyfin),
@@ -489,7 +491,7 @@
     function cardInputsKey(items) {
         const ctx = getBatchContext();
         return JSON.stringify([
-            ctx.seerrBase, ctx.useMoreInfoModal, ctx.moreInfoLoaded, ctx.availablePostersLinkToJellyfin,
+            ctx.seerrBase, ctx.tvLayout, ctx.useMoreInfoModal, ctx.moreInfoLoaded, ctx.availablePostersLinkToJellyfin,
             ctx.showProviderIcons, ctx.posterNotFoundUrl, ctx.seerrIconUrl,
             ctx.showHideButtons, ctx.hiddenLabel, ctx.unhideLabel, ctx.hideLabel, ctx.viewOnJellyseerrLabel(),
             ctx.mediaBadgeLabel('movie'), ctx.mediaBadgeLabel('tv'), ctx.mediaBadgeLabel('collection'),
@@ -559,6 +561,9 @@
         titleLink.setAttribute('title', (jellyfinHref || useMoreInfoModal || !jellyseerrUrl) ? title : ctx.viewOnJellyseerrLabel());
         titleLink.firstElementChild.textContent = title;
         titleLink.addEventListener('click', onTitleLinkCaptureClick, true);
+        // TV: the poster, whose OK then does what the title does, is the card's one remote stop
+        // (jellyfin-web skips tabindex -1).
+        if (ctx.tvLayout && ctx.moreInfoLoaded) titleLink.tabIndex = -1;
         // Empty for collections: drop the element (rating first, so the year keeps its index).
         if (rating) meta.children[2].lastElementChild.textContent = rating;
         else meta.children[2].remove();
@@ -966,10 +971,16 @@
         e.preventDefault();
         if (state.linksAvailableToJellyfin) {
             goToJellyfinItem(state);
+        } else if (state.ctx.tvLayout && state.posterOpensModal) {
+            // TV: OK does what the title (no longer a remote stop) does; requesting stays inside More Info.
+            const item = state.item;
+            if (state.jellyfinHref) goToJellyfinItem(state);
+            else if (item.mediaType === 'collection') ui.showCollectionRequestModal(item.id, item.name || item.title, item);
+            else JE.jellyseerrMoreInfo.open(parseInt(item.id), item.mediaType);
         } else if (!state.overview) {
             createOverview(state);
             state.overview.dataset.byKey = '1';
-            if (JE.core.ui.isTvLayout()) state.overview?.querySelector('.jellyseerr-request-button')?.focus();
+            if (state.ctx.tvLayout) state.overview?.querySelector('.jellyseerr-request-button')?.focus();
         } else {
             removeOverview(state);
         }
