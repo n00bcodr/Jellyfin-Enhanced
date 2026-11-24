@@ -6,13 +6,14 @@ const en = JSON.parse(readFileSync(new URL('../../../Jellyfin.Plugin.JellyfinEnh
 const translate = (key, params = {}) => Object.entries(params).reduce((s, [k, v]) => s.replaceAll(`{${k}}`, v), en[key] || key);
 
 /** Real renderer factory and layout controller, with captured pipeline registration. */
-function setup(t, settings = {}, plugin = {}) {
+function setup(t, settings = {}, plugin = {}, prepare = () => {}) {
   const registrations = new Map();
   const h = createHarness({ html: '<div class="card" data-id="a"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div></div><div class="cardText">Title</div></div></div>',
     JE: { currentSettings: { languageTagsEnabled: true, ...settings }, pluginConfig: { TagCacheServerMode: false, ...plugin }, t: translate,
       cdn: { flagSvg: code => `/flags/${code}.svg` }, session: { getUserId: () => 'a', getServerId: () => 's', onUserChange() {} },
       _cacheManager: { register() {}, markDirty() {} }, tagPipeline: { tagStripRevision: () => 'none', registerRenderer: (key, value) => registrations.set(key, { ...value, render: (el, item, extras = {}) => value.render(el, item, { stripRevision: 'none', ...extras }) }), clearProcessed() {}, scheduleScan() {} } } });
   t.after(() => h.close());
+  prepare(h.window);
   for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/media-language.js', 'tags/languagetags.js']) h.load(file);
   h.JE.initializeLanguageTags();
   h.target = h.document.querySelector('.cardScalable');
@@ -348,6 +349,13 @@ test('language editor searches equivalent names and keeps full ISO names on brow
     assert.ok(norwegian.aliases.some(name => name.includes('Bokmål')));
     assert.ok(norwegian.aliases.some(name => name.includes('Nynorsk')));
   } finally { h.window.Intl.DisplayNames = original; }
+});
+
+test('language tags load and fall back to codes on engines without Intl.DisplayNames', t => {
+  const h = setup(t, {}, {}, window => { delete window.Intl.DisplayNames; });
+  h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['en'] });
+  assert.equal(h.chips()[0].title, 'Audio: EN');
+  assert.equal(h.JE.core.mediaLanguage.displayName('ja'), 'JA');
 });
 
 for (const style of ['flags', 'codes']) test(`SDH subtitle flag/title and grouped aliases survive cache and Summary: ${style}`, async t => {
