@@ -115,6 +115,7 @@ export function createLoad(m: LoadDeps) {
                 needControl(document.querySelector('#mdblistCriticRatingFallbackSource')).value = shown(config.MdblistCriticRatingFallbackSource || '');
                 m.displayCards.renderMdblistSourcesAdmin(config);
                 needInput(document.querySelector('#mdblistRatingsShowPercentSymbol')).checked = !!config.MdblistRatingsShowPercentSymbol;
+                needControl(document.querySelector('#mdblistRatingsScale')).value = ['10', '5'].includes(shown(config.MdblistRatingsScale)) ? shown(config.MdblistRatingsScale) : '100';
                 if (config.MdblistApiKey) m.misc.checkMdblistStatus();
                 needControl(document.querySelector('#jellyseerrUrls')).value = shown(config.JellyseerrUrls);
                 needControl(document.querySelector('#JellyseerrApiKey')).value = shown(config.JellyseerrApiKey);

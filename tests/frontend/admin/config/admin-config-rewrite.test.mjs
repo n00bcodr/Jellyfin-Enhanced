@@ -1070,3 +1070,18 @@ test('the Seerr region switch is off by default, saved with the form, and announ
   assert.equal(box.checked, false);
   assert.match(box.closest('label').textContent, /Use each user's Seerr streaming region/);
 });
+
+// Upstream 03875081 (#1101): the scale of the item-details ratings row; unknown stored values read as 0-100.
+test('the MDBList rating scale loads as stored, unknown values as 0-100, and is saved as chosen', async t => {
+  const h = await loadedPage(t, { saved: { MdblistRatingsEnabled: true, MdblistRatingsScale: '5' } });
+  const scale = h.document.getElementById('mdblistRatingsScale');
+  assert.deepEqual([...scale.options].map(o => o.value), ['100', '10', '5']);
+  assert.equal(scale.value, '5');
+  scale.value = '10';
+  h.submit();
+  await settle(h.window, 80);
+  assert.equal(h.calls.puts.length, 1);
+  assert.equal(h.calls.puts[0].MdblistRatingsScale, '10');
+  const k = await loadedPage(t, { saved: { MdblistRatingsEnabled: true, MdblistRatingsScale: '7' } });
+  assert.equal(k.document.getElementById('mdblistRatingsScale').value, '100');
+});

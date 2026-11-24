@@ -7,7 +7,7 @@ import { bridge, currentUserId } from './host';
 import type { MdblistBridge } from './host';
 import { detailPageHook, detailsLease, hashItemId, lookupDetailsItem, removeFirst } from './page';
 import { externalLink, pathSegment } from './links';
-import { RUNTIME_PATTERN, configuredSources, decodeMdblistEntry, isUnconfirmed, mdblistBadges, resolveProviderTarget } from './provider-domain';
+import { RUNTIME_PATTERN, configuredSources, decodeMdblistEntry, isUnconfirmed, mdblistBadges, mdblistScaleMax, resolveProviderTarget } from './provider-domain';
 import type { MdblistEntry } from './provider-domain';
 
 const JE = bridge<MdblistBridge>('MDBList ratings');
@@ -74,7 +74,7 @@ JE.initializeMdblistRatingsScript = function initializeMdblistRatingsScript() {
         const wrap = document.createElement('div');
         wrap.className = sectionClass;
         const badges = mdblistBadges(entry, mediaType, title, configuredSources(JE.pluginConfig?.MdblistRatingsSources),
-            !!JE.pluginConfig?.MdblistRatingsShowPercentSymbol);
+            !!JE.pluginConfig?.MdblistRatingsShowPercentSymbol, mdblistScaleMax(JE.pluginConfig?.MdblistRatingsScale));
         for (const badge of badges) {
             const votesText = badge.votes ? ` (${JE.t('mdblist_ratings_votes', { count: badge.votes })})` : '';
             const badgeTitle = `${badge.label}: ${badge.score}${votesText}`;

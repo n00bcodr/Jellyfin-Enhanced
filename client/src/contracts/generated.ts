@@ -266,6 +266,7 @@ export interface BootstrapPublicConfig {
   "MaintenanceModeMessage": string;
   "MdblistEnabled": boolean;
   "MdblistRatingsEnabled": boolean;
+  "MdblistRatingsScale": string;
   "MdblistRatingsShowOnItemDetails": boolean;
   "MdblistRatingsShowPercentSymbol": boolean;
   "MdblistRatingsSources": string;

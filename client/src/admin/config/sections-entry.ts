@@ -59,6 +59,7 @@ import { defineAllSections } from './sections';
  *  { id: 'mdblistRatingsEnabled', type: 'toggle' }
  *  { id: 'mdblistRatingsShowOnItemDetails', type: 'toggle' }
  *  { id: 'mdblistRatingsShowPercentSymbol', type: 'toggle' }
+ *  { id: 'mdblistRatingsScale', type: 'select' }
  *  { id: 'mdblistRatingsFetchEnabled', type: 'toggle' }
  *  { id: 'mdblistFetchReserve', type: 'number' }
  *  { id: 'mdblistRatingsAutoSyncEnabled', type: 'toggle' }

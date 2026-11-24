@@ -201,6 +201,7 @@ define({
                     + '<div class="je-setting-description" data-desc-for="mdblistApiKey"><div class="fieldDescription">Your API key from <a class="sectionTitle" href="https://mdblist.com/preferences/#api" target="_blank">mdblist.com</a>.</div></div>' },
                 tog('mdblistRatingsShowOnItemDetails', 'Show Ratings Row on Item Details', 'Displays the MDBList ratings row on item-details pages.'),
                 tog('mdblistRatingsShowPercentSymbol', 'Show % Symbol', 'Appends "%" after each rating badge\'s number.'),
+                sel('mdblistRatingsScale', 'Rating Scale', [['100', '0-100 (MDBList score)'], ['10', '0-10'], ['5', '0-5']], 'Scale of the numbers on the item-details ratings row. 0-10 and 0-5 show one decimal (e.g. 6.4) and no % symbol. Default 0-100.'),
                 { type: 'group', title: 'Configure ratings shown', items: [
                     { type: 'note', html: 'Pick which ratings appear on the item-details row, and the order they\'re shown in. Use the '
                         + arrow('up') + ' / ' + arrow('down') + ' buttons to reorder. All checked by default.' },

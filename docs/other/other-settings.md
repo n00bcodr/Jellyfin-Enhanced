@@ -236,6 +236,7 @@ After setting up the master switch and key above:
 | **Show Ratings Row on Item Details** | On | Displays source badges on supported movie/series detail pages; seasons and episodes use their parent series. Requires the master switch. |
 | **Configure ratings shown** | Empty source list: all returned sources | Expands checkboxes and up/down controls to select and order detail-page badges independently of sync sources. |
 | **Show % Symbol** | Off | Adds `%` to normalized badge scores; raw-value fallbacks retain their source scale and precision. |
+| **Rating Scale** | 0-100 | Scale of the detail-page badge numbers: 0-100 (MDBList's score), 0-10 or 0-5. The 0-10 and 0-5 scales show one decimal (for example 6.4) and ignore **Show % Symbol**; raw-value fallbacks keep their source scale. |
 
 To hide the entire row, turn off **Show Ratings Row on Item Details**. Clearing every badge checkbox saves an empty list, which shows all usable returned sources.
 

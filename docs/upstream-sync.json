@@ -3899,6 +3899,76 @@
       ],
       "notes": "Re-implemented in client/src/features/seerr/core/ui/cards.ts as upstream: the batch context gains tvLayout (read once per batch, and part of the key that decides whether built cards can be reused); on the TV layout with the More Info module loaded the title link gets tabIndex -1, so each card is one remote stop; and OK on a poster whose click opens the modal now does what the title does: the Jellyfin item for a title in the library, the collection's request window, or More Info. Without More Info, OK still opens the overview and focuses Request, and Back closes it (the previous port). The rewrite's own differences stay: the collection window and More Info are opened through its optional facades (showCollectionRequestModal, openMoreInfo), as its title-link handler does. Upstream's test change applied as is (git apply, clean): the two Back tests now run without More Info, and a new test checks that OK opens More Info for the poster's title and that the title link is out of the remote's path. Lab parity (je12 browse --profile tv, p113-tv-remote.mjs, Seerr search \"Mock\"): on upstream's build and on this branch the title link has tabindex -1, OK on the poster opens More Info (no overview), and Back closes it with focus back on the poster and the address unchanged; on the main line before the ports OK opened the overview and Back left the page.",
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p113-116.live.txt (pair tv-remote, the search-page card), p113-tv-remote.mjs, p113-tv-remote.rewrite-base.txt, p113-116.tests.txt"
+    },
+    {
+      "sha": "03875081ebea47068c1bf15f97b34237b1e40c8b",
+      "date": "2026-11-24T08:37:00Z",
+      "subject": "feat(mdblist): choose a 0-100, 0-10 or 0-5 scale for the item-details ratings row",
+      "class": "feature",
+      "features": [
+        "details-providers",
+        "admin",
+        "platform"
+      ],
+      "issues": [
+        "#1101"
+      ],
+      "release": null,
+      "size": {
+        "files": 11,
+        "insertions": 74,
+        "deletions": 6
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+        "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/others/mdblist-ratings.js",
+        "docs/advanced/api.md",
+        "docs/advanced/config-flag-groups.json",
+        "docs/advanced/project-structure.md",
+        "docs/other/other-settings.md",
+        "tests/docs/production-inventory.json",
+        "tests/frontend/pages/pages-mdblist-ratings-scale.test.mjs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "34887bbec0eea137a95b6a5a3db9109bca6ad6db"
+      ],
+      "unmappedPaths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
+      ],
+      "notes": "Re-implemented. Setting: MdblistRatingsScale (string, default \"100\") in Configuration/PluginConfiguration.cs, upstream's hunk as is; it reaches the page in the public bootstrap configuration (Transport/BootstrapConfig.cs and Features/Platform/JePlatformController.Bootstrap.cs, which serve what upstream's JellyfinEnhancedController public-config hunk adds), and the generated contracts (contracts/bootstrap.schema.json, client/src/contracts) are regenerated. Client: client/src/features/details-providers/provider-domain.ts gains mdblistScaleMax (\"10\" and \"5\" give that scale, anything else 0-100, as upstream's lookup) and mdblistBadges takes the scale: on 0-10 or 0-5 a true MDBList Score is rescaled to one decimal with toFixed(1) and no % symbol; on 0-100 the rounded Score with the optional %, as before; a raw fallback Value keeps its own scale and precision whatever the setting. mdblist-ratings.ts passes the served value; the badge's tooltip still shows the raw score, as upstream's. Admin page: upstream's select line in client/src/admin/config/sections/display.ts (same id, label, options and help), its line in the What's New lexical index (sections-entry.ts), load (an unknown stored value shows as 0-100, as upstream's configPage.html), save, and the Enable MDBList Ratings dependency (page/dependencies.ts, upstream's PARENT_DEPS line); the Services tab's linked copy of the MDBList card gets the control through the engine's mirror. Docs: upstream's other-settings.md, project-structure.md and config-flag-groups.json hunks as is; in api.md the field is listed with the String fields, where upstream put it in a Boolean row. Tests: upstream's tests/frontend/pages/pages-mdblist-ratings-scale.test.mjs applied as is at its own path (it loads the built js/others/mdblist-ratings.js); it fails before the port (0-10 and 0-5 still drew 85% and 64%) and passes after. A new admin test (tests/frontend/admin/config/admin-config-rewrite.test.mjs) checks the control's options, that a stored scale loads, an unknown one shows 0-100 and the chosen one is saved; it fails without the admin part. tests/fixtures/admin-config-baseline.json lists the new id (and its mirror) among the rendered and What's New ids. Lab parity (p117-mdblist-scale.mjs; the lab has no MDBList key or route out, so the page's one ratings request for Abominable is answered in the browser with a fixed entry: IMDb Score 64, RT Critic Score 85, Roger Ebert raw Value 3.5): on upstream's build and on this branch alike, scale 10 with % on draws RT Critic 8.5, IMDb 6.4, Roger Ebert 3.5; scale 5 draws 4.3, 3.2, 3.5; scale 100 with % draws 85%, 64%, 3.5; the admin control reads Rating Scale with 0-100 (MDBList score), 0-10 and 0-5 and shows the stored value. On the main line before the port the scale was not served, the row drew 85%, 64%, 3.5 and the page had no control.",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p117-118.live.txt (pairs scale-10, scale-5, scale-100), p117-mdblist-scale.mjs, p117-mdblist-scale.rewrite-base.txt, p117-118.tests.txt"
+    },
+    {
+      "sha": "49ee210d7ea0322153717e6f843145478d2b6681",
+      "date": "2026-11-24T08:58:54Z",
+      "subject": "fix(maintainerr): say what Maintainerr returned when no manual collection is found",
+      "class": "fix",
+      "features": [
+        "media-tags"
+      ],
+      "issues": [
+        "#1071"
+      ],
+      "release": null,
+      "size": {
+        "files": 2,
+        "insertions": 17,
+        "deletions": 2
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintainerrActions.cs",
+        "tests/backend/Integrations/IntegrationMaintainerrActionsTests.cs"
+      ],
+      "status": "ported",
+      "rewriteCommits": [
+        "43104605549a9ca06097488d59f6ecd706eba69d"
+      ],
+      "notes": "Applied as is at the moved paths: upstream's NoManualCollection helper and its call in MatchAsync go into Jellyfin.Plugin.JellyfinEnhanced/Features/MediaTags/Services/MaintainerrActions.cs (the helper beside Names, which sits lower in this file than upstream's, so the hunk was placed by hand with the same text), and upstream's test change into tests/backend/Features/MediaTags/IntegrationMaintainerrActionsTests.cs (git apply, clean at an offset). When Maintainerr has no active manual collection, the mark refusal now names up to five of the collections it returned, each as manual or not and active or inactive, or says it returned none, followed by the hint that the rule must use a manual collection and be active. The test fails before the port (the old message has no \"It returned 2\") and passes after. No client change: the item menu shows the server's reason in its failure toast, escaped (client/src/features/media-tags/editor/maintainerr-item-menu.ts), as it already did for the other refusals that name collections. Lab parity (p118-maintainerr.setup.py: the Sonarr mock answers Maintainerr's GET /api/collections, and the plugin's Maintainerr source and item-menu actions point at it; then je12 api admin POST /JellyfinEnhanced/maintainerr/mark for Abominable): with a non-manual active collection \"Rule list\" and an inactive manual one \"Old\", upstream's build and this branch alike answer 400 \"Maintainerr has no active manual collection. It returned 2: Rule list (not manual, active), Old (manual, inactive). A manual collection comes from a Maintainerr rule with 'Use manual collection' on; the rule must also be active.\"; with no collections both answer \"Maintainerr returned no collections.\" and the same hint. On the main line before the port both cases answered \"Maintainerr has no active manual collection. Create one (a rule with 'Use manual collection') and try again.\"",
+      "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p117-118.live.txt (pairs maintainerr-two, maintainerr-empty), p118-maintainerr.setup.py, p118-maintainerr.rewrite-base.txt, p117-118.tests.txt"
     }
   ]
 }

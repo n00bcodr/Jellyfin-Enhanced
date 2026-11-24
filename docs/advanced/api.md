@@ -1575,7 +1575,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `AudioInfoTagOrder`, `DefaultSubtitleStyle`, `DefaultSubtitleSize`, `DefaultSubtitleFont`, `DefaultSubtitleTextEffect`, `TagsCacheTtlDays`, `DownloadsPollIntervalSeconds`, `SpoilerBlurIntensity` | Integer |
     | `StatusTagsJustAddedDays`, `StatusTagsNewReleaseDays`, `LogoTagsMaxLogos` | Integer |
     | `SplashScreenImageUrl`, `DEFAULT_REGION`, `DEFAULT_PROVIDERS`, `IGNORE_PROVIDERS`, `ElsewhereCustomBrandingText`, `ElsewhereCustomBrandingImageUrl`, `WatchProgressDefaultMode`, `WatchProgressTimeFormat` | String |
-    | `MdblistRatingsSources`, `DefaultLanguage`, `QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `LanguageTagsPriority`, `QualityTagsPreferredAudioLanguage`, `RatingTagsPosition` | String |
+    | `MdblistRatingsSources`, `MdblistRatingsScale`, `DefaultLanguage`, `QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `LanguageTagsPriority`, `QualityTagsPreferredAudioLanguage`, `RatingTagsPosition` | String |
     | `AgeRatingTagsPosition`, `JellyseerrBaseUrl`, `JellyseerrUrlMappings`, `ArrTagsPrefix`, `ArrTagsLinksFilter`, `ArrTagsLinksHideFilter`, `AudioLanguageTagPrefix`, `IconStyle` | String |
     | `StatusTagsPosition`, `CustomTagsPosition`, `TagLayout`, `TagLabelDensity`, `TagScale`, `TagGap`, `TagEdgeSpacing`, `TagStylePreset`, `LogoTagsPosition`, `LogoTagsMovieMode`, `LogoTagsSeriesMode` | String |
     | `CustomTagRules` | Array of `{Id,Label,Icon}` in rule order (no tag or collection names, see above) |

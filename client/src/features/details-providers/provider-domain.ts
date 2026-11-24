@@ -174,8 +174,12 @@ export function mdblistLink(sourceKey: string, ids: Readonly<Record<string, stri
 export function configuredSources(raw: string | undefined): string[] {
     return (raw || '').split(',').map(source => source.trim().toLowerCase()).filter(Boolean);
 }
+/** The admin's MdblistRatingsScale: "10" and "5" rescale MDBList's 0-100 Score; anything else keeps 0-100. */
+export function mdblistScaleMax(raw: string | undefined): number {
+    return raw === '10' ? 10 : raw === '5' ? 5 : 100;
+}
 export interface MdblistBadge { label: string; logo: string | undefined; link: string | null; scoreText: string; score: number; votes: number | null }
-export function mdblistBadges(entry: MdblistEntry, mediaType: string, title: string | undefined, sources: readonly string[], showPercent: boolean): MdblistBadge[] {
+export function mdblistBadges(entry: MdblistEntry, mediaType: string, title: string | undefined, sources: readonly string[], showPercent: boolean, scaleMax = 100): MdblistBadge[] {
     const order = sources.length ? sources : MDBLIST_DEFAULT_ORDER;
     const rank = (rating: MdblistRating) => {
         const index = order.indexOf(rating.Source.toLowerCase());
@@ -198,8 +202,11 @@ export function mdblistBadges(entry: MdblistEntry, mediaType: string, title: str
                 label,
                 logo: freshLogo || own(MDBLIST_LOGOS, sourceKey),
                 link: mdblistLink(sourceKey, entry.Ids, rating.Url, mediaType, title),
-                // A raw fallback Value keeps its precision (rogerebert's 3.5 stays 3.5).
-                scoreText: normalized !== null ? Math.round(normalized) + (showPercent ? '%' : '') : String(score),
+                // A raw fallback Value keeps its precision and scale (rogerebert's 3.5 stays 3.5);
+                // a Score on 0-10 or 0-5 shows one decimal and no "%".
+                scoreText: normalized === null ? String(score)
+                    : scaleMax === 100 ? Math.round(normalized) + (showPercent ? '%' : '')
+                        : (normalized * scaleMax / 100).toFixed(1),
                 score,
                 votes: rating.Votes
             };

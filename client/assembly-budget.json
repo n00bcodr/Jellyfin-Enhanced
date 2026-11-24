@@ -1,7 +1,7 @@
 {
   "description": "Budget for what the plugin assembly, Jellyfin.Plugin.JellyfinEnhanced.dll, embeds (client assets, pages, tag assets). embeddedBytes: the summed length of its manifest resources as embedded (a packed one at its packed length). The DLL is these plus about 3.1 MB of code. The budget counts the resources, not the DLL file, because gate T runs with coverage and the file on disk is then the instrumented copy (0.65 MB longer); the resources are the same bytes either way. Checked by tests/backend/Api/PackedResourcesTests.cs (gate T). It is a ratchet: lowering the limit needs no reason; a history entry that raises it must give one. `limits` is always the last history entry's.",
   "limits": {
-    "embeddedBytes": 12454502
+    "embeddedBytes": 12456602
   },
   "history": [
     {
@@ -136,6 +136,17 @@
         "embeddedBytes": 12454502
       },
       "reason": "Raised by exactly what the ports add, so the headroom left before them stays as it was (1,502 bytes). The assembly embeds the changed client scripts with their minified twins and maps: core/ui-kit.js, plugin.js (the replaceChildren polyfill), the Seerr, More Info, chrome, player, settings-panel and language-tag modules, and the createCustomElement helper bundled into each of the 30 modules that make a jellyfin-web custom element. Measured with PackedResourcesTests with the limit set to 1: 12,383,224 bytes on f6c47dc6 (the base), 12,453,000 with the ports (+69,776)."
+    },
+    {
+      "date": "2026-11-24",
+      "change": "upstream sync: ports of upstream 03875081 (#1101) and 49ee210d (#1071), branch sync/auto-20261124-1710",
+      "measured": {
+        "embeddedBytes": 12455100
+      },
+      "limits": {
+        "embeddedBytes": 12456602
+      },
+      "reason": "Raised by exactly what the ports add, so the headroom left before them stays as it was (1,502 bytes). The assembly embeds the changed client scripts with their minified twins and maps (others/mdblist-ratings.js, others/doesthedogdie.js, which bundles the same provider module, enhanced/config.js and contracts/bootstrap.js) and the admin page (configPage.html and Configuration/admin/sections.js with their maps: the Rating Scale control). Measured with PackedResourcesTests: 12,453,000 bytes on add28a67d (the base, the same embedded resources as 73e76050, measured by the previous sync with the limit set to 1), 12,455,100 with the ports (+2,100), from the test's own failure message on 431046055."
     }
   ]
 }

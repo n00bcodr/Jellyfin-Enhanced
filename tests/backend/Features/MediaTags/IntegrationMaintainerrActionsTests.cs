@@ -208,7 +208,12 @@ public sealed class IntegrationMaintainerrActionsTests : IDisposable
         Assert.Equal(2, (await Match(new Series { Id = Guid.NewGuid() }, null, all)).Collection!.Id);
 
         Assert.Contains("Only movies, series and seasons", (await Match(new Episode { Id = Guid.NewGuid() }, LibShows, all)).Error);
-        Assert.Contains("no active manual collection", (await Match(movie, LibMovies, new[] { C(3, "Rule list", LibMovies, "movie", manual: false) })).Error);
+        var noManual = (await Match(movie, LibMovies, new[] { C(3, "Rule list", LibMovies, "movie", manual: false), C(4, "Old", LibMovies, "movie", active: false) })).Error;
+        Assert.Contains("no active manual collection", noManual);
+        Assert.Contains("It returned 2", noManual);
+        Assert.Contains("Rule list (not manual, active)", noManual);
+        Assert.Contains("Old (manual, inactive)", noManual);
+        Assert.Contains("Maintainerr returned no collections", (await Match(movie, LibMovies, Array.Empty<MaintainerrCollection>())).Error);
         var noMovies = await Match(movie, LibMovies, new[] { C(2, "Leaving Soon (Shows)", LibShows, "show") });
         Assert.Contains("no manual collection for movies", noMovies.Error);
         Assert.Contains("Leaving Soon (Shows)", noMovies.Error);

@@ -58,6 +58,7 @@ public sealed class BootstrapPublicConfig
     public required bool MdblistRatingsShowOnItemDetails { get; init; }
     public required string MdblistRatingsSources { get; init; }
     public required bool MdblistRatingsShowPercentSymbol { get; init; }
+    public required string MdblistRatingsScale { get; init; }
     public required bool ShowReleaseDates { get; init; }
     public required bool ShowUserRatingOnPosters { get; init; }
     public required bool ShowUserRatingDash { get; init; }

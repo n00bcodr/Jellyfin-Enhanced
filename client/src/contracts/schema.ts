@@ -1919,6 +1919,9 @@ export const bootstrapSchema = {
         "MdblistRatingsEnabled": {
           "type": "boolean"
         },
+        "MdblistRatingsScale": {
+          "type": "string"
+        },
         "MdblistRatingsShowOnItemDetails": {
           "type": "boolean"
         },
@@ -2615,6 +2618,7 @@ export const bootstrapSchema = {
         "MaintenanceModeMessage",
         "MdblistEnabled",
         "MdblistRatingsEnabled",
+        "MdblistRatingsScale",
         "MdblistRatingsShowOnItemDetails",
         "MdblistRatingsShowPercentSymbol",
         "MdblistRatingsSources",

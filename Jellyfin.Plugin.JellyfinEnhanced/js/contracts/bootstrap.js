@@ -1922,6 +1922,9 @@
           "MdblistRatingsEnabled": {
             "type": "boolean"
           },
+          "MdblistRatingsScale": {
+            "type": "string"
+          },
           "MdblistRatingsShowOnItemDetails": {
             "type": "boolean"
           },
@@ -2618,6 +2621,7 @@
           "MaintenanceModeMessage",
           "MdblistEnabled",
           "MdblistRatingsEnabled",
+          "MdblistRatingsScale",
           "MdblistRatingsShowOnItemDetails",
           "MdblistRatingsShowPercentSymbol",
           "MdblistRatingsSources",

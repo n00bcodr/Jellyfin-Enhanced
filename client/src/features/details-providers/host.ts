@@ -269,7 +269,7 @@ export interface AwardsBridge {
     initializeAwardsScript?: () => void;
 }
 export interface MdblistBridge {
-    pluginConfig?: Pub<'MdblistRatingsEnabled' | 'MdblistRatingsShowOnItemDetails' | 'MdblistRatingsSources' | 'MdblistRatingsShowPercentSymbol'>;
+    pluginConfig?: Pub<'MdblistRatingsEnabled' | 'MdblistRatingsShowOnItemDetails' | 'MdblistRatingsSources' | 'MdblistRatingsShowPercentSymbol' | 'MdblistRatingsScale'>;
     escapeHtml?(value: string): string;
     core: { api: PluginApi & { manager: CacheManager } };
     cdn: CdnUrls;

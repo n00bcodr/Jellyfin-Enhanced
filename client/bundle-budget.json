@@ -2,7 +2,7 @@
   "description": "Budget for the served component bundle, GET /JellyfinEnhanced/bundle.js (Features/Platform/Services/ClientScriptBundle.cs), as an identity (uncompressed) body. rawBytes: its length. gzipBytes: its length after gzip at level 9 (zlib level 9; `gzip -9 -n`, .NET CompressionLevel.SmallestSize). Checked by tests/backend/Api/BundleBudgetTests.cs (gate T) and `scripts/restructure-gates.sh size`. It is a ratchet: lowering a limit needs no reason; a history entry that raises either limit must give one. `limits` is always the last history entry's.",
   "limits": {
     "rawBytes": 2772818,
-    "gzipBytes": 760592
+    "gzipBytes": 760656
   },
   "history": [
     {
@@ -173,6 +173,19 @@
         "gzipBytes": 760592
       },
       "reason": "gzip-9 raised by exactly what the ports add, so the headroom left before them stays as it was (31 bytes); raw stays (its headroom covers the ports). The bundle carries the TV remote's Back, focus and inert links in More Info, the request window and the Seerr cards, OK on a poster opening the title, the TV header rule, the :focus and clamp() fallbacks, the Intl.DisplayNames fallbacks, and createCustomElement in every module that makes a jellyfin-web custom element. Measured with BundleBudgetTests (gate T's own measure) with the limits set out of the way: 2,749,202 raw / 758,279 gzip-9 bytes on f6c47dc6 (the base), 2,755,714 / 760,561 with the ports (+6,512 / +2,282)."
+    },
+    {
+      "date": "2026-11-24",
+      "change": "upstream sync: ports of upstream 03875081 (#1101) and 49ee210d (#1071), branch sync/auto-20261124-1710",
+      "measured": {
+        "rawBytes": 2755895,
+        "gzipBytes": 760625
+      },
+      "limits": {
+        "rawBytes": 2772818,
+        "gzipBytes": 760656
+      },
+      "reason": "gzip-9 raised by exactly what the ports add, so the headroom left before them stays as it was (31 bytes); raw stays (its headroom covers the ports). The bundle carries the MDBList ratings row's Rating Scale (0-10 and 0-5 show one decimal) and the scale in the bootstrap configuration's reader. Measured with BundleBudgetTests (gate T's own measure) with the limits set out of the way: 2,755,714 raw / 760,561 gzip-9 bytes on add28a67d (the base, the same client output as 73e76050, measured by the previous sync), 2,755,895 / 760,625 with the ports (+181 / +64)."
     }
   ]
 }

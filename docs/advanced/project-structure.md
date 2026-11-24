@@ -529,6 +529,7 @@ See [MDBList Ratings](../other/other-settings.md#mdblist-ratings) for controls a
 | **Overwrite Existing Jellyfin Ratings** | `MdblistRatingsOverwriteExisting` |
 | **Configure ratings shown** | `MdblistRatingsSources` |
 | **Show % Symbol** | `MdblistRatingsShowPercentSymbol` |
+| **Rating Scale** | `MdblistRatingsScale` |
 
 Repository-root `images/mdblist-logos/` supplies logos. See [Other Features](../other/other-features.md) for usage and limits.
 

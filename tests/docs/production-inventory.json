@@ -5093,6 +5093,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "MdblistRatingsScale",
+      "type": "string",
+      "initializer": "\"100\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ShowReleaseDates",
       "type": "bool",
       "initializer": null,
@@ -11342,7 +11350,7 @@
     "build_targets": 1,
     "files": 570,
     "routes": 228,
-    "configuration_properties": 790,
+    "configuration_properties": 791,
     "storage_references": 100,
     "scheduled_tasks": 17,
     "locales": 33

@@ -231,6 +231,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.Platform
                 MdblistRatingsShowOnItemDetails = config.MdblistRatingsShowOnItemDetails,
                 MdblistRatingsSources = config.MdblistRatingsSources,
                 MdblistRatingsShowPercentSymbol = config.MdblistRatingsShowPercentSymbol,
+                MdblistRatingsScale = config.MdblistRatingsScale,
                 ShowReleaseDates = config.ShowReleaseDates,
                 ShowUserRatingOnPosters = config.ShowUserRatingOnPosters,
                 ShowUserRatingDash = config.ShowUserRatingDash,

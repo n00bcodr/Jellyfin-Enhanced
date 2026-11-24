@@ -193,7 +193,10 @@
   function configuredSources(raw) {
     return (raw || "").split(",").map((source) => source.trim().toLowerCase()).filter(Boolean);
   }
-  function mdblistBadges(entry, mediaType, title, sources, showPercent) {
+  function mdblistScaleMax(raw) {
+    return raw === "10" ? 10 : raw === "5" ? 5 : 100;
+  }
+  function mdblistBadges(entry, mediaType, title, sources, showPercent, scaleMax = 100) {
     const order = sources.length ? sources : MDBLIST_DEFAULT_ORDER;
     const rank = (rating) => {
       const index = order.indexOf(rating.Source.toLowerCase());
@@ -210,8 +213,9 @@
         label,
         logo: freshLogo || own(MDBLIST_LOGOS, sourceKey),
         link: mdblistLink(sourceKey, entry.Ids, rating.Url, mediaType, title),
-        // A raw fallback Value keeps its precision (rogerebert's 3.5 stays 3.5).
-        scoreText: normalized !== null ? Math.round(normalized) + (showPercent ? "%" : "") : String(score),
+        // A raw fallback Value keeps its precision and scale (rogerebert's 3.5 stays 3.5);
+        // a Score on 0-10 or 0-5 shows one decimal and no "%".
+        scoreText: normalized === null ? String(score) : scaleMax === 100 ? Math.round(normalized) + (showPercent ? "%" : "") : (normalized * scaleMax / 100).toFixed(1),
         score,
         votes: rating.Votes
       };
@@ -285,7 +289,8 @@
         mediaType,
         title,
         configuredSources(JE.pluginConfig?.MdblistRatingsSources),
-        !!JE.pluginConfig?.MdblistRatingsShowPercentSymbol
+        !!JE.pluginConfig?.MdblistRatingsShowPercentSymbol,
+        mdblistScaleMax(JE.pluginConfig?.MdblistRatingsScale)
       );
       for (const badge of badges) {
         const votesText = badge.votes ? ` (${JE.t("mdblist_ratings_votes", { count: badge.votes })})` : "";

@@ -127,7 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             var type = MediaType(item);
             if (type == null) return MaintainerrMatch.Fail("Only movies, series and seasons can be marked.");
             var manual = collections.Where(c => c.IsActive && c.Manual).ToList();
-            if (manual.Count == 0) return MaintainerrMatch.Fail("Maintainerr has no active manual collection. Create one (a rule with 'Use manual collection') and try again.");
+            if (manual.Count == 0) return MaintainerrMatch.Fail(NoManualCollection(collections));
             var typed = manual.Where(c => c.Type == type).ToList();
             if (typed.Count == 0) return MaintainerrMatch.Fail($"Maintainerr has no manual collection for {type}s (it has: {Names(manual)}).");
             var inLibrary = libraryId == null ? typed : typed.Where(c => c.LibraryId != null && string.Equals(c.LibraryId.Replace("-", string.Empty), libraryId, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -152,6 +152,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Features.MediaTags.Services
             return MaintainerrMatch.Fail(unknown
                 ? $"Several Maintainerr collections fit this item ({Names(inLibrary)}) and their Radarr/Sonarr servers could not be asked which one holds it."
                 : $"Several Maintainerr collections fit this item ({Names(inLibrary)}) but none of their Radarr/Sonarr servers has it.");
+        }
+
+        /// <summary>The "no manual collection" reason, with what Maintainerr did return so the administrator can see which condition failed.</summary>
+        private static string NoManualCollection(IReadOnlyList<MaintainerrCollection> collections)
+        {
+            const string Hint = "A manual collection comes from a Maintainerr rule with 'Use manual collection' on; the rule must also be active.";
+            if (collections.Count == 0) return "Maintainerr returned no collections. " + Hint;
+            var found = string.Join(", ", collections.Take(5).Select(c => $"{c.Title} ({(c.Manual ? "manual" : "not manual")}, {(c.IsActive ? "active" : "inactive")})"));
+            if (collections.Count > 5) found += ", ...";
+            return $"Maintainerr has no active manual collection. It returned {collections.Count}: {found}. {Hint}";
         }
 
         private static string Names(IEnumerable<MaintainerrCollection> collections) => string.Join(", ", collections.Select(c => c.Title));

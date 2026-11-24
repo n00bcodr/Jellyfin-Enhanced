@@ -88,6 +88,7 @@ export function createSave(m: SaveDeps) {
             config.MdblistCriticRatingFallbackSource = needControl(document.querySelector('#mdblistCriticRatingFallbackSource')).value;
             config.MdblistRatingsSources = m.displayCards.computeMdblistRatingsSources();
             config.MdblistRatingsShowPercentSymbol = needInput(document.querySelector('#mdblistRatingsShowPercentSymbol')).checked;
+            config.MdblistRatingsScale = needControl(document.querySelector('#mdblistRatingsScale')).value;
             // validate scheme on save. Lines that don't parse as
             // http(s) are dropped with a warning so we never persist garbage
             // like "seerr.local" (no scheme) — which downstream string-concats
