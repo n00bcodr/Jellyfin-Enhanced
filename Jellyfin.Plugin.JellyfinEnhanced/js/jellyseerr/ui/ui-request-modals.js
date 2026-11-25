@@ -23,25 +23,21 @@
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
         const { requestMedia, fetchAdvancedRequestData, fetchUserQuota } = JE.jellyseerrAPI;
 
-        const bodyHtml = createAdvancedOptionsHTML('movie');
+        const bodyHtml = JE.jellyseerrModal.autoApproveNoticeHTML('movie', is4k) + createAdvancedOptionsHTML('movie', { showUser: JE.helpers?.isAdmin?.() });
         const { modalElement, show } = create({
             title: JE.t('jellyseerr_modal_title_movie'),
             subtitle: title,
             bodyHtml,
             backdropPath: searchResultItem?.backdropPath,
             onSave: async (modalEl, requestBtn, closeFn) => {
-                const serverSelect = modalEl.querySelector('#movie-server');
-                const qualitySelect = modalEl.querySelector('#movie-quality');
-                const folderSelect = modalEl.querySelector('#movie-folder');
-
-                if (!serverSelect.value || !qualitySelect.value || !folderSelect.value) {
+                const settings = JE.jellyseerrModal.readAdvancedOptions(modalEl, 'movie');
+                if (!settings) {
                     JE.toast(JE.t('jellyseerr_modal_toast_options_missing'), 3000);
                     return;
                 }
 
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
-                const settings = { serverId: parseInt(serverSelect.value), profileId: parseInt(qualitySelect.value), rootFolder: folderSelect.value, tags: [] };
 
                 try {
                     await requestMedia(tmdbId, 'movie', settings, is4k, searchResultItem);
@@ -162,6 +158,7 @@
         }).join('');
 
         const bodyHtml = `
+            ${JE.jellyseerrModal.autoApproveNoticeHTML('movie', false)}
             <div class="jellyseerr-collection-list" style="max-height: 600px; overflow-y: auto;">
                 <div class="jellyseerr-collection-header-row">
                     <input type="checkbox" class="jellyseerr-collection-checkbox" id="jellyseerr-select-all-movies">
@@ -171,7 +168,7 @@
                 </div>
                 ${movieListHtml}
             </div>
-            ${showAdvanced ? createAdvancedOptionsHTML('movie') : ''}
+            ${showAdvanced ? createAdvancedOptionsHTML('movie', { showUser: JE.helpers?.isAdmin?.() }) : ''}
         `;
 
         const modalInstance = create({
@@ -186,16 +183,14 @@
 
                 let settings = {};
                 if (showAdvanced) {
-                    const server = modalEl.querySelector('#movie-server').value;
-                    const quality = modalEl.querySelector('#movie-quality').value;
-                    const folder = modalEl.querySelector('#movie-folder').value;
-                    if (!server || !quality || !folder) {
+                    const advanced = JE.jellyseerrModal.readAdvancedOptions(modalEl, 'movie');
+                    if (!advanced) {
                         JE.toast(JE.t('jellyseerr_modal_toast_options_missing') || 'Please select all options', 3000);
                         requestBtn.disabled = false;
                         requestBtn.textContent = JE.t('jellyseerr_modal_request_selected_movies') || 'Request Selected Movies';
                         return;
                     }
-                    settings = { serverId: parseInt(server), profileId: parseInt(quality), rootFolder: folder, tags: [] };
+                    settings = advanced;
                 }
 
                 try {

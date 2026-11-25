@@ -109,9 +109,9 @@
         const needsTvdbMatch = !tvDetails.externalIds?.tvdbId && !storedTvdbId;
 
         // Show season selection UI with Select All checkbox header
-        const bodyHtml = `${needsTvdbMatch ? buildTvdbMatchHTML() : ''}<div class="jellyseerr-season-list">
+        const bodyHtml = `${JE.jellyseerrModal.autoApproveNoticeHTML('tv', is4k)}${needsTvdbMatch ? buildTvdbMatchHTML() : ''}<div class="jellyseerr-season-list">
             ${partialRequestsEnabled && !singleSeasonOnly ? '<div class="jellyseerr-season-header-row"><input type="checkbox" class="jellyseerr-season-checkbox" id="jellyseerr-select-all-seasons"><label class="jellyseerr-season-header-label" for="jellyseerr-select-all-seasons">' + JE.t('jellyseerr_select_all_seasons') + '</label><div></div><div></div></div>' : ''}
-        </div>${showAdvanced ? createAdvancedOptionsHTML('tv') : ''}`;
+        </div>${showAdvanced ? createAdvancedOptionsHTML('tv', { showUser: JE.helpers?.isAdmin?.() }) : ''}`;
         const modalInstance = create({
             title: is4k ? `${JE.t('jellyseerr_modal_title')} - 4K` : JE.t('jellyseerr_modal_title'),
             subtitle: resolvedShowTitle,
@@ -146,16 +146,14 @@
 
                 let settings = {};
                 if (showAdvanced) {
-                    const server = modalEl.querySelector('#tv-server').value;
-                    const quality = modalEl.querySelector('#tv-quality').value;
-                    const folder = modalEl.querySelector('#tv-folder').value;
-                    if (!server || !quality || !folder) {
+                    const advanced = JE.jellyseerrModal.readAdvancedOptions(modalEl, 'tv');
+                    if (!advanced) {
                         JE.toast(JE.t('jellyseerr_modal_toast_options_missing'), 3000);
                         requestBtn.disabled = false;
                         requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : (partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request'));
                         return;
                     }
-                    settings = { serverId: parseInt(server), profileId: parseInt(quality), rootFolder: folder, tags: [] };
+                    settings = advanced;
                 }
 
                 try {

@@ -1448,7 +1448,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!string.IsNullOrEmpty(jellyseerrUserId))
             {
                 var seerrUser = await GetJellyseerrUser(jellyfinUserId!);
-                return Ok(LinkedSeerrUserStatus(jellyseerrUserId, CanRequestAdvanced(IsAdminUser(), seerrUser)));
+                return Ok(LinkedSeerrUserStatus(jellyseerrUserId, CanRequestAdvanced(IsAdminUser(), seerrUser), seerrUser));
             }
 
             // User not found — could be server unreachable, HTML challenge from
@@ -1504,15 +1504,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // canRequestAdvanced: an admin always may; anyone else needs their
             // Seerr user (permissions), which must already be in the user cache
             // for this answer to need no Seerr round trip.
-            if (isAdmin) return LinkedSeerrUserStatus(cachedId, true);
-            return TryGetCachedJellyseerrUser(jellyfinUserId, out var seerrUser)
-                ? LinkedSeerrUserStatus(cachedId, CanRequestAdvanced(false, seerrUser))
+            var haveUser = TryGetCachedJellyseerrUser(jellyfinUserId, out var seerrUser);
+            if (isAdmin) return LinkedSeerrUserStatus(cachedId, true, haveUser ? seerrUser : null);
+            return haveUser
+                ? LinkedSeerrUserStatus(cachedId, CanRequestAdvanced(false, seerrUser), seerrUser)
                 : null;
         }
 
         /// <summary>The <c>jellyseerr/user-status</c> answer for a linked user.</summary>
-        private static object LinkedSeerrUserStatus(string jellyseerrUserId, bool canRequestAdvanced)
-            => new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked", canRequestAdvanced };
+        private static object LinkedSeerrUserStatus(string jellyseerrUserId, bool canRequestAdvanced, JellyseerrUser? seerrUser)
+            => new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked", canRequestAdvanced, autoApprove = AutoApproveFor(seerrUser) };
+
+        /// <summary>
+        /// Which of the user's requests Seerr approves without a manager, by the same permissions its request dialog reads
+        /// (managers and administrators included). Null when the Seerr user is not known, so nothing is claimed.
+        /// </summary>
+        private static object? AutoApproveFor(JellyseerrUser? user)
+        {
+            if (user == null) return null;
+            bool Has(JellyseerrPermission p) => JellyseerrPermissionHelper.HasAnyPermission(user.Permissions, JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS | p);
+            return new
+            {
+                movie = Has(JellyseerrPermission.AUTO_APPROVE | JellyseerrPermission.AUTO_APPROVE_MOVIE),
+                tv = Has(JellyseerrPermission.AUTO_APPROVE | JellyseerrPermission.AUTO_APPROVE_TV),
+                movie4k = Has(JellyseerrPermission.AUTO_APPROVE_4K | JellyseerrPermission.AUTO_APPROVE_4K_MOVIE),
+                tv4k = Has(JellyseerrPermission.AUTO_APPROVE_4K | JellyseerrPermission.AUTO_APPROVE_4K_TV)
+            };
+        }
 
         /// <summary>
         /// Whether the request modals may offer the advanced options (server,
@@ -13185,6 +13203,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return IsFuture(digitalReleaseDate, today) || IsFuture(theatricalReleaseDate, today);
         }
 
+        /// <summary>
+        /// Reads what a pending request currently asks for (server, quality profile, root folder, tags, requester,
+        /// seasons) so the Requests page can open the same options as the request dialog before approving.
+        /// Managers only.
+        /// </summary>
+        [HttpGet("arr/requests/{requestId}/options")]
+        [Authorize]
+        public async Task<IActionResult> GetRequestOptions([FromRoute] int requestId)
+        {
+            var (ctx, denied) = await ResolveRequestManagerAsync();
+            if (denied != null) return denied;
+
+            var requestUri = $"{ctx!.Url}/api/v1/request/{requestId}";
+            var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+            using var httpRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, ctx.ApiKey, ctx.SeerrUserId.ToString());
+            using var response = await client.SendAsync(httpRequest);
+            var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+            if (error != null || json == null)
+            {
+                return StatusCode(error?.HttpStatus > 0 ? error.HttpStatus : 502,
+                    error == null ? new { error = true, message = "Seerr returned no request." } : (IsAdminUser() ? error.ToAdminResponseShape() : error.ToResponseShape()));
+            }
+
+            var r = JObject.Parse(json);
+            return Ok(new
+            {
+                id = requestId,
+                type = r["type"]?.ToString(),
+                is4k = r["is4k"]?.Value<bool?>() ?? false,
+                status = r["status"]?.Value<int?>(),
+                serverId = r["serverId"]?.Value<int?>(),
+                profileId = r["profileId"]?.Value<int?>(),
+                rootFolder = r["rootFolder"]?.ToString(),
+                languageProfileId = r["languageProfileId"]?.Value<int?>(),
+                tags = (r["tags"] as JArray)?.Select(t => t.Value<int>()).ToArray() ?? Array.Empty<int>(),
+                userId = r["requestedBy"]?["id"]?.Value<int?>(),
+                seasons = (r["seasons"] as JArray)?.Select(x => x["seasonNumber"]?.Value<int>() ?? 0).ToArray() ?? Array.Empty<int>()
+            });
+        }
+
         [HttpPost("arr/requests/{requestId}/approve")]
         [HttpPost("arr/requests/{requestId}/decline")]
         [Authorize]
@@ -13192,39 +13250,80 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             var action = HttpContext.Request.Path.Value?.Contains("/approve", StringComparison.OrdinalIgnoreCase) == true ? "approve" : "decline";
 
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
-                return StatusCode(503, new { error = true, message = "Seerr not configured." });
+            var (ctx, denied) = await ResolveRequestManagerAsync();
+            if (denied != null) return denied;
 
-            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
-            if (string.IsNullOrEmpty(jellyfinUserId))
-                return BadRequest(new { message = "Jellyfin User ID not found." });
-
-            var jellyseerrUser = await GetJellyseerrUser(jellyfinUserId);
-            if (jellyseerrUser == null)
-                return NotFound(new { message = "Current user is not linked to a Seerr account." });
-
-            bool canApprove = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
-                jellyseerrUser.Permissions,
-                JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
-            );
-            if (!canApprove)
-                return StatusCode(403, new { error = true, message = "You do not have permission to approve or decline requests." });
-
-            var jellyseerrUrl = config.JellyseerrUrls
-                .Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(u => u.Trim().TrimEnd('/'))
-                .FirstOrDefault(u => !string.IsNullOrWhiteSpace(u));
-
-            if (string.IsNullOrEmpty(jellyseerrUrl))
-                return StatusCode(503, new { error = true, message = "No valid Seerr URL configured." });
-
-            var requestUri = $"{jellyseerrUrl}/api/v1/request/{requestId}/{action}";
             var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+
+            // Approving with options: Seerr takes them through "edit request" (PUT), which replaces the server, profile,
+            // folder and tags wholesale, so the current values are read first and only what was sent is changed.
+            JObject? options = null;
+            if (action == "approve" && (Request.ContentLength ?? 0) > 0)
+            {
+                try
+                {
+                    using var reader = new StreamReader(Request.Body);
+                    var raw = await reader.ReadToEndAsync();
+                    if (!string.IsNullOrWhiteSpace(raw)) options = JObject.Parse(raw);
+                }
+                catch (Exception ex) when (ex is Newtonsoft.Json.JsonException)
+                {
+                    return BadRequest(new { error = true, message = "Invalid request options." });
+                }
+            }
+
+            if (options != null && options.HasValues)
+            {
+                var requestUri = $"{ctx!.Url}/api/v1/request/{requestId}";
+                JObject current;
+                using (var getRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, ctx.ApiKey, ctx.SeerrUserId.ToString()))
+                using (var getResponse = await client.SendAsync(getRequest))
+                {
+                    var (json, getError) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(getResponse, requestUri);
+                    if (getError != null || json == null)
+                    {
+                        _logger.Warning($"Seerr read request {requestId} before approving failed: {getError?.Code} {getError?.HttpStatus}");
+                        return StatusCode(getError?.HttpStatus > 0 ? getError.HttpStatus : 502,
+                            getError == null ? new { error = true, message = "Seerr returned no request." } : (IsAdminUser() ? getError.ToAdminResponseShape() : getError.ToResponseShape()));
+                    }
+                    current = JObject.Parse(json);
+                }
+
+                // Request as: only an administrator may hand a request to someone else.
+                var userId = options["userId"]?.Value<int?>() ?? current["requestedBy"]?["id"]?.Value<int?>();
+                if (userId != current["requestedBy"]?["id"]?.Value<int?>() && !IsAdminUser())
+                    return StatusCode(403, new { error = true, message = "Only administrators can change who a request is for." });
+
+                var edit = new JObject
+                {
+                    ["serverId"] = options["serverId"] ?? current["serverId"],
+                    ["profileId"] = options["profileId"] ?? current["profileId"],
+                    ["rootFolder"] = options["rootFolder"] ?? current["rootFolder"],
+                    ["tags"] = options["tags"] ?? current["tags"] ?? new JArray(),
+                    ["userId"] = userId
+                };
+                if (string.Equals(current["type"]?.ToString(), "tv", StringComparison.OrdinalIgnoreCase))
+                {
+                    edit["languageProfileId"] = options["languageProfileId"] ?? current["languageProfileId"];
+                    edit["seasons"] = new JArray(((current["seasons"] as JArray) ?? new JArray()).Select(x => x["seasonNumber"]?.Value<int>() ?? 0));
+                }
+
+                using var putRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Put, requestUri, ctx.ApiKey, ctx.SeerrUserId.ToString(), edit.ToString(Newtonsoft.Json.Formatting.None));
+                using var putResponse = await client.SendAsync(putRequest);
+                var (_, putError) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(putResponse, requestUri);
+                if (putError != null)
+                {
+                    _logger.Warning($"Seerr edit request {requestId} before approving failed: {putError.Code} {putError.HttpStatus}");
+                    return StatusCode(putError.HttpStatus > 0 ? putError.HttpStatus : 502,
+                        IsAdminUser() ? putError.ToAdminResponseShape() : putError.ToResponseShape());
+                }
+            }
+
+            var actionUri = $"{ctx!.Url}/api/v1/request/{requestId}/{action}";
             using var httpRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                HttpMethod.Post, requestUri, config.JellyseerrApiKey, jellyseerrUser.Id.ToString());
+                HttpMethod.Post, actionUri, ctx.ApiKey, ctx.SeerrUserId.ToString());
             using var response = await client.SendAsync(httpRequest);
-            var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+            var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, actionUri);
 
             if (error != null)
             {
@@ -13234,6 +13333,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return Ok(new { success = true });
+        }
+
+        private sealed record RequestManagerContext(string Url, string ApiKey, int SeerrUserId);
+
+        /// <summary>The Seerr address, API key and linked account for a caller who may approve and edit requests, or the refusal to return.</summary>
+        private async Task<(RequestManagerContext? Context, IActionResult? Denied)> ResolveRequestManagerAsync()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+                return (null, StatusCode(503, new { error = true, message = "Seerr not configured." }));
+
+            var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(jellyfinUserId))
+                return (null, BadRequest(new { message = "Jellyfin User ID not found." }));
+
+            var jellyseerrUser = await GetJellyseerrUser(jellyfinUserId);
+            if (jellyseerrUser == null)
+                return (null, NotFound(new { message = "Current user is not linked to a Seerr account." }));
+
+            bool canApprove = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
+                jellyseerrUser.Permissions,
+                JellyseerrPermission.ADMIN | JellyseerrPermission.MANAGE_REQUESTS
+            );
+            if (!canApprove)
+                return (null, StatusCode(403, new { error = true, message = "You do not have permission to approve or decline requests." }));
+
+            var jellyseerrUrl = config.JellyseerrUrls
+                .Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(u => u.Trim().TrimEnd('/'))
+                .FirstOrDefault(u => !string.IsNullOrWhiteSpace(u));
+            if (string.IsNullOrEmpty(jellyseerrUrl))
+                return (null, StatusCode(503, new { error = true, message = "No valid Seerr URL configured." }));
+
+            return (new RequestManagerContext(jellyseerrUrl, config.JellyseerrApiKey, jellyseerrUser.Id), null);
         }
 
         /// <summary>

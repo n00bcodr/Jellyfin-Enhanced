@@ -1363,8 +1363,8 @@
         'seerr': {
             needed: (route) => !!(JE.pluginConfig || {}).JellyseerrEnabled && isSeerrRoute(route),
             // Opened from outside its own pages: Home Screen Sections' discover
-            // cards and Hidden Content lists (More Info), the Requests page (issues).
-            exports: ['jellyseerrMoreInfo.open', 'jellyseerrIssueReporter.showReportModal']
+            // cards and Hidden Content lists (More Info), the Requests page (issues, approving with options).
+            exports: ['jellyseerrMoreInfo.open', 'jellyseerrIssueReporter.showReportModal', 'jellyseerrModal.ensureLoaded']
         },
         'recommendations': { needed: pageRule('recommendations') },
         'requests-page': { needed: pageRule('requests-page') },

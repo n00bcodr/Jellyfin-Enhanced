@@ -431,6 +431,14 @@
         return;
       }
 
+      const optionsBtn = e.target.closest('.je-request-options-btn');
+      if (optionsBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        P.handleApproveWithOptions(optionsBtn);
+        return;
+      }
+
       const declineBtn = e.target.closest('.je-request-decline-btn');
       if (declineBtn) {
         e.preventDefault();

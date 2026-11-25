@@ -277,6 +277,17 @@
     };
 
     /**
+     * Whether Seerr approves this user's request for the given type on its own, by their permissions.
+     * False while the status has not loaded or does not say.
+     * @param {'movie'|'tv'} mediaType
+     * @param {boolean} [is4k]
+     * @returns {boolean}
+     */
+    api.willAutoApprove = function(mediaType, is4k) {
+        return cachedUserStatus?.autoApprove?.[`${mediaType === 'tv' ? 'tv' : 'movie'}${is4k ? '4k' : ''}`] === true;
+    };
+
+    /**
      * Clears the cached user status (called when user logs out or on page refresh).
      * Now also wired to navigation/hashchange so transient SPA-session blips
      * don't outlive the page they happened on.
@@ -783,6 +794,18 @@
      * @param {string} mediaType - 'movie' for Radarr, 'tv' for Sonarr.
      * @returns {Promise<{servers: Array, tags: Array}>}
      */
+    // The Seerr users a request can be made for ("Request as"): administrators only, as listing every user is theirs alone.
+    async function fetchRequestableUsers() {
+        if (!JE.helpers?.isAdmin?.()) return [];
+        try {
+            const res = await get('/user?take=1000');
+            return (res?.results || []).map(u => ({ id: u.id, displayName: u.displayName, username: u.username, jellyfinUserId: u.jellyfinUserId, avatar: u.avatar }));
+        } catch (error) {
+            console.debug(`${logPrefix} Could not list Seerr users for "Request as":`, error);
+            return [];
+        }
+    }
+
     api.fetchAdvancedRequestData = async function(mediaType) {
         const serverType = mediaType === 'movie' ? 'radarr' : 'sonarr';
         try {
@@ -798,15 +821,16 @@
                             return {
                                 ...server,
                                 qualityProfiles: details.profiles || [],
-                                rootFolders: details.rootFolders || []
+                                rootFolders: details.rootFolders || [],
+                                tags: details.tags || []
                             };
                         } catch (e) {
                             console.error(`${logPrefix} Could not fetch details for ${serverType} server ID ${server.id}:`, e);
-                            return { ...server, qualityProfiles: [], rootFolders: [] };
+                            return { ...server, qualityProfiles: [], rootFolders: [], tags: [] };
                         }
                     })
             );
-            return { servers: validServers, tags: [] };
+            return { servers: validServers, tags: [], users: await fetchRequestableUsers(), currentUserId: parseInt(cachedUserStatus?.jellyseerrUserId) || null };
         } catch (error) {
             console.error(`${logPrefix} Failed to fetch ${serverType} servers:`, error);
             return { servers: [], tags: [] };

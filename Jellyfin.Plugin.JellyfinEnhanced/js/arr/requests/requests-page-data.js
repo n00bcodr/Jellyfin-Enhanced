@@ -416,6 +416,70 @@
   }
 
   /**
+   * Opens the request dialog's advanced options (server, quality profile, root folder, tags and, for
+   * administrators, who the request is for) filled with what the request asks for now, then approves
+   * with the choices made. The plugin edits the request in Seerr first, as Seerr's own "Edit request" does.
+   * @param {HTMLButtonElement} btn - The clicked button (carries data-request-id and data-request-title).
+   */
+  async function handleApproveWithOptions(btn) {
+    const requestId = btn.getAttribute('data-request-id');
+    if (!requestId || btn.disabled || !JE.jellyseerrAPI) return;
+
+    btn.disabled = true;
+    try {
+      // The dialogs are part of the Seerr group, which this page does not load: this loads it on first use.
+      await JE.jellyseerrModal?.ensureLoaded?.();
+      const { create, createAdvancedOptionsHTML, populateAdvancedOptions, readAdvancedOptions } = JE.jellyseerrModal;
+      const current = await JE.core.api.plugin(`/arr/requests/${requestId}/options`);
+      const mediaType = current.type === 'tv' ? 'tv' : 'movie';
+      const showUser = JE.helpers.isAdmin();
+      const modalInstance = create({
+        title: JE.t?.('requests_approve_with_options') || 'Approve with options',
+        subtitle: btn.getAttribute('data-request-title') || '',
+        bodyHtml: createAdvancedOptionsHTML('req', { showUser }),
+        buttonText: JE.t?.('requests_approve') || 'Approve',
+        onSave: async (modalEl, saveBtn, closeFn) => {
+          const settings = readAdvancedOptions(modalEl, 'req');
+          if (!settings) {
+            JE.toast?.(JE.t?.('jellyseerr_modal_toast_options_missing'), 3000);
+            return;
+          }
+          saveBtn.disabled = true;
+          try {
+            // skipRetry: approving is not idempotent — never auto-repeat it.
+            await JE.core.api.plugin(`/arr/requests/${requestId}/approve`, {
+              method: 'POST',
+              body: settings,
+              skipRetry: true,
+            });
+            closeFn();
+            await fetchRequests();
+            renderPage();
+          } catch (err) {
+            console.error(`${logPrefix} Failed to approve request ${requestId} with options:`, err);
+            saveBtn.disabled = false;
+            JE.toast?.(JE.escapeHtml(err?.message || JE.t?.('jellyseerr_err_load_server_options') || 'Could not approve the request'), 4000);
+          }
+        },
+      });
+      modalInstance.show();
+      const advanced = await JE.jellyseerrAPI.fetchAdvancedRequestData(mediaType);
+      populateAdvancedOptions(modalInstance.modalElement, advanced, 'req', !!current.is4k, {
+        serverId: current.serverId ?? undefined,
+        profileId: current.profileId ?? undefined,
+        rootFolder: current.rootFolder || undefined,
+        tags: current.tags,
+        userId: current.userId ?? undefined,
+      });
+    } catch (err) {
+      console.error(`${logPrefix} Could not open approve options for request ${requestId}:`, err);
+      JE.toast?.(JE.escapeHtml(JE.t?.('jellyseerr_err_load_server_options') || 'Could not load the request options'), 4000);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /**
    * Asks for confirmation with Jellyfin's own dialog, falling back to window.confirm
    * on clients that do not expose Dashboard.confirm.
    * @param {string} text - The question.
@@ -483,5 +547,6 @@
   P.getIssueTmdbId = getIssueTmdbId;
   P.loadAllData = loadAllData;
   P.handleRequestAction = handleRequestAction;
+  P.handleApproveWithOptions = handleApproveWithOptions;
   P.handleRemoveRequest = handleRemoveRequest;
 })();

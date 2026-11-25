@@ -286,7 +286,7 @@
      * @param {string} idPrefix - A prefix ('movie' or 'tv') to ensure unique element IDs.
      * @returns {string} - The HTML content for the form.
      */
-    modal.createAdvancedOptionsHTML = function(idPrefix) {
+    modal.createAdvancedOptionsHTML = function(idPrefix, { showUser = false } = {}) {
         return `
             <div class="jellyseerr-advanced-options">
                 <h3>${JE.t('jellyseerr_advanced_options')}</h3>
@@ -295,20 +295,209 @@
                         <label for="${idPrefix}-server">${JE.t('jellyseerr_server_select')}</label>
                         <select is="emby-select" id="${idPrefix}-server" class="emby-select"></select>
                     </div>
+                </div>
+                <div class="jellyseerr-form-row">
                     <div class="jellyseerr-form-group">
                         <label for="${idPrefix}-quality">${JE.t('jellyseerr_quality_select')}</label>
                         <select is="emby-select" id="${idPrefix}-quality" class="emby-select"></select>
                     </div>
-                </div>
-                <div class="jellyseerr-form-row">
                     <div class="jellyseerr-form-group">
                         <label for="${idPrefix}-folder">${JE.t('jellyseerr_folder_select')}</label>
                         <select is="emby-select" id="${idPrefix}-folder" class="emby-select"></select>
                     </div>
                 </div>
+                <div class="jellyseerr-form-row jellyseerr-tags-group" id="${idPrefix}-tags-group" hidden>
+                    <div class="jellyseerr-form-group">
+                        <label>${JE.t('jellyseerr_tags_select')}</label>
+                        <div class="jellyseerr-tag-list" id="${idPrefix}-tags" role="group"></div>
+                    </div>
+                </div>
+                ${showUser ? `<div class="jellyseerr-form-row">
+                    <div class="jellyseerr-form-group">
+                        <label for="${idPrefix}-user">${JE.t('jellyseerr_request_as')}</label>
+                        <select is="emby-select" id="${idPrefix}-user" class="emby-select"></select>
+                    </div>
+                </div>` : ''}
             </div>
         `;
     };
+
+    /**
+     * A typeable multi-select for tags, like Seerr's: the chosen tags sit in the field as removable chips, typing
+     * narrows the list below, Enter or a click adds one, Backspace on an empty box removes the last. The chosen
+     * chips carry `.selected` and `data-tag-id`, which readAdvancedOptions reads.
+     */
+    function buildTagPicker(box, tags, selectedIds) {
+        box.textContent = '';
+        box.classList.add('jellyseerr-tag-picker');
+        const chosen = new Set(selectedIds.filter(id => tags.some(t => t.id === id)));
+        const field = document.createElement('div');
+        field.className = 'jellyseerr-tag-field';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'jellyseerr-tag-input';
+        input.placeholder = JE.t('jellyseerr_tags_placeholder');
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-expanded', 'false');
+        input.autocomplete = 'off';
+        const list = document.createElement('div');
+        list.className = 'jellyseerr-tag-options';
+        list.setAttribute('role', 'listbox');
+        list.hidden = true;
+        let active = 0;
+
+        const available = () => {
+            const q = input.value.trim().toLowerCase();
+            return tags.filter(t => !chosen.has(t.id) && (!q || String(t.label).toLowerCase().includes(q)));
+        };
+        const closeList = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); };
+        const renderChips = () => {
+            field.querySelectorAll('.jellyseerr-tag-chip').forEach(c => c.remove());
+            tags.filter(t => chosen.has(t.id)).forEach(tag => {
+                const chip = document.createElement('span');
+                chip.className = 'jellyseerr-tag-chip selected';
+                chip.dataset.tagId = tag.id;
+                chip.append(document.createTextNode(tag.label));
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'jellyseerr-tag-remove';
+                remove.setAttribute('aria-label', `${JE.t('jellyseerr_tags_remove')} ${tag.label}`);
+                remove.textContent = '×';
+                remove.addEventListener('click', e => { e.stopPropagation(); chosen.delete(tag.id); renderChips(); renderList(); });
+                chip.appendChild(remove);
+                field.insertBefore(chip, input);
+            });
+        };
+        const add = tag => { chosen.add(tag.id); input.value = ''; active = 0; renderChips(); renderList(); input.focus(); };
+        const renderList = () => {
+            list.textContent = '';
+            const items = available();
+            if (!items.length) { closeList(); return; }
+            active = Math.min(active, items.length - 1);
+            items.forEach((tag, i) => {
+                const option = document.createElement('div');
+                option.className = 'jellyseerr-tag-option' + (i === active ? ' active' : '');
+                option.setAttribute('role', 'option');
+                option.textContent = tag.label;
+                // mousedown, so the input keeps focus and the list does not close first.
+                option.addEventListener('mousedown', e => { e.preventDefault(); add(tag); });
+                list.appendChild(option);
+            });
+            list.hidden = false;
+            input.setAttribute('aria-expanded', 'true');
+            list.scrollIntoView({ block: 'nearest' });
+        };
+
+        input.addEventListener('input', () => { active = 0; renderList(); });
+        input.addEventListener('focus', renderList);
+        input.addEventListener('blur', closeList);
+        input.addEventListener('keydown', e => {
+            const items = available();
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (list.hidden) { renderList(); return; }
+                active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+                renderList();
+                list.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'Enter') {
+                if (!list.hidden && items[active]) { e.preventDefault(); e.stopPropagation(); add(items[active]); }
+            } else if (e.key === 'Escape' && !list.hidden) {
+                e.stopPropagation();
+                closeList();
+            } else if (e.key === 'Backspace' && !input.value && chosen.size) {
+                chosen.delete([...chosen].pop());
+                renderChips();
+                renderList();
+            }
+        });
+        field.addEventListener('click', () => input.focus());
+        field.appendChild(input);
+        box.append(field, list);
+        renderChips();
+    }
+
+    function userLabel(user) {
+        return user.displayName || user.username || `User ${user.id}`;
+    }
+
+    /** A round avatar: the user's Jellyfin picture, or their initial when there is none. */
+    function userAvatar(user) {
+        const wrap = document.createElement('span');
+        wrap.className = 'jellyseerr-user-avatar';
+        wrap.textContent = userLabel(user).trim().charAt(0).toUpperCase();
+        // The Jellyfin picture first, then Seerr's own avatar; the initial stays when neither loads.
+        const sources = [];
+        if (user.jellyfinUserId && window.ApiClient?.getUrl) {
+            sources.push(window.ApiClient.getUrl(`Users/${user.jellyfinUserId}/Images/Primary`, { maxHeight: 64, quality: 90 }));
+        }
+        const seerrBase = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl?.();
+        if (user.avatar && seerrBase) sources.push(/^https?:/i.test(user.avatar) ? user.avatar : `${seerrBase.replace(/\/$/, '')}${user.avatar}`);
+        const tryNext = () => {
+            const src = sources.shift();
+            if (!src) return;
+            const img = new Image();
+            img.alt = '';
+            img.addEventListener('load', () => { wrap.textContent = ''; wrap.appendChild(img); });
+            img.addEventListener('error', tryNext);
+            img.src = src;
+        };
+        tryNext();
+        return wrap;
+    }
+
+    /**
+     * Replaces the "Request as" select with a list that shows each person's picture next to their name. The
+     * select stays, hidden, as the value the form reads.
+     */
+    function buildUserPicker(select, users) {
+        select.style.display = 'none';
+        select.parentElement.querySelector('.jellyseerr-user-picker')?.remove();
+        const picker = document.createElement('div');
+        picker.className = 'jellyseerr-user-picker';
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'jellyseerr-user-toggle';
+        toggle.setAttribute('aria-haspopup', 'listbox');
+        toggle.setAttribute('aria-expanded', 'false');
+        const list = document.createElement('div');
+        list.className = 'jellyseerr-user-list';
+        list.setAttribute('role', 'listbox');
+        list.hidden = true;
+
+        const byId = new Map(users.map(u => [String(u.id), u]));
+        const close = () => { list.hidden = true; toggle.setAttribute('aria-expanded', 'false'); };
+        const renderToggle = () => {
+            toggle.textContent = '';
+            const user = byId.get(select.value);
+            if (!user) return;
+            const name = document.createElement('span');
+            name.textContent = userLabel(user);
+            toggle.append(userAvatar(user), name);
+        };
+        users.forEach(user => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'jellyseerr-user-item';
+            item.setAttribute('role', 'option');
+            const name = document.createElement('span');
+            name.textContent = userLabel(user);
+            item.append(userAvatar(user), name);
+            item.addEventListener('click', () => { select.value = String(user.id); renderToggle(); close(); toggle.focus(); });
+            list.appendChild(item);
+        });
+        toggle.addEventListener('click', () => {
+            list.hidden = !list.hidden;
+            toggle.setAttribute('aria-expanded', String(!list.hidden));
+            if (!list.hidden) (list.querySelector(`.jellyseerr-user-item:nth-child(${select.selectedIndex + 1})`) || list.firstElementChild)?.focus();
+            if (!list.hidden) list.scrollIntoView({ block: 'nearest' });
+        });
+        picker.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && !list.hidden) { e.stopPropagation(); close(); toggle.focus(); }
+        });
+        renderToggle();
+        picker.append(toggle, list);
+        select.after(picker);
+    }
 
     /**
      * Populates the select dropdowns in the advanced options form.
@@ -319,8 +508,11 @@
      *   server whose `is4k` matches is auto-selected -- Seerr flags one regular
      *   AND one 4K instance as `isDefault: true` each, so without this the last
      *   `isDefault` instance processed always wins regardless of request mode.
+     * @param {{serverId?: number, profileId?: number, rootFolder?: string, tags?: number[], userId?: number}} [preset]
+     *   Values to start from instead of the server defaults (editing an existing request).
+     *   `data.users` fills the "Request as" list when the form has one.
      */
-    modal.populateAdvancedOptions = function(modalElement, data, idPrefix, is4k) {
+    modal.populateAdvancedOptions = function(modalElement, data, idPrefix, is4k, preset) {
         // Use a timer to ensure emby-select elements are ready
         let attempts = 0;
         const maxAttempts = 50; // 5 seconds
@@ -346,11 +538,35 @@
                     const option = document.createElement('option');
                     option.value = server.id;
                     option.textContent = server.name || `Server ${server.id}`;
-                    if (server.isDefault && (is4k === undefined || !!server.is4k === !!is4k)) {
+                    if (preset?.serverId != null ? server.id === preset.serverId : (server.isDefault && (is4k === undefined || !!server.is4k === !!is4k))) {
                         option.selected = true;
                     }
                     serverSelect.appendChild(option);
                 });
+
+                const userSelect = modalElement.querySelector(`#${idPrefix}-user`);
+                if (userSelect) {
+                    userSelect.innerHTML = '';
+                    (data.users || []).forEach(user => {
+                        const option = document.createElement('option');
+                        option.value = user.id;
+                        option.textContent = userLabel(user);
+                        if (preset?.userId != null ? user.id === preset.userId : user.id === data.currentUserId) option.selected = true;
+                        userSelect.appendChild(option);
+                    });
+                    buildUserPicker(userSelect, data.users || []);
+                }
+
+                let usePreset = !!preset;
+                const tagsGroup = modalElement.querySelector(`#${idPrefix}-tags-group`);
+                const tagsList = modalElement.querySelector(`#${idPrefix}-tags`);
+
+                function renderTags(selectedServer, selectedIds) {
+                    if (!tagsGroup || !tagsList) return;
+                    const tags = selectedServer?.tags || [];
+                    tagsGroup.hidden = tags.length === 0;
+                    buildTagPicker(tagsList, tags, selectedIds);
+                }
 
                 function updateServerDependentOptions() {
                     const selectedServer = data.servers.find(s => s.id == serverSelect.value);
@@ -362,16 +578,18 @@
                         const option = document.createElement('option');
                         option.value = profile.id;
                         option.textContent = profile.name || `Profile ${profile.id}`;
-                        if (profile.id === selectedServer.activeProfileId) option.selected = true;
+                        if (usePreset && preset.profileId != null ? profile.id === preset.profileId : profile.id === selectedServer.activeProfileId) option.selected = true;
                         qualitySelect.appendChild(option);
                     });
                     selectedServer.rootFolders.forEach(folder => {
                         const option = document.createElement('option');
                         option.value = folder.path;
                         option.textContent = formatFolderLabel(folder);
-                        if (folder.path === selectedServer.activeDirectory) option.selected = true;
+                        if (usePreset && preset.rootFolder ? folder.path === preset.rootFolder : folder.path === selectedServer.activeDirectory) option.selected = true;
                         folderSelect.appendChild(option);
                     });
+                    renderTags(selectedServer, usePreset && preset.tags ? preset.tags : (selectedServer.activeTags || []));
+                    usePreset = false;
                 }
 
                 serverSelect.addEventListener('change', updateServerDependentOptions);
@@ -388,6 +606,44 @@
                 }
             }
         }, 100);
+    };
+
+    /**
+     * Reads the advanced options form back into the settings a request takes.
+     * @param {HTMLElement} modalElement - The root element of the modal.
+     * @param {string} idPrefix - The prefix used when the form was created.
+     * @returns {{serverId: number, profileId: number, rootFolder: string, tags: number[], userId?: number}|null}
+     *   Null while the server, quality profile or root folder is still unchosen.
+     */
+    modal.readAdvancedOptions = function(modalElement, idPrefix) {
+        const server = modalElement.querySelector(`#${idPrefix}-server`)?.value;
+        const quality = modalElement.querySelector(`#${idPrefix}-quality`)?.value;
+        const folder = modalElement.querySelector(`#${idPrefix}-folder`)?.value;
+        if (!server || !quality || !folder) return null;
+        const settings = {
+            serverId: parseInt(server),
+            profileId: parseInt(quality),
+            rootFolder: folder,
+            tags: Array.from(modalElement.querySelectorAll(`#${idPrefix}-tags .jellyseerr-tag-chip.selected`)).map(c => parseInt(c.dataset.tagId))
+        };
+        const user = modalElement.querySelector(`#${idPrefix}-user`)?.value;
+        if (user) settings.userId = parseInt(user);
+        return settings;
+    };
+
+    // Callers outside the Seerr pages await this first: before the group loads it is a stand-in that loads it.
+    modal.ensureLoaded = function() { return Promise.resolve(); };
+
+    /**
+     * The note a request dialog shows when Seerr approves the request on its own, like Seerr's own dialog.
+     * Nothing is shown otherwise: a request waiting for approval is what people expect.
+     * @param {'movie'|'tv'} mediaType
+     * @param {boolean} [is4k]
+     * @returns {string} HTML, empty when the request will not be approved automatically or this is not known.
+     */
+    modal.autoApproveNoticeHTML = function(mediaType, is4k) {
+        if (!JE.jellyseerrAPI?.willAutoApprove?.(mediaType, !!is4k)) return '';
+        return `<div class="jellyseerr-auto-approve"><span class="material-icons" aria-hidden="true">check_circle</span><span>${escapeHtml(JE.t('jellyseerr_auto_approve_notice'))}</span></div>`;
     };
 
     // Expose the modal module on the global JE object

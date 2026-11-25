@@ -260,7 +260,7 @@ async function seasonModal(t, { tvDetails, partial = true, specials = true, post
     fetchTvShowDetails: async () => tvDetails, fetchSonarrLookup: async () => [], fetchUserQuota: async () => null, fetchTvSeasonDetails: async () => ({}),
     followUpOptions: details => (details?.jeSpoilerGuard ? { skipCache: true } : undefined), ...api });
   let modal;
-  h.JE.jellyseerrModal = { createAdvancedOptionsHTML: () => '', populateAdvancedOptions() {}, create(o) {
+  h.JE.jellyseerrModal = { createAdvancedOptionsHTML: () => '', autoApproveNoticeHTML: () => '', populateAdvancedOptions() {}, create(o) {
     const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`;
     h.document.body.append(el); modal = { el, o }; return { modalElement: el, show() {} }; } };
   await h.JE.jellyseerrUI.showSeasonSelectionModal(42, 'tv', 'Show', null, false);
@@ -401,7 +401,8 @@ function requestModals(t, options) {
   const values = { 'movie-server': 2, 'movie-quality': 5, 'movie-folder': '/movies' };
   const select = id => `<select id="${id}"><option value=""></option><option value="${values[id]}">x</option></select>`;
   let current;
-  h.JE.jellyseerrModal = { createAdvancedOptionsHTML: () => ['movie-server', 'movie-quality', 'movie-folder'].map(select).join(''), populateAdvancedOptions() {},
+  h.JE.jellyseerrModal = { autoApproveNoticeHTML: () => '', createAdvancedOptionsHTML: () => ['movie-server', 'movie-quality', 'movie-folder'].map(select).join(''), populateAdvancedOptions() {},
+    readAdvancedOptions(el, p) { const [server, quality, folder] = ['server', 'quality', 'folder'].map(k => el.querySelector(`#${p}-${k}`).value); return server && quality && folder ? { serverId: parseInt(server), profileId: parseInt(quality), rootFolder: folder, tags: [] } : null; },
     create(o) { const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`; h.document.body.append(el); current = { el, o }; return { modalElement: el, show() {} }; } };
   h.requestBtn = h.document.createElement('button');
   h.modal = () => current.el;

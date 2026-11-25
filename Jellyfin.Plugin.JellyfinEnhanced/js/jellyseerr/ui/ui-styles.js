@@ -322,6 +322,8 @@
             .jellyseerr-season-title { position: relative; font-size: 0.92rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.4rem; color: #8b9bff; text-shadow: 0 0 14px rgba(99, 102, 241, 0.55); }
             .jellyseerr-season-subtitle { position: relative; font-size: 1.65rem; line-height: 1.15; color: #fff; font-weight: 700; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); }
             .jellyseerr-modal-body { padding: 24px; overflow-y: auto; }
+            .jellyseerr-auto-approve { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 10px 14px; border-radius: 10px; font-size: 0.9rem; background: rgba(76, 175, 80, 0.14); border: 1px solid rgba(76, 175, 80, 0.4); color: #c8e6c9; }
+            .jellyseerr-auto-approve .material-icons { font-size: 20px; color: #4caf50; }
             .jellyseerr-advanced-options { margin-top: 1.25em; padding-top: 1.1em; border-top: 1px solid rgba(148, 163, 184, 0.14); }
             .jellyseerr-advanced-options h3 { margin: 0 0 0.9rem; font-size: 0.9rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #94a3b8; }
             .jellyseerr-form-row { display: flex; gap: 1em; margin-bottom: 1em; }
@@ -333,6 +335,27 @@
             /* Option list: themes colour it differently (and often garishly), so pin it */
             .jellyseerr-advanced-options select[is="emby-select"] option { background-color: #111a2e !important; color: #e2e8f0 !important; padding: 10px 14px; }
             .jellyseerr-advanced-options select[is="emby-select"] option:checked { background-color: #4f46e5 !important; background-image: linear-gradient(135deg, #4f46e5, #7c3aed) !important; color: #fff !important; }
+            .jellyseerr-user-picker { width: 100%; }
+            .jellyseerr-user-toggle, .jellyseerr-user-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; box-sizing: border-box; padding: 0 14px; border-radius: 10px; border: 1px solid rgba(71, 85, 105, 0.55); background: rgba(15, 23, 42, 0.6); color: #e2e8f0; font: inherit; text-align: left; cursor: pointer; }
+            .jellyseerr-user-toggle:hover, .jellyseerr-user-toggle:focus-visible { border-color: rgba(129, 140, 248, 0.55); outline: none; }
+            .jellyseerr-user-list { margin-top: 4px; max-height: 200px; overflow-y: auto; border-radius: 10px; background: #111a2e; border: 1px solid rgba(71, 85, 105, 0.55); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+            .jellyseerr-user-list[hidden] { display: none; }
+            .jellyseerr-user-item { border: none; border-radius: 0; background: transparent; }
+            .jellyseerr-user-item:hover, .jellyseerr-user-item:focus-visible { background: #4f46e5; outline: none; }
+            .jellyseerr-user-avatar { flex: none; width: 28px; height: 28px; border-radius: 50%; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; background: rgba(148, 163, 184, 0.3); font-size: 0.8rem; font-weight: 700; }
+            .jellyseerr-user-avatar img { width: 100%; height: 100%; object-fit: cover; }
+            .jellyseerr-advanced-options .jellyseerr-tags-group[hidden] { display: none; }
+            .jellyseerr-tag-picker { width: 100%; }
+            .jellyseerr-tag-field { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 44px; box-sizing: border-box; padding: 5px 10px; border-radius: 10px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(71, 85, 105, 0.55); cursor: text; }
+            .jellyseerr-tag-field:focus-within { border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25); }
+            .jellyseerr-tag-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border-radius: 999px; font-size: 0.85rem; background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff; }
+            .jellyseerr-tag-remove { border: none; background: transparent; color: inherit; font-size: 1.1rem; line-height: 1; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; padding: 0; }
+            .jellyseerr-tag-remove:hover, .jellyseerr-tag-remove:focus-visible { background: rgba(255,255,255,0.25); outline: none; }
+            .jellyseerr-tag-input { flex: 1 1 120px; min-width: 80px; border: none !important; outline: none !important; box-shadow: none !important; background: transparent !important; color: #e2e8f0; font: inherit; padding: 4px 0 !important; }
+            .jellyseerr-tag-options { margin-top: 4px; max-height: 200px; overflow-y: auto; border-radius: 10px; background: #111a2e; border: 1px solid rgba(71, 85, 105, 0.55); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+            .jellyseerr-tag-options[hidden] { display: none; }
+            .jellyseerr-tag-option { padding: 10px 14px; cursor: pointer; color: #e2e8f0; }
+            .jellyseerr-tag-option:hover, .jellyseerr-tag-option.active { background: #4f46e5; }
             .jellyseerr-advanced-options select[is="emby-select"] option[value=""] { color: #94a3b8 !important; }
             .jellyseerr-form-group { flex: 1; }
             .jellyseerr-form-group label { display: block; margin-bottom: 0.5em; font-weight: 600; color: #e2e8f0; }

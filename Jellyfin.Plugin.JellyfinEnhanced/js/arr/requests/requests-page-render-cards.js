@@ -102,7 +102,12 @@
     // "Partially Available"/"Available" and would otherwise hide the buttons,
     // making the request impossible to approve from the UI.
     if (state.canApproveRequests && item.requestStatus === 1 && item.id) {
+      const optionsLabel = JE.t?.("requests_approve_with_options") || "Approve with options";
+      const optionsBtn = JE.pluginConfig?.JellyseerrEnabled !== false && item.type !== 'collection'
+        ? `<button class="je-request-options-btn" data-request-id="${escapeHtml(String(item.id))}" data-request-title="${escapeHtml(item.title || "")}" title="${escapeHtml(optionsLabel)}" aria-label="${escapeHtml(optionsLabel)}"><span class="material-icons">tune</span></button>`
+        : "";
       approvalButtons = `
+        ${optionsBtn}
         <button class="je-request-approve-btn" data-request-id="${escapeHtml(String(item.id))}" title="Approve"><span class="material-icons">check</span></button>
         <button class="je-request-decline-btn" data-request-id="${escapeHtml(String(item.id))}" title="Decline"><span class="material-icons">close</span></button>
       `;
