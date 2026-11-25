@@ -290,9 +290,8 @@
     }
     function installLongPress() {
       const onVideoPage = (name) => (event) => {
-        if (!JE.isVideoPage()) return;
+        if (!JE.isVideoPage() && name !== "handleLongPressUp" && name !== "handleLongPressCancel") return;
         if (event.isTrusted === false) return;
-        if (event.target instanceof Element && event.target.closest(".osdControls, .pause-screen-active, .jellyfin-enhanced-panel")) return;
         JE[name]?.(event);
       };
       document.addEventListener("mousedown", onVideoPage("handleLongPressDown"), true);
@@ -300,8 +299,8 @@
       document.addEventListener("mousemove", onVideoPage("handleLongPressMove"), true);
       document.addEventListener("click", onVideoPage("handleLongPressClick"), true);
       document.addEventListener("mouseleave", onVideoPage("handleLongPressCancel"), true);
-      document.addEventListener("touchstart", onVideoPage("handleLongPressDown"), { capture: true, passive: true });
-      document.addEventListener("touchmove", onVideoPage("handleLongPressMove"), { capture: true, passive: true });
+      document.addEventListener("touchstart", onVideoPage("handleLongPressDown"), { capture: true, passive: false });
+      document.addEventListener("touchmove", onVideoPage("handleLongPressMove"), { capture: true, passive: false });
       document.addEventListener("touchend", onVideoPage("handleLongPressUp"), { capture: true, passive: false });
       document.addEventListener("touchcancel", onVideoPage("handleLongPressCancel"), { capture: true, passive: false });
     }

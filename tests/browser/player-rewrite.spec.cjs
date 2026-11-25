@@ -28,7 +28,7 @@ test('player long press restores replaced media element at navigation without ch
  const errors=[];page.on('pageerror',e=>errors.push(e.message));await setup(page,['playback']);
  await page.evaluate(()=>{
   const JE=window.JellyfinEnhanced;JE.currentSettings.longPress2xEnabled=true;const video=document.querySelector('video');Object.defineProperty(video,'paused',{value:false});video.playbackRate=1.5;window.originalVideo=video;
-  document.addEventListener('mousedown',JE.handleLongPressDown);document.dispatchEvent(new MouseEvent('mousedown',{clientX:0,clientY:0,button:0}));
+  document.addEventListener('mousedown',JE.handleLongPressDown);video.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:0,clientY:0,button:0}));
  });
  await expect.poll(()=>page.evaluate(()=>window.originalVideo.playbackRate)).toBe(2);
  const rates=await page.evaluate(()=>{const next=document.createElement('video');next.playbackRate=0.75;window.originalVideo.replaceWith(next);window.navigateCallbacks.forEach(fn=>fn());return [window.originalVideo.playbackRate,next.playbackRate];});

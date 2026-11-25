@@ -1,7 +1,7 @@
 {
   "description": "Budget for what the plugin assembly, Jellyfin.Plugin.JellyfinEnhanced.dll, embeds (client assets, pages, tag assets). embeddedBytes: the summed length of its manifest resources as embedded (a packed one at its packed length). The DLL is these plus about 3.1 MB of code. The budget counts the resources, not the DLL file, because gate T runs with coverage and the file on disk is then the instrumented copy (0.65 MB longer); the resources are the same bytes either way. Checked by tests/backend/Api/PackedResourcesTests.cs (gate T). It is a ratchet: lowering the limit needs no reason; a history entry that raises it must give one. `limits` is always the last history entry's.",
   "limits": {
-    "embeddedBytes": 12456602
+    "embeddedBytes": 12459350
   },
   "history": [
     {
@@ -147,6 +147,17 @@
         "embeddedBytes": 12456602
       },
       "reason": "Raised by exactly what the ports add, so the headroom left before them stays as it was (1,502 bytes). The assembly embeds the changed client scripts with their minified twins and maps (others/mdblist-ratings.js, others/doesthedogdie.js, which bundles the same provider module, enhanced/config.js and contracts/bootstrap.js) and the admin page (configPage.html and Configuration/admin/sections.js with their maps: the Rating Scale control). Measured with PackedResourcesTests: 12,453,000 bytes on add28a67d (the base, the same embedded resources as 73e76050, measured by the previous sync with the limit set to 1), 12,455,100 with the ports (+2,100), from the test's own failure message on 431046055."
+    },
+    {
+      "date": "2026-11-25",
+      "change": "upstream sync: port of upstream 417c00d8 (#1094), branch sync/auto-20261125-2335",
+      "measured": {
+        "embeddedBytes": 12457848
+      },
+      "limits": {
+        "embeddedBytes": 12459350
+      },
+      "reason": "Raised by exactly what the port adds, so the headroom left before it stays as it was (1,502 bytes). The assembly embeds the changed client scripts with their minified twins and maps (enhanced/player/playback.js, enhanced/events.js, and the maps of enhanced/player/now-playing.js, playback-rating-badge.js and subtitles.js, which share the player's host types). Measured with PackedResourcesTests: 12,455,100 bytes on a808c5f3d (the base, the same embedded resources as 43104605, measured by the previous sync), 12,457,848 with the port (+2,748), from the test's own failure message on 289bd75ae."
     }
   ]
 }

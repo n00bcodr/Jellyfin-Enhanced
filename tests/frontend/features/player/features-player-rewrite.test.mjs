@@ -25,14 +25,28 @@ function clock(h) {
 test('compiled player restores original boosted element on replacement and navigation', t => {
  const h=setup(t); const c=clock(h); h.JE.currentSettings.longPress2xEnabled=true; h.load('enhanced/player/playback.js');
  Object.defineProperty(h.video,'paused',{value:false}); h.video.playbackRate=1.5;
- h.JE.handleLongPressDown({button:0,clientX:0,clientY:0}); c.advance(500); assert.equal(h.video.playbackRate,2);
+ h.JE.handleLongPressDown({button:0,clientX:0,clientY:0,target:h.video}); c.advance(500); assert.equal(h.video.playbackRate,2);
  const next=h.document.createElement('video'); h.video.replaceWith(next); next.playbackRate=0.75;
  h.navigate(); assert.equal(h.video.playbackRate,1.5); assert.equal(next.playbackRate,0.75); assert.equal(c.size(),0);
  assert.equal(h.document.querySelector('[data-speed-overlay]'),null);
 });
 test('compiled player cancels long press dragged from zero coordinates', t => {
  const h=setup(t); const c=clock(h); h.JE.currentSettings.longPress2xEnabled=true;h.load('enhanced/player/playback.js');
- h.JE.handleLongPressDown({button:0,clientX:0,clientY:0});h.JE.handleLongPressMove({clientX:20,clientY:0});c.advance(600);assert.equal(h.video.playbackRate,1);
+ Object.defineProperty(h.video,'paused',{value:false});h.JE.handleLongPressDown({button:0,clientX:0,clientY:0,target:h.video});h.JE.handleLongPressMove({clientX:20,clientY:0});c.advance(600);assert.equal(h.video.playbackRate,1);
+});
+// Upstream 417c00d8: the touch-tap claim (pointerdown) and the gesture's cancels live on the player's lifetime here,
+// so each navigation removes them and adds them again: one live listener each, still claiming a touch on the video.
+test('compiled long press keeps one live pointer listener per type across navigations', t => {
+ const h=setup(t); const live=new Map(); const add=h.document.addEventListener.bind(h.document);
+ h.document.addEventListener=(type,fn,options)=>{ const set=live.get(type)??new Set(); live.set(type,set); const entry={fn}; set.add(entry);
+  options?.signal?.addEventListener('abort',()=>set.delete(entry)); add(type,fn,options); };
+ h.JE.currentSettings.longPress2xEnabled=true; h.load('enhanced/player/playback.js');
+ Object.defineProperty(h.video,'paused',{value:false});
+ h.navigate(); h.navigate();
+ for (const type of ['pointerdown','pointermove','pointercancel','visibilitychange']) assert.equal(live.get(type)?.size,1,type);
+ let claimed=0; const down={type:'pointerdown',isTrusted:true,pointerType:'touch',target:h.video,stopImmediatePropagation(){claimed++;}};
+ for (const {fn} of live.get('pointerdown')) fn(down);
+ assert.equal(claimed,1);
 });
 test('compiled frame-step ignores metadata after account switch and retries in next account', async t => {
  const pending=deferred();let calls=0;

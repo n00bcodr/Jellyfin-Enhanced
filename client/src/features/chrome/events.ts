@@ -297,15 +297,16 @@ export function createEvents(ctx: EventsContext) {
     /**
      * Long-press 2x is a physical gesture on the player. Listeners are always
      * installed and resolve JE's press handlers per event; the player gates the
-     * press on the signed-in user's current setting (CHR-EVENTS-1).
+     * press on the signed-in user's current setting (CHR-EVENTS-1) and decides
+     * which targets it may claim. A release or cancel also reaches it off the
+     * video page, so a hold that outlives the page still restores the speed.
      */
     function installLongPress(): void {
         const onVideoPage = (name: 'handleLongPressDown' | 'handleLongPressUp' | 'handleLongPressMove' | 'handleLongPressClick' | 'handleLongPressCancel') => (event: Event): void => {
-            if (!JE.isVideoPage()) return;
+            if (!JE.isVideoPage() && name !== 'handleLongPressUp' && name !== 'handleLongPressCancel') return;
             // Synthetic events (dialog helpers replaying outside taps) neither arm nor cancel a press;
             // stopping them here would swallow them before the host's own listener.
             if (event.isTrusted === false) return;
-            if (event.target instanceof Element && event.target.closest('.osdControls, .pause-screen-active, .jellyfin-enhanced-panel')) return;
             JE[name]?.(event);
         };
         document.addEventListener('mousedown', onVideoPage('handleLongPressDown'), true);
@@ -313,8 +314,9 @@ export function createEvents(ctx: EventsContext) {
         document.addEventListener('mousemove', onVideoPage('handleLongPressMove'), true);
         document.addEventListener('click', onVideoPage('handleLongPressClick'), true);
         document.addEventListener('mouseleave', onVideoPage('handleLongPressCancel'), true);
-        document.addEventListener('touchstart', onVideoPage('handleLongPressDown'), { capture: true, passive: true });
-        document.addEventListener('touchmove', onVideoPage('handleLongPressMove'), { capture: true, passive: true });
+        // Not passive: a touch on the playing video cancels native scrolling (the player decides).
+        document.addEventListener('touchstart', onVideoPage('handleLongPressDown'), { capture: true, passive: false });
+        document.addEventListener('touchmove', onVideoPage('handleLongPressMove'), { capture: true, passive: false });
         document.addEventListener('touchend', onVideoPage('handleLongPressUp'), { capture: true, passive: false });
         document.addEventListener('touchcancel', onVideoPage('handleLongPressCancel'), { capture: true, passive: false });
     }

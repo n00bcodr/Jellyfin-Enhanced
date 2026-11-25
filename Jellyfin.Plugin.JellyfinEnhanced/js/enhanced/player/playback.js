@@ -1248,6 +1248,33 @@
     let speedOverlay = null;
     let pressStartX = null;
     let pressStartY = null;
+    let touchTarget = null;
+    let touchPointerDown = null;
+    let suppressClickUntil = 0;
+    function canStartLongPress(e) {
+      const video = getVideo2();
+      const target = e.target instanceof Element ? e.target : null;
+      return !!(JE2.currentSettings.longPress2xEnabled && video && !video.paused && target?.closest("video, .videoPlayerContainer, #videoOsdPage") && !target.closest('button, a, input, select, textarea, [role="button"], .osdControls, .headerTop, .upNextContainer, .dialogContainer, .pause-screen-active, .jellyfin-enhanced-panel'));
+    }
+    function handleLongPressPointerDown(e) {
+      suppressClickUntil = 0;
+      if (e.pointerType !== "touch" || !canStartLongPress(e)) return;
+      touchPointerDown = e;
+      e.stopImmediatePropagation();
+    }
+    const physical = (handler, videoPage = true) => (e) => {
+      if (e.isTrusted !== false && (!videoPage || JE2.isVideoPage())) handler(e);
+    };
+    function listen() {
+      const { signal } = lifetime2.lease();
+      document.addEventListener("pointerdown", physical(handleLongPressPointerDown), { capture: true, signal });
+      document.addEventListener("pointermove", physical((e) => JE2.handleLongPressMove(e)), { capture: true, signal });
+      document.addEventListener("pointercancel", physical(() => JE2.handleLongPressCancel(), false), { capture: true, signal });
+      window.addEventListener("blur", () => JE2.handleLongPressCancel(), { signal });
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) JE2.handleLongPressCancel();
+      }, { signal });
+    }
     function createSpeedOverlay() {
       if (speedOverlay) return;
       speedOverlay = document.createElement("div");
@@ -1279,18 +1306,26 @@
       }
     }
     JE2.handleLongPressDown = (e) => {
-      if (!JE2.currentSettings.longPress2xEnabled || e.button !== void 0 && e.button !== 0 || pressTimer) {
+      suppressClickUntil = 0;
+      if (e.touches && e.touches.length > 1) {
+        JE2.handleLongPressCancel();
         return;
       }
+      if (!canStartLongPress(e) || e.button !== void 0 && e.button !== 0 || pressTimer) return;
       videoElement = getVideo2();
       if (!videoElement) return;
-      pressStartX = e.clientX ?? e.touches?.[0]?.clientX ?? null;
-      pressStartY = e.clientY ?? e.touches?.[0]?.clientY ?? null;
+      if (e.touches) {
+        touchTarget = e.target instanceof Element ? e.target : null;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+      pressStartX = e.touches?.[0]?.clientX ?? e.clientX ?? null;
+      pressStartY = e.touches?.[0]?.clientY ?? e.clientY ?? null;
       originalSpeed = videoElement.playbackRate || LONG_PRESS_CONFIG.SPEED_NORMAL;
       isLongPress = false;
       const lease = lifetime2.lease(videoElement);
       pressTimer = lifetime2.timeout(() => {
-        if (!lease.current() || videoElement !== getVideo2()) {
+        if (!lease.current() || !videoElement || videoElement !== getVideo2() || videoElement.paused || !JE2.currentSettings.longPress2xEnabled) {
           JE2.handleLongPressCancel();
           return;
         }
@@ -1299,53 +1334,53 @@
           JE2.state.pauseScreenClickTimer = null;
         }
         isLongPress = true;
-        if (!videoElement) return;
-        if (videoElement.paused) {
-          videoElement.play().catch((err) => console.warn("🪼 Play blocked:", err));
-        }
         videoElement.playbackRate = LONG_PRESS_CONFIG.SPEED_FAST;
         showOverlay(LONG_PRESS_CONFIG.SPEED_FAST);
         if (navigator.vibrate) navigator.vibrate(50);
       }, LONG_PRESS_CONFIG.DURATION);
     };
     JE2.handleLongPressUp = (e) => {
-      if (!pressTimer) return;
+      const target = touchTarget;
+      const pointer = touchPointerDown;
+      const tap = target && pressTimer && !isLongPress && videoElement === getVideo2();
+      if (target || isLongPress) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+      JE2.handleLongPressCancel();
+      if (tap && target.isConnected) {
+        if (!pointer) {
+          target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+          return;
+        }
+        const init = { bubbles: true, pointerType: "touch", pointerId: pointer.pointerId ?? 0, clientX: pointer.clientX ?? 0, clientY: pointer.clientY ?? 0, button: 0 };
+        target.dispatchEvent(new PointerEvent("pointerdown", init));
+        target.dispatchEvent(new PointerEvent("pointerup", init));
+      }
+    };
+    JE2.handleLongPressCancel = () => {
       lifetime2.cancel(pressTimer);
       pressTimer = null;
       if (isLongPress) {
-        const video = videoElement;
-        if (video) {
-          video.playbackRate = originalSpeed;
-        }
+        if (videoElement) videoElement.playbackRate = originalSpeed;
         hideOverlay();
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
+        suppressClickUntil = Date.now() + 400;
       }
       isLongPress = false;
+      videoElement = null;
       pressStartX = null;
       pressStartY = null;
-    };
-    JE2.handleLongPressCancel = () => {
-      if (pressTimer) {
-        lifetime2.cancel(pressTimer);
-        pressTimer = null;
-        if (isLongPress) {
-          const video = videoElement;
-          if (video) {
-            video.playbackRate = originalSpeed;
-          }
-          hideOverlay();
-        }
-        isLongPress = false;
-      }
-      pressStartX = null;
-      pressStartY = null;
+      touchTarget = null;
+      touchPointerDown = null;
     };
     JE2.handleLongPressMove = (e) => {
+      if (touchTarget || isLongPress) {
+        if (e.cancelable) e.preventDefault();
+        e.stopImmediatePropagation();
+      }
       if (!pressTimer || isLongPress || pressStartX === null || pressStartY === null) return;
-      const currentX = e.clientX ?? e.touches?.[0]?.clientX ?? null;
-      const currentY = e.clientY ?? e.touches?.[0]?.clientY ?? null;
+      const currentX = e.touches?.[0]?.clientX ?? e.clientX ?? null;
+      const currentY = e.touches?.[0]?.clientY ?? e.clientY ?? null;
       if (currentX === null || currentY === null) return;
       const distanceMoved = Math.sqrt(
         Math.pow(currentX - pressStartX, 2) + Math.pow(currentY - pressStartY, 2)
@@ -1358,7 +1393,7 @@
       }
     };
     JE2.handleLongPressClick = (e) => {
-      if (isLongPress || pressTimer) {
+      if (isLongPress || pressTimer || Date.now() < suppressClickUntil) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
@@ -1370,7 +1405,9 @@
       videoElement = null;
       speedOverlay?.remove();
       speedOverlay = null;
+      listen();
     });
+    listen();
   }
 
   // client/src/features/player/osd-seek-history.ts

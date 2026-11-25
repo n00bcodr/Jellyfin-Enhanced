@@ -4,7 +4,7 @@
 
 What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-Enhanced) (`main`) since it branched at `2e0f9251bf`. The source of truth is [`upstream-sync.json`](upstream-sync.json); the procedure is [upstream-sync-procedure.md](upstream-sync-procedure.md).
 
-118 upstream commits: 113 ported, 5 already-present.
+119 upstream commits: 114 ported, 5 already-present.
 
 | # | Upstream | Date | Class | Features | Subject | Status | Rewrite commit | Note |
 |---|---|---|---|---|---|---|---|---|
@@ -126,3 +126,4 @@ What the rewrite has taken from [upstream](https://github.com/n00bcodr/Jellyfin-
 | 116 | [`235dc152`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/235dc1528576548e52888341aa9fe8ca99e9a5ec) | 2026-11-24 | fix | seerr | fix(seerr): one remote stop per card, and OK opens the title on TV (#1103) | ported | `73e76050` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p113-116.live.txt (pair tv-remote, the search-page card), p113-tv-remote.mjs, p113-tv-remote.rewrite-base.txt, p113-116.tests.txt |
 | 117 | [`03875081`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/03875081ebea47068c1bf15f97b34237b1e40c8b) | 2026-11-24 | feature | details-providers, admin, platform | feat(mdblist): choose a 0-100, 0-10 or 0-5 scale for the item-details ratings row | ported | `34887bbe` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p117-118.live.txt (pairs scale-10, scale-5, scale-100), p117-mdblist-scale.mjs, p117-mdblist-scale.rewrite-base.txt, p117-118.tests.txt |
 | 118 | [`49ee210d`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/49ee210d7ea0322153717e6f843145478d2b6681) | 2026-11-24 | fix | media-tags | fix(maintainerr): say what Maintainerr returned when no manual collection is found | ported | `43104605` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p117-118.live.txt (pairs maintainerr-two, maintainerr-empty), p118-maintainerr.setup.py, p118-maintainerr.rewrite-base.txt, p117-118.tests.txt |
+| 119 | [`417c00d8`](https://github.com/n00bcodr/Jellyfin-Enhanced/commit/417c00d88221a7b63b879c5cb5510452e66197fa) | 2026-11-25 | fix | player, chrome | fix(player): keep touch holds from toggling controls or scrolling (#1094) | ported | `289bd75a` | artifacts/restructure-plan/step-logs/upstream-sync-evidence/p119.live.txt (the unnamed pair: before = upstream's build at 417c00d8, after = this branch), p119-long-press.mjs, p119-long-press.rewrite-base.txt, p119.tests.txt, p119.smoke.txt |

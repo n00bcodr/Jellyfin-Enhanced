@@ -28,7 +28,11 @@ export interface AutoSkipDependencies {
 }
 export interface ResolverOptions { parseFromSrc(src: string): string | null; fallbackId(): string | null; probeNowPlayingId(): Promise<string | null> }
 export interface SkipEngine { attach(video: HTMLVideoElement): void; detach(): void }
-export interface PressEvent { button?: number; clientX?: number; clientY?: number; touches?: TouchList; preventDefault(): void; stopPropagation(): void; stopImmediatePropagation(): void }
+export interface PressEvent {
+    button?: number; clientX?: number; clientY?: number; touches?: TouchList; target?: EventTarget | null;
+    pointerType?: string; pointerId?: number; cancelable?: boolean;
+    preventDefault(): void; stopPropagation(): void; stopImmediatePropagation(): void;
+}
 export interface PlayerBridge {
     currentSettings: PlayerSettings;
     pluginConfig?: { ShowRatingInPlayer?: boolean; ShowPlaybackRatingBadge?: boolean };

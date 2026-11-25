@@ -2,7 +2,7 @@
   "description": "Budget for the served component bundle, GET /JellyfinEnhanced/bundle.js (Features/Platform/Services/ClientScriptBundle.cs), as an identity (uncompressed) body. rawBytes: its length. gzipBytes: its length after gzip at level 9 (zlib level 9; `gzip -9 -n`, .NET CompressionLevel.SmallestSize). Checked by tests/backend/Api/BundleBudgetTests.cs (gate T) and `scripts/restructure-gates.sh size`. It is a ratchet: lowering a limit needs no reason; a history entry that raises either limit must give one. `limits` is always the last history entry's.",
   "limits": {
     "rawBytes": 2772818,
-    "gzipBytes": 760656
+    "gzipBytes": 761032
   },
   "history": [
     {
@@ -186,6 +186,19 @@
         "gzipBytes": 760656
       },
       "reason": "gzip-9 raised by exactly what the ports add, so the headroom left before them stays as it was (31 bytes); raw stays (its headroom covers the ports). The bundle carries the MDBList ratings row's Rating Scale (0-10 and 0-5 show one decimal) and the scale in the bootstrap configuration's reader. Measured with BundleBudgetTests (gate T's own measure) with the limits set out of the way: 2,755,714 raw / 760,561 gzip-9 bytes on add28a67d (the base, the same client output as 73e76050, measured by the previous sync), 2,755,895 / 760,625 with the ports (+181 / +64)."
+    },
+    {
+      "date": "2026-11-25",
+      "change": "upstream sync: port of upstream 417c00d8 (#1094), branch sync/auto-20261125-2335",
+      "measured": {
+        "rawBytes": 2757365,
+        "gzipBytes": 761001
+      },
+      "limits": {
+        "rawBytes": 2772818,
+        "gzipBytes": 761032
+      },
+      "reason": "gzip-9 raised by exactly what the port adds, so the headroom left before it stays as it was (31 bytes); raw stays (its headroom covers the port). The bundle carries the player's long-press touch handling (a press only on the playing video surface, the touch tap replayed on release, the hold's move, release, cancel and trailing-click rules, and its pointer, blur and visibility listeners) and the release and cancel forwarding in the core event wiring. Measured with BundleBudgetTests (gate T's own measure): 2,755,895 raw / 760,625 gzip-9 bytes on a808c5f3d (the base, the same client output as 43104605, measured by the previous sync), 2,757,365 / 761,001 with the port (+1,470 / +376), the gzip from the test's own failure message on 289bd75ae and the raw with the raw limit set to 1 for one run."
     }
   ]
 }
