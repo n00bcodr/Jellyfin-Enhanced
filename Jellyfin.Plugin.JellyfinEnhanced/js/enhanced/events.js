@@ -425,28 +425,34 @@
             // `handler` is the name of a player function (enhanced/player/playback.js), looked
             // up at each event: the player modules load when a video does, after this runs.
             const videoPageCheck = (handler) => (e) => {
-                if (JE.isVideoPage()) {
+                if (JE.isVideoPage() || handler === 'handleLongPressUp' || handler === 'handleLongPressCancel') {
                     // Long-press 2x is a physical gesture. Synthetic events (e.g. closeActionSheet
                     // replaying dialogHelper's outside tap on a .dialogContainer) must neither arm
                     // the press timer nor be cancelled by the click guard below — these are
                     // capture-phase document listeners, so stopImmediatePropagation here would eat
                     // the event before dialogHelper's own listener ever sees it.
                     if (e.isTrusted === false) return;
-                    // Don't interfere with clicks on OSD buttons / the pause screen overlay / Enhanced Panel
-                    if (e.target && e.target.closest && e.target.closest('.osdControls, .pause-screen-active, .jellyfin-enhanced-panel')) return;
                     JE[handler]?.(e);
                 }
             };
 
+            document.addEventListener('pointerdown', videoPageCheck('handleLongPressPointerDown'), true);
             document.addEventListener('mousedown', videoPageCheck('handleLongPressDown'), true);
             document.addEventListener('mouseup', videoPageCheck('handleLongPressUp'), true);
             document.addEventListener('mousemove', videoPageCheck('handleLongPressMove'), true);
+            document.addEventListener('pointermove', videoPageCheck('handleLongPressMove'), true);
             document.addEventListener('click', videoPageCheck('handleLongPressClick'), true);
             document.addEventListener('mouseleave', videoPageCheck('handleLongPressCancel'), true);
-            document.addEventListener('touchstart', videoPageCheck('handleLongPressDown'), { capture: true, passive: true });
-            document.addEventListener('touchmove', videoPageCheck('handleLongPressMove'), { capture: true, passive: true });
+            document.addEventListener('touchstart', videoPageCheck('handleLongPressDown'), { capture: true, passive: false });
+            document.addEventListener('touchmove', videoPageCheck('handleLongPressMove'), { capture: true, passive: false });
             document.addEventListener('touchend', videoPageCheck('handleLongPressUp'), { capture: true, passive: false });
             document.addEventListener('touchcancel', videoPageCheck('handleLongPressCancel'), { capture: true, passive: false });
+            document.addEventListener('pointercancel', videoPageCheck('handleLongPressCancel'), true);
+            window.addEventListener('blur', () => JE.handleLongPressCancel?.());
+            window.addEventListener('hashchange', () => JE.handleLongPressCancel?.());
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) JE.handleLongPressCancel?.();
+            });
         }
 
         // Auto PiP only closes a PiP window it opened itself. Chromium browsers (Edge, Chrome) can
