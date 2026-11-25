@@ -3865,6 +3865,15 @@
       ]
     },
     {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/requests/{requestId}/options",
+      "method": "GetRequestOptions",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
       "verb": "POST",
       "path": "/JellyfinEnhanced/arr/requests/{requestId}/approve",
       "method": "ActOnRequest",
@@ -10968,7 +10977,7 @@
   "counts": {
     "build_targets": 2,
     "files": 502,
-    "routes": 224,
+    "routes": 225,
     "configuration_properties": 786,
     "storage_references": 91,
     "scheduled_tasks": 17,
