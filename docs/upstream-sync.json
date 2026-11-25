@@ -4000,6 +4000,69 @@
       ],
       "notes": "Re-implemented. client/src/features/player/long-press.ts takes upstream's playback.js change: a press starts only on the playing video surface (canStartLongPress, upstream's selector lists: video, .videoPlayerContainer or #videoOsdPage, never a button, link, form control, [role=button], .osdControls, .headerTop, .upNextContainer, .dialogContainer, .pause-screen-active or the Enhanced panel; the setting on; the video not paused); a touch on it cancels the touchstart (no native scrolling or compatibility mouse events), and its pointerdown is held back from jellyfin-web, which toggles the OSD on pointerdown; a short tap is replayed on release as a touch pointerdown/pointerup on the same target (a click when the browser had no pointerdown), so jellyfin-web's own OSD handler and its double-tap guard run once; a hold owns the gesture: moves are cancelled and stopped, release restores the rate of the element it boosted, and a click within 400 ms after a hold is swallowed unless a new press starts first; a second finger cancels; the hold timer cancels when the video was paused, replaced or the setting turned off meanwhile (it no longer calls play() on a paused video); coordinates read touches first with ?? (the rewrite already used ??, so zero coordinates worked before). The rewrite's own lease check in the timer (navigation, user switch, a new source) stays. client/src/features/chrome/events.ts takes upstream's events.js change: release and cancel reach the player off the video page, the target exclusion moved into the player, and touchstart/touchmove are no longer passive. Differences: (1) the new listeners (pointerdown for the tap, pointermove, pointercancel, window blur and document visibilitychange when hidden) are added by the player's long-press.ts with the player lifetime's abort signal and added again after each lifetime reset, instead of page-lifetime listeners in events.js: the leak guard's L2 ratchet admits no new global listener without a signal or a removal. They keep upstream's rules: physical input only (isTrusted false is ignored), pointerdown and pointermove only on the video page, the cancels on any page. handleLongPressPointerDown is therefore not published on JE. (2) Upstream's window hashchange cancel is not added: the player lifetime already resets on navigation (core navigation, else hashchange) and its reset cancels the press; upstream's hashchange test passes before and after the port. (3) The rewrite's listeners were already installed whatever the setting was at start (CHR-EVENTS-1); upstream installs them only when it was on as the page started. Tests: upstream's tests/frontend/features/features-long-press.test.mjs applied unchanged at tests/frontend/features/player/features-long-press.test.mjs (the harness import one folder deeper): 11 of its 15 tests fail before the port, all pass after. A new test in features-player-rewrite.test.mjs checks that after two navigations each new listener type is live once and a touch pointerdown on the video is claimed once; it fails before the port. The two existing long-press tests there and the long-press test in tests/browser/player-rewrite.spec.cjs now press on the video element (a press must start on the playing video surface), and the drag test marks its video as playing (a paused video no longer arms a press). tests/docs/coverage-matrix.md: upstream's sentence added to the Player row. Lab parity (p119-long-press.mjs: the lab movie playing, Long press for 2x on for the lab admin, real touch input through Chromium's touch emulation at the middle of the video): on upstream's build at 417c00d8 and on this branch alike, a 120 ms tap leaves the OSD hidden while the finger is down and shows it after release, with the touchstart cancelled; a 900 ms hold plays at 2x with the OSD still hidden and the touchstart cancelled, and release restores 1x with the OSD hidden; a hold then a drag keeps 2x and cancels both touchmoves; a hold on paused playback leaves it paused at 1x. On the main line before the port the OSD showed as soon as the finger went down (tap, hold and drag), no touchstart or touchmove was cancelled (Chromium logged an ignored attempt to cancel a touchend while scrolling), and a hold on paused playback started it at 2x and left it playing.",
       "evidence": "artifacts/restructure-plan/step-logs/upstream-sync-evidence/p119.live.txt (the unnamed pair: before = upstream's build at 417c00d8, after = this branch), p119-long-press.mjs, p119-long-press.rewrite-base.txt, p119.tests.txt, p119.smoke.txt"
+    },
+    {
+      "sha": "a66d70c52fc9bf14637fcbc0dd99cc9f79edd76b",
+      "date": "2026-11-25T17:24:36Z",
+      "subject": "feat(seerr): approve requests with options, and tags, request-as and auto-approve notice in request dialogs",
+      "class": "feature",
+      "features": [
+        "seerr",
+        "downloads",
+        "platform"
+      ],
+      "issues": [
+        "#1106"
+      ],
+      "release": null,
+      "size": {
+        "files": 13,
+        "insertions": 581,
+        "deletions": 62
+      },
+      "paths": [
+        "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-data.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-render-cards.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-render.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-styles.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/api.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/modal.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-request-modals.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-season-modal.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-styles.js",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json",
+        "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js",
+        "tests/frontend/requests/request-submission.test.mjs"
+      ],
+      "status": "deferred",
+      "rewriteCommits": [],
+      "reason": "The port changes three existing contract lines, which an unattended sync may not land. Upstream's approve route (POST arr/requests/{requestId}/approve and /decline, one action ActOnRequest) now takes an optional body: it reads the request from Seerr, edits it (PUT) and then approves, and refuses a change of who the request is for unless the caller is a Jellyfin administrator. That adds administrator checks to the action, so ActOnRequest in auth-helper-calls.snapshot.json and the approve and decline lines of auth-reads-by-route.base.json grow from {IsAdminUser 2, User 1, UserHelper.GetCurrentUserId 1} to {IsAdminUser 5, User 1, UserHelper.GetCurrentUserId 1} (the shared manager check moves into ResolveRequestManagerAsync as upstream has it; the three new reads are the Request-as check and the error shapes of the read and the edit). Dropping the Request-as check to keep the lines would loosen upstream's access rule. Everything else only adds (one route, GET arr/requests/{requestId}/options). Upstream's approve-with-options also never works as written: Seerr refuses its edit with 400 (no mediaType, and a null server, profile, folder or language profile for a request made without advanced options); the port on the branch fixes both.",
+      "needs": "A maintainer's review of the last commit of branch sync/contract-a66d70c5, `contract: upstream sync additions and three changed lines`: the finished port (tests failing before and passing after, lab parity with upstream's build) with the lines for the new route GET JellyfinEnhanced/arr/requests/{requestId}/options (GetRequestOptions, requiresAuth, no policy, parameters requestId:Path; {IsAdminUser 2, User 1, UserHelper.GetCurrentUserId 1}) in route-auth.snapshot.json, auth-helper-calls.snapshot.json, auth-reads-by-route.base.json and baselines/inventory-routes.txt, RouteAuthSnapshotTests.ExpectedRoutes 228 to 229, and the three changed lines above. Accepted, that branch lands as it is and marks this entry ported."
+    },
+    {
+      "sha": "3b6825ea8c32ddac6eea9264bcdb4c66072c0ebc",
+      "date": "2026-11-25T17:30:20Z",
+      "subject": "chore(tests): regenerate production inventory",
+      "class": "test",
+      "features": [
+        "downloads"
+      ],
+      "issues": [],
+      "release": null,
+      "size": {
+        "files": 1,
+        "insertions": 10,
+        "deletions": 1
+      },
+      "paths": [
+        "tests/docs/production-inventory.json"
+      ],
+      "status": "deferred",
+      "rewriteCommits": [],
+      "with": "a66d70c52fc9bf14637fcbc0dd99cc9f79edd76b",
+      "reason": "Upstream's bot regenerates tests/docs/production-inventory.json for the route a66d70c5 adds (GET arr/requests/{requestId}/options); this tree regenerates its own inventory with that port, which is deferred.",
+      "needs": "The port of a66d70c5 (branch sync/contract-a66d70c5), whose commit carries the regenerated inventory."
     }
   ]
 }
