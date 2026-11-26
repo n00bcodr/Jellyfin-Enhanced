@@ -101,7 +101,7 @@ async function hub(page, options = {}) {
   await base(page, options);
   // Panel controls outside the Media Tags hub that the settings wiring binds by id.
   await page.evaluate(() => {
-    const others = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle', 'randomButtonToggle', 'randomUnwatchedOnly',
+    const others = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle', 'autoSkipRecapToggle', 'autoSkipPreviewToggle', 'autoSkipCommercialToggle', 'randomButtonToggle','randomUnwatchedOnly',
       'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle', 'showAudioLanguagesToggle', 'removeContinueWatchingToggle', 'pauseScreenToggle',
       'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSyncButtonEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
     document.body.innerHTML = `<div hidden>${others.map((id) => `<input type="checkbox" id="${id}">`).join('')}<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button></div><button id="opener">open</button>`;
