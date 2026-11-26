@@ -15,6 +15,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int PauseScreenDelaySeconds { get; set; } = 5;
         public bool AutoSkipIntro { get; set; }
         public bool AutoSkipOutro { get; set; }
+        public bool AutoSkipRecap { get; set; }
+        public bool AutoSkipPreview { get; set; }
+        public bool AutoSkipCommercial { get; set; }
         public bool DisableCustomSubtitleStyles { get; set; }
         public int SelectedStylePresetIndex { get; set; }
         public int SelectedFontSizePresetIndex { get; set; }

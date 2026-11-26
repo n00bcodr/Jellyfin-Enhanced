@@ -5050,6 +5050,9 @@
             { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'autoSkipIntro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
             { id: 'autoSkipOutro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
+            { id: 'autoSkipRecap',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
+            { id: 'autoSkipPreview',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
+            { id: 'autoSkipCommercial',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
             { id: 'bookmarksUsePluginPages',       checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'hiddenContentUsePluginPages',   checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'downloadsUsePluginPages',       checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
@@ -6195,9 +6198,9 @@
             feat('Age Rating on Playback Start', bool('showPlaybackRatingBadge'), 'playback', 'Enabled');
             feat('Long press for 2x speed', bool('longPress2xEnabled'), 'playback', 'Enabled (touch devices)');
             feat('Subtitle sync button', bool('subtitleSyncButtonEnabled'), 'playback', 'Enabled');
-            var autoSkip = bool('autoSkipIntro') || bool('autoSkipOutro');
+            var autoSkip = ['Intro', 'Outro', 'Recap', 'Preview', 'Commercial'].some(function(t) { return bool('autoSkip' + t); });
             var autoSkipWarn = autoSkip && hasIntroSkipper !== true;
-            feat('Auto-skip Intro/Outro', autoSkip, 'playback',
+            feat('Auto-skip segments', autoSkip, 'playback',
                 autoSkipWarn ? 'Enabled but Intro Skipper plugin is missing' : 'Enabled',
                 autoSkipWarn);
             var tabSwitch = bool('autoPauseEnabled') || bool('autoResumeEnabled') || bool('autoPipEnabled');

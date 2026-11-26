@@ -249,6 +249,24 @@
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_auto_skip_outro')}</div></div>
                                 </label>
                             </div>
+                            <div style="margin-top: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="autoSkipRecapToggle" ${JE.currentSettings.autoSkipRecap ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_auto_skip_recap')}</div></div>
+                                </label>
+                            </div>
+                            <div style="margin-top: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="autoSkipPreviewToggle" ${JE.currentSettings.autoSkipPreview ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_auto_skip_preview')}</div></div>
+                                </label>
+                            </div>
+                            <div style="margin-top: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="autoSkipCommercialToggle" ${JE.currentSettings.autoSkipCommercial ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500;">${JE.t('panel_settings_auto_skip_commercial')}</div></div>
+                                </label>
+                            </div>
                         </div>
                     </section>
                     <section class="je-pane" data-pane="subtitles">

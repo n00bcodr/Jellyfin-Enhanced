@@ -230,7 +230,7 @@
 
         const hardcodedDefaults = {
             autoPauseEnabled: true, autoResumeEnabled: false, autoPipEnabled: false,
-            autoSkipIntro: false, autoSkipOutro: false,
+            autoSkipIntro: false, autoSkipOutro: false, autoSkipRecap: false, autoSkipPreview: false, autoSkipCommercial: false,
             selectedStylePresetIndex: 0, selectedFontSizePresetIndex: 2, selectedFontFamilyPresetIndex: 0, selectedTextEffectPresetIndex: 0,
             customSubtitleTextColor: '#FFFFFFFF', customSubtitleBgColor: '#00000000',
             usingCustomColors: false,

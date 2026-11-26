@@ -1011,7 +1011,7 @@ Conditional controls appear only when their feature is available.
 | Group | Hooks |
 | --- | --- |
 | Playback | `#autoPauseToggle`, `#autoResumeToggle`, `#autoPipToggle`, `#longPress2xEnabled`, `#pauseScreenToggle`, `.je-pause-delay-row`, `#pauseScreenDelayInput` |
-| Auto-skip | `#autoSkipIntroToggle`, `#autoSkipOutroToggle` |
+| Auto-skip | `#autoSkipIntroToggle`, `#autoSkipOutroToggle`, `#autoSkipRecapToggle`, `#autoSkipPreviewToggle`, `#autoSkipCommercialToggle` |
 | Subtitle presets | `.preset-box`, `.style-preset`, `.font-size-preset`, `.font-family-preset`, `.text-effect-preset`, `[data-preset-index]`; `#subtitle-style-presets-container`, `#font-size-presets-container`, `#font-family-presets-container`, `#text-effect-presets-container` |
 | Subtitle colors | `.je-subtitle-color-layout`, `.je-subtitle-color-controls`, `.je-subtitle-color-control-row`, `#customSubtitleTextColorPicker`, `#customSubtitleTextAlpha`, `#customSubtitleBgColorPicker`, `#customSubtitleBgAlpha`, `#subtitleColorPreview` |
 | Subtitle position and status | `#subtitlePositionGrid`, `#subtitlePositionPreview`, `#subtitlePositionReset`, `#disableCustomSubtitleStyles`, `#subtitleSyncButtonEnabled`, `#je-subtitle-format-warning`, `#je-subtitle-position-note` |

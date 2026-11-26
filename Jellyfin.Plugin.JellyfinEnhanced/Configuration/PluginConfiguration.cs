@@ -63,6 +63,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoPipEnabled = false;
             AutoSkipIntro = false;
             AutoSkipOutro = false;
+            AutoSkipRecap = false;
+            AutoSkipPreview = false;
+            AutoSkipCommercial = false;
             LongPress2xEnabled = false;
             SubtitleSyncButtonEnabled = false;
             RandomButtonEnabled = true;
@@ -620,6 +623,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AutoPipEnabled { get; set; }
         public bool AutoSkipIntro { get; set; }
         public bool AutoSkipOutro { get; set; }
+        public bool AutoSkipRecap { get; set; }
+        public bool AutoSkipPreview { get; set; }
+        public bool AutoSkipCommercial { get; set; }
         public bool LongPress2xEnabled { get; set; }
 
         /// <summary>Default for the player's Subtitle Sync button (lists the subtitle lines to sync to, search or jump to).</summary>

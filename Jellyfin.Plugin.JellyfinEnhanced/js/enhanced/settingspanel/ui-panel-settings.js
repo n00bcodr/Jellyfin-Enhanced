@@ -231,6 +231,9 @@
         addSettingToggleListener('autoPipToggle', 'autoPipEnabled', 'feature_auto_pip');
         addSettingToggleListener('autoSkipIntroToggle', 'autoSkipIntro', 'feature_auto_skip_intro');
         addSettingToggleListener('autoSkipOutroToggle', 'autoSkipOutro', 'feature_auto_skip_outro');
+        addSettingToggleListener('autoSkipRecapToggle', 'autoSkipRecap', 'panel_settings_auto_skip_recap');
+        addSettingToggleListener('autoSkipPreviewToggle', 'autoSkipPreview', 'panel_settings_auto_skip_preview');
+        addSettingToggleListener('autoSkipCommercialToggle', 'autoSkipCommercial', 'panel_settings_auto_skip_commercial');
         addSettingToggleListener('randomButtonToggle', 'randomButtonEnabled', 'feature_random_button');
         addSettingToggleListener('randomUnwatchedOnly', 'randomUnwatchedOnly', 'feature_unwatched_only');
         addSettingToggleListener('randomScopeCurrentContainer', 'randomScopeCurrentContainer', 'feature_random_scope_current');

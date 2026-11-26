@@ -4485,6 +4485,30 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "AutoSkipRecap",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AutoSkipPreview",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AutoSkipCommercial",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "LongPress2xEnabled",
       "type": "bool",
       "initializer": null,
@@ -8605,6 +8629,30 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "AutoSkipRecap",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "AutoSkipPreview",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "AutoSkipCommercial",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "DisableCustomSubtitleStyles",
       "type": "bool",
       "initializer": null,
@@ -10978,7 +11026,7 @@
     "build_targets": 2,
     "files": 502,
     "routes": 225,
-    "configuration_properties": 786,
+    "configuration_properties": 792,
     "storage_references": 91,
     "scheduled_tasks": 17,
     "locales": 33
