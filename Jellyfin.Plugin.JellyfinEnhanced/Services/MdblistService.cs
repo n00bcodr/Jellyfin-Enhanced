@@ -50,7 +50,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly Logger _logger;
 
         private readonly ConcurrentDictionary<string, MdblistCacheEntry> _cache = new();
-        private readonly ConcurrentDictionary<string, SemaphoreSlim> _inFlight = new();
+        // One gate per title with a fetch in flight. Refs counts the callers that hold or wait
+        // for the gate; it leaves the map only when the last one is done (under _inFlight's lock),
+        // so a waiter and a new caller always share the same gate.
+        private readonly Dictionary<string, TitleGate> _inFlight = new();
+
+        private sealed class TitleGate
+        {
+            public readonly SemaphoreSlim Semaphore = new(1, 1);
+            public int Refs;
+        }
         private readonly object _saveLock = new();
         private volatile bool _dirty;
         private long _firstDirtyTicks;
@@ -105,32 +114,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return cached;
             }
 
-            var gate = _inFlight.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            TitleGate gate;
+            lock (_inFlight)
+            {
+                if (!_inFlight.TryGetValue(key, out var existing))
+                {
+                    existing = new TitleGate();
+                    _inFlight[key] = existing;
+                }
+                gate = existing;
+                gate.Refs++;
+            }
             try
             {
-                if (_cache.TryGetValue(key, out cached) && !IsExpired(cached))
+                await gate.Semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
                 {
-                    return cached;
-                }
+                    if (_cache.TryGetValue(key, out cached) && !IsExpired(cached))
+                    {
+                        return cached;
+                    }
 
-                var fetched = await FetchFromMdblistAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
-                // A caller that gave up must not publish anything: the cache is
-                // shared with the tag-rating warmers and every other viewer.
-                cancellationToken.ThrowIfCancellationRequested();
-                fetched = KeepLastGood(cached, fetched);
-                _cache[key] = fetched;
-                ScheduleDebouncedSave();
-                // Posters read the server tag cache's copy of these scores: publish a change now, not at its next reconcile.
-                if (TagSourceRatings.FromMdblist(cached) != TagSourceRatings.FromMdblist(fetched)) TagCacheService.Instance?.PublishSourceRatings(tmdbId);
-                return fetched;
+                    var fetched = await FetchFromMdblistAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
+                    // A caller that gave up must not publish anything: the cache is
+                    // shared with the tag-rating warmers and every other viewer.
+                    cancellationToken.ThrowIfCancellationRequested();
+                    fetched = KeepLastGood(cached, fetched);
+                    _cache[key] = fetched;
+                    ScheduleDebouncedSave();
+                    // Posters read the server tag cache's copy of these scores: publish a change now, not at its next reconcile.
+                    if (TagSourceRatings.FromMdblist(cached) != TagSourceRatings.FromMdblist(fetched)) TagCacheService.Instance?.PublishSourceRatings(tmdbId);
+                    return fetched;
+                }
+                finally
+                {
+                    gate.Semaphore.Release();
+                }
             }
             finally
             {
-                gate.Release();
-                if (gate.CurrentCount == 1)
+                lock (_inFlight)
                 {
-                    _inFlight.TryRemove(key, out _);
+                    if (--gate.Refs == 0)
+                    {
+                        _inFlight.Remove(key);
+                        gate.Semaphore.Dispose();
+                    }
                 }
             }
         }
@@ -967,7 +996,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var timer = Interlocked.Exchange(ref _debounceSaveTimer, null);
             timer?.Dispose();
             if (_dirty) SaveToDisk();
-            foreach (var gate in _inFlight.Values) gate.Dispose();
+            lock (_inFlight)
+            {
+                foreach (var gate in _inFlight.Values) gate.Semaphore.Dispose();
+            }
         }
     }
 }

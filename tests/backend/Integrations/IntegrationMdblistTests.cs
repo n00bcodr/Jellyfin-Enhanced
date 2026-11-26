@@ -117,3 +117,50 @@ public class IntegrationMdblistSavedKeyTests
         Assert.Equal(7, service.RemainingQuota());
     }
 }
+
+[Collection("Plugin singleton")]
+public class IntegrationMdblistGateTests
+{
+    // The caller whose lookup is on the wire, so the fake provider can make that caller give up.
+    private static readonly AsyncLocal<CancellationTokenSource?> Caller = new();
+
+    [Fact]
+    public async Task MdblistNeverHasTwoLookupsForOneTitleInFlight()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.MdblistApiKey = "key";
+        int active = 0, overlaps = 0;
+        using var transport = new IntegrationTransport(async (request, ct) =>
+        {
+            if (request.RequestUri!.AbsolutePath == "/user") return IntegrationTransport.Response("{\"rate_limit\":1000000,\"rate_limit_remaining\":1000000}");
+            if (Interlocked.Increment(ref active) > 1) Interlocked.Increment(ref overlaps);
+            try
+            {
+                await Task.Yield();
+                // The viewer leaves mid-lookup, so nothing is cached and the next caller looks the title up again.
+                Caller.Value!.Cancel();
+                await Task.Delay(Timeout.Infinite, ct);
+                throw new InvalidOperationException("unreachable");
+            }
+            finally { Interlocked.Decrement(ref active); }
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+
+        // Two viewers keep opening the same title. A released gate dropped from the map while the
+        // other viewer already holds it lets the next lookup make a second gate and fetch alongside it.
+        var stop = DateTime.UtcNow.AddSeconds(5);
+        await Task.WhenAll(Enumerable.Range(0, 2).Select(_ => Task.Run(async () =>
+        {
+            while (DateTime.UtcNow < stop && Volatile.Read(ref overlaps) == 0)
+            {
+                using var cts = new CancellationTokenSource();
+                Caller.Value = cts;
+                try { await service.GetRatingsAsync("movie", "1", cts.Token); } catch (OperationCanceledException) { }
+            }
+        })));
+        Assert.Equal(0, overlaps);
+        // Gates live only while a lookup for their title is in flight: titles never pile up.
+        var gates = typeof(MdblistService).GetField("_inFlight", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(service);
+        Assert.Equal(0, ((System.Collections.ICollection)gates!).Count);
+    }
+}
