@@ -3117,10 +3117,10 @@
 <p>Logo, disc, and blurred backdrop depend on available item/parent/series artwork. A missing logo does not guarantee a text-title fallback. Disc art hides on narrow layouts, can return in short landscape layouts, and stops rotating with reduced-motion preferences.</p>
 </details>
 <h3 id="smart-playback">Smart Playback<a class="headerlink" href="#smart-playback" title="Permanent link">&para;</a></h3>
-<p>Manage tab-switch playback, temporary speed boosts, and automatic intro/outro skipping in the browser player.</p>
+<p>Manage tab-switch playback, temporary speed boosts, and automatic segment skipping (intros, outros, recaps, previews and commercials) in the browser player.</p>
 <p><a class="glightbox" data-type="image" data-width="100%" href="../../images/enhanced/player-osd.webp"><img alt="Playing movie with Enhanced player controls" src="../../images/enhanced/player-osd.webp" /></a>
 <em>The player also shows rating chips, a bookmark button, and the optional Playback Info overlay.</em></p>
-<p><strong>How to use:</strong> Open <strong>Playback Settings</strong> for tab-switch and hold controls, or <strong>Auto-Skip Settings</strong> for intros/outros. Admin defaults are under <a href="../../open-in-jellyfin/?tab=playback&amp;card=player-behaviour"><strong>Playback → Player Behaviour</strong></a> and <a href="../../open-in-jellyfin/?tab=playback&amp;card=auto-skip"><strong>Playback → Auto-Skip</strong></a>.</p>
+<p><strong>How to use:</strong> Open <strong>Playback Settings</strong> for tab-switch and hold controls, or <strong>Auto-Skip Settings</strong> for segment skipping. Admin defaults are under <a href="../../open-in-jellyfin/?tab=playback&amp;card=player-behaviour"><strong>Playback → Player Behaviour</strong></a> and <a href="../../open-in-jellyfin/?tab=playback&amp;card=auto-skip"><strong>Playback → Auto-Skip</strong></a>.</p>
 <ul>
 <li>For continuous Picture-in-Picture playback, turn off <strong>Auto-pause</strong>.</li>
 <li>For temporary 2× speed, hold the video background with the left mouse button or touch for 500 ms. Release or cancel to restore the previous speed. Hold only on the video background.</li>
@@ -3173,6 +3173,21 @@
 <td>Off</td>
 <td>Seeks to the end of stored Outro segments.</td>
 </tr>
+<tr>
+<td><strong>Automatically Skip Recap</strong> — personal; <strong>Auto-skip Recap</strong> — admin</td>
+<td>Off</td>
+<td>Seeks to the end of stored Recap segments.</td>
+</tr>
+<tr>
+<td><strong>Automatically Skip Preview</strong> — personal; <strong>Auto-skip Preview</strong> — admin</td>
+<td>Off</td>
+<td>Seeks to the end of stored Preview segments.</td>
+</tr>
+<tr>
+<td><strong>Automatically Skip Commercial</strong> — personal; <strong>Auto-skip Commercial</strong> — admin</td>
+<td>Off</td>
+<td>Seeks to the end of stored Commercial segments.</td>
+</tr>
 </tbody>
 </table>
 <details class="info">
@@ -3180,7 +3195,7 @@
 <p><strong>Picture-in-Picture:</strong> Auto-pause pauses playing video when the document is hidden. Auto-pause and PiP can run on the same visibility change. PiP needs browser support, loaded video metadata, and browser permission/activation. A request can be refused. Edge/Chrome may open their own automatic PiP; JE closes only the window it opened itself.</p>
 <p><strong>Temporary 2× speed:</strong> A speed indicator appears during the boost. Activation on a paused video attempts playback. Moving more than ten pixels before activation cancels the pending hold. OSD controls and the pause overlay are excluded, but the Enhanced panel is not reliably excluded.</p>
 <p><strong>Auto-skip:</strong> JE seeks to the exact stored segment end. It does not depend on an English button label or require Jellyfin's segment action to display a skip button. Segments need start/end boundaries and must last at least one second.</p>
-<p>Seeking back inside a segment just skipped leaves you there. Seek before its start and play through it to skip again. <strong>Recap</strong>, <strong>Preview</strong>, and <strong>Commercial</strong> actions remain Jellyfin's responsibility; JE's automatic toggles cover only intros/outros. Outro skipping does not implement a separate auto-next feature; Jellyfin controls next-episode autoplay.</p>
+<p>Seeking back inside a segment just skipped leaves you there. Seek before its start and play through it to skip again. Each toggle covers only its own segment type; segments of an unknown type are never skipped automatically. Outro skipping does not implement a separate auto-next feature; Jellyfin controls next-episode autoplay.</p>
 <p>Failed segment retrieval or ambiguous playing-item identity can leave skipping inactive. Jellyfin stores segments per item, so multiple versions with different timings can use boundaries from the primary version.</p>
 </details>
 <div class="admonition note">
