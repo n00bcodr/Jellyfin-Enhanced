@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
 
 // Panel controls outside the Media Tags hub that the settings wiring binds by id.
-const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
+const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle', 'autoSkipRecapToggle', 'autoSkipPreviewToggle', 'autoSkipCommercialToggle',
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle', 'showAudioLanguagesToggle',
   'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'subtitleSyncButtonEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
 

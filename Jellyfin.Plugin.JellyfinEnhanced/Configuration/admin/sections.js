@@ -376,7 +376,13 @@ JEAdmin.define({
             { id: 'autoSkipIntro', prop: 'AutoSkipIntro', type: 'toggle', perUser: true, label: 'Auto-skip Intro',
               desc: 'Automatically skip detected intros. Requires the Intro Skipper plugin.' },
             { id: 'autoSkipOutro', prop: 'AutoSkipOutro', type: 'toggle', perUser: true, label: 'Auto-skip Outro',
-              desc: 'Automatically skip detected outros (end credits). Requires the Intro Skipper plugin.' }
+              desc: 'Automatically skip detected outros (end credits). Requires the Intro Skipper plugin.' },
+            { id: 'autoSkipRecap', prop: 'AutoSkipRecap', type: 'toggle', perUser: true, label: 'Auto-skip Recap',
+              desc: 'Automatically skip detected recaps ("previously on"). Requires a media segment provider such as Intro Skipper.' },
+            { id: 'autoSkipPreview', prop: 'AutoSkipPreview', type: 'toggle', perUser: true, label: 'Auto-skip Preview',
+              desc: 'Automatically skip detected previews of what comes next. Requires a media segment provider such as Intro Skipper.' },
+            { id: 'autoSkipCommercial', prop: 'AutoSkipCommercial', type: 'toggle', perUser: true, label: 'Auto-skip Commercial',
+              desc: 'Automatically skip detected commercials. Requires a media segment provider such as Intro Skipper.' }
         ]
     },
     'pb-subtitles': {

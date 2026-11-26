@@ -100,6 +100,7 @@ function setup(t, { video = false, duration = 1200, remaining = true, shortcuts 
   h.load('core/dom-observer.js');
   h.load('enhanced/player/osd-playback.js');
   h.load('enhanced/player/playback.js');
+  h.load('enhanced/player/auto-skip.js');
   h.load('enhanced/player/now-playing.js');
   /** The user drags or clicks the timeline: jellyfin-web's emby-slider fires change on release. */
   const dragTo = (seconds) => {

@@ -25,9 +25,8 @@
  * Precedence vs native: the plugin seeks to the SAME EndTicks the native client
  * would, so any overlap with the native Skip action is idempotent (one visible
  * jump to the identical position). The plugin's value-add is the in-player quick
- * toggle (Auto Skip Intro / Auto Skip Outro) plus a localized toast; the native
- * per-type actions still own Recap/Preview/Commercial, which these toggles
- * deliberately do not cover.
+ * toggle per segment type (Intro, Outro, Recap, Preview, Commercial) plus a
+ * localized toast.
  *
  * One deliberate divergence from the native manager: a segment with no EndTicks is
  * ignored rather than acted on. Native reads "no end" as "advance to the next
@@ -376,18 +375,23 @@
 
     // ── DOM glue ─────────────────────────────────────────────────────────────
 
+    /** The setting that turns auto-skip on for each segment type; any other type is never skipped on its own. */
+    const SEGMENT_TYPE_SETTINGS = {
+        Intro: 'autoSkipIntro',
+        Outro: 'autoSkipOutro',
+        Recap: 'autoSkipRecap',
+        Preview: 'autoSkipPreview',
+        Commercial: 'autoSkipCommercial'
+    };
+
     /**
-     * Whether the user's settings enable auto-skip for a given segment type. Only
-     * the two types the settings model exposes (Intro/Outro) are covered — we do
-     * NOT invent settings for Recap/Preview/Commercial, which the native per-type
-     * actions own.
+     * Whether the user's settings enable auto-skip for a given segment type.
      * @param {string|undefined} type
      * @returns {boolean}
      */
     function segmentTypeEnabled(type) {
-        if (type === 'Intro') return !!JE.currentSettings?.autoSkipIntro;
-        if (type === 'Outro') return !!JE.currentSettings?.autoSkipOutro;
-        return false;
+        if (!Object.prototype.hasOwnProperty.call(SEGMENT_TYPE_SETTINGS, type || '')) return false;
+        return !!JE.currentSettings?.[SEGMENT_TYPE_SETTINGS[type]];
     }
 
     /**
@@ -405,12 +409,16 @@
     }
 
     /**
-     * Localized toast after an auto-skip. Constant keys, no interpolation.
-     * @param {MediaSegment} seg
+     * Localized toast after a skip, naming the segment type.
+     * @param {string|undefined} type
+     * @param {boolean} auto - True for an auto-skip, false for the shortcut.
      */
-    function autoSkipToast(seg) {
-        if (seg.Type === 'Intro') JE.toast(JE.t('toast_auto_skipped_intro'));
-        else if (seg.Type === 'Outro') JE.toast(JE.t('toast_auto_skipped_outro'));
+    function skipToast(type, auto) {
+        const prefix = auto ? 'toast_auto_skipped' : 'toast_skipped';
+        if (type === 'Intro' || type === 'Outro') JE.toast(JE.t(`${prefix}_${type.toLowerCase()}`));
+        else if (type === 'Recap' || type === 'Preview' || type === 'Commercial') {
+            JE.toast(JE.t(`${prefix}_segment`, { segment: JE.t(`segment_${type.toLowerCase()}`) }));
+        } else if (!auto) JE.toast(`${JE.icons.wrapEmoji('⏭️')} Skipped`);
     }
 
     /**
@@ -507,7 +515,7 @@
                     fallbackId: () => JE.internals?.player?.getCurrentVideoItemId?.() || null,
                     probeNowPlayingId: () => probeNowPlayingItemId(userId)
                 }),
-                onSkipped: autoSkipToast,
+                onSkipped: (seg) => skipToast(seg.Type, true),
                 getPositionOffsetTicks: (video) => parseTranscodeOffsetTicksFromSrc(video.currentSrc || '')
             });
         }
@@ -550,7 +558,8 @@
         createSessionItemResolver,
         parseTranscodeOffsetTicksFromSrc,
         parseItemIdFromVideosSrc,
-        segmentTypeEnabled
+        segmentTypeEnabled,
+        skipToast
     };
 
 })(window.JellyfinEnhanced);

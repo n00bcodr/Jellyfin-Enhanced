@@ -349,12 +349,12 @@ The overlay shows the year, official age rating, runtime, description, elapsed/t
 
 ### Smart Playback
 
-Manage tab-switch playback, temporary speed boosts, and automatic intro/outro skipping in the browser player.
+Manage tab-switch playback, temporary speed boosts, and automatic segment skipping (intros, outros, recaps, previews and commercials) in the browser player.
 
 ![Playing movie with Enhanced player controls](../images/enhanced/player-osd.webp)
 *The player also shows rating chips, a bookmark button, and the optional Playback Info overlay.*
 
-**How to use:** Open **Playback Settings** for tab-switch and hold controls, or **Auto-Skip Settings** for intros/outros. Admin defaults are under [**Playback → Player Behaviour**](../open-in-jellyfin.md?tab=playback&card=player-behaviour) and [**Playback → Auto-Skip**](../open-in-jellyfin.md?tab=playback&card=auto-skip).
+**How to use:** Open **Playback Settings** for tab-switch and hold controls, or **Auto-Skip Settings** for segment skipping. Admin defaults are under [**Playback → Player Behaviour**](../open-in-jellyfin.md?tab=playback&card=player-behaviour) and [**Playback → Auto-Skip**](../open-in-jellyfin.md?tab=playback&card=auto-skip).
 
 - For continuous Picture-in-Picture playback, turn off **Auto-pause**.
 - For temporary 2× speed, hold the video background with the left mouse button or touch for 500 ms. Release or cancel to restore the previous speed. Hold only on the video background.
@@ -378,6 +378,9 @@ For auto-skip, you need Jellyfin's stored media segments from a provider such as
 | **Long Press for 2x Speed (β)** — personal; **Long press/hold for 2x speed β** — admin | Off | Temporarily boosts speed while holding. Reload after first enabling. |
 | **Automatically Skip Intro** — personal; **Auto-skip Intro** — admin | Off | Seeks to the end of stored Intro segments. |
 | **Automatically Skip Outro** — personal; **Auto-skip Outro** — admin | Off | Seeks to the end of stored Outro segments. |
+| **Automatically Skip Recap** — personal; **Auto-skip Recap** — admin | Off | Seeks to the end of stored Recap segments. |
+| **Automatically Skip Preview** — personal; **Auto-skip Preview** — admin | Off | Seeks to the end of stored Preview segments. |
+| **Automatically Skip Commercial** — personal; **Auto-skip Commercial** — admin | Off | Seeks to the end of stored Commercial segments. |
 
 ??? info "Playback behavior and limits"
 
@@ -387,7 +390,7 @@ For auto-skip, you need Jellyfin's stored media segments from a provider such as
 
     **Auto-skip:** JE seeks to the exact stored segment end. It does not depend on an English button label or require Jellyfin's segment action to display a skip button. Segments need start/end boundaries and must last at least one second.
 
-    Seeking back inside a segment just skipped leaves you there. Seek before its start and play through it to skip again. **Recap**, **Preview**, and **Commercial** actions remain Jellyfin's responsibility; JE's automatic toggles cover only intros/outros. Outro skipping does not implement a separate auto-next feature; Jellyfin controls next-episode autoplay.
+    Seeking back inside a segment just skipped leaves you there. Seek before its start and play through it to skip again. Each toggle covers only its own segment type; segments of an unknown type are never skipped automatically. Outro skipping does not implement a separate auto-next feature; Jellyfin controls next-episode autoplay.
 
     Failed segment retrieval or ambiguous playing-item identity can leave skipping inactive. Jellyfin stores segments per item, so multiple versions with different timings can use boundaries from the primary version.
 

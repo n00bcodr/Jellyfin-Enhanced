@@ -153,7 +153,7 @@ On the pause screen, press ++space++/++enter++ or tap the background to resume. 
 
 ### Auto-Skip Settings
 
-Auto-skip lets you move past intros and outros during web playback. You can choose either type separately for your account.
+Auto-skip lets you move past intros, outros, recaps, previews and commercials during web playback. You can choose each type separately for your account.
 
 Open **Auto-Skip Settings** and turn on the segment types you want to skip.
 
@@ -161,10 +161,13 @@ Open **Auto-Skip Settings** and turn on the segment types you want to skip.
 | --- | --- | --- |
 | **Automatically Skip Intro** | Off | Seeks to the end of an Intro segment. |
 | **Automatically Skip Outro** | Off | Seeks to the end of an Outro segment. |
+| **Automatically Skip Recap** | Off | Seeks to the end of a Recap segment. |
+| **Automatically Skip Preview** | Off | Seeks to the end of a Preview segment. |
+| **Automatically Skip Commercial** | Off | Seeks to the end of a Commercial segment. |
 
-!!! note "Intro/outro data required"
+!!! note "Segment data required"
 
-    Auto-skip needs usable Intro/Outro segment data, commonly supplied by Intro Skipper. The panel says **Depends on Intro-Skipper Plugin being available**.
+    Auto-skip needs usable media segment data of the chosen type, commonly supplied by Intro Skipper. The panel says **Depends on Intro-Skipper Plugin being available**.
 
 ??? info "How it works"
 

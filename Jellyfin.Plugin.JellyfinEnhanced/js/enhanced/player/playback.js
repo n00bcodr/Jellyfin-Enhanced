@@ -852,13 +852,7 @@
                 const target = Math.min(endSeconds, duration);
                 if (target > pressVideo.currentTime) {
                     pressVideo.currentTime = target;
-                    if (seg.Type === 'Intro') {
-                        JE.toast(JE.t('toast_skipped_intro'));
-                    } else if (seg.Type === 'Outro') {
-                        JE.toast(JE.t('toast_skipped_outro'));
-                    } else {
-                        JE.toast(`${JE.icons.wrapEmoji('⏭️')} Skipped`);
-                    }
+                    JE.internals.autoSkip.skipToast(seg.Type, false);
                     return;
                 }
             }
@@ -913,13 +907,7 @@
                 const duration = osd.durationSeconds();
                 const target = Math.min(seg.EndTicks / TICKS_PER_SECOND, duration || Infinity);
                 if (target > now && osd.seekTo(target)) {
-                    if (seg.Type === 'Intro') {
-                        JE.toast(JE.t('toast_skipped_intro'));
-                    } else if (seg.Type === 'Outro') {
-                        JE.toast(JE.t('toast_skipped_outro'));
-                    } else {
-                        JE.toast(`${JE.icons.wrapEmoji('⏭️')} Skipped`);
-                    }
+                    JE.internals.autoSkip.skipToast(seg.Type, false);
                     return;
                 }
             }
