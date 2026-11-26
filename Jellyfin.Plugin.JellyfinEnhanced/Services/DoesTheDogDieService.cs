@@ -88,8 +88,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             finally
             {
+                // Retain title gates: a waiter can already hold the reference when
+                // CurrentCount reaches one; removing it would allow duplicate fetches.
                 gate.Release();
-                if (gate.CurrentCount == 1) _inFlight.TryRemove(key, out _);
             }
         }
 
@@ -241,7 +242,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     FetchedAtUnixMs = now,
                 };
             }
-            catch (Exception ex)
+            // A caller that gave up must not cache a failure for every other viewer.
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 // Don't break the page over this; retry in an hour.
                 _logger.Warning($"[DoesTheDogDie] Lookup failed for {mediaType}:{tmdbId}: {ex.Message}");
