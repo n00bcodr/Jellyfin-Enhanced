@@ -5314,6 +5314,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
                 return Ok(result);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return StatusCode(499); // browser went away; nothing was cached
+            }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to fetch awards for {mediaType}:{tmdbId}. Error: {ex.Message}");
