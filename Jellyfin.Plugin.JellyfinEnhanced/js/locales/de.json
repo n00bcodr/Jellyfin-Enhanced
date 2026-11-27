@@ -1604,5 +1604,13 @@
     "jellyseerr_tags_placeholder": "Select tags",
     "jellyseerr_tags_remove": "Remove",
     "requests_approve_with_options": "Approve with options",
-    "jellyseerr_request_as": "Request As"
+    "jellyseerr_request_as": "Request As",
+    "panel_settings_auto_skip_preview": "Automatically Skip Preview",
+    "segment_recap": "Recap",
+    "segment_preview": "Preview",
+    "panel_settings_auto_skip_commercial": "Automatically Skip Commercial",
+    "segment_commercial": "Commercial",
+    "toast_auto_skipped_segment": "{{icon:skip}} Auto-Skipped {segment}",
+    "panel_settings_auto_skip_recap": "Automatically Skip Recap",
+    "toast_skipped_segment": "{{icon:skip}} Skipped {segment}"
 }
