@@ -1597,5 +1597,20 @@
     "discovery_filter_without_language": "Sense idioma",
     "discovery_filter_keywords_hint": "Paraules amb què està etiquetat un títol, com «heist» o «time travel».",
     "discovery_filter_without_hint": "Els títols etiquetats amb aquestes paraules se'n deixen fora.",
-    "discovery_filter_two_letters": "Escriu dues lletres o més."
+    "discovery_filter_two_letters": "Escriu dues lletres o més.",
+    "jellyseerr_tags_select": "Etiquetes",
+    "jellyseerr_auto_approve_notice": "Aquesta sol·licitud s'aprovarà automàticament.",
+    "requests_approve": "Aprova",
+    "jellyseerr_tags_placeholder": "Selecciona etiquetes",
+    "jellyseerr_tags_remove": "Treure",
+    "requests_approve_with_options": "Aprova amb opcions",
+    "jellyseerr_request_as": "Sol·licitar com a",
+    "panel_settings_auto_skip_preview": "Saltar la previsualització automàticament",
+    "segment_recap": "Resum",
+    "segment_preview": "Previsualització",
+    "panel_settings_auto_skip_commercial": "Saltar la publicitat automàticament",
+    "segment_commercial": "Publicitat",
+    "toast_auto_skipped_segment": "{{icon:skip}} S'ha saltat automàticament: {segment}",
+    "panel_settings_auto_skip_recap": "Saltar el resum automàticament",
+    "toast_skipped_segment": "{{icon:skip}} S'ha omès: {segment}"
 }
