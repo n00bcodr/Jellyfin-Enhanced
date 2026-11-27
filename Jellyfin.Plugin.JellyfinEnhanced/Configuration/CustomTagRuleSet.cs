@@ -52,15 +52,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public const int MaxValueLength = 200;
 
         /// <summary>
-        /// Icons a rule may show: the genre icons the bundled Material Symbols Outlined subset
-        /// carries (js/tags/genretags.js genreIconMap; js/tags/customtags.js ICONS), so the web
-        /// and native posters both have the glyph.
+        /// Icons a rule may show. Each needs a glyph on the web (the Material Symbols Outlined
+        /// subset) and on native posters (icons.json); scripts/material-symbols/subset.py and
+        /// scripts/build_poster_assets.py read the matching list in js/tags/customtags.js.
         /// </summary>
         public static readonly IReadOnlyList<string> Icons = new[]
         {
             "theaters", "sports_martial_arts", "explore", "animation", "mood", "local_police", "article", "theater_comedy",
             "family_restroom", "auto_awesome", "history_edu", "skull", "music_note", "psychology_alt", "favorite", "science", "tv",
             "psychology", "military_tech", "landscape", "domino_mask", "music_video", "menu_book", "sports_soccer", "quiz", "live_tv",
+            "hd", "4k", "8k", "high_quality", "hdr_on", "surround_sound", "spatial_audio", "headphones", "volume_up", "closed_caption", "subtitles", "translate", "language", "public",
+            "movie", "videocam", "album", "stream", "sensors", "cloud", "download", "hard_drive", "dns", "link",
+            "star", "bookmark", "verified", "workspace_premium", "trophy", "crown", "diamond", "thumb_up", "fiber_new", "local_fire_department", "bolt",
+            "check_circle", "visibility", "visibility_off", "lock", "block", "warning", "flag", "schedule", "history", "update", "archive", "delete",
+            "child_care", "person", "groups", "pets", "rocket_launch", "swords", "sports_esports", "celebration", "cake", "ac_unit", "forest", "church", "school", "restaurant", "flight", "directions_car",
         };
 
         /// <summary>

@@ -29,14 +29,19 @@
 
 
     /**
-     * Icons a rule may show: the genre icons the bundled Material Symbols
-     * Outlined subset carries (tags/genretags.js genreIconMap), so every one
-     * renders as a glyph. The server accepts the same list
-     * (CustomTagRuleSet.Icons).
+     * Icons a rule may show. The server accepts the same list
+     * (CustomTagRuleSet.Icons). The build scripts read this one: after a change
+     * run scripts/material-symbols/subset.py and
+     * `scripts/build_poster_assets.py --icons-only`.
      */
     const ICONS = ['theaters', 'sports_martial_arts', 'explore', 'animation', 'mood', 'local_police', 'article', 'theater_comedy',
         'family_restroom', 'auto_awesome', 'history_edu', 'skull', 'music_note', 'psychology_alt', 'favorite', 'science', 'tv',
-        'psychology', 'military_tech', 'landscape', 'domino_mask', 'music_video', 'menu_book', 'sports_soccer', 'quiz', 'live_tv'];
+        'psychology', 'military_tech', 'landscape', 'domino_mask', 'music_video', 'menu_book', 'sports_soccer', 'quiz', 'live_tv',
+        'hd', '4k', '8k', 'high_quality', 'hdr_on', 'surround_sound', 'spatial_audio', 'headphones', 'volume_up', 'closed_caption', 'subtitles', 'translate', 'language', 'public',
+        'movie', 'videocam', 'album', 'stream', 'sensors', 'cloud', 'download', 'hard_drive', 'dns', 'link',
+        'star', 'bookmark', 'verified', 'workspace_premium', 'trophy', 'crown', 'diamond', 'thumb_up', 'fiber_new', 'local_fire_department', 'bolt',
+        'check_circle', 'visibility', 'visibility_off', 'lock', 'block', 'warning', 'flag', 'schedule', 'history', 'update', 'archive', 'delete',
+        'child_care', 'person', 'groups', 'pets', 'rocket_launch', 'swords', 'sports_esports', 'celebration', 'cake', 'ac_unit', 'forest', 'church', 'school', 'restaurant', 'flight', 'directions_car'];
 
     /**
      * Read a key in either the client's camelCase or the server's PascalCase.

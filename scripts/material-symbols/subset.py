@@ -86,7 +86,8 @@ ICONS = {
         # enhanced/player/subtitle-sync.js (the player's Subtitle Sync button)
         'subtitles_gear',
     },
-    # tags/genre-icons.json (genretags.js's table): read from the source, nothing to list.
+    # tags/genre-icons.json (genretags.js's table) and tags/customtags.js ICONS: read from
+    # the sources, nothing to list.
     'outlined': set(),
 }
 
@@ -97,6 +98,9 @@ COMPONENT_GLYPHS = list('abcdefghijklmnopqrstuvwxyz') + [
     'digit_five', 'digit_six', 'digit_seven', 'digit_eight', 'digit_nine',
     'underscore', 'space',
 ]
+
+# Glyph names that differ from the character they stand for in an icon name.
+GLYPH_CHARS = {'underscore': '_', **{name: str(digit) for digit, name in enumerate(COMPONENT_GLYPHS[26:36])}}
 
 # Face -> (full font, subset) file names, both under FONTS.
 FACES = {
@@ -128,8 +132,8 @@ def ligature_map(font):
             table = getattr(subtable, 'ExtSubTable', subtable)
             for first, ligatures in getattr(table, 'ligatures', {}).items():
                 for ligature in ligatures:
-                    text = first + ''.join(ligature.Component)
-                    names[text.replace('underscore', '_')] = ligature.LigGlyph
+                    text = ''.join(GLYPH_CHARS.get(g, g) for g in [first, *ligature.Component])
+                    names[text] = ligature.LigGlyph
     return names
 
 
@@ -164,6 +168,8 @@ def scan_sources():
     genre = json.loads((JS / 'tags' / 'genre-icons.json').read_text(encoding='utf-8'))
     found['outlined'].add(genre['defaultIcon'])
     found['outlined'].update(icon for names in genre['names'].values() for icon in names.values())
+    custom = re.search(r'ICONS = \[([^\]]+)\]', (JS / 'tags' / 'customtags.js').read_text(encoding='utf-8'))
+    found['outlined'].update(re.findall(r"'([a-z0-9_]+)'", custom.group(1)))
     element = re.compile(r'<span\s+class="([^"]*)"[^>]*>\s*([a-z0-9_]+)\s*</span>')
     for path in sources():
         text = path.read_text(encoding='utf-8')
@@ -181,7 +187,7 @@ def main():
     for face, names in found.items():
         missing = sorted(names - ICONS[face])
         if face == 'outlined':
-            # The genre map is the source of truth for the outlined face.
+            # The genre map and the Custom list are the source of truth for the outlined face.
             ICONS[face].update(names)
             missing = []
         if missing:

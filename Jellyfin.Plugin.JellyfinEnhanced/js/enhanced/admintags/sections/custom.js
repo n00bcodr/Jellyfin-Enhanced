@@ -17,7 +17,8 @@
             { id: 'customTagRules', key: 'CustomTagRules', type: 'custom', label: 'Custom tag rules' },
         ],
         render(ctx, body) {
-            body.innerHTML = `<p class="je-ta-hint" id="customTagRulesHelp">${ctx.tx('Match existing tags or collections to labels and icons. Up to 20 rules; labels up to 24 characters. Collections require the server cache.')}</p>` + A.CUSTOM_HTML;
+            // The card already shows this text; this copy only describes the table to screen readers.
+            body.innerHTML = `<p class="je-ct-sr" id="customTagRulesHelp">${ctx.tx('Match existing tags or collections to labels and icons. Up to 20 rules; labels up to 24 characters. Collections require the server cache.')}</p>` + A.CUSTOM_HTML;
             const editor = A.createCustomTagRules(body, (rules) => {
                 ctx.set('CustomTagRules', rules);
                 ctx.root.dispatchEvent(new CustomEvent('je-custom-labels'));

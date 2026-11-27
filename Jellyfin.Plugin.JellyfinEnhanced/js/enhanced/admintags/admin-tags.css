@@ -728,6 +728,65 @@ body.je-hide-descriptions .je-tag-admin .je-ta-intro { display: none; }
     color: inherit;
     font: inherit;
 }
+.je-ct-row .je-ct-icon-button,
+.je-ct-icon-panel button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    height: 36px;
+    padding: 0;
+    border-radius: 4px;
+    border: 1px solid rgba(128, 128, 128, 0.45);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.je-ct-row .je-ct-icon-button {
+    width: 100%;
+}
+.je-ct-icon-panel {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+    gap: 4px;
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 6px;
+    border-radius: 6px;
+    border: 1px solid rgba(128, 128, 128, 0.45);
+}
+.je-ct-icon-panel[hidden] {
+    display: none;
+}
+.je-ct-icon-panel button:hover,
+.je-ct-row .je-ct-icon-button:hover {
+    background: rgba(128, 128, 128, 0.2);
+}
+.je-ct-icon-panel button[aria-pressed="true"] {
+    border-color: #00a4dc;
+    background: rgba(0, 164, 220, 0.25);
+}
+.je-ct-glyph {
+    font-family: 'JE Material Symbols Outlined';
+    font-size: 22px;
+    font-weight: normal;
+    font-style: normal;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    white-space: nowrap;
+    direction: ltr;
+    overflow: hidden;
+    max-width: 100%;
+    -webkit-font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+}
+.je-ct-none {
+    font-size: 11px;
+    opacity: 0.75;
+}
 .je-ct-row input[aria-invalid="true"] {
     border-color: #ef5350;
 }

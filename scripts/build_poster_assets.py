@@ -130,6 +130,9 @@ FLAG_WIDTH, FLAG_HEIGHT = 160, 120
 # The genre table genretags.js is generated from (scripts/generate_genre_labels.py), which native code reads too.
 GENRE_TABLE = PLUGIN / "js/tags/genre-icons.json"
 
+# Custom tag rules may show these too: the ICONS list in customtags.js.
+CUSTOM_TAGS = PLUGIN / "js/tags/customtags.js"
+
 # Icons outside the genre table; the genre icons are read from the table itself.
 EXTRA_ICONS = {
     "MaterialSymbolsRounded": ["person_heart"],  # userreviewtags.js
@@ -199,6 +202,13 @@ def genre_icon_names() -> list:
     if "theaters" not in names:
         sys.exit("genre-icons.json: default icon 'theaters' missing")
     return names
+
+
+def custom_icon_names() -> list:
+    m = re.search(r"ICONS = \[([^\]]+)\]", CUSTOM_TAGS.read_text(encoding="utf-8"))
+    if not m:
+        sys.exit("customtags.js: ICONS not found")
+    return sorted(set(re.findall(r"'([a-z0-9_]+)'", m.group(1))))
 
 
 def flag_codes():
@@ -371,7 +381,7 @@ def build_icons(out: Path, cache: Path) -> list:
     from fontTools.ttLib import TTFont
 
     genre_icons = genre_icon_names()
-    wanted = {"MaterialSymbolsOutlined": genre_icons, **EXTRA_ICONS}
+    wanted = {"MaterialSymbolsOutlined": sorted({*genre_icons, *custom_icon_names()}), **EXTRA_ICONS}
     sources = {
         "MaterialSymbolsOutlined": TTFont(IN_REPO["symbols-outlined"]),
         "MaterialSymbolsRounded": TTFont(IN_REPO["symbols-rounded"]),
@@ -584,6 +594,7 @@ def build(out: Path, cache: Path, tmp: Path) -> None:
         "tools": tool_versions(),
         "options": {"flagSize": [FLAG_WIDTH, FLAG_HEIGHT], "notoSubsets": NOTO_SUBSETS, "notoWeights": [700]},
         "genreIcons": genre_icons,
+        "customIcons": custom_icon_names(),
         "flagCodes": codes + ["zxx"],
         "zxxSvgSha256": sha256(flag_codes()[1].encode()),
         "outputs": outputs_of(out),
@@ -605,6 +616,28 @@ def build_quality(out: Path) -> None:
     manifest["outputs"][name] = {"bytes": len(data), "sha256": sha256(data)}
     write(manifest_path, json.dumps(manifest, indent=1, sort_keys=True) + "\n")
     print(f"{out / name}: regenerated quality colours and manifest records")
+
+
+def build_custom_icons(out: Path) -> None:
+    """Regenerate the Material Symbols Outlined glyphs (bundled font, no downloads) and their manifest records."""
+    from fontTools.ttLib import TTFont
+
+    manifest_path = out / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    name = "icons.json"
+    font = TTFont(IN_REPO["symbols-outlined"])
+    lig = ligature_map(font)
+    icons = {k: v for k, v in json.loads((out / name).read_text(encoding="utf-8")).items() if ":" in k}
+    for n in sorted({*genre_icon_names(), *custom_icon_names()}):
+        if n not in lig:
+            sys.exit(f"MaterialSymbolsOutlined has no glyph for '{n}'")
+        icons[n] = glyph_entry(font, "MaterialSymbolsOutlined", lig[n])
+    data = to_json(icons).encode("utf-8")
+    write(out / name, data)
+    manifest["customIcons"] = custom_icon_names()
+    manifest["outputs"][name] = {"bytes": len(data), "sha256": sha256(data)}
+    write(manifest_path, json.dumps(manifest, indent=1, sort_keys=True) + "\n")
+    print(f"{out / name}: regenerated {len(icons)} icons and manifest records")
 
 
 # ── Check ────────────────────────────────────────────────────────────────────
@@ -630,6 +663,8 @@ def check(out: Path, full: bool, cache: Path, keep_tmp: bool) -> int:
             problems.append(f"{name}: stale, its in-repo source (js/css) changed")
     if manifest.get("genreIcons") != genre_icon_names():
         problems.append("genre icon list in js/tags/genre-icons.json changed: icons.json is stale")
+    if manifest.get("customIcons") != custom_icon_names():
+        problems.append("Custom tag icon list in js/tags/customtags.js changed: icons.json is stale")
     codes, zxx = flag_codes()
     if manifest.get("flagCodes") != codes + ["zxx"]:
         problems.append("flag codes in js/core/media-language.js changed: flags/ are stale")
@@ -677,6 +712,7 @@ def main() -> int:
                     default=Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "jellyfin-enhanced" / "poster-assets")
     ap.add_argument("--awards-only", action="store_true", help="regenerate only Awards logos and their manifest records")
     ap.add_argument("--quality-only", action="store_true", help="regenerate only quality colours and their manifest records")
+    ap.add_argument("--icons-only", action="store_true", help="regenerate only the genre and Custom tag glyphs and their manifest records")
     ap.add_argument("--check", action="store_true", help="verify instead of writing")
     ap.add_argument("--full", action="store_true", help="with --check: regenerate everything and compare bytes")
     ap.add_argument("--keep-tmp", action="store_true")
@@ -690,6 +726,11 @@ def main() -> int:
         if a.check or a.full:
             ap.error("--quality-only cannot be combined with --check or --full")
         build_quality(a.out)
+        return 0
+    if a.icons_only:
+        if a.check or a.full:
+            ap.error("--icons-only cannot be combined with --check or --full")
+        build_custom_icons(a.out)
         return 0
     if a.full and not a.check:
         ap.error("--full requires --check")

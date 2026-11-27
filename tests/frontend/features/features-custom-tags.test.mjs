@@ -327,16 +327,49 @@ test('Tag Styles colour every custom chip and each label', t => {
   assert.equal(h.JE.tagStyles.buildCss({ custom: { Bad: { color: 'red; } body { x' } } }), '', 'only colours reach the sheet');
 });
 
-test('the icon list is the bundled genre icon set, the same on the server and the configuration page', () => {
+test('the icon list covers the genre icons and is the same on the server and the configuration page', () => {
   // The genre table genretags.js is generated from (scripts/generate_genre_labels.py).
   const table = JSON.parse(readFileSync(`${jsRoot}/tags/genre-icons.json`, 'utf8'));
   const genreIcons = [...new Set([table.defaultIcon, ...Object.values(table.names).flatMap(names => Object.values(names))])].sort();
   const list = source => JSON.parse(`[${/ICONS = \[([^\]]+)\]/.exec(source)[1].replace(/'/g, '"')}]`).sort();
-  assert.deepEqual(list(readFileSync(`${jsRoot}/tags/customtags.js`, 'utf8')), genreIcons);
-  assert.deepEqual(list(readFileSync(`${jsRoot}/enhanced/admintags/custom-rules-editor.js`, 'utf8')), genreIcons);
+  const icons = list(readFileSync(`${jsRoot}/tags/customtags.js`, 'utf8'));
+  assert.equal(new Set(icons).size, icons.length, 'no repeats');
+  assert.deepEqual(genreIcons.filter(name => !icons.includes(name)), []);
+  assert.deepEqual(list(readFileSync(`${jsRoot}/enhanced/admintags/custom-rules-editor.js`, 'utf8')), icons);
+  const native = JSON.parse(readFileSync(`${jsRoot}/../Assets/PosterTags/icons.json`, 'utf8'));
+  assert.deepEqual(icons.filter(name => !native[name]), [], 'native posters have every glyph');
   const server = readFileSync(`${jsRoot}/../Configuration/CustomTagRuleSet.cs`, 'utf8');
   const cs = JSON.parse(`[${/Icons = new\[\]\s*\{([^}]+)\}/.exec(server)[1].replace(/,\s*$/, '')}]`).sort();
-  assert.deepEqual(cs, genreIcons);
+  assert.deepEqual(cs, icons);
+});
+
+test('the icon picker shows glyphs, saves the one clicked and closes on Escape', t => {
+  const h = createHarness({ JE: { t: englishT } });
+  t.after(() => h.close());
+  h.JE.adminTags = {}; h.load('enhanced/admintags/custom-rules-editor.js');
+  h.document.body.innerHTML = h.JE.adminTags.CUSTOM_HTML;
+  const rules = h.JE.adminTags.createCustomTagRules(h.document.body);
+  rules.load({ CustomTagRules: [{ Match: 'tag', Value: 'Signed', Label: 'Signed', Icon: 'star' }] });
+  const trigger = h.document.querySelector('.je-ct-icon-button');
+  const panel = h.document.querySelector('.je-ct-icon-panel');
+  assert.equal(trigger.querySelector('.je-ct-glyph').textContent, 'star');
+  assert.equal(panel.hidden, true);
+  trigger.click();
+  assert.equal(panel.hidden, false);
+  assert.equal(panel.querySelector('[aria-pressed="true"]').dataset.icon, 'star');
+  panel.querySelector('[data-icon="4k"]').click();
+  assert.equal(panel.hidden, true);
+  assert.equal(trigger.getAttribute('aria-label'), 'Rule 1 icon: 4k');
+  const config = {};
+  rules.collect(config);
+  assert.equal(config.CustomTagRules[0].Icon, '4k');
+  trigger.click();
+  panel.firstChild.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(panel.hidden, true);
+  trigger.click();
+  panel.querySelector('[data-icon=""]').click();
+  rules.collect(config);
+  assert.equal(config.CustomTagRules[0].Icon, null);
 });
 
 test('the rules table flags punctuation-only labels such as "*" and leaves them out of the save', t => {

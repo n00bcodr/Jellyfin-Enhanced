@@ -29,10 +29,15 @@
 
         var MAX_RULES = 20;
         var MAX_LABEL = 24;
-        // The genre icons the bundled Material Symbols subset carries (js/tags/customtags.js ICONS).
+        // The icons a rule may show (js/tags/customtags.js ICONS).
         var ICONS = ['theaters', 'sports_martial_arts', 'explore', 'animation', 'mood', 'local_police', 'article', 'theater_comedy',
             'family_restroom', 'auto_awesome', 'history_edu', 'skull', 'music_note', 'psychology_alt', 'favorite', 'science', 'tv',
-            'psychology', 'military_tech', 'landscape', 'domino_mask', 'music_video', 'menu_book', 'sports_soccer', 'quiz', 'live_tv'];
+            'psychology', 'military_tech', 'landscape', 'domino_mask', 'music_video', 'menu_book', 'sports_soccer', 'quiz', 'live_tv',
+            'hd', '4k', '8k', 'high_quality', 'hdr_on', 'surround_sound', 'spatial_audio', 'headphones', 'volume_up', 'closed_caption', 'subtitles', 'translate', 'language', 'public',
+            'movie', 'videocam', 'album', 'stream', 'sensors', 'cloud', 'download', 'hard_drive', 'dns', 'link',
+            'star', 'bookmark', 'verified', 'workspace_premium', 'trophy', 'crown', 'diamond', 'thumb_up', 'fiber_new', 'local_fire_department', 'bolt',
+            'check_circle', 'visibility', 'visibility_off', 'lock', 'block', 'warning', 'flag', 'schedule', 'history', 'update', 'archive', 'delete',
+            'child_care', 'person', 'groups', 'pets', 'rocket_launch', 'swords', 'sports_esports', 'celebration', 'cake', 'ac_unit', 'forest', 'church', 'school', 'restaurant', 'flight', 'directions_car'];
         var rows = [];
         var sourcesLoaded = false;
         var onLabels = null;
@@ -122,6 +127,22 @@
                 .catch(function () { /* suggestions only */ });
         }
 
+        /** An icon's readable name. */
+        function iconName(name) {
+            return name ? name.replace(/_/g, ' ') : tr('No icon');
+        }
+
+        /** Put the glyph itself (or "None") on a button, its name as the tooltip. */
+        function drawIcon(button, name) {
+            var face = document.createElement('span');
+            face.className = name ? 'je-ct-glyph' : 'je-ct-none';
+            face.setAttribute('aria-hidden', 'true');
+            face.textContent = name || tr('None');
+            button.textContent = '';
+            button.appendChild(face);
+            button.title = iconName(name);
+        }
+
         /** Redraw the rows from the state (keyboard focus stays on the same control of the same row). */
         function render() {
             var box = byId('customTagRuleRows');
@@ -200,16 +221,70 @@
                 checkLabel();
                 label.addEventListener('input', function () { r.label = label.value; checkLabel(); changed(); });
                 cell('je-ct-label', label).parentNode.appendChild(hint);
-                var icon = document.createElement('select');
-                icon.setAttribute('aria-label', tr('Rule {n} icon', { n: n }));
-                [''].concat(ICONS).forEach(function (name) {
-                    var option = document.createElement('option');
-                    option.value = name;
-                    option.textContent = name ? name.replace(/_/g, ' ') : tr('No icon');
-                    option.selected = (r.icon || '') === name;
-                    icon.appendChild(option);
+                // The icon: a button showing the glyph, which opens a grid of all of them under the row.
+                var icon = document.createElement('button');
+                icon.type = 'button';
+                icon.className = 'je-ct-icon-button';
+                var choices = document.createElement('span');
+                choices.className = 'je-ct-icon-panel';
+                choices.id = 'customTagRuleIcons' + index;
+                choices.setAttribute('role', 'cell');
+                choices.setAttribute('aria-label', tr('Rule {n} icon choices', { n: n }));
+                choices.hidden = true;
+                icon.setAttribute('aria-controls', choices.id);
+                icon.setAttribute('aria-expanded', 'false');
+                var showIcon = function () {
+                    drawIcon(icon, r.icon);
+                    icon.setAttribute('aria-label', tr('Rule {n} icon: {icon}', { n: n, icon: iconName(r.icon) }));
+                };
+                var closeIcons = function () {
+                    choices.hidden = true;
+                    icon.setAttribute('aria-expanded', 'false');
+                };
+                var chooseIcon = function (name) {
+                    r.icon = name || null;
+                    showIcon();
+                    closeIcons();
+                    icon.focus();
+                    changed();
+                    // Like the other fields, for the card's own change listener.
+                    icon.dispatchEvent(new Event('change', { bubbles: true }));
+                };
+                showIcon();
+                icon.addEventListener('click', function () {
+                    var opening = choices.hidden;
+                    // One grid at a time.
+                    box.querySelectorAll('.je-ct-icon-panel').forEach(function (panel) { panel.hidden = true; });
+                    box.querySelectorAll('.je-ct-icon-button').forEach(function (button) { button.setAttribute('aria-expanded', 'false'); });
+                    if (!opening) return;
+                    if (!choices.firstChild) {
+                        [''].concat(ICONS).forEach(function (name) {
+                            var option = document.createElement('button');
+                            option.type = 'button';
+                            option.dataset.icon = name;
+                            drawIcon(option, name);
+                            option.setAttribute('aria-label', iconName(name));
+                            option.addEventListener('click', function () { chooseIcon(name); });
+                            choices.appendChild(option);
+                        });
+                    }
+                    var selected = null;
+                    Array.prototype.forEach.call(choices.children, function (option) {
+                        var pressed = option.dataset.icon === (r.icon || '');
+                        option.setAttribute('aria-pressed', String(pressed));
+                        if (pressed) selected = option;
+                    });
+                    choices.hidden = false;
+                    icon.setAttribute('aria-expanded', 'true');
+                    if (selected) selected.focus();
                 });
-                icon.addEventListener('change', function () { r.icon = icon.value || null; changed(); });
+                row.addEventListener('keydown', function (e) {
+                    if (e.key !== 'Escape' || choices.hidden) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeIcons();
+                    icon.focus();
+                });
                 cell('je-ct-icon', icon);
                 var remove = document.createElement('button');
                 remove.type = 'button';
@@ -225,6 +300,7 @@
                     changed();
                 });
                 cell('je-ct-remove-cell', remove);
+                row.appendChild(choices);
                 box.appendChild(row);
             });
             if (keep) {
