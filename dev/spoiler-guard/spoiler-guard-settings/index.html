@@ -2605,7 +2605,7 @@
 
 
 <h1 id="spoiler-guard-settings">Spoiler Guard Settings<a class="headerlink" href="#spoiler-guard-settings" title="Permanent link">&para;</a></h1>
-<p>Set server-wide policy under <a href="../../open-in-jellyfin/?tab=display&amp;card=spoiler-guard"><strong>Display</strong> → <strong>Spoiler Guard</strong></a>. Users can relax individual metadata policies and seek previews in <a href="#per-user-overrides">Per-user overrides</a>. Title toggles, supported clients and collection inheritance are in <a href="../spoiler-guard-features/">Spoiler Guard features</a>.</p>
+<p>Set server-wide policy under <a href="../../open-in-jellyfin/?tab=display&amp;card=spoiler-guard"><strong>Display</strong> → <strong>Spoiler Guard</strong></a>. Users can relax individual metadata policies, season posters and seek previews in <a href="#per-user-overrides">Per-user overrides</a>. Title toggles, supported clients and collection inheritance are in <a href="../spoiler-guard-features/">Spoiler Guard features</a>.</p>
 <div class="admonition note">
 <p class="admonition-title">A title must be protected</p>
 <p>Protection needs a direct series/movie entry for the user, or collection membership, and the item must be eligible.</p>
@@ -2662,6 +2662,11 @@
 <td>Leaves guarded movie posters and thumbnails visible in either mode.</td>
 </tr>
 <tr>
+<td><strong>Keep season posters visible</strong></td>
+<td>Off</td>
+<td>Leaves the season posters of guarded shows visible in either mode. Episode images, descriptions and ratings stay protected. While off, users can opt out.</td>
+</tr>
+<tr>
 <td><strong>Hide trickplay seek previews</strong></td>
 <td>On</td>
 <td>Protects scrubbing previews of protected unwatched episodes and movies. Sheets ending before saved progress are revealed, and users can opt out.</td>
@@ -2711,7 +2716,7 @@
 <details class="note">
 <summary>Which images stay protected</summary>
 <p>Primary, Thumb, Screenshot and Chapter images are covered. Trickplay is covered while <strong>Hide trickplay seek previews</strong> is on and the user has not unchecked <strong>Seek previews</strong>. Backdrop/Art are optional, and Logo/Banner are never replaced.</p>
-<p>Series and collection images pass through. Season 0/1 images pass through, while later seasons stay protected until any episode in them is played. Played movies and episodes are exempt, and unplayed episodes in Season 0/1 stay eligible.</p>
+<p>Series and collection images pass through. Season 0/1 images pass through, while later seasons stay protected until any episode in them is played (<strong>Keep season posters visible</strong>, or unchecking <strong>Season posters</strong> for your account, exempts their posters). Played movies and episodes are exempt, and unplayed episodes in Season 0/1 stay eligible.</p>
 <p><strong>Keep movie posters visible</strong> still leaves movie chapter thumbnails and screenshots eligible (and Backdrop/Art when enabled). Movie chapters starting before saved progress are revealed. Episodes keep chapter-image protection until played. Whole trickplay sheets are revealed once their end is at or before saved progress. See <a href="../spoiler-guard-features/#saved-progress-chapters-and-trickplay">saved-progress rules</a>.</p>
 <p>While seek previews are unprotected, previews of protected items are served unchanged with <code>no-store</code>, so re-enabling protection takes effect on the next fetch.</p>
 <p>Advanced mode can exempt the next episode's Primary/Thumb image. Metadata opt-outs do not disable image replacement, but opting out of advanced mode removes that exception.</p>
@@ -3147,6 +3152,11 @@
 <td>Uncheck to permit the JE Reviews panel when otherwise available.</td>
 </tr>
 <tr>
+<td><strong>Season posters</strong></td>
+<td>Inherit</td>
+<td>Uncheck to see the posters of seasons you have not started yet. Appears only while <strong>Keep season posters visible</strong> is off.</td>
+</tr>
+<tr>
 <td><strong>Seek previews</strong></td>
 <td>Inherit</td>
 <td>Uncheck to see trickplay thumbnails while seeking through an unwatched episode or movie. Appears only while <strong>Hide trickplay seek previews</strong> is on.</td>
@@ -3169,7 +3179,7 @@
 </div>
 <details class="note">
 <summary>Preference storage and limits</summary>
-<p>Users cannot enable a protection category the admin disabled. <strong>Seek previews</strong> is the only image policy with a per-user override; other image replacement follows admin policy. On a shared address where JE cannot tell which signed-in user fetched a preview, the opt-out applies only when every user whose protection covers the item unchecked <strong>Seek previews</strong>; played-state and saved-progress reveals still follow the first such user. If initial state loading fails, preference controls are disabled to avoid overwriting unknown state.</p>
+<p>Users cannot enable a protection category the admin disabled. <strong>Season posters</strong> and <strong>Seek previews</strong> are the only image policies with a per-user override; other image replacement follows admin policy. On a shared address where JE cannot tell which signed-in user fetched an image, either opt-out applies only when every user whose protection covers the item unchecked it; played-state and saved-progress reveals still follow the first such user. If initial state loading fails, preference controls are disabled to avoid overwriting unknown state.</p>
 <p>Checking a category saves <code>null</code> (inherit); unchecking saves <code>false</code>. The inherited defaults are nullable. <strong>Don't ask me to confirm when turning Spoiler Guard off</strong> defaults to <code>false</code>. These preferences live in <code>UserSpoilerBlur.Prefs</code> within <code>spoilerblur.json</code>.</p>
 <p>The dialog's <strong>Don't ask again for 15 minutes</strong> is a separate per-account, per-browser local-storage snooze. Unchecking the permanent preference restores confirmation subject to any active snooze.</p>
 </details>
@@ -3179,7 +3189,7 @@
 <details class="info">
 <summary>How it works</summary>
 <p>When the master is on, recognized authenticated-user DTO responses receive per-user image-tag markers. A client echoing those tags lets the server select the user's policy. Userless API-key responses do not automatically receive a user marker.</p>
-<p>Requests without usable identity may pass through. Ambiguous image requests apply the first scope-matching candidate's played/progress state and exemptions; a <strong>Seek previews</strong> opt-out applies only when every scope-matching candidate made it. Markers are not credentials. See <a href="../spoiler-guard-features/#per-user-isolation">per-user identity and limits</a>.</p>
+<p>Requests without usable identity may pass through. Ambiguous image requests apply the first scope-matching candidate's played/progress state and exemptions; a <strong>Season posters</strong> or <strong>Seek previews</strong> opt-out applies only when every scope-matching candidate made it. Markers are not credentials. See <a href="../spoiler-guard-features/#per-user-isolation">per-user identity and limits</a>.</p>
 </details>
 <h2 id="health-spoiler-state-corruption-recovery">Health: spoiler-state corruption recovery<a class="headerlink" href="#health-spoiler-state-corruption-recovery" title="Permanent link">&para;</a></h2>
 <p>Spoiler Guard stores each account's title lists and preferences in a file. Back up the per-user configuration directory so you can restore protection if that file becomes unreadable.</p>
@@ -3361,6 +3371,10 @@
 <td><code>SpoilerKeepMoviePosters</code></td>
 </tr>
 <tr>
+<td><strong>Keep season posters visible</strong></td>
+<td><code>SpoilerKeepSeasonPosters</code></td>
+</tr>
+<tr>
 <td><strong>Hide trickplay seek previews</strong></td>
 <td><code>SpoilerBlurTrickplay</code></td>
 </tr>
@@ -3511,6 +3525,10 @@
 <tr>
 <td><strong>Reviews</strong></td>
 <td><code>HideReviews</code></td>
+</tr>
+<tr>
+<td><strong>Season posters</strong></td>
+<td><code>HideSeasonPosters</code></td>
 </tr>
 <tr>
 <td><strong>Seek previews</strong></td>
