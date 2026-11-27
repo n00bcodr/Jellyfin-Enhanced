@@ -274,6 +274,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // false = show this user the scrubbing thumbnails while seeking
         // through a protected unwatched episode/movie.
         public bool? HideTrickplay { get; set; }
+        // Season posters of unstarted seasons (admin switch: SpoilerKeepSeasonPosters).
+        // false = show this user those posters.
+        public bool? HideSeasonPosters { get; set; }
         // Advanced per-category reveals (admin default: SpoilerAdvancedMode).
         // Unlike the per-field opt-outs above, `false` here is the STRICTER
         // choice: it opts this user out of the category reveals entirely,

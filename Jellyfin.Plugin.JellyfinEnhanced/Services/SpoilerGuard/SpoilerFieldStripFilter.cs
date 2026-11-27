@@ -653,7 +653,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 // Mutate ImageTags BEFORE the watched-skip so the URL
                 // flips when the user starts the season.
-                MutateImageTagsForCacheBust(item, cfg, seasonAnyWatched, playbackPositionTicks: 0);
+                MutateImageTagsForCacheBust(item, cfg, seasonAnyWatched, playbackPositionTicks: 0,
+                    seasonPosterVisible: !ShouldStrip(!cfg.SpoilerKeepSeasonPosters, userState.Prefs?.HideSeasonPosters));
                 if (seasonAnyWatched) return;
                 ApplyStripping(item, userState, cfg, userId);
                 return;
@@ -1008,7 +1009,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             BaseItemDto item,
             PluginConfiguration cfg,
             bool watched,
-            long playbackPositionTicks)
+            long playbackPositionTicks,
+            bool seasonPosterVisible = false)
         {
             if (item == null) return;
             var hasPrimaryTags = item.ImageTags != null && item.ImageTags.Count > 0;
@@ -1023,6 +1025,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // as the API's imageCacheToken so a client integrating with
             // the API ends up with the SAME URL as one that doesn't.
             var inputs = $"{item.Id:N}|{cfg?.SpoilerBlurEnabled == true}|{watched}|{cfg?.SpoilerBlurMode ?? "blur"}|{cfg?.SpoilerBlurIntensity ?? 40}|{cfg?.SpoilerBlurArtwork == true}|{cfg?.SpoilerKeepMoviePosters == true}|{playbackPositionTicks}";
+            if (seasonPosterVisible) inputs += "|ksp";
             var token = ShortHash(inputs);
 
             // Prefix the existing tag rather than replace it — preserves

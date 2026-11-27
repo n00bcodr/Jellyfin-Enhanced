@@ -121,6 +121,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             bool CastAll,
             bool Poster,
             bool Backdrop,
+            bool SeasonPoster,
             string Placeholder)
         {
             // The title-bearing block in ApplyStripping runs on the same condition.
@@ -716,6 +717,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Series art passes the image filter. Movie art follows these two settings.
                 Poster: !isSeries && !cfg.SpoilerKeepMoviePosters,
                 Backdrop: !isSeries && cfg.SpoilerBlurArtwork,
+                SeasonPoster: SpoilerFieldStripFilter.ShouldStrip(!cfg.SpoilerKeepSeasonPosters, prefs?.HideSeasonPosters),
                 Placeholder: SpoilerFieldStripFilter.SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder));
         }
 
@@ -1034,7 +1036,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (policy.SeasonOverview) season.Remove("overview");
             if (policy.ReplaceTitle) season["name"] = $"Season {number}";
             if (policy.Dates) RemoveDateKeepingYear(season, keys.AirDate);
-            season.Remove(keys.Poster);
+            if (policy.SeasonPoster) season.Remove(keys.Poster);
         }
 
         // Seerr's TVDB mode fills these fields differently: a season's id is a TVDB id or the

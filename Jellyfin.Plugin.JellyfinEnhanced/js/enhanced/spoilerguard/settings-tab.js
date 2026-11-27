@@ -25,6 +25,8 @@
             reviews: JE.pluginConfig.SpoilerStripReviews !== false,
             // Trickplay seek previews (admin SpoilerBlurTrickplay, default on).
             trickplay: JE.pluginConfig.SpoilerBlurTrickplay !== false,
+            // Season posters are protected unless the admin keeps them visible.
+            seasonPosters: JE.pluginConfig.SpoilerKeepSeasonPosters !== true,
             // Advanced per-category reveals. Gated on the admin having
             // explicitly ENABLED advanced mode (not "not disabled" like the
             // strip categories above) — there is nothing to opt out of while
@@ -67,6 +69,7 @@
                     ${row('sbPrefHideAirDate', 'HideAirDate', 'panel_settings_spoiler_guard_override_air_date', 'panel_settings_spoiler_guard_override_air_date_desc', adminOn.premiereDate)}
                     ${row('sbPrefHideTaglines', 'HideTaglines', 'panel_settings_spoiler_guard_override_taglines', 'panel_settings_spoiler_guard_override_taglines_desc', adminOn.taglines)}
                     ${row('sbPrefHideTags', 'HideTags', 'panel_settings_spoiler_guard_override_tags', 'panel_settings_spoiler_guard_override_tags_desc', adminOn.tags)}
+                    ${row('sbPrefHideSeasonPosters', 'HideSeasonPosters', 'panel_settings_spoiler_guard_override_season_posters', 'panel_settings_spoiler_guard_override_season_posters_desc', adminOn.seasonPosters)}
                     ${row('sbPrefHideReviews', 'HideReviews', 'panel_settings_spoiler_guard_override_reviews', 'panel_settings_spoiler_guard_override_reviews_desc', adminOn.reviews)}
                     ${row('sbPrefHideTrickplay', 'HideTrickplay', 'panel_settings_spoiler_guard_override_trickplay', 'panel_settings_spoiler_guard_override_trickplay_desc', adminOn.trickplay)}
                     ${row('sbPrefUseAdvancedCategories', 'UseAdvancedCategories', 'panel_settings_spoiler_guard_override_advanced', 'panel_settings_spoiler_guard_override_advanced_desc', adminOn.advanced)}

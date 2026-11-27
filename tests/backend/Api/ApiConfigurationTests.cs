@@ -150,10 +150,10 @@ public class ApiConfigurationTests
         var user = Guid.NewGuid();
         var controller = ApiAssetTests.Controller(fixture.Core, fixture.Core.Manager);
         controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-UserId", user.ToString())], "test"));
-        var body = new SpoilerBlurUserPrefs { HideTrickplay = hideTrickplay, HideReviews = false, UseAdvancedCategories = false };
+        var body = new SpoilerBlurUserPrefs { HideTrickplay = hideTrickplay, HideSeasonPosters = hideTrickplay, HideReviews = false, UseAdvancedCategories = false };
         Assert.IsType<OkObjectResult>(controller.SetSpoilerBlurUserPrefs(body));
         var reloaded = Assert.IsType<SpoilerBlurUserPrefs>(Assert.IsType<OkObjectResult>(controller.GetSpoilerBlurUserPrefs()).Value);
-        Assert.Equal(hideTrickplay, reloaded.HideTrickplay);
+        Assert.Equal(hideTrickplay, reloaded.HideTrickplay); Assert.Equal(hideTrickplay, reloaded.HideSeasonPosters);
         Assert.False(reloaded.HideReviews);
         Assert.False(reloaded.UseAdvancedCategories);
         SpoilerUserResolver.InvalidateUser(user.ToString("N"));

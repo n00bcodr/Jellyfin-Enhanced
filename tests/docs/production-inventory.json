@@ -7797,6 +7797,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "SpoilerKeepSeasonPosters",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "SpoilerBlurTrickplay",
       "type": "bool",
       "initializer": "true",
@@ -9813,6 +9821,14 @@
     },
     {
       "class": "SpoilerBlurUserPrefs",
+      "name": "HideSeasonPosters",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "SpoilerBlurUserPrefs",
       "name": "UseAdvancedCategories",
       "type": "bool?",
       "initializer": null,
@@ -11026,7 +11042,7 @@
     "build_targets": 2,
     "files": 502,
     "routes": 225,
-    "configuration_properties": 792,
+    "configuration_properties": 794,
     "storage_references": 91,
     "scheduled_tasks": 17,
     "locales": 33

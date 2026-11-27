@@ -1077,12 +1077,13 @@ The four dictionaries default to `{}` and use case-insensitive keys. Library key
   "HideCast": null,
   "HideReviews": null,
   "HideTrickplay": null,
+  "HideSeasonPosters": null,
   "UseAdvancedCategories": null,
   "SkipDisableConfirm": false
 }
 ```
 
-Nullable category flags inherit policy with null, and opt out of stripping with false. True never enables a category that the administrator disabled. `HideTrickplay=false` opts out of trickplay seek-preview protection (`SpoilerBlurTrickplay`). `UseAdvancedCategories=false` instead restores uniform stripping by opting out of category reveals.
+Nullable category flags inherit policy with null, and opt out of stripping with false. True never enables a category that the administrator disabled. `HideTrickplay=false` opts out of trickplay seek-preview protection (`SpoilerBlurTrickplay`). `HideSeasonPosters=false` shows unstarted season posters (`SpoilerKeepSeasonPosters` shows them to everyone). `UseAdvancedCategories=false` instead restores uniform stripping by opting out of category reveals.
 
 POST replaces preferences rather than patching them; missing body returns `400`.
 

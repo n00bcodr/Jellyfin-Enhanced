@@ -318,7 +318,7 @@ The [per-user settings table](spoiler-guard-settings.md#per-user-overrides) cove
 
 ??? note "Override limits"
 
-    Metadata opt-outs do not directly turn off image replacement. Images retain their admin policy, played/progress rules, and exemptions. **Seek previews** is the exception: unchecking it shows trickplay thumbnails while you seek through protected unwatched items.
+    Metadata opt-outs do not directly turn off image replacement. Images retain their admin policy, played/progress rules, and exemptions. **Season posters** and **Seek previews** are the exceptions: unchecking them shows unstarted season posters, and trickplay thumbnails while you seek through protected unwatched items.
 
     **Advanced per-category reveals** works in the other direction: unchecking it restores uniform metadata protection and disables the next-episode image exception for your account.
 

@@ -514,6 +514,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerAutoEnableLibraryIds = "";
             SpoilerBlurStrictRefresh = false;
             SpoilerKeepMoviePosters = true;
+            SpoilerKeepSeasonPosters = false;
             SpoilerBlurTrickplay = true;
             SpoilerOverviewPlaceholder = "Spoiler Guard activated";
 
@@ -1508,6 +1509,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // are usually curated marketing art, while chapter scene-thumbs (and
         // synopsis/cast) are the real spoiler vector. Off = hide posters too.
         public bool SpoilerKeepMoviePosters { get; set; } = true;
+        // True: season Primary posters of a listed series pass unblurred; episode
+        // images and season text/ratings still follow protection. Off by default
+        // because later-season art can itself give plot away.
+        public bool SpoilerKeepSeasonPosters { get; set; } = false;
         // True (default): trickplay seek-preview tile sheets of a listed, unwatched
         // episode/movie are protected (sheets that end before the saved resume
         // point still pass through). Off = seek previews always pass through

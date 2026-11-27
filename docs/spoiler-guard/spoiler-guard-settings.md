@@ -1,6 +1,6 @@
 # Spoiler Guard Settings
 
-Set server-wide policy under [**Display** → **Spoiler Guard**](../open-in-jellyfin.md?tab=display&card=spoiler-guard). Users can relax individual metadata policies and seek previews in [Per-user overrides](#per-user-overrides). Title toggles, supported clients and collection inheritance are in [Spoiler Guard features](spoiler-guard-features.md).
+Set server-wide policy under [**Display** → **Spoiler Guard**](../open-in-jellyfin.md?tab=display&card=spoiler-guard). Users can relax individual metadata policies, season posters and seek previews in [Per-user overrides](#per-user-overrides). Title toggles, supported clients and collection inheritance are in [Spoiler Guard features](spoiler-guard-features.md).
 
 !!! note "A title must be protected"
 
@@ -28,6 +28,7 @@ Choose whether protected images are swapped for parent artwork or blurred.
 | **Blur intensity** | 40 | Strength from 5 to 100. Also sets the stock-card fallback blur. High values do not guarantee the image is unrecognizable. |
 | **Also hide the wide backdrop / fanart** | Off | Protects wide backdrops and fanart on eligible items. |
 | **Keep movie posters visible** | On | Leaves guarded movie posters and thumbnails visible in either mode. |
+| **Keep season posters visible** | Off | Leaves the season posters of guarded shows visible in either mode. Episode images, descriptions and ratings stay protected. While off, users can opt out. |
 | **Hide trickplay seek previews** | On | Protects scrubbing previews of protected unwatched episodes and movies. Sheets ending before saved progress are revealed, and users can opt out. |
 
 Clients need to refetch item metadata after a policy change.
@@ -65,7 +66,7 @@ Protection targets unwatched content. Series, collection and early-season artwor
 
     Primary, Thumb, Screenshot and Chapter images are covered. Trickplay is covered while **Hide trickplay seek previews** is on and the user has not unchecked **Seek previews**. Backdrop/Art are optional, and Logo/Banner are never replaced.
 
-    Series and collection images pass through. Season 0/1 images pass through, while later seasons stay protected until any episode in them is played. Played movies and episodes are exempt, and unplayed episodes in Season 0/1 stay eligible.
+    Series and collection images pass through. Season 0/1 images pass through, while later seasons stay protected until any episode in them is played (**Keep season posters visible**, or unchecking **Season posters** for your account, exempts their posters). Played movies and episodes are exempt, and unplayed episodes in Season 0/1 stay eligible.
 
     **Keep movie posters visible** still leaves movie chapter thumbnails and screenshots eligible (and Backdrop/Art when enabled). Movie chapters starting before saved progress are revealed. Episodes keep chapter-image protection until played. Whole trickplay sheets are revealed once their end is at or before saved progress. See [saved-progress rules](spoiler-guard-features.md#saved-progress-chapters-and-trickplay).
 
@@ -336,6 +337,7 @@ Changes save immediately. Only admin-enabled categories appear; **Advanced per-c
 | **Taglines** | Inherit | Uncheck to retain eligible taglines. |
 | **Tags** | Inherit | Uncheck to retain story tags and overlays governed by tags policy. |
 | **Reviews** | Inherit | Uncheck to permit the JE Reviews panel when otherwise available. |
+| **Season posters** | Inherit | Uncheck to see the posters of seasons you have not started yet. Appears only while **Keep season posters visible** is off. |
 | **Seek previews** | Inherit | Uncheck to see trickplay thumbnails while seeking through an unwatched episode or movie. Appears only while **Hide trickplay seek previews** is on. |
 | **Advanced per-category reveals** | Inherit | Uncheck to disable category metadata reveals and the next-episode image exception. |
 | **Don't ask me to confirm when turning Spoiler Guard off** | Off | Check to skip confirmation permanently for this account. |
@@ -346,7 +348,7 @@ Changes save immediately. Only admin-enabled categories appear; **Advanced per-c
 
 ??? note "Preference storage and limits"
 
-    Users cannot enable a protection category the admin disabled. **Seek previews** is the only image policy with a per-user override; other image replacement follows admin policy. On a shared address where JE cannot tell which signed-in user fetched a preview, the opt-out applies only when every user whose protection covers the item unchecked **Seek previews**; played-state and saved-progress reveals still follow the first such user. If initial state loading fails, preference controls are disabled to avoid overwriting unknown state.
+    Users cannot enable a protection category the admin disabled. **Season posters** and **Seek previews** are the only image policies with a per-user override; other image replacement follows admin policy. On a shared address where JE cannot tell which signed-in user fetched an image, either opt-out applies only when every user whose protection covers the item unchecked it; played-state and saved-progress reveals still follow the first such user. If initial state loading fails, preference controls are disabled to avoid overwriting unknown state.
 
     Checking a category saves `null` (inherit); unchecking saves `false`. The inherited defaults are nullable. **Don't ask me to confirm when turning Spoiler Guard off** defaults to `false`. These preferences live in `UserSpoilerBlur.Prefs` within `spoilerblur.json`.
 
@@ -362,7 +364,7 @@ Image tags help the server apply your account's protection behind proxies or sha
 
     When the master is on, recognized authenticated-user DTO responses receive per-user image-tag markers. A client echoing those tags lets the server select the user's policy. Userless API-key responses do not automatically receive a user marker.
 
-    Requests without usable identity may pass through. Ambiguous image requests apply the first scope-matching candidate's played/progress state and exemptions; a **Seek previews** opt-out applies only when every scope-matching candidate made it. Markers are not credentials. See [per-user identity and limits](spoiler-guard-features.md#per-user-isolation).
+    Requests without usable identity may pass through. Ambiguous image requests apply the first scope-matching candidate's played/progress state and exemptions; a **Season posters** or **Seek previews** opt-out applies only when every scope-matching candidate made it. Markers are not credentials. See [per-user identity and limits](spoiler-guard-features.md#per-user-isolation).
 
 ## Health: spoiler-state corruption recovery
 
@@ -467,6 +469,7 @@ JE logs Spoiler Guard activity so you can investigate automatic protection or st
     | **Blur intensity** | `SpoilerBlurIntensity` |
     | **Also hide the wide backdrop / fanart** | `SpoilerBlurArtwork` |
     | **Keep movie posters visible** | `SpoilerKeepMoviePosters` |
+    | **Keep season posters visible** | `SpoilerKeepSeasonPosters` |
     | **Hide trickplay seek previews** | `SpoilerBlurTrickplay` |
     | **Auto-enable Spoiler Guard on first play of a new show** | `SpoilerAutoEnableOnFirstPlay` |
     | **Auto-enable Spoiler Guard on Seerr request** | `SpoilerAutoEnableOnSeerrRequest` |
@@ -505,6 +508,7 @@ JE logs Spoiler Guard activity so you can investigate automatic protection or st
     | **Taglines** | `HideTaglines` |
     | **Tags** | `HideTags` |
     | **Reviews** | `HideReviews` |
+    | **Season posters** | `HideSeasonPosters` |
     | **Seek previews** | `HideTrickplay` |
     | **Advanced per-category reveals** | `UseAdvancedCategories` |
     | **Don't ask me to confirm when turning Spoiler Guard off** | `SkipDisableConfirm` |

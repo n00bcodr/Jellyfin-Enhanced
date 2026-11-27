@@ -3690,6 +3690,7 @@
                     ['spoilerAutoEnableMovies',     'SpoilerAutoEnableMovies',     true],
                     ['spoilerBlurStrictRefresh',    'SpoilerBlurStrictRefresh',    false],
                     ['spoilerKeepMoviePosters',     'SpoilerKeepMoviePosters',     true],
+                    ['spoilerKeepSeasonPosters',    'SpoilerKeepSeasonPosters',    false],
                     ['spoilerBlurTrickplay',        'SpoilerBlurTrickplay',        true],
                     // Advanced per-category reveals. The master switch is off
                     // for existing installs; the category masks keep the
@@ -3985,6 +3986,7 @@
                 'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies',
                 'spoilerBlurStrictRefresh',
                 'spoilerKeepMoviePosters',
+                'spoilerKeepSeasonPosters',
                 'spoilerBlurTrickplay',
                 'spoilerAdvancedMode',
                 'spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview',
@@ -5390,7 +5392,7 @@
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseNativeTab', 'bookmarksUseCustomTabs'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseNativeTab', 'hiddenContentUseCustomTabs'] },
-            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerAutoEnableOnLibraryAdd', 'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerBlurTrickplay', 'spoilerAdvancedMode'] },
+            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerAutoEnableOnLibraryAdd', 'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerKeepSeasonPosters', 'spoilerBlurTrickplay', 'spoilerAdvancedMode'] },
             { parent: 'spoilerStripCast',     label: 'Hide cast on unwatched episodes', children: ['spoilerStripCastMode'] },
             { parent: 'spoilerAdvancedMode',  label: 'Enable advanced per-category reveals', children: ['spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview', 'spoilerNextEpisodeStripRatings', 'spoilerNextEpisodeStripImage', 'spoilerCurrentSeasonStripTitle', 'spoilerCurrentSeasonStripOverview', 'spoilerCurrentSeasonStripRatings'] }
         ];

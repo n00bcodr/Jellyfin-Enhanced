@@ -266,6 +266,15 @@ public class PrivacySeerrRedactionTests
     }
 
     [Fact]
+    public void KeepSeasonPostersLeavesOnlyThePosterOfAnUnstartedSeason()
+    {
+        using var f = new Fixture(); f.GuardSeries(); f.Config.SpoilerKeepSeasonPosters = true;
+        var season = f.SeerrObject(TvJson, TvPath)["seasons"]![2]!;
+        Assert.Equal("/s2.jpg", (string?)season["posterPath"]);
+        Assert.Equal("Season 2", (string?)season["name"]); Assert.Null(season["overview"]);
+    }
+
+    [Fact]
     public void ASeasonTheUserHasStartedStaysVisible()
     {
         using var f = new Fixture(); var series = f.GuardSeries();

@@ -167,6 +167,26 @@ public class PosterBlurFilterTests
         var original=new FileContentResult(PosterBlurTests.Source(),"image/png");var(executed,http)=await f.Run(original,type);Assert.Same(original,executed.Result);Private(http);
     }
     [Theory]
+    [InlineData(false,"Primary",true)][InlineData(true,"Primary",false)][InlineData(true,"Thumb",true)]
+    public async Task Keep_season_posters_exempts_only_the_primary_image(bool keep,string type,bool replaced)
+    {
+        using var f=new Fixture(); f.Plugin.Plugin.Configuration.SpoilerKeepSeasonPosters=keep;
+        var season=new Season{Id=Guid.NewGuid(),SeriesId=f.Episode.SeriesId,IndexNumber=2}; f.Library.Setup(l=>l.GetItemById(season.Id)).Returns(season);
+        var original=new FileContentResult(PosterBlurTests.Source(),"image/png");var(executed,http)=await f.Run(original,type,item:season.Id);
+        Assert.Equal(replaced,!ReferenceEquals(original,executed.Result));Private(http);
+    }
+    // Prefs.HideSeasonPosters=false opts a user out; true cannot re-hide what the admin keeps visible.
+    [Theory]
+    [InlineData(false,false,false)][InlineData(false,true,true)][InlineData(true,true,false)]
+    public async Task Season_poster_user_preference_only_relaxes_the_admin_policy(bool keep,bool hide,bool replaced)
+    {
+        using var f=new Fixture(); f.Plugin.Plugin.Configuration.SpoilerKeepSeasonPosters=keep; f.SetPrefs(new SpoilerBlurUserPrefs{HideSeasonPosters=hide});
+        // SetPrefs replaces only Prefs, so the fixture's guarded series stays.
+        var season=new Season{Id=Guid.NewGuid(),SeriesId=f.Episode.SeriesId,IndexNumber=2}; f.Library.Setup(l=>l.GetItemById(season.Id)).Returns(season);
+        var original=new FileContentResult(PosterBlurTests.Source(),"image/png");var(executed,http)=await f.Run(original,item:season.Id);
+        Assert.Equal(replaced,!ReferenceEquals(original,executed.Result));Private(http);
+    }
+    [Theory]
     [InlineData("blur")][InlineData("hide")]
     public async Task Head_preserves_body_result_but_scrubs_cache(string mode)
     {

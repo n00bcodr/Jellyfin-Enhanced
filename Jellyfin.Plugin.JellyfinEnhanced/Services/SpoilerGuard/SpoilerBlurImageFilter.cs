@@ -23,6 +23,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // for these protected surfaces:
     //   • Episodes of an opted-in series the user has NOT played
     //   • Season posters for S2+ of an opted-in series with no episode watched
+    //     (SpoilerKeepSeasonPosters, or Prefs.HideSeasonPosters=false, exempts
+    //     them)
     //   • Movies opted in directly OR via an opted-in collection (until played;
     //     SpoilerKeepMoviePosters can exempt the Primary/Thumb poster)
     //   • Trickplay tile-sheets (unless the admin turned SpoilerBlurTrickplay
@@ -613,7 +615,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         await next().ConfigureAwait(false);
                         return;
                     }
-                    if (HasWatchedAnyEpisodeInSeason(jUser, season))
+                    // Poster opt-out (admin or per-user): the season poster
+                    // (Primary only) passes like a watched season.
+                    var posterExempt = string.Equals(imageType, "Primary", StringComparison.OrdinalIgnoreCase)
+                        && (pluginConfig.SpoilerKeepSeasonPosters
+                            || !AnyCandidateStillHides(context.HttpContext, candidates, item, p => p?.HideSeasonPosters));
+                    if (posterExempt || HasWatchedAnyEpisodeInSeason(jUser, season))
                     {
                         RegisterNoStoreOnStarting(context.HttpContext);
                         await next().ConfigureAwait(false);
@@ -989,26 +996,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Is trickplay protection on for this in-scope trickplay request? The
         // admin switch (SpoilerBlurTrickplay) caps everything. Otherwise each
-        // user may opt out with Prefs.HideTrickplay=false (null/true inherit
-        // the admin's protection). Fail-CLOSED on a shared-IP request: the
-        // sheet is only exempt when EVERY candidate whose scope covers the item
-        // opted out — one in-scope candidate still inheriting keeps it
-        // protected, matching the "protect if ANY opted in" effective-user
-        // pick. Only called for trickplay routes, after an in-scope candidate
-        // was found; LoadUserState is cached per request, so re-walking the
-        // candidates costs no extra disk reads.
+        // user may opt out with Prefs.HideTrickplay=false. Only called for
+        // trickplay routes, after an in-scope candidate was found.
         private bool TrickplayProtectionApplies(
             Microsoft.AspNetCore.Http.HttpContext httpContext,
             Configuration.PluginConfiguration pluginConfig,
             IReadOnlyList<Guid> candidates,
             BaseItem item)
+            => pluginConfig.SpoilerBlurTrickplay
+                && AnyCandidateStillHides(httpContext, candidates, item, p => p?.HideTrickplay);
+
+        // Per-user image opt-outs (null/true inherit the admin's protection,
+        // false opts out). Fail-CLOSED on a shared-IP request: the image is only
+        // exempt when EVERY candidate whose scope covers the item opted out; one
+        // in-scope candidate still inheriting keeps it protected, matching the
+        // "protect if ANY opted in" effective-user pick. LoadUserState is cached
+        // per request, so re-walking the candidates costs no extra disk reads.
+        private bool AnyCandidateStillHides(
+            Microsoft.AspNetCore.Http.HttpContext httpContext,
+            IReadOnlyList<Guid> candidates,
+            BaseItem item,
+            Func<SpoilerBlurUserPrefs?, bool?> preference)
         {
-            if (!pluginConfig.SpoilerBlurTrickplay) return false;
             foreach (var candidate in candidates)
             {
                 if (candidate == Guid.Empty) continue;
                 var candidateState = _resolver.LoadUserState(httpContext, candidate);
-                if (candidateState.Prefs?.HideTrickplay != false
+                if (preference(candidateState.Prefs) != false
                     && ItemInSpoilerScope(candidateState, item))
                 {
                     return true;
