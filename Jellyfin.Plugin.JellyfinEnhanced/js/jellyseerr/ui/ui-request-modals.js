@@ -106,9 +106,10 @@
 
         // Create checkbox list of movies in the collection with posters and status badges
         const movieListHtml = collectionDetails.parts.map(movie => {
-            const status = movie.mediaInfo?.status || MediaStatus.UNKNOWN;
             const downloads = movie.mediaInfo?.downloadStatus || [];
             const hasActiveDownloads = downloads && downloads.length > 0;
+            const rawStatus = movie.mediaInfo?.status || MediaStatus.UNKNOWN;
+            const status = rawStatus === MediaStatus.DELETED && hasActiveDownloads ? MediaStatus.PROCESSING : rawStatus;
             const isAvailable = status === MediaStatus.AVAILABLE;
             const isRequested = status === MediaStatus.PENDING || status === MediaStatus.PROCESSING;
             const isDisabled = isAvailable || isRequested;

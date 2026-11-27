@@ -109,7 +109,6 @@
         }
 
         const show4KOption = !!JE.pluginConfig.JellyseerrEnable4KTvRequests;
-        const status4k = item.mediaInfo ? item.mediaInfo.status4k : 1;
 
         if (show4KOption && !button.closest('.jellyseerr-button-group')) {
             const buttonGroup = document.createElement('div');
@@ -127,7 +126,7 @@
             arrowButton.dataset.tmdbId = item.id;
             arrowButton.dataset.toggle4k = 'true';
 
-            const tvDs4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
+            const tvDs4k = JE.seerrStatus.resolve4kDisplayStatus(item.mediaInfo);
             if (tvDs4k === DisplayStatus.AVAILABLE) {
                 arrowButton.disabled = true;
                 arrowButton.classList.add('jellyseerr-split-arrow-disabled', 'jellyseerr-4k-available');
@@ -162,10 +161,12 @@
     function configureMovieButton(button, item) {
         button.dataset.searchResultItem = JSON.stringify(item);
         const status = item.mediaInfo ? item.mediaInfo.status : 1;
-        const status4k = item.mediaInfo ? item.mediaInfo.status4k : 1;
 
         // Show split button when the 4K feature is enabled
         const show4KOption = !!JE.pluginConfig.JellyseerrEnable4KRequests;
+
+        // A 4K download says nothing about a deleted non-4K copy.
+        const countsDownloads = (hasAny) => (status === MediaStatus.DELETED ? item.mediaInfo.downloadStatus?.length > 0 : hasAny);
 
         const setButton = (text, icon, className, disabled = false) => {
             button.innerHTML = `${icon || ''}<span>${text}</span>`;
@@ -180,7 +181,7 @@
             buttonGroup.className = 'jellyseerr-button-group';
 
             const hasMainDownloads = item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0;
-            const mainDisplayStatus = JE.seerrStatus.resolveDisplayStatus(status, hasMainDownloads);
+            const mainDisplayStatus = JE.seerrStatus.resolveDisplayStatus(status, countsDownloads(hasMainDownloads));
             const { labelKey: mainLabelKey, cssClass: mainButtonClass, disabled: mainButtonDisabled, showSpinner: mainShowSpinner, iconKey } = JE.seerrStatus.getButtonConfig(mainDisplayStatus);
             const mainButtonText = JE.t(mainLabelKey);
             const mainButtonIcon = icons[iconKey] || '';
@@ -204,7 +205,7 @@
             arrowButton.dataset.tmdbId = item.id;
             arrowButton.dataset.toggle4k = 'true';
 
-            const ds4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
+            const ds4k = JE.seerrStatus.resolve4kDisplayStatus(item.mediaInfo);
             if (ds4k === DisplayStatus.AVAILABLE) {
                 arrowButton.disabled = true;
                 arrowButton.classList.add('jellyseerr-split-arrow-disabled', 'jellyseerr-4k-available');
@@ -278,7 +279,7 @@
         }
 
         const hasStdDownloads = item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0;
-        const stdDisplayStatus = JE.seerrStatus.resolveDisplayStatus(status, hasStdDownloads);
+        const stdDisplayStatus = JE.seerrStatus.resolveDisplayStatus(status, countsDownloads(hasStdDownloads));
         const { labelKey: stdLabelKey, cssClass: stdClass, disabled: stdDisabled, showSpinner: stdSpinner, iconKey: stdIconKey } = JE.seerrStatus.getButtonConfig(stdDisplayStatus);
 
         if (stdSpinner) {

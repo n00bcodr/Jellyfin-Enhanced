@@ -136,6 +136,32 @@ for (const split of [false, true]) test(`quota rejection shows escaped dialog an
   assert.equal(button.classList.contains('jellyseerr-button-error'), false);
 });
 
+for (const split of [false, true]) test(`a deleted movie that is downloading again reads as processing, not requestable (split=${split})`, async t => {
+  const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split } });
+  h.JE.internals.jellyseerrUi.addDownloadProgressHover = () => {}; // lives in ui-popover.js
+  h.item.mediaInfo = { status: 7, status4k: 1, downloadStatus: [{ downloadId: 'a', size: 4, sizeLeft: 3 }] };
+  h.configure(); const button = mainButton(h, split); button.click(); await flush();
+  assert.equal(button.disabled, true); assert.ok(button.classList.contains('jellyseerr-button-processing')); assert.equal(h.calls.length, 0);
+});
+
+for (const split of [false, true]) test(`a deleted movie with only a 4K download stays requestable (split=${split})`, t => {
+  const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split } });
+  h.item.mediaInfo = { status: 7, status4k: 7, downloadStatus4k: [{ downloadId: 'b', size: 4, sizeLeft: 3 }] };
+  h.configure();
+  assert.equal(mainButton(h, split).disabled, false);
+});
+
+test('only a download turns a deleted status into processing', t => {
+  const S = uiSetup(t).JE.seerrStatus;
+  assert.equal(S.resolveDisplayStatus(S.MEDIA.DELETED, true), S.DISPLAY.PROCESSING);
+  assert.equal(S.resolveDisplayStatus(S.MEDIA.DELETED, false), S.DISPLAY.DELETED);
+  assert.equal(S.isRequestable(S.MEDIA.DELETED, true), false);
+  assert.equal(S.isRequestable(S.MEDIA.DELETED), true);
+  assert.equal(S.resolve4kDisplayStatus({ status4k: 7, downloadStatus4k: [{}] }), S.DISPLAY.PROCESSING);
+  assert.equal(S.resolve4kDisplayStatus({ status4k: 5, downloadStatus4k: [{}] }), S.DISPLAY.AVAILABLE);
+  assert.equal(S.resolve4kDisplayStatus(undefined), S.DISPLAY.NONE);
+});
+
 test('quota detection distinguishes permission errors and honors feature toggle', t => {
   const h = uiSetup(t); const ui = h.JE.jellyseerrUI;
   assert.equal(ui.isQuotaError({ status: 403, responseJSON: { message: 'TV Quota exceeded.' } }), true);

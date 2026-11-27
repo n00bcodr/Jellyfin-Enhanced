@@ -210,6 +210,10 @@ const css = `
         .je-more-info-modal .title-chip {
             display: flex;
             align-items: center;
+            /* Centred on the line box the chip sits above the title's lowercase
+               letters and year; nudge it onto them. */
+            position: relative;
+            top: 0.2rem;
         }
 
         .je-more-info-modal .title-chip:empty {

@@ -56,12 +56,15 @@
     /**
      * Returns true when a media status permits a new request.
      * Absent/0 and UNKNOWN (never touched), plus DELETED (prior request removed),
-     * are all requestable. Everything else is already in flight or fulfilled.
+     * are all requestable. Everything else is already in flight or fulfilled,
+     * including a DELETED title that is downloading again.
      * @param {number|undefined} mediaStatus
+     * @param {boolean}          [hasActiveDownloads=false]
      * @returns {boolean}
      */
-    seerrStatus.isRequestable = function(mediaStatus) {
-        return !mediaStatus || mediaStatus === M.UNKNOWN || mediaStatus === M.DELETED;
+    seerrStatus.isRequestable = function(mediaStatus, hasActiveDownloads = false) {
+        if (mediaStatus === M.DELETED) return !hasActiveDownloads;
+        return !mediaStatus || mediaStatus === M.UNKNOWN;
     };
 
     /**
@@ -120,10 +123,23 @@
             case M.BLOCKED:
                 return DisplayStatus.BLOCKED;
             case M.DELETED:
-                return DisplayStatus.DELETED;
+                // Seerr keeps this status while the title downloads again, and
+                // shows it as processing.
+                return hasActiveDownloads ? DisplayStatus.PROCESSING : DisplayStatus.DELETED;
             default:
                 return DisplayStatus.NONE;
         }
+    };
+
+    /**
+     * The 4K slot's display state for the 4K request controls. Its downloads
+     * count only for a deleted title: the controls compare AVAILABLE as it is.
+     * @param {Object|undefined} mediaInfo
+     * @returns {string} one of seerrStatus.DISPLAY.*
+     */
+    seerrStatus.resolve4kDisplayStatus = function(mediaInfo) {
+        const status = mediaInfo?.status4k ?? M.UNKNOWN;
+        return seerrStatus.resolveDisplayStatus(status, status === M.DELETED && mediaInfo.downloadStatus4k?.length > 0);
     };
 
     // ── Button config ────────────────────────────────────────────────────────

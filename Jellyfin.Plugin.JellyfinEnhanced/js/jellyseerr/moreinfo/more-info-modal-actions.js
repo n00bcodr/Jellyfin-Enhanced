@@ -49,8 +49,7 @@ function buildSingle4kButton(data) {
 
 function buildMovieActions(data, actionMount, chipMount, show4kOption) {
     const status = data.mediaInfo ? data.mediaInfo.status : 1;
-    const status4k = data.mediaInfo ? data.mediaInfo.status4k : 1;
-    if (!JE.seerrStatus.isRequestable(status)) {
+    if (!JE.seerrStatus.isRequestable(status, data.mediaInfo?.downloadStatus?.length > 0)) {
         return null;
     }
 
@@ -131,7 +130,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
         const option = document.createElement('button');
         option.className = 'je-4k-popup-item';
 
-        const moviePopupDs4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
+        const moviePopupDs4k = JE.seerrStatus.resolve4kDisplayStatus(data.mediaInfo);
         if (moviePopupDs4k === DisplayStatus.AVAILABLE) {
             option.textContent = 'Request in 4K';
             option.disabled = true;
@@ -408,8 +407,8 @@ function drawActions(data, mediaType) {
         const effectiveMovieStatus = JE.seerrStatus.effectiveMediaStatus(status, jellyfinMediaId);
         const effectiveMovieStatus4k = JE.seerrStatus.effectiveMediaStatus(status4k, jellyfinMediaId4k);
 
-        const canRequestNormal = JE.seerrStatus.isRequestable(effectiveMovieStatus);
-        const canRequest4k = JE.seerrStatus.isRequestable(effectiveMovieStatus4k);
+        const canRequestNormal = JE.seerrStatus.isRequestable(effectiveMovieStatus, downloads.length > 0);
+        const canRequest4k = JE.seerrStatus.isRequestable(effectiveMovieStatus4k, downloads4k.length > 0);
 
         if (!canRequestNormal) {
             if (show4k && canRequest4k && actionMount) {
@@ -464,8 +463,8 @@ function drawActions(data, mediaType) {
         const effectiveStatus = JE.seerrStatus.effectiveMediaStatus(status, jellyfinMediaId);
         const effectiveStatus4k = JE.seerrStatus.effectiveMediaStatus(status4k, jellyfinMediaId4k);
 
-        const canRequestNormal = JE.seerrStatus.isRequestable(effectiveStatus);
-        const canRequest4k = JE.seerrStatus.isRequestable(effectiveStatus4k);
+        const canRequestNormal = JE.seerrStatus.isRequestable(effectiveStatus, downloads.length > 0);
+        const canRequest4k = JE.seerrStatus.isRequestable(effectiveStatus4k, downloads4k.length > 0);
         if (canRequestNormal) {
             const actions = internal.buildTvActions(data, show4kTv);
             if (actions && actionMount) actionMount.appendChild(actions);

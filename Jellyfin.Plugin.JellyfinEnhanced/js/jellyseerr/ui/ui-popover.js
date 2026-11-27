@@ -208,13 +208,11 @@
         const popup = document.createElement('div');
         popup.className = 'jellyseerr-4k-popup';
 
-        const status4k = item.mediaInfo ? item.mediaInfo.status4k : 1;
-
         // Create 4K button
         const request4KBtn = document.createElement('button');
         request4KBtn.className = 'jellyseerr-4k-popup-item';
 
-        const popupDs4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
+        const popupDs4k = JE.seerrStatus.resolve4kDisplayStatus(item.mediaInfo);
         if (popupDs4k === DisplayStatus.AVAILABLE) {
             request4KBtn.innerHTML = `<span>4K Available</span>${icons.available}`;
             request4KBtn.disabled = true;

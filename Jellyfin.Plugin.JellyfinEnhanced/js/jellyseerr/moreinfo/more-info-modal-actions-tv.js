@@ -16,7 +16,6 @@
 function buildTvActions(data, show4kOption = false) {
     const mediaInfo = data.mediaInfo || {};
     const status = mediaInfo.status ?? 1;
-    const status4k = mediaInfo.status4k ?? 1;
 
     // If Seerr reports Available (5) but the item has no Jellyfin media ID,
     // the library was wiped and Seerr's status is stale — treat as requestable.
@@ -83,7 +82,7 @@ function buildTvActions(data, show4kOption = false) {
             const option = document.createElement('button');
             option.className = 'je-4k-popup-item';
 
-            const tvPopupDs4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
+            const tvPopupDs4k = JE.seerrStatus.resolve4kDisplayStatus(mediaInfo);
             if (tvPopupDs4k === DisplayStatus.AVAILABLE) {
                 option.textContent = `4K ${JE.t('jellyseerr_btn_available') || 'Available'}`;
                 option.disabled = true;
