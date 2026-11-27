@@ -1597,5 +1597,12 @@
     "discovery_filter_without_language": "언어 없음",
     "discovery_filter_keywords_hint": "작품에 붙은 단어, 예를 들어 “강도” 또는 “타임 트래블”.",
     "discovery_filter_without_hint": "이 단어들이 태그된 작품은 제외됩니다.",
-    "discovery_filter_two_letters": "두 글자 이상 입력하세요."
+    "discovery_filter_two_letters": "두 글자 이상 입력하세요.",
+    "jellyseerr_tags_select": "Tags",
+    "jellyseerr_auto_approve_notice": "This request will be approved automatically.",
+    "requests_approve": "Approve",
+    "jellyseerr_tags_placeholder": "Select tags",
+    "jellyseerr_tags_remove": "Remove",
+    "requests_approve_with_options": "Approve with options",
+    "jellyseerr_request_as": "Request As"
 }

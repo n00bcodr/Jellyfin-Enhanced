@@ -1597,5 +1597,12 @@
     "discovery_filter_without_language": "Sin idioma",
     "discovery_filter_keywords_hint": "Palabras con las que está etiquetado un título, como “heist” o “time travel”.",
     "discovery_filter_without_hint": "Se excluyen los títulos etiquetados con estas palabras.",
-    "discovery_filter_two_letters": "Escribe dos letras o más."
+    "discovery_filter_two_letters": "Escribe dos letras o más.",
+    "jellyseerr_tags_select": "Tags",
+    "jellyseerr_auto_approve_notice": "This request will be approved automatically.",
+    "requests_approve": "Approve",
+    "jellyseerr_tags_placeholder": "Select tags",
+    "jellyseerr_tags_remove": "Remove",
+    "requests_approve_with_options": "Approve with options",
+    "jellyseerr_request_as": "Request As"
 }

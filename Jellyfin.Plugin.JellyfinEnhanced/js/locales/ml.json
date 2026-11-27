@@ -1597,5 +1597,12 @@
     "discovery_filter_without_language": "ഭാഷയില്ലാതെ",
     "discovery_filter_keywords_hint": "ഒരു ശീർഷകത്തിന് ടാഗ് ചെയ്ത വാക്കുകൾ, ഉദാഹരണത്തിന് “കവർച്ച” അല്ലെങ്കിൽ “ടൈം ട്രാവൽ”.",
     "discovery_filter_without_hint": "ഈ വാക്കുകൾ ടാഗ് ചെയ്ത ശീർഷകങ്ങൾ ഒഴിവാക്കപ്പെടും.",
-    "discovery_filter_two_letters": "രണ്ടോ അതിലധികമോ അക്ഷരങ്ങൾ ടൈപ്പ് ചെയ്യുക."
+    "discovery_filter_two_letters": "രണ്ടോ അതിലധികമോ അക്ഷരങ്ങൾ ടൈപ്പ് ചെയ്യുക.",
+    "jellyseerr_tags_select": "Tags",
+    "jellyseerr_auto_approve_notice": "This request will be approved automatically.",
+    "requests_approve": "Approve",
+    "jellyseerr_tags_placeholder": "Select tags",
+    "jellyseerr_tags_remove": "Remove",
+    "requests_approve_with_options": "Approve with options",
+    "jellyseerr_request_as": "Request As"
 }
