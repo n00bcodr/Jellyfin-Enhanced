@@ -1605,12 +1605,12 @@
     "jellyseerr_tags_remove": "Treure",
     "requests_approve_with_options": "Aprova amb opcions",
     "jellyseerr_request_as": "Sol·licitar com a",
-    "panel_settings_auto_skip_preview": "Automatically Skip Preview",
-    "segment_recap": "Recap",
-    "segment_preview": "Preview",
-    "panel_settings_auto_skip_commercial": "Automatically Skip Commercial",
-    "segment_commercial": "Commercial",
-    "toast_auto_skipped_segment": "{{icon:skip}} Auto-Skipped {segment}",
-    "panel_settings_auto_skip_recap": "Automatically Skip Recap",
-    "toast_skipped_segment": "{{icon:skip}} Skipped {segment}"
+    "panel_settings_auto_skip_preview": "Saltar la previsualització automàticament",
+    "segment_recap": "Resum",
+    "segment_preview": "Previsualització",
+    "panel_settings_auto_skip_commercial": "Saltar la publicitat automàticament",
+    "segment_commercial": "Publicitat",
+    "toast_auto_skipped_segment": "{{icon:skip}} S'ha saltat automàticament: {segment}",
+    "panel_settings_auto_skip_recap": "Saltar el resum automàticament",
+    "toast_skipped_segment": "{{icon:skip}} S'ha omès: {segment}"
 }
