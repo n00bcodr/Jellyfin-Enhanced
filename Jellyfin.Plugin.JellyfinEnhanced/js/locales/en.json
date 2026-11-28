@@ -934,6 +934,7 @@
     "bookmark_update_failed": "Failed to update bookmarks",
     "bookmark_offset_failed": "Failed to apply offset",
     "bookmark_no_replacement": "No replacement found in your library",
+    "bookmark_search_library": "Search your library",
     "bookmark_migrated": "{{icon:success}} Migrated {count} bookmark(s) to {name}",
     "bookmark_migration_failed": "Migration failed",
     "bookmark_migrate": "Migrate Bookmarks",

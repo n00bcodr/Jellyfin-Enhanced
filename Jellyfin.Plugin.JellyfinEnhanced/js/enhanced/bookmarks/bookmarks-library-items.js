@@ -116,7 +116,7 @@
               ${orphaned ? ` • <span style="color: #ff9800;">${JE.t('bookmark_orphaned')}</span>` : ''}
             </div>
           </div>
-          ${orphaned && group.details.tmdbId ? `
+          ${orphaned ? `
             <button class="btnFindReplacement je-btn-find-replacement" data-group-key="${key}" title="${JE.t('bookmark_find_replacement')}">
               <span class="material-icons" aria-hidden="true">find_replace</span>
             </button>

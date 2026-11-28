@@ -192,12 +192,64 @@ for(const operation of ['update','deleteAll','backfill']){
 /** Loads the replacement modal and migrates `group` to the single offered item. */
 async function migrate(h,group){
   const replacement={Id:'new-item-0000000000000000',Name:'New cut',Type:'Movie',ProviderIds:{Tmdb:'42'}};
-  h.JE.core={api:{fetch:async()=>({Items:[replacement]})}};h.JE.helpers={getItemCached:async()=>replacement};h.window.ApiClient.getImageUrl=()=>'';
-  h.load('enhanced/bookmarks/bookmarks-library-replacements.js');
-  await h.JE.internals.bookmarksLibrary.findAndOfferReplacement(group,h.document.createElement('button'));
+  h.routes.items=async()=>({Items:[replacement]});
+  await offer(h,group,()=>[replacement]);
   h.document.querySelector('.replacement-option').click();
   h.document.querySelector('.je-bookmark-btn-submit').click();
 }
+/** Opens the replacement modal for `group`; `answer` returns the items for each library URL. */
+async function offer(h,group,answer){
+  const urls=[];
+  h.JE.core={api:{fetch:async url=>{urls.push(new URL(url));return {Items:answer(new URL(url))};}}};h.window.ApiClient.getImageUrl=()=>'';
+  h.load('enhanced/bookmarks/bookmarks-library-replacements.js');
+  await h.JE.internals.bookmarksLibrary.findAndOfferReplacement(group,h.document.createElement('button'));
+  return urls;
+}
+const shownNames=h=>Array.from(h.document.querySelectorAll('.replacement-option-name'),el=>el.textContent);
+const episode=(Id,ParentIndexNumber,IndexNumber,extra={})=>({Id,Name:Id,Type:'Episode',ParentIndexNumber,IndexNumber,...extra});
+test('replacement search covers the whole library and asks for provider IDs',async t=>{
+  const h=setup(t);
+  const urls=await offer(h,{details:{itemId:'old',tmdbId:'42',mediaType:'movie',name:'Film'},bookmarks:[]},()=>[
+    {Id:'a',Name:'Match',Type:'Movie',ProviderIds:{Tmdb:'42'}},{Id:'b',Name:'Other',Type:'Movie',ProviderIds:{Tmdb:'7'}}]);
+  assert.equal(urls[0].searchParams.get('Fields'),'ProviderIds');
+  assert.equal(urls[0].searchParams.has('Limit'),false);
+  assert.deepEqual(shownNames(h),['Match']);
+});
+test('replacement search finds an episode through its show and skips missing placeholders',async t=>{
+  const h=setup(t);
+  await offer(h,{details:{itemId:'old',tmdbId:'42',mediaType:'tv',seasonNumber:2,episodeNumber:3,name:'Ep'},bookmarks:[]},url=>
+    url.pathname.endsWith('/Episodes')
+      ?[episode('wrong',2,4),episode('missing',2,3,{LocationType:'Virtual'}),episode('right',2,3)]
+      :[{Id:'show',Name:'Show',Type:'Series',ProviderIds:{Tmdb:'42'}}]);
+  assert.deepEqual(shownNames(h),['right']);
+});
+test('replacement search falls back to the episode TVDB ID',async t=>{
+  const h=setup(t);
+  await offer(h,{details:{itemId:'old',tvdbId:'900',mediaType:'tv',seasonNumber:1,episodeNumber:1,name:'Ep'},bookmarks:[]},url=>
+    url.searchParams.get('IncludeItemTypes')==='Episode'?[episode('found',1,1,{ProviderIds:{Tvdb:'900'}})]:[]);
+  assert.deepEqual(shownNames(h),['found']);
+});
+test('an orphaned bookmark can be moved to a hand-picked episode',async t=>{
+  const saved=[];
+  const h=setup(t,{a:{itemId:'old',timestamp:5,label:'scene'}},async(file,data)=>saved.push(plain(data)));
+  // The picked episode is looked up first, then its series.
+  const lookups=[episode('second',1,2,{SeriesId:'series',ProviderIds:{Tvdb:'901'}}),{Id:'series',Name:'Show',Type:'Series',ProviderIds:{Tmdb:'55'}}];
+  h.routes.items=async()=>({Items:[lookups.shift()]});
+  // No saved provider IDs, so nothing matches automatically.
+  await offer(h,{details:{itemId:'old',mediaType:'tv',seasonNumber:1,episodeNumber:2,name:'Show'},bookmarks:[{id:'a',itemId:'old',timestamp:5,label:'scene'}]},url=>
+    url.pathname.endsWith('/Episodes')?[episode('first',1,1),episode('second',1,2)]:[{Id:'series',Name:'Show',Type:'Series'}]);
+  assert.deepEqual(shownNames(h),[]);
+  const submit=h.document.querySelector('.je-bookmark-btn-submit');
+  h.document.querySelector('.je-replacement-search').dispatchEvent(new h.window.Event('submit',{cancelable:true}));
+  await settle(()=>shownNames(h).length===1);
+  h.document.querySelector('.replacement-option').click();
+  assert.equal(submit.disabled,true,'a series cannot receive bookmarks');
+  await settle(()=>shownNames(h).length===2);
+  assert.deepEqual(shownNames(h),['second','first']);
+  h.document.querySelector('.replacement-option').click();submit.click();
+  await settle(()=>saved.length===1);
+  assert.deepEqual(Object.values(saved[0].bookmarks).map(bm=>[bm.itemId,bm.tmdbId,bm.tvdbId,bm.seasonNumber,bm.episodeNumber,bm.timestamp]),[['second','55','901',1,2,5]]);
+});
 const orphanGroup=bookmarks=>({details:{itemId:'old-item-0000000000000000',tmdbId:'42',mediaType:'movie',name:'Old cut'},bookmarks:Object.entries(bookmarks).map(([id,bm])=>({id,...bm}))});
 test('failed bookmark migration keeps the old group, and the next save still persists it',async t=>{
   let fail=true;const saved=[];

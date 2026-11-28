@@ -1294,6 +1294,7 @@
     updateMarkers: updateBookmarkMarkersForCurrentVideo,
     formatTimestamp,
     syncBookmarks,
+    itemDetails: fetchItemDetails,
     cleanupOrphaned: cleanupOrphanedBookmarks,
     backfillEpisodeMetadata
   };

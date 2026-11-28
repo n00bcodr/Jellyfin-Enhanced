@@ -306,7 +306,7 @@ Admin [**Pages → Bookmarks**](../open-in-jellyfin.md?tab=pages&card=bookmarks)
 
     On the resulting item, use **Adjust Offset**, enter positive or negative **Time Offset (seconds)**, then **Apply Offset**. Only copied records still marked as synchronized are shifted, with times clamped at zero. Successful updates clear their synchronization markers; a zero offset clears markers without shifting times.
 
-    For an **Orphaned** item, use **Find Replacement**, select a matching library item, then **Migrate Bookmarks**. Migration moves records and removes the old ones after a successful save. The replacement button needs a saved TMDB ID; matching can also use TVDB. Search checks at most the newest 500 candidates, so an older replacement may not appear.
+    For an **Orphaned** item, use **Find Replacement**, select a library item, then **Migrate Bookmarks**. Migration moves records and removes the old ones after a successful save. Items matching the saved TMDB or TVDB ID are listed first. If the right one is not there, search your library by title and pick it yourself; choosing a series lists its episodes. Check the choice before migrating.
 
     Failed saves show feedback and roll back changes; a failed migration preserves the original records. Bookmark writes are serialized within the client.
 

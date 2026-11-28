@@ -14,100 +14,73 @@
 
   const escapeHtml = JE.escapeHtml;
 
+  const logPrefix = '🪼 Jellyfin Enhanced: Bookmarks Library:';
+
+  /** Item types a user can pick by hand. A Series only opens its episode list. */
+  const PICKABLE_TYPES = 'Movie,Series,Episode,Video,MusicVideo';
+
   /**
-   * Search Jellyfin for items matching a TMDB/TVDB ID
+   * Items from a Jellyfin list endpoint, without the placeholders for missing episodes.
    */
-  async function searchForReplacementItem(tmdbId, tvdbId, mediaType, seasonNumber = null, episodeNumber = null) {
+  async function getItems(path, params) {
     const apiClient = window.ApiClient || window.ConnectionManager?.currentApiClient();
-    if (!apiClient) return null;
+    const query = new URLSearchParams(params).toString();
+    const response = await JE.core.api.fetch(apiClient.getUrl(`${path}?${query}`));
+    return (response?.Items || []).filter(item => item.LocationType !== 'Virtual');
+  }
 
-    const userId = apiClient.getCurrentUserId();
+  const queryLibrary = (params) => getItems(
+    `Users/${(window.ApiClient || window.ConnectionManager?.currentApiClient()).getCurrentUserId()}/Items`,
+    { Recursive: 'true', ...params }
+  );
 
-    try {
-      // Search using Jellyfin's provider ID filtering. Movies/TV can be scoped
-      // to their known item types; other media (music videos, etc.) search
-      // across all types since the original Jellyfin type isn't preserved.
-      const itemTypes = mediaType === 'tv' ? 'Series,Episode' : mediaType === 'movie' ? 'Movie' : null;
+  const getEpisodes = (seriesId) => getItems(`Shows/${seriesId}/Episodes`, {
+    userId: (window.ApiClient || window.ConnectionManager?.currentApiClient()).getCurrentUserId(),
+    Fields: 'ProviderIds'
+  });
 
-      // Fetch all items of this type and filter by provider ID client-side
-      // This is more reliable than relying on AnyProviderIdEquals
-      const url = `Users/${userId}/Items?Recursive=true${itemTypes ? `&IncludeItemTypes=${itemTypes}` : ''}&SortBy=DateCreated&SortOrder=Descending&Limit=500`;
+  /**
+   * Search Jellyfin for items matching a bookmark's TMDB/TVDB ID. The whole library
+   * is checked, and Jellyfin only returns provider IDs when asked for them.
+   */
+  async function searchForReplacementItem({ tmdbId, tvdbId, mediaType, seasonNumber = null, episodeNumber = null }) {
+    if (!tmdbId && !tvdbId) return [];
 
-      // Routed through the core fetch layer (auth + JSON parse identical to the
-      // former ApiClient.ajax call; failures still land in the catch below).
-      let response = await JE.core.api.fetch(apiClient.getUrl(url));
+    const matchesIds = ({ ProviderIds: ids = {} }) =>
+      (!!tmdbId && ids.Tmdb === String(tmdbId)) || (!!tvdbId && ids.Tvdb === String(tvdbId));
+    const search = async (types) => (await queryLibrary({ IncludeItemTypes: types, Fields: 'ProviderIds' })).filter(matchesIds);
 
-      // Handle if response is a string (shouldn't happen but be safe)
-      if (typeof response === 'string') {
-        response = JSON.parse(response);
-      }
+    if (mediaType === 'movie') return search('Movie');
+    // Other media (music videos, etc.) doesn't preserve the original Jellyfin type.
+    if (mediaType !== 'tv') return search(PICKABLE_TYPES);
 
-      console.log(`🪼 Jellyfin Enhanced: Bookmarks Library: API Response:`, response);
+    // An episode bookmark stores the series' TMDB ID, so find the show first.
+    const shows = await search('Series');
+    if (episodeNumber == null) return shows;
 
-      const items = response?.Items || [];
-      console.log(`🪼 Jellyfin Enhanced: Bookmarks Library: Fetched ${items.length} total items of type ${itemTypes || 'any'}`);
-
-      if (!Array.isArray(items) || items.length === 0) {
-        console.warn(`🪼 Jellyfin Enhanced: Bookmarks Library: No items found or items is not an array`);
-        return null;
-      }
-
-      // Filter items by matching provider IDs
-      // Check both ProviderIds and UserData.Key (TMDB ID is often stored there)
-      const matches = items.filter(item => {
-        const providerIds = item.ProviderIds || {};
-        const userData = item.UserData || {};
-
-        let providerMatch = false;
-        if (tmdbId) {
-          // Check ProviderIds.Tmdb
-          if (providerIds.Tmdb === String(tmdbId)) providerMatch = true;
-          // Check UserData.Key for TMDB ID
-          if (userData.Key === String(tmdbId)) providerMatch = true;
-        }
-
-        if (!providerMatch && tvdbId) {
-          // Check ProviderIds.Tvdb
-          if (providerIds.Tvdb === String(tvdbId)) providerMatch = true;
-        }
-
-        if (!providerMatch) return false;
-
-        // A provider match can be any episode of the show; also require the episode
-        // number when known, so we don't offer an unrelated episode as a "replacement".
-        if (item.Type === 'Episode' && episodeNumber != null) {
-          return item.ParentIndexNumber === seasonNumber && item.IndexNumber === episodeNumber;
-        }
-
-        return true;
-      });
-
-      console.log(`🪼 Jellyfin Enhanced: Bookmarks Library: Found ${matches.length} matches for ${tmdbId ? 'TMDB:'+tmdbId : 'TVDB:'+tvdbId}`, matches);
-      return matches.length > 0 ? matches : null;
-    } catch (e) {
-      console.error('Failed to search for replacement:', e);
-      return null;
+    const isSameEpisode = (item) => item.ParentIndexNumber === seasonNumber && item.IndexNumber === episodeNumber;
+    const matches = [];
+    for (const show of shows) {
+      matches.push(...(await getEpisodes(show.Id)).filter(isSameEpisode));
     }
+    if (matches.length > 0 || !tvdbId) return matches;
+
+    // The episode's own TVDB ID still finds it when the show's IDs have changed.
+    return (await search('Episode')).filter(isSameEpisode);
   }
 
   /**
-   * Find replacement for orphaned item and offer migration
+   * Find replacements for an orphaned item and offer migration. The modal opens even
+   * without a match, so the user can pick the item by hand.
    */
   async function findAndOfferReplacement(group, triggerBtn) {
     triggerBtn.disabled = true;
 
-    const matches = await searchForReplacementItem(
-      group.details.tmdbId,
-      group.details.tvdbId,
-      group.details.mediaType,
-      group.details.seasonNumber,
-      group.details.episodeNumber
-    );
-
-    if (!matches || matches.length === 0) {
-      JE.toast(JE.t('bookmark_no_replacement'), 3000);
-      triggerBtn.disabled = false;
-      return;
+    let matches = [];
+    try {
+      matches = await searchForReplacementItem(group.details);
+    } catch (e) {
+      console.error(`${logPrefix} Failed to search for replacement:`, e);
     }
 
     showReplacementSelectionModal(group, matches);
@@ -117,7 +90,7 @@
   /**
    * Show modal to select replacement item and migrate bookmarks
    */
-  function showReplacementSelectionModal(oldGroup, replacementItems) {
+  function showReplacementSelectionModal(oldGroup, matches) {
     const apiClient = window.ApiClient || window.ConnectionManager?.currentApiClient();
     if (!apiClient) return;
 
@@ -131,7 +104,7 @@
           <div class="je-bookmarks-modal-header">
             <span class="material-icons" aria-hidden="true" style="font-size: 48px; color: #4caf50; flex-shrink: 0;">find_replace</span>
             <div style="flex: 1;">
-              <h2 class="je-modal-title">Replacement Found</h2>
+              <h2 class="je-modal-title">${JE.t('bookmark_find_replacement')}</h2>
               <p class="je-modal-subtitle">Migrate ${oldGroup.bookmarks.length} bookmark(s) from the old item to a new version</p>
             </div>
           </div>
@@ -139,30 +112,18 @@
           <div class="je-modal-warning-box">
             <div class="je-modal-warning-label">Old Item (Missing)</div>
             <div class="je-modal-item-name">${escapeHtml(oldGroup.details.name)}</div>
-            <div class="je-modal-item-meta">TMDB: ${oldGroup.details.tmdbId || 'N/A'} • Item ID: ${oldGroup.details.itemId.substring(0,16)}...</div>
+            <div class="je-modal-item-meta">TMDB: ${escapeHtml(oldGroup.details.tmdbId || 'N/A')} • Item ID: ${escapeHtml((oldGroup.details.itemId || '').substring(0, 16))}...</div>
           </div>
 
+          <form class="je-replacement-search">
+            <input type="search" class="je-input" placeholder="${JE.t('bookmark_search_library')}" aria-label="${JE.t('bookmark_search_library')}">
+            <button type="submit" class="je-btn-action" title="${JE.t('bookmark_search_library')}">
+              <span class="material-icons" aria-hidden="true" style="font-size: 18px;">search</span>
+            </button>
+          </form>
+
           <div class="je-replacement-section-title">Select Replacement:</div>
-          <div class="je-replacement-options">
-            ${replacementItems.map((item, idx) => {
-              const posterUrl = apiClient.getImageUrl(item.Id, {
-                type: 'Primary',
-                maxWidth: 120,
-                tag: item.ImageTags?.Primary
-              });
-              return `
-                <div class="replacement-option" data-item-index="${idx}" style="display: flex; gap: 12px; background: rgba(76,175,80,0.05); border: 2px solid rgba(76,175,80,0.2); border-radius: 8px; padding: 12px; cursor: pointer; transition: all 0.2s; align-items: center;">
-                  ${posterUrl ? `<img src="${posterUrl}" style="width: 60px; height: 90px; object-fit: cover; border-radius: 6px; flex-shrink: 0;">` : '<div style="width: 60px; height: 90px; background: rgba(255,255,255,0.05); border-radius: 6px; flex-shrink: 0;"></div>'}
-                  <div style="flex: 1;">
-                    <div style="font-weight: 600; margin-bottom: 4px; color: #fff; font-size: 15px;">${escapeHtml(item.Name)}</div>
-                    <div style="font-size: 12px; color: #aaa; margin-bottom: 4px;">${item.ProductionYear || ''}</div>
-                    <div style="font-size: 11px; color: #888;">Item ID: ${item.Id.substring(0,16)}...</div>
-                  </div>
-                  <span class="material-icons" aria-hidden="true" style="color: #4caf50; font-size: 28px; display: none; flex-shrink: 0;">check_circle</span>
-                </div>
-              `;
-            }).join('')}
-          </div>
+          <div class="je-replacement-options"></div>
         </div>
         <div class="je-modal-actions-padded">
           <button class="je-modal-btn-cancel-alt je-bookmark-btn-cancel">
@@ -171,7 +132,7 @@
           </button>
           <button class="je-modal-btn-submit je-bookmark-btn-submit" disabled>
             <span class="material-icons" aria-hidden="true" style="font-size: 18px;">swap_horiz</span>
-            <span>Migrate Bookmarks</span>
+            <span>${JE.t('bookmark_migrate')}</span>
           </button>
         </div>
       </div>
@@ -179,7 +140,64 @@
 
     document.body.appendChild(modal);
 
+    const options = modal.querySelector('.je-replacement-options');
+    const submitBtn = modal.querySelector('.je-bookmark-btn-submit');
+    const searchInput = modal.querySelector('.je-replacement-search input');
+    searchInput.value = oldGroup.details.name || '';
+
+    let shownItems = [];
     let selectedItem = null;
+    // Only the newest search or episode list may fill the results.
+    let latestRequest = 0;
+
+    function renderOptions(items) {
+      shownItems = items;
+      selectedItem = null;
+      submitBtn.disabled = true;
+
+      if (items.length === 0) {
+        options.innerHTML = `<div class="replacement-option-meta">${JE.t('bookmark_no_replacement')}</div>`;
+        return;
+      }
+
+      options.innerHTML = items.map((item, idx) => {
+        const posterUrl = apiClient.getImageUrl(item.Id, {
+          type: 'Primary',
+          maxWidth: 120,
+          tag: item.ImageTags?.Primary
+        });
+        const episode = item.Type === 'Episode'
+          ? `${item.SeriesName || ''} S${item.ParentIndexNumber ?? '?'}:E${item.IndexNumber ?? '?'}`
+          : '';
+        const meta = [episode, item.ProductionYear].filter(Boolean).join(' • ');
+        return `
+          <button type="button" class="replacement-option" data-item-index="${idx}">
+            ${posterUrl ? `<img src="${posterUrl}" alt="">` : '<div class="replacement-option-placeholder"></div>'}
+            <div class="replacement-option-info">
+              <div class="replacement-option-name">${escapeHtml(item.Name)}</div>
+              <div class="replacement-option-meta">${escapeHtml(meta)}</div>
+              <div class="replacement-option-meta">Item ID: ${escapeHtml(item.Id.substring(0, 16))}...</div>
+            </div>
+            <span class="material-icons replacement-option-check" aria-hidden="true">${item.Type === 'Series' ? 'chevron_right' : 'check_circle'}</span>
+          </button>
+        `;
+      }).join('');
+    }
+
+    async function showResults(load) {
+      const request = ++latestRequest;
+      renderOptions([]);
+      options.textContent = '…';
+      let items = [];
+      try {
+        items = await load();
+      } catch (e) {
+        console.error(`${logPrefix} Failed to search the library:`, e);
+      }
+      if (request === latestRequest) renderOptions(items);
+    }
+
+    renderOptions(matches);
 
     const closeDialog = () => {
       modal.style.opacity = '0';
@@ -192,58 +210,58 @@
       if (e.target === modal) closeDialog();
     });
 
-    // Selection handlers
-    modal.querySelectorAll('.replacement-option').forEach(option => {
-      option.addEventListener('click', () => {
-        const idx = parseInt(option.dataset.itemIndex);
-        selectedItem = replacementItems[idx];
+    modal.querySelector('.je-replacement-search').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const term = searchInput.value.trim();
+      if (!term) return;
+      showResults(() => queryLibrary({ SearchTerm: term, IncludeItemTypes: PICKABLE_TYPES, Limit: '50' }));
+    });
 
-        modal.querySelectorAll('.replacement-option').forEach(opt => {
-          opt.style.borderColor = 'rgba(76,175,80,0.2)';
-          opt.style.background = 'rgba(76,175,80,0.05)';
-          opt.querySelector('.material-icons').style.display = 'none';
-        });
+    // Selection handler
+    options.addEventListener('click', (e) => {
+      const option = e.target.closest('.replacement-option');
+      if (!option) return;
+      const item = shownItems[Number(option.dataset.itemIndex)];
 
-        option.style.borderColor = '#4caf50';
-        option.style.background = 'rgba(76,175,80,0.15)';
-        option.querySelector('.material-icons').style.display = 'block';
+      if (item.Type === 'Series') {
+        // Bookmarks belong to a playable file: list the episodes, the bookmarked one first.
+        const { seasonNumber, episodeNumber } = oldGroup.details;
+        const isSameEpisode = (ep) => ep.ParentIndexNumber === seasonNumber && ep.IndexNumber === episodeNumber;
+        showResults(async () => (await getEpisodes(item.Id)).sort((a, b) => isSameEpisode(b) - isSameEpisode(a)));
+        return;
+      }
 
-        const submitBtn = modal.querySelector('.je-bookmark-btn-submit');
-        submitBtn.disabled = false;
-        submitBtn.style.opacity = '1';
+      selectedItem = item;
+      options.querySelectorAll('.replacement-option').forEach(opt => {
+        opt.classList.toggle('selected', opt === option);
+        opt.setAttribute('aria-pressed', String(opt === option));
       });
+      submitBtn.disabled = false;
     });
 
     // Migrate handler
-    modal.querySelector('.je-bookmark-btn-submit').addEventListener('click', async () => {
+    submitBtn.addEventListener('click', async () => {
       if (!selectedItem) return;
 
-      const btn = modal.querySelector('.je-bookmark-btn-submit');
-      btn.disabled = true;
-      btn.querySelector('span:last-child').textContent = 'Migrating...';
+      submitBtn.disabled = true;
+      submitBtn.querySelector('span:last-child').textContent = 'Migrating...';
 
       try {
-        // Fetch full details for new item
-        const userId = apiClient.getCurrentUserId();
-        const fullItem = JE.helpers?.getItemCached
-          ? await JE.helpers.getItemCached(selectedItem.Id, { userId })
-          : await apiClient.getItem(userId, selectedItem.Id);
+        // The same item fields a new bookmark on that file would get.
+        const details = await JE.bookmarks.itemDetails(selectedItem.Id);
+        if (!details) throw new Error('Could not load the selected item');
 
         const newDetails = {
-          itemId: fullItem.Id,
-          tmdbId: fullItem.ProviderIds?.Tmdb || oldGroup.details.tmdbId,
-          tvdbId: fullItem.ProviderIds?.Tvdb || oldGroup.details.tvdbId,
-          mediaType: oldGroup.details.mediaType,
-          name: fullItem.Name,
-          seasonNumber: fullItem.Type === 'Episode' ? (fullItem.ParentIndexNumber ?? null) : null,
-          episodeNumber: fullItem.Type === 'Episode' ? (fullItem.IndexNumber ?? null) : null
+          ...details,
+          tmdbId: details.tmdbId || oldGroup.details.tmdbId || '',
+          tvdbId: details.tvdbId || oldGroup.details.tvdbId || ''
         };
 
         // Move the bookmarks to the new item (no offset). The old records are removed
         // in the same save, before the re-render it triggers, and come back if it fails.
         const synced = await JE.bookmarks.syncBookmarks(oldGroup.bookmarks, newDetails, 0, { replaceOriginals: true });
 
-        JE.toast(JE.t('bookmark_migrated').replace('{count}', synced.length).replace('{name}', fullItem.Name), 4000);
+        JE.toast(JE.t('bookmark_migrated').replace('{count}', synced.length).replace('{name}', details.name), 4000);
 
         closeDialog();
 
@@ -255,8 +273,8 @@
       } catch (e) {
         console.error('Migration failed:', e);
         JE.toast(JE.t('bookmark_migration_failed'), 3000);
-        btn.disabled = false;
-        btn.querySelector('span:last-child').textContent = JE.t('bookmark_migrate');
+        submitBtn.disabled = false;
+        submitBtn.querySelector('span:last-child').textContent = JE.t('bookmark_migrate');
       }
     });
 

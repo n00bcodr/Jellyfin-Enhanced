@@ -629,9 +629,23 @@
 
     /* Replacement modal specific */
     .je-replacement-modal-container {
+      width: 90%;
       max-width: 650px;
+      max-height: 90vh;
+      overflow-y: auto;
       background: linear-gradient(135deg, rgba(20,20,30,0.95) 0%, rgba(25,25,35,0.95) 100%);
       border: 1px solid rgba(76,175,80,0.3);
+    }
+
+    .je-replacement-search {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .je-replacement-search input {
+      flex: 1;
+      min-width: 0;
     }
 
     .je-replacement-section-title {
@@ -648,10 +662,17 @@
       flex-direction: column;
       gap: 12px;
       margin-bottom: 24px;
+      max-height: 40vh;
+      overflow-y: auto;
     }
 
     .replacement-option {
       display: flex;
+      flex-shrink: 0;
+      width: 100%;
+      color: inherit;
+      font: inherit;
+      text-align: left;
       gap: 12px;
       background: rgba(76,175,80,0.05);
       border: 2px solid rgba(76,175,80,0.2);
