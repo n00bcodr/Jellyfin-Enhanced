@@ -1612,5 +1612,8 @@
     "segment_commercial": "Reklam",
     "toast_auto_skipped_segment": "{{icon:skip}} {segment} otomatik atlandı",
     "panel_settings_auto_skip_recap": "Özeti Otomatik Atla",
-    "toast_skipped_segment": "{{icon:skip}} {segment} atlandı"
+    "toast_skipped_segment": "{{icon:skip}} {segment} atlandı",
+    "bookmark_search_library": "Search your library",
+    "panel_settings_spoiler_guard_override_season_posters_desc": "Uncheck to see the posters of seasons you have not started yet.",
+    "panel_settings_spoiler_guard_override_season_posters": "Season posters"
 }
