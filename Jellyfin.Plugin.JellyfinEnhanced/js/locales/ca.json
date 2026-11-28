@@ -1612,5 +1612,8 @@
     "segment_commercial": "Publicitat",
     "toast_auto_skipped_segment": "{{icon:skip}} S'ha saltat automàticament: {segment}",
     "panel_settings_auto_skip_recap": "Saltar el resum automàticament",
-    "toast_skipped_segment": "{{icon:skip}} S'ha omès: {segment}"
+    "toast_skipped_segment": "{{icon:skip}} S'ha omès: {segment}",
+    "bookmark_search_library": "Search your library",
+    "panel_settings_spoiler_guard_override_season_posters_desc": "Uncheck to see the posters of seasons you have not started yet.",
+    "panel_settings_spoiler_guard_override_season_posters": "Season posters"
 }
